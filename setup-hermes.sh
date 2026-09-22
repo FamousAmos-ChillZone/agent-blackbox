@@ -455,6 +455,15 @@ fi
 # Done
 # ============================================================================
 
+# Embedded mode: the Blackbox installer runs this script as a base-install
+# step and prints its own next-steps guidance afterwards.
+if [ "${HERMES_EMBEDDED_INSTALL:-}" = "1" ]; then
+    echo ""
+    echo -e "${GREEN}✓ Base Hermes setup complete${NC}"
+    echo ""
+    exit 0
+fi
+
 echo ""
 echo -e "${GREEN}✓ Setup complete!${NC}"
 echo ""

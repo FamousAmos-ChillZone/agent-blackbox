@@ -20,6 +20,9 @@ act/
 .env.production.local
 .env.development
 .env.test
+.env.*
+!.env.example
+!.env.*.example
 .hermes-docker/
 .notebooklm-home/
 .notebooklm-cli-venv/
@@ -60,6 +63,16 @@ agent-browser/
 # Private keys
 *.ppk
 *.pem
+*.key
+*.pfx
+id_rsa
+id_rsa.*
+id_dsa
+id_dsa.*
+id_ecdsa
+id_ecdsa.*
+id_ed25519
+id_ed25519.*
 privvy*
 images/
 __pycache__/
@@ -301,3 +314,15 @@ native/fts5_cjk/*.so
 
 # Disposable profile created by scripts/probe_active_session_exclusivity.py
 .probe-home/
+
+# Blackbox / DKG credentials — never commit (public repo)
+auth.token
+wallets.json
+*.p12
+dkg.json
+# DKG node home / config — holds chain.rpcUrl with the paid RPC provider key
+.dkg/
+# Installer-managed OriginTrail DKG npm package.
+/dkg/
+# Backup directory for installer migrations from custom DKG checkouts.
+/dkg.custom-backup-*/

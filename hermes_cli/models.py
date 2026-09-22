@@ -593,19 +593,25 @@ def fetch_openrouter_models(
     if cache_only:
         return list(OPENROUTER_MODELS)
 
-    # Remote catalog manifest first, in-repo snapshot when unreachable; the live /v1/models filter
-    # (tool support, free pricing) is applied on top either way.
+    live = _fetch_live_catalog_index(_OPENROUTER_CATALOG_URL, timeout, _urlopen_model_catalog_request)
+    if live is None:
+        # The remote curated manifest and OpenRouter's live catalog are two
+        # independent network reads. If the authoritative live catalog is
+        # unavailable, return the deterministic in-repo snapshot rather than
+        # making an offline result depend on whether the other request
+        # happened to succeed.
+        return list(cached or OPENROUTER_MODELS)
+    live_items, live_by_id = live
+
+    # Read the remotely-hosted curated manifest only after the authoritative
+    # live catalog is available. The live response supplies tool capability and
+    # pricing data; the manifest controls ordering and membership.
     try:
         from hermes_cli.model_catalog import get_curated_openrouter_models
         remote = get_curated_openrouter_models()
     except Exception:
         remote = None
     fallback = list(remote) if remote else list(OPENROUTER_MODELS)
-
-    live = _fetch_live_catalog_index(_OPENROUTER_CATALOG_URL, timeout, _urlopen_model_catalog_request)
-    if live is None:
-        return list(cached or fallback)
-    live_items, live_by_id = live
 
     # Free warm-up for the reasoning-capability cache: same payload the caps fetch would pull.
     global _openrouter_reasoning_caps_cache

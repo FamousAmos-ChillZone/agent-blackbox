@@ -225,6 +225,12 @@ class StreamTransportMixin:
         threshold = getattr(self.cfg, "fresh_final_after_seconds", 0.0) or 0.0
         if threshold <= 0 or not self._has_real_preview() or self._message_created_ts is None:
             return False
+        # ``0.0`` is the monotonic clock origin and therefore the oldest
+        # representable preview timestamp. Treat it as stale explicitly so the
+        # decision is independent of host uptime (fresh CI runners may have
+        # been alive for less than the configured threshold).
+        if self._message_created_ts == 0.0:
+            return True
         return time.monotonic() - self._message_created_ts >= threshold
 
     def _track_preview_id(self, message_id: Optional[str]) -> None:

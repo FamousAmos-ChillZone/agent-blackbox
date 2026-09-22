@@ -3322,14 +3322,28 @@ def _register_plugin_cli_commands(subparsers) -> None:
     """
     if not _plugin_cli_discovery_needed():
         return
+    # Memory-plugin CLI discovery and hermes_cli plugin discovery are two
+    # independent registries: a broken active memory plugin (import error or a
+    # setup_fn that raises) must not hide unrelated plugin CLIs such as
+    # ``hermes blackbox``. Each memory command also attaches inside its own
+    # guard so one bad descriptor cannot take down its siblings.
+    seen_plugin_commands = set()
     try:
         from plugins.memory import discover_plugin_cli_commands
-        from hermes_cli.plugins import discover_plugins, get_plugin_manager
 
-        seen_plugin_commands = set()
         for cmd_info in discover_plugin_cli_commands():
-            _attach_plugin_cli_command(subparsers, cmd_info)
-            seen_plugin_commands.add(cmd_info["name"])
+            try:
+                _attach_plugin_cli_command(subparsers, cmd_info)
+                seen_plugin_commands.add(cmd_info["name"])
+            except Exception as _exc:
+                logging.getLogger(__name__).debug(
+                    "Memory plugin CLI setup failed for %s: %s", cmd_info.get("name"), _exc
+                )
+    except Exception as _exc:
+        logging.getLogger(__name__).debug("Memory plugin CLI discovery failed: %s", _exc)
+
+    try:
+        from hermes_cli.plugins import discover_plugins, get_plugin_manager
 
         discover_plugins()
         # The invoked platform may still be a deferred entry; import it so its

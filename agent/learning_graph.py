@@ -175,26 +175,55 @@ def _has_learning_signal(node: SkillNode) -> bool:
     return node.created_by in {"agent", "learn"} or node.use_count > 0
 
 
-def build_learning_graph() -> dict[str, Any]:
-    """Full payload for the desktop learning panel: non-base skills with real
-    learning signal (agent-created or used) plus memory chunks as graph nodes."""
-    roots = [("base", Path(__file__).resolve().parent.parent / "skills"), ("profile", get_hermes_home() / "skills")]
-    learned_skills = {
-        name: node for name, node in build_skill_nodes(roots).items()
+def _learning_neighborhood(all_skills: dict[str, SkillNode]) -> tuple[dict[str, SkillNode], set[str], set[str]]:
+    """Skills worth drawing in the learning graph -> ``(graph_skills, learned_names, context_names)``.
+
+    The core graph remains anchored on learned/profile skills, but it also pulls
+    in directly-related neighbors from the catalog (declared ``related_skills``
+    in either direction). Those context nodes make the graph explorable: a user
+    can see where a learned skill points next without having to use that
+    neighboring skill first.
+    """
+    learned_names = {
+        name for name, node in all_skills.items()
         if node.source != "base" and _has_learning_signal(node)
     }
-    skill_edges, memory_cards = build_edges(learned_skills), _memory_cards()
-    memory_edges = _memory_skill_edges(memory_cards, list(learned_skills.values()))
-    clusters = Counter(node.category for node in learned_skills.values())
+    related_names: set[str] = set()
+
+    for name in learned_names:
+        related_names.update(target for target in all_skills[name].related if target in all_skills)
+
+    for name, node in all_skills.items():
+        if name not in learned_names and any(target in learned_names for target in node.related):
+            related_names.add(name)
+
+    graph_names = learned_names | related_names
+    return (
+        {name: node for name, node in all_skills.items() if name in graph_names},
+        learned_names,
+        related_names - learned_names,
+    )
+
+
+def build_learning_graph() -> dict[str, Any]:
+    """Full payload for the desktop learning panel: non-base skills with real
+    learning signal (agent-created or used), directly-related catalog skills as
+    explorable context, plus memory chunks as graph nodes."""
+    roots = [("base", Path(__file__).resolve().parent.parent / "skills"), ("profile", get_hermes_home() / "skills")]
+    graph_skills, learned_names, related_names = _learning_neighborhood(build_skill_nodes(roots))
+    skill_edges, memory_cards = build_edges(graph_skills), _memory_cards()
+    memory_edges = _memory_skill_edges(memory_cards, list(graph_skills.values()))
+    clusters = Counter(node.category for node in graph_skills.values())
     if memory_cards:
         clusters["memory"] = len(memory_cards)
 
     graph_nodes = [
         {
             "id": n.name, "label": n.name, "kind": "skill", "timestamp": n.timestamp, "category": n.category,
+            "source": n.source, "learned": n.name in learned_names, "context": n.name in related_names,
             "useCount": n.use_count, "state": n.state, "createdBy": n.created_by, "pinned": n.pinned,
         }
-        for n in learned_skills.values()
+        for n in graph_skills.values()
     ] + [
         {
             "id": f"memory:{card['source']}:{i}", "label": card["title"], "kind": "memory",
@@ -209,7 +238,8 @@ def build_learning_graph() -> dict[str, Any]:
         "clusters": [{"category": c, "count": n} for c, n in sorted(clusters.items(), key=lambda kv: -kv[1])],
         "memory": memory_cards,
         "stats": {
-            **density_stats(learned_skills, skill_edges),
-            "memory_nodes": len(memory_cards), "memory_skill_edges": len(memory_edges), "learned_skills": len(learned_skills),
+            **density_stats(graph_skills, skill_edges),
+            "memory_nodes": len(memory_cards), "memory_skill_edges": len(memory_edges),
+            "learned_skills": len(learned_names), "related_skill_nodes": len(related_names),
         },
     }
