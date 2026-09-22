@@ -1,0 +1,121 @@
+{
+  "id": "blackbox",
+  "name": "Agent Blackbox",
+  "description": "Detects prompt-injection, escalation, dependency, file-access, and skill threats from the curated Verifiable Memory graph. Findings stay local; sharing is coming soon.",
+  "activation": {
+    "onStartup": true
+  },
+  "hooks": {
+    "registers": [
+      "before_tool_call",
+      "after_tool_call",
+      "before_agent_run",
+      "message_received",
+      "session_start",
+      "session_end"
+    ],
+    "notes": "before_agent_run is a conversation hook: OpenClaw requires plugins.entries.blackbox.hooks.allowConversationAccess=true for it to receive the prompt and session messages. Without it, tool-call, message, and session detection still work, but the prompt-injection scan on the incoming run is skipped."
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {
+      "mode": {
+        "type": "string",
+        "enum": ["audit", "block"],
+        "default": "audit",
+        "description": "audit = observe locally; block = also block tool calls and runs at or above blockSeverity."
+      },
+      "contextGraphId": {
+        "type": "string",
+        "default": "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm",
+        "description": "Public Agent Blackbox Verifiable Memory graph id."
+      },
+      "dkgUrl": {
+        "type": "string",
+        "default": "http://127.0.0.1:9320",
+        "description": "Blackbox-managed local DKG node HTTP URL (override with $BLACKBOX_DKG_DAEMON_URL). Uses a non-default port so it does not collide with a user's own DKG node."
+      },
+      "dkgHome": {
+        "type": "string",
+        "default": "~/.hermes/blackbox/dkg",
+        "description": "Blackbox-managed DKG home that stores this node's config, pid, API token, and cache separately from the DKG CLI default ~/.dkg."
+      },
+      "syncInterval": {
+        "type": "number",
+        "default": 300,
+        "description": "Seconds between ruleset refreshes from the node."
+      },
+      "report": {
+        "type": "boolean",
+        "default": false,
+        "description": "Coming soon. Findings currently stay local."
+      },
+      "dailyReportLimit": {
+        "type": "number",
+        "default": 0,
+        "description": "Coming soon. Outbound sighting reports are currently disabled."
+      },
+      "reportMinSeverity": {
+        "type": "string",
+        "enum": ["info", "low", "medium", "high", "critical"],
+        "default": "high",
+        "description": "Minimum severity a built-in heuristic candidate must reach to be flagged/reported. Graph-backed findings (public or community) always flag."
+      },
+      "blockSeverity": {
+        "type": "string",
+        "enum": ["info", "low", "medium", "high", "critical"],
+        "default": "critical",
+        "description": "Minimum severity blocked when mode is block. Only public-graph (confirmed) findings can block."
+      },
+      "discover": {
+        "type": "boolean",
+        "default": true,
+        "description": "Run the built-in discovery nomination layer (candidate injection/escalation/file-access/skill threats)."
+      },
+      "osvLookup": {
+        "type": "boolean",
+        "default": true,
+        "description": "Run OSV dependency auto-discovery off the blocking path."
+      },
+      "detection": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Per-category detection policy. Each of the six categories can be individually disabled or given a minimum severity floor. Omitted categories default to enabled at severity 'info' (flag everything the threat graph knows). Custom protected-path rules bypass this policy.",
+        "properties": {
+          "injection": { "$ref": "#/$defs/categoryPolicy" },
+          "escalation": { "$ref": "#/$defs/categoryPolicy" },
+          "dependency": { "$ref": "#/$defs/categoryPolicy" },
+          "fileaccess": { "$ref": "#/$defs/categoryPolicy" },
+          "skill": { "$ref": "#/$defs/categoryPolicy" },
+          "ioc": { "$ref": "#/$defs/categoryPolicy" }
+        }
+      },
+      "protectedPaths": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "description": "User-defined protected path patterns (globs / directory prefixes; '~' expands to home). Access to a matching path by a file tool is flagged locally as a critical 'custom' finding — it always flags, blocks in block mode, and is NEVER shared to the community graph. Also accepted under the snake_case key 'protected_paths'. Capped at 100 patterns."
+      }
+    },
+    "$defs": {
+      "categoryPolicy": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether this category is detected at all. false drops every finding in the category."
+          },
+          "minSeverity": {
+            "type": "string",
+            "enum": ["info", "low", "medium", "high", "critical"],
+            "default": "info",
+            "description": "Minimum severity a finding in this category must reach to be flagged/reported. Also accepted as snake_case 'min_severity'."
+          }
+        }
+      }
+    }
+  }
+}
