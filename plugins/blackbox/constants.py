@@ -64,6 +64,7 @@ KIND_VULNERABILITY = "vulnerability"
 # file-access predicates (g:toolName reused; category is new) ----------------
 CATEGORY_PRED = f"{BLACKBOX_ONTOLOGY}category"
 # suspicious-skill predicates -----------------------------------------------
+IOC_TYPE_PRED = f"{BLACKBOX_ONTOLOGY}iocType"
 SKILL_NAME_PRED = f"{BLACKBOX_ONTOLOGY}skillName"
 SKILL_VERSION_PRED = f"{BLACKBOX_ONTOLOGY}skillVersion"
 DANGER_SHAPE_PRED = f"{BLACKBOX_ONTOLOGY}dangerShape"
@@ -178,10 +179,24 @@ VIEW_WORKING_MEMORY = "working-memory"
 VIEW_SHARED_WORKING_MEMORY = "shared-working-memory"
 VIEW_VERIFIABLE_MEMORY = "verifiable-memory"
 
-# Community graph ingestion and outbound threat sharing are intentionally not
-# part of the current release. Keep this compile-time closed until the complete
-# SWM trust and consent model ships; user configuration must not reopen it.
-COMMUNITY_GRAPH_ENABLED = False
+# Community graph: the open, shared threat graph every Blackbox agent can
+# contribute to and learn from. The runtime gate lives in config
+# (BlackboxConfig.community_enabled = report AND community_graph_id present);
+# this constant only records that the capability ships in this build.
+COMMUNITY_GRAPH_ENABLED = True
+
+#: Default community context graph id. SHIPS EMPTY until Umanitek mints the
+#: production community graph — an empty id keeps every community path dormant
+#: (community_enabled is False without a graph address), so a release can never
+#: point the fleet at a development graph by accident. Dev machines opt in via
+#: the BLACKBOX_COMMUNITY_GRAPH_ID env override or the config entry. The
+#: production id lands here in the launch PR and the flip is one line.
+DEFAULT_COMMUNITY_GRAPH_ID = ""
+
+#: Default daily cap on outbound community reports per node. Bounds a runaway
+#: or compromised agent's graph footprint even before the per-threat 6-hour
+#: cooldown is considered; 50/day is far above honest single-node signal.
+DEFAULT_DAILY_REPORT_LIMIT = 50
 
 
 def normalize_severity(value: object, fallback: str = "info") -> str:

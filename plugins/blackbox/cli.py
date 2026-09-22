@@ -67,8 +67,10 @@ you MUST fetch the real data from the sources below and answer from that.
 ## Graph scope
 - **Public** (on-chain, verifiable memory): the Umanitek-curated threat graph.
   Confirmed threats that BLOCK in block mode. Field name in APIs: `curated`.
-- **Community** (shared working memory / SWM): coming soon. It is not queried,
-  matched, joined, or written in this release. Findings stay local.
+- **Community** (shared working memory / SWM): the open community threat graph.
+  Any Blackbox agent contributes privacy-safe threat reports and learns from
+  other agents' reports. Community rules FLAG only — they can never block.
+  Active only when a community graph is configured and sharing is on.
 - **Local** (this node's working memory + synced ruleset): what THIS node has
   pulled down and what it detects with offline. Field name: `ruleset`.
 
@@ -77,7 +79,7 @@ Prefer the running dashboard API on http://127.0.0.1:9700 (all read-only, JSON):
 
 - `GET /api/graph-status` — counts + config. Returns `mode`, `context_graph_id`,
   `dkg_url`, `node_reachable`, `last_sync`, `ruleset` (per-category local counts),
-  `curated` (Public tier count), `community` (always 0 / coming soon),
+  `curated` (Public tier count), `community` (community-tier rule count),
   `sightings`, `findings_logged`.
 - `GET /api/graph?tier=public|local` — the actual threat ENTRIES for a
   tier. Returns `{{tier, threats:[{{identifier, category, severity, name}}]}}`.
@@ -90,7 +92,7 @@ Prefer the running dashboard API on http://127.0.0.1:9700 (all read-only, JSON):
   lifecycle, API requests, tool calls with the real command, installs, flags).
 - `GET /api/agents` — connected/protected local agents. Count the `agents` array
   EXACTLY; never estimate from generic Hermes status or sessions.
-- `GET /api/reports` — returns the community-feature coming-soon state.
+- `GET /api/reports` — this node's outbound community reports (the ledger).
 
 If the dashboard is NOT running (curl to :9700 fails), fall back to:
 - `hermes blackbox status` — mode, node reachability, ruleset + findings counts.
@@ -172,11 +174,22 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
     detach_p.add_argument("--openclaw-only", action="store_true", help="Only detach from OpenClaw workspaces")
     detach_p.set_defaults(func=_cmd_detach)
 
-    report = sub.add_parser("report", help="Community threat sharing (coming soon; submits nothing)")
+    report = sub.add_parser("report", help="Report a threat to the community graph / view your contributions")
     report.add_argument(
-        "--type", required=True,
-        choices=["injection", "escalation", "dependency", "fileaccess", "skill"],
+        "--type", required=False,
+        choices=["injection", "escalation", "dependency", "fileaccess", "skill", "ioc"],
     )
+    report.add_argument(
+        "--status", action="store_true",
+        help="Show what this node has contributed (offline ledger + graph profile)",
+    )
+    report.add_argument(
+        "--false-positive", dest="false_positive", metavar="IDENTIFIER",
+        help="Dispute a community threat: submit a false-positive signal for IDENTIFIER",
+    )
+    report.add_argument("--ioc-type", dest="ioc_type", choices=list(quads.IOC_TYPES),
+                        help="ioc: indicator type")
+    report.add_argument("--value", help="ioc: the indicator value (domain/url/ip/hash/...)")
     report.add_argument("--pattern", help="injection: regex source")
     report.add_argument("--owasp", help="injection: OWASP category (e.g. LLM01)")
     report.add_argument("--tool", help="escalation/fileaccess: tool name")
@@ -412,6 +425,44 @@ def _blackbox_chat_argv(chat_args: Optional[List[str]], profile: str = _BLACKBOX
     return argv
 
 
+def _term_safe(value: object, limit: int = 200) -> str:
+    """Render an untrusted string safely for a terminal (KI-009 / LES-001).
+
+    Community/graph-derived text is attacker-authored input at the display
+    surface: strip every non-printable character (ANSI escapes, control
+    codes) and clamp the length. Use this on ANY value printed to the
+    terminal that did not originate on this machine.
+    """
+    text = str(value or "")
+    cleaned = "".join(ch for ch in text if ch.isprintable())
+    return cleaned[:limit]
+
+
+def _ensure_community_subscription(client: DkgClient, cfg) -> "tuple[bool, str]":
+    """Idempotently subscribe (and enroll) this node into the community graph.
+
+    Fail-open: community connectivity must never break sync. Subscription
+    includes shared memory (B1-proven: community reports LIVE in SWM, and the
+    default subscribe excludes it — KI-007). When a curator peer is known,
+    a join request is forwarded once (KI-040: SWM participation is
+    enrollment-mediated even on open graphs; the daemon no-ops when already
+    a member). Returns (ok, detail-for-logs).
+    """
+    if not cfg.community_graph_id:
+        return False, "no community graph configured"
+    try:
+        client.subscribe_context_graph(cfg.community_graph_id, include_shared_memory=True)
+    except Exception as exc:
+        logger.debug("blackbox: community subscribe failed: %s", exc)
+        return False, f"subscribe failed: {exc}"
+    if cfg.community_graph_peer_id:
+        try:
+            client.request_join(cfg.community_graph_id, cfg.community_graph_peer_id)
+        except Exception as exc:  # join is best-effort; open enrollment auto-approves
+            logger.debug("blackbox: community join request failed: %s", exc)
+    return True, "subscribed"
+
+
 def _cmd_status(args: argparse.Namespace) -> int:
     cfg = load_blackbox_config()
     client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
@@ -425,15 +476,47 @@ def _cmd_status(args: argparse.Namespace) -> int:
     print(f"  DKG node:          {cfg.dkg_url}  [{'reachable' if reachable else 'unreachable'}]")
     print(f"  DKG home:          {cfg.dkg_home}")
     print(f"  DKG CLI:           {cfg.dkg_bin}")
-    print("  threat sharing:    off (Community graph coming soon)")
+    _print_community_status(cfg)
     print(f"  sync interval:     {cfg.sync_interval}s")
     print(f"  ruleset:           {counts['injection']} injection, "
           f"{counts['escalation']} escalation, {counts['dependency']} dependency, "
           f"{counts['fileaccess']} fileaccess, {counts['skill']} skill")
+    if not any(counts.values()):
+        # KI-023: an empty ruleset is a LOUD state, never a quiet day.
+        print("  !! UNPROTECTED:    threat ruleset is EMPTY — detection has no rules.")
+        print("                     Run 'hermes blackbox sync --wait' to load the threat graph.")
     print(f"  findings logged:   {audit.count_findings()}")
     print(f"  dashboard:         http://127.0.0.1:{cfg.dashboard_port}")
     _print_attached_targets()
     return 0
+
+
+def _print_community_status(cfg) -> None:
+    """The truthful community lines for `blackbox status` (B4).
+
+    Reads only local state (config + the reports ledger) so status stays
+    instant and offline-safe; ledger identifiers are community-era data and
+    render through :func:`_term_safe`.
+    """
+    if not cfg.community_graph_id:
+        print("  community graph:   not configured (community sharing dormant)")
+        return
+    print(f"  community graph:   {_term_safe(cfg.community_graph_id)}")
+    if cfg.community_enabled:
+        sharing = f"on (min severity {cfg.report_min_severity}, cap {cfg.daily_report_limit}/day)"
+    elif not cfg.report:
+        sharing = "off (config key `report` is false)"
+    else:
+        sharing = "off"
+    print(f"  threat sharing:    {sharing}")
+    ledger = audit.read_share_ledger(limit=1000)
+    contributed = sum(1 for row in ledger if row.get("ok"))
+    line = f"  reports shared:    {contributed}"
+    if ledger:
+        last = ledger[0]
+        outcome = "ok" if last.get("ok") else "FAILED"
+        line += f" (last: {_term_safe(last.get('identifier'), 80)} · {outcome} · {_term_safe(last.get('ts'), 24)})"
+    print(line)
 
 
 def _print_attached_targets() -> None:
@@ -1124,6 +1207,10 @@ def _cmd_sync_impl(args: argparse.Namespace) -> int:
                 )
 
         may_probe_private = private_graph and not getattr(args, "wait", False)
+        # Community graph rides the same sync: idempotent, fail-open, never
+        # blocks or fails the verified-graph transfer (B4).
+        if cfg.community_graph_id:
+            _ensure_community_subscription(client, cfg)
         if not subscribed and (admitted or not private_graph or may_probe_private):
             try:
                 subscription = client.subscribe_context_graph(cfg.context_graph_id)
@@ -1489,7 +1576,11 @@ def _cmd_sync_impl(args: argparse.Namespace) -> int:
     print(f"  {counts['injection']} injection, {counts['escalation']} escalation, "
           f"{counts['dependency']} dependency")
     print(f"  {public_count:,} public VM (curated)")
-    print("  Community graph (SWM): coming soon")
+    if cfg.community_graph_id:
+        print(f"  Community graph: {_term_safe(cfg.community_graph_id)} "
+              f"[sharing {'on' if cfg.community_enabled else 'off'}]")
+    else:
+        print("  Community graph: not configured (community sharing dormant)")
     if not sync_complete:
         if private_graph and (pending_approval or not subscribed):
             print("  This graph is not supported; Agent Blackbox only uses its public VM graph.")
@@ -2246,10 +2337,201 @@ def _print_openclaw_attach_row(row: Dict[str, Any], prefix: str) -> None:
     print(f"  {prefix} {row['target']} (openclaw){note}")
 
 
+#: Per-type required args (KI-025): a manual report with missing coordinates
+#: would derive a malformed identifier (e.g. ``dep::pkg@``) that poisons
+#: corroboration counting — reject loudly, submit nothing.
+_REPORT_REQUIRED_ARGS: Dict[str, "tuple[str, ...]"] = {
+    "injection": ("pattern",),
+    "escalation": ("tool", "arg_shape"),
+    "dependency": ("ecosystem", "name", "version"),
+    "fileaccess": ("tool", "category"),
+    "skill": ("skill_name",),
+    "ioc": ("ioc_type", "value"),
+}
+
+
+def _report_finding_from_args(args: argparse.Namespace) -> "tuple[Optional[dict], str]":
+    """Factory: parsed report args → the finding dict the share path expects.
+
+    Pattern: Factory function — the one creational seam of the manual path.
+    Validates per-type required args (KI-025) and derives the deterministic
+    identifier with the SAME quads helpers automatic detection uses, so a
+    manual report and an automatic one about the same threat are
+    byte-identical downstream. Returns (finding, "") or (None, error).
+    """
+    rtype = args.type or ""
+    required = _REPORT_REQUIRED_ARGS.get(rtype)
+    if required is None:
+        return None, "a --type is required (or use --status / --false-positive)"
+    missing = [f"--{name.replace('_', '-')}" for name in required if not getattr(args, name, None)]
+    if missing:
+        return None, f"--type {rtype} requires {', '.join(missing)}"
+    fields: Dict[str, Any] = {}
+    if rtype == "injection":
+        identifier = quads.injection_identifier(args.pattern)
+        fields = {"pattern": args.pattern, "owasp_category": args.owasp}
+    elif rtype == "escalation":
+        identifier = quads.escalation_identifier(args.tool, args.arg_shape)
+        fields = {"tool_name": args.tool, "arg_shape": args.arg_shape}
+    elif rtype == "dependency":
+        identifier = quads.dependency_identifier(args.ecosystem, args.name, args.version)
+        fields = {
+            "ecosystem": args.ecosystem,
+            "package_name": args.name,
+            "package_version": args.version,
+            "advisory_id": args.advisory_id,
+            "kind": args.kind,
+        }
+    elif rtype == "fileaccess":
+        identifier = quads.fileaccess_identifier(args.tool, args.category)
+        fields = {"tool_name": args.tool, "file_category": args.category}
+    elif rtype == "skill":
+        if args.skill_version:
+            identifier = quads.skill_version_identifier(args.skill_name, args.skill_version)
+        elif args.danger_shape:
+            identifier = quads.skill_shape_identifier(args.skill_name, args.danger_shape)
+        else:
+            return None, "--type skill requires --skill-version or --danger-shape"
+        fields = {
+            "skill_name": args.skill_name,
+            "skill_version": args.skill_version,
+            "danger_shape": args.danger_shape,
+        }
+    else:  # ioc
+        identifier = quads.ioc_identifier(args.ioc_type, args.value)
+        fields = {"ioc_type": args.ioc_type}
+    return {
+        "identifier": identifier,
+        "category": rtype,
+        "severity": args.severity,
+        "source": "custom-manual",  # never auto-shared; explicit path only
+        "fields": {k: v for k, v in fields.items() if v},
+    }, ""
+
+
 def _cmd_report(args: argparse.Namespace) -> int:
-    print("Community graph and threat sharing are coming soon.")
-    print("Nothing was submitted; findings and threat reports stay local.")
-    return 2
+    """Manual community reporting: submit, dispute, or review contributions.
+
+    Same gates as automatic sharing (community_enabled, identity, cooldown,
+    daily cap) and the SAME share/ledger path — one implementation per
+    concern. ACK is real: the command waits for the share job and prints the
+    outcome + report subject (lifecycle: ACKNOWLEDGE).
+    """
+    cfg = load_blackbox_config()
+    if args.status:
+        return _report_status(cfg)
+    if not cfg.community_enabled:
+        if not cfg.community_graph_id:
+            print("Community sharing is dormant: no community graph is configured.")
+        else:
+            print("Community sharing is OFF (config key `report: false`).")
+        print("Nothing was submitted.")
+        return 2
+    client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
+    reporter = _resolve_reporter(client)
+    if not reporter or reporter == "node" or not reporter.startswith("0x"):
+        print("No resolved node identity — refusing to report as a shared ghost identity.")
+        print("Start the DKG node (or finish setup) and retry.")
+        return 1
+    if args.false_positive:
+        return _submit_false_positive(client, cfg, args.false_positive, reporter)
+    finding, err = _report_finding_from_args(args)
+    if finding is None:
+        print(f"Invalid report: {err}")
+        print("Nothing was submitted.")
+        return 2
+    identifier = finding["identifier"]
+    if audit.recently_reported(identifier):
+        print(f"Already reported within the cooldown window: {_term_safe(identifier)}")
+        return 0
+    if not audit.allow_report(cfg.daily_report_limit):
+        print(f"Daily report cap reached ({cfg.daily_report_limit}); try again tomorrow.")
+        return 2
+    subject = quads.report_uri(identifier, reporter)
+    name = f"report-{quads.stable_hash(identifier + reporter, 16)}"
+    q = quads.build_report_quads(
+        identifier=identifier,
+        category=finding["category"],
+        severity=finding["severity"],
+        reporter_address=reporter,
+        framework="hermes",
+        **finding["fields"],
+    )
+    try:
+        client.share_knowledge_asset(cfg.community_graph_id, name, q)
+    except Exception as exc:
+        audit.record_share_outcome(
+            identifier=identifier, category=finding["category"],
+            severity=finding["severity"], subject=subject, asset_name=name,
+            ok=False, error=str(exc),
+        )
+        print(f"Share FAILED: {_term_safe(str(exc), 160)}")
+        print("The attempt is recorded in your local reports ledger.")
+        return 1
+    audit.mark_reported(identifier)
+    audit.record_share_outcome(
+        identifier=identifier, category=finding["category"],
+        severity=finding["severity"], subject=subject, asset_name=name, ok=True,
+    )
+    print("Report shared to the community graph.")
+    print(f"  identifier: {_term_safe(identifier)}")
+    print(f"  subject:    {_term_safe(subject)}")
+    return 0
+
+
+def _submit_false_positive(client: DkgClient, cfg, identifier: str, reporter: str) -> int:
+    """Dispute a community threat (lifecycle: DISPUTE — the Q8 veto writer)."""
+    identifier = identifier.strip()
+    if not identifier:
+        print("Provide the threat identifier to dispute.")
+        return 2
+    q = quads.build_false_positive_quads(identifier=identifier, reporter_address=reporter)
+    name = f"fp-{quads.stable_hash(identifier + reporter, 16)}"
+    subject = quads.report_uri(identifier, reporter) + ":fp"
+    try:
+        client.share_knowledge_asset(cfg.community_graph_id, name, q)
+    except Exception as exc:
+        print(f"Dispute FAILED: {_term_safe(str(exc), 160)}")
+        return 1
+    audit.record_share_outcome(
+        identifier=identifier, category="false-positive", severity="info",
+        subject=subject, asset_name=name, ok=True,
+    )
+    print(f"False-positive signal shared for: {_term_safe(identifier)}")
+    return 0
+
+
+def _report_status(cfg) -> int:
+    """Lifecycle TRACK: the ledger first (offline-safe), Q9 when reachable."""
+    rows = audit.read_share_ledger(limit=50)
+    if not rows:
+        print("No community reports from this node yet.")
+    else:
+        print(f"Community contributions from this node (newest first, {len(rows)} shown):")
+        for row in rows:
+            outcome = "ok" if row.get("ok") else "FAILED"
+            print(f"  {_term_safe(row.get('ts'), 24)}  [{outcome}]  "
+                  f"{_term_safe(row.get('category'), 16)}  {_term_safe(row.get('identifier'), 96)}")
+    if cfg.community_graph_id:
+        try:
+            client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
+            reporter = _resolve_reporter(client)
+            if reporter and reporter.startswith("0x"):
+                sparql = (
+                    "PREFIX g: <http://umanitek.ai/ontology/guardian/> "
+                    "SELECT (COUNT(?r) AS ?n) WHERE { ?r a g:ThreatReport ; "
+                    f"g:reporter {ruleset.sparql_string_literal(reporter.lower())} }}"
+                )
+                res = client.query(
+                    sparql, cfg.community_graph_id,
+                    view=constants.VIEW_SHARED_WORKING_MEMORY, on_error=None,
+                )
+                if res:
+                    from .dkg_client import extract_binding
+                    print(f"On the community graph: {extract_binding(res[0].get('n')) or 0} report(s) under your address.")
+        except Exception as exc:
+            logger.debug("blackbox: report --status graph read failed: %s", exc)
+    return 0
 
 
 def _cmd_dashboard(args: argparse.Namespace) -> int:
