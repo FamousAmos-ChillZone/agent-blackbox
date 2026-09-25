@@ -72,6 +72,8 @@ _VM_PARTITION_RETRY_DELAY_S = 5.0
 # 5s after the partition kills, and succeeded ~30s later), so the pre-lane
 # pause gets its own, longer budget. Tests set it to 0.
 _VM_FALLBACK_PAUSE_S = 30.0
+#: Delayed retries per lane page (backoff multiplies by attempt).
+_LANE_PAGE_RETRIES = 2
 _FORBIDDEN_IRI_CHARS = frozenset('<>"{}|^`\\\r\n\t')
 
 
@@ -1484,7 +1486,7 @@ def _fetch_paged_lanes(
     for lane_index in range(lane_count):
         after = ""
         fetched_subjects = 0
-        retried_page = False
+        page_retries = 0
         lane_dead = False
         while fetched_subjects < _MAX_ROWS:
             kwargs: Dict[str, Any] = {"view": view, "on_error": _QUERY_ERROR}
@@ -1493,11 +1495,12 @@ def _fetch_paged_lanes(
             query = query_lanes(_PAGE_SIZE, after)[lane_index]
             page = client.query(query, cg_id, **kwargs)
             if page is _QUERY_ERROR:
-                if retry_delay_s > 0 and not retried_page:
-                    # One delayed retry per page: a page landing inside the
-                    # store's post-kill recovery window is transient (KI-062).
-                    retried_page = True
-                    time.sleep(retry_delay_s)
+                if retry_delay_s > 0 and page_retries < _LANE_PAGE_RETRIES:
+                    # Delayed retries per page: a long lane (tens of pages
+                    # under sync load) WILL hit transient recovery windows;
+                    # one hiccup must not kill the whole lane (KI-062).
+                    page_retries += 1
+                    time.sleep(retry_delay_s * page_retries)
                     continue
                 if skip_failed_lanes:
                     logger.warning(
@@ -1508,7 +1511,7 @@ def _fetch_paged_lanes(
                     lane_dead = True
                     break
                 return None
-            retried_page = False
+            page_retries = 0
             rows.extend(page)
             page_subjects = list(
                 dict.fromkeys(
