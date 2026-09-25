@@ -55,6 +55,13 @@ _MAX_ROWS = 1_000_000
 _VM_PARTITION_BATCH_SIZE = 5
 _VM_PARTITION_QUERY_LIMIT = 50_000
 _VM_PARTITION_QUERY_TIMEOUT = 120.0
+# DKG 10.0.19 enforces a 30s SERVER-side store deadline per query
+# (STORE_OPERATION_TIMEOUT, retryable) — a 50K-row partition page can exceed it
+# while the store is under initial-sync insert load, and the client timeout
+# above is irrelevant to that. On such a failure the pager halves the page and
+# retries the same offset (the daemon's own sync uses the identical pattern);
+# only a failure at the floor is treated as a real error (KI-062).
+_VM_PARTITION_QUERY_LIMIT_FLOOR = 1_000
 _FORBIDDEN_IRI_CHARS = frozenset('<>"{}|^`\\\r\n\t')
 
 
@@ -1349,20 +1356,29 @@ def _fetch_tier(
             for start in range(0, len(partitions), _VM_PARTITION_BATCH_SIZE):
                 batch = partitions[start : start + _VM_PARTITION_BATCH_SIZE]
                 offset = 0
+                # Adaptive page size (KI-062): shrink to fit the daemon's
+                # server-side store deadline, then advance by rows received.
+                limit = _VM_PARTITION_QUERY_LIMIT
                 while len(partition_rows) < _MAX_ROWS:
                     page = client.query(
-                        _partition_threats_sparql(batch, offset=offset),
+                        _partition_threats_sparql(batch, limit=limit, offset=offset),
                         cg_id,
                         view=None,
                         on_error=_QUERY_ERROR,
                         timeout=_VM_PARTITION_QUERY_TIMEOUT,
                     )
                     if page is _QUERY_ERROR:
-                        return None
+                        if limit > _VM_PARTITION_QUERY_LIMIT_FLOOR:
+                            limit = max(_VM_PARTITION_QUERY_LIMIT_FLOOR, limit // 2)
+                            logger.debug(
+                                "blackbox: partition page failed; retrying at limit=%d", limit
+                            )
+                            continue  # retry the SAME offset with a smaller page
+                        return None  # floor-size page failed: genuine error
                     partition_rows.extend(page)
-                    if len(page) < _VM_PARTITION_QUERY_LIMIT:
+                    if len(page) < limit:
                         break
-                    offset += _VM_PARTITION_QUERY_LIMIT
+                    offset += len(page)
             if len(partition_rows) >= _MAX_ROWS:
                 return None
 

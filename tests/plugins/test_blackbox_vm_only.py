@@ -413,3 +413,56 @@ def test_dashboard_community_surfaces_live_but_dormant_without_graph(monkeypatch
     assert "coming_soon" not in threat
     assert stats["configured"] is False
     assert stats["community_threats"] == 0
+
+
+def test_partition_pager_shrinks_page_on_store_deadline(monkeypatch):
+    """KI-062: a partition page that exceeds the daemon's server-side store
+    deadline (DKG 10.0.19: 30s -> 503 STORE_OPERATION_TIMEOUT) is retried at a
+    halved LIMIT instead of failing the whole tier."""
+    cg = "0xC/agent-blackbox-vm"
+    data_graph = f"did:dkg:context-graph:{cg}"
+    partition = f"{data_graph}/_verifiable_memory/0xc/1"
+    attempts = []
+
+    class Client:
+        def query(self, sparql, _cg, on_error=None, **kwargs):
+            if "dkg:assertionGraph" in sparql:
+                return [{"assertionGraph": partition, "status": "confirmed"}]
+            if "VALUES ?sourceGraph" in sparql:
+                limit = int(sparql.rsplit("LIMIT", 1)[1].split()[0])
+                attempts.append(limit)
+                if limit > 10_000:
+                    return on_error  # deadline-killed page (too big)
+                return [{
+                    "threat": "urn:guardian:threat:x",
+                    "rdfType": "urn:defender:IocSignal",
+                    "identifier": "ioc:domain:evil.example",
+                    "severity": "high",
+                    "category": "domain",
+                    "iocValue": "evil.example",
+                }]
+            return []  # root lanes empty
+
+    rows = ruleset._fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
+    assert rows is not None, "tier must survive an oversized-page deadline"
+    assert any(r.get("identifier") == "ioc:domain:evil.example" for r in rows)
+    # 50K failed -> halved until a page fits (<=10K here)
+    assert attempts[0] == 50_000 and attempts[-1] <= 10_000
+    assert len(attempts) >= 3
+
+
+def test_partition_pager_fails_only_at_floor(monkeypatch):
+    """A page that still errors AT the floor is a genuine failure -> None."""
+    cg = "0xC/agent-blackbox-vm"
+    data_graph = f"did:dkg:context-graph:{cg}"
+    partition = f"{data_graph}/_verifiable_memory/0xc/1"
+
+    class Client:
+        def query(self, sparql, _cg, on_error=None, **kwargs):
+            if "dkg:assertionGraph" in sparql:
+                return [{"assertionGraph": partition, "status": "confirmed"}]
+            if "VALUES ?sourceGraph" in sparql:
+                return on_error  # every page size fails
+            return []
+
+    assert ruleset._fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY) is None
