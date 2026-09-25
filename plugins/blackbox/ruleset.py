@@ -67,6 +67,11 @@ _VM_PARTITION_QUERY_TIMEOUT = 120.0
 # verified view, pausing first so the recovery window can clear (KI-062).
 # Tests set the delay to 0.
 _VM_PARTITION_RETRY_DELAY_S = 5.0
+# The recovery window after back-to-back 30s kills outlasts the short retry
+# delay (measured: lane queries that run in <1s on a calm store still failed
+# 5s after the partition kills, and succeeded ~30s later), so the pre-lane
+# pause gets its own, longer budget. Tests set it to 0.
+_VM_FALLBACK_PAUSE_S = 30.0
 _FORBIDDEN_IRI_CHARS = frozenset('<>"{}|^`\\\r\n\t')
 
 
@@ -1411,8 +1416,8 @@ def _fetch_tier(
             )
             # Let the store's post-kill recovery window clear before the lane
             # queries start, or they inherit the same "not started" rejections.
-            if _VM_PARTITION_RETRY_DELAY_S > 0:
-                time.sleep(_VM_PARTITION_RETRY_DELAY_S)
+            if _VM_FALLBACK_PAUSE_S > 0:
+                time.sleep(_VM_FALLBACK_PAUSE_S)
             fallback = _fetch_paged_lanes(
                 client,
                 cg_id,
@@ -1422,6 +1427,7 @@ def _fetch_tier(
                 ),
                 view=constants.VIEW_VERIFIABLE_MEMORY,
                 retry_delay_s=_VM_PARTITION_RETRY_DELAY_S,
+                skip_failed_lanes=True,
             )
             if fallback is None or len(fallback) >= _MAX_ROWS:
                 return None
@@ -1462,13 +1468,24 @@ def _fetch_paged_lanes(
     view: Optional[str],
     agent_address: Optional[str] = None,
     retry_delay_s: float = 0.0,
+    skip_failed_lanes: bool = False,
 ) -> Optional[List[Dict[str, Any]]]:
+    """Cursor-page every lane; see KI-062 for the retry/skip options.
+
+    ``skip_failed_lanes`` trades completeness for availability: a lane that
+    still fails after its retry is logged and SKIPPED instead of failing the
+    whole fetch — used only by the VM verified-view fallback, where partial
+    verified rules beat none (the partition path remains the completeness
+    path). All lanes failing still returns ``None``.
+    """
     rows: List[Dict[str, Any]] = []
     lane_count = len(query_lanes(1, ""))
+    lanes_failed = 0
     for lane_index in range(lane_count):
         after = ""
         fetched_subjects = 0
         retried_page = False
+        lane_dead = False
         while fetched_subjects < _MAX_ROWS:
             kwargs: Dict[str, Any] = {"view": view, "on_error": _QUERY_ERROR}
             if agent_address:
@@ -1482,6 +1499,14 @@ def _fetch_paged_lanes(
                     retried_page = True
                     time.sleep(retry_delay_s)
                     continue
+                if skip_failed_lanes:
+                    logger.warning(
+                        "blackbox: verified lane %d failed; continuing without it",
+                        lane_index,
+                    )
+                    lanes_failed += 1
+                    lane_dead = True
+                    break
                 return None
             retried_page = False
             rows.extend(page)
@@ -1506,6 +1531,10 @@ def _fetch_paged_lanes(
             # and the old short-page break silently truncated every lane to its
             # first page (the KI-052 "one _PAGE_SIZE compiled" signature).
             after = next_cursor
+        if lane_dead:
+            continue
+    if skip_failed_lanes and lanes_failed == lane_count:
+        return None  # every lane failed: nothing real to offer
     return rows
 
 

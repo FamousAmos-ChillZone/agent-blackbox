@@ -421,6 +421,7 @@ def test_partition_kill_retries_once_then_falls_back_to_verified_view(monkeypatc
     then the tier is served from cursor-paged lanes on the daemon's
     verifiable-memory view."""
     monkeypatch.setattr(ruleset, "_VM_PARTITION_RETRY_DELAY_S", 0)
+    monkeypatch.setattr(ruleset, "_VM_FALLBACK_PAUSE_S", 0)
     cg = "0xC/agent-blackbox-vm"
     data_graph = f"did:dkg:context-graph:{cg}"
     partition = f"{data_graph}/_verifiable_memory/0xc/1"
@@ -461,6 +462,7 @@ def test_partition_and_fallback_failure_keeps_last_good(monkeypatch):
     """Both the partition path AND the view-lane fallback failing -> None
     (caller preserves last-good; the tier is never fabricated or emptied)."""
     monkeypatch.setattr(ruleset, "_VM_PARTITION_RETRY_DELAY_S", 0)
+    monkeypatch.setattr(ruleset, "_VM_FALLBACK_PAUSE_S", 0)
     cg = "0xC/agent-blackbox-vm"
     data_graph = f"did:dkg:context-graph:{cg}"
     partition = f"{data_graph}/_verifiable_memory/0xc/1"
@@ -478,6 +480,7 @@ def test_partition_success_never_touches_fallback(monkeypatch):
     """Healthy partition reads compile exactly as before — no lane queries on
     the verified view, preserving the confirmed-partition trust path."""
     monkeypatch.setattr(ruleset, "_VM_PARTITION_RETRY_DELAY_S", 0)
+    monkeypatch.setattr(ruleset, "_VM_FALLBACK_PAUSE_S", 0)
     cg = "0xC/agent-blackbox-vm"
     data_graph = f"did:dkg:context-graph:{cg}"
     partition = f"{data_graph}/_verifiable_memory/0xc/1"
@@ -509,6 +512,7 @@ def test_lane_pager_survives_daemon_row_cap(monkeypatch):
     on 10.0.19: 5,000 requested -> 1,000 returned). The lane pager must keep
     paging until an EMPTY page — a short page is NOT exhaustion."""
     monkeypatch.setattr(ruleset, "_VM_PARTITION_RETRY_DELAY_S", 0)
+    monkeypatch.setattr(ruleset, "_VM_FALLBACK_PAUSE_S", 0)
     cg = "0xC/agent-blackbox-vm"
     data_graph = f"did:dkg:context-graph:{cg}"
     partition = f"{data_graph}/_verifiable_memory/0xc/1"
@@ -549,6 +553,7 @@ def test_lane_pager_one_delayed_retry_per_page(monkeypatch):
     """A lane page failing once (recovery window) is retried once and succeeds;
     the retry budget resets per page."""
     monkeypatch.setattr(ruleset, "_VM_PARTITION_RETRY_DELAY_S", 0.001)
+    monkeypatch.setattr(ruleset, "_VM_FALLBACK_PAUSE_S", 0)
     cg = "0xC/agent-blackbox-vm"
     data_graph = f"did:dkg:context-graph:{cg}"
     partition = f"{data_graph}/_verifiable_memory/0xc/1"
