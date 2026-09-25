@@ -56,17 +56,17 @@ _VM_PARTITION_BATCH_SIZE = 5
 _VM_PARTITION_QUERY_LIMIT = 50_000
 _VM_PARTITION_QUERY_TIMEOUT = 120.0
 # DKG 10.0.19 enforces a 30s SERVER-side store deadline per query
-# (STORE_OPERATION_TIMEOUT, retryable) — a 50K-row partition page can exceed it
-# while the store is under initial-sync insert load, and the client timeout
-# above is irrelevant to that. On such a failure the pager halves the page and
-# retries the same offset (the daemon's own sync uses the identical pattern);
-# only a failure at the floor is treated as a real error (KI-062).
-_VM_PARTITION_QUERY_LIMIT_FLOOR = 1_000
-# A killed query also flips the managed store into a short "recovering" window
-# that rejects EVERY immediate follow-up ("query was not started"), so retries
-# pause briefly instead of burning the shrink ladder against a closed door.
-# Tests set this to 0.
-_VM_PARTITION_RETRY_DELAY_S = 3.0
+# (STORE_OPERATION_TIMEOUT, retryable); the client timeout above is irrelevant
+# to it. Under initial-sync insert load the partition query's ORDER BY forces a
+# full scan of the batched graphs, so the deadline hits at ANY page size
+# (measured live: LIMIT 50_000 down to 1_000 all killed at 30s — shrinking the
+# LIMIT is not a lever for a sort-bound query). A killed query also flips the
+# managed store into a short "recovering" window that rejects every immediate
+# follow-up ("query was not started"). So the pager makes ONE full-size attempt
+# plus one delayed retry, and the caller then falls back to the daemon's
+# verified view, pausing first so the recovery window can clear (KI-062).
+# Tests set the delay to 0.
+_VM_PARTITION_RETRY_DELAY_S = 5.0
 _FORBIDDEN_IRI_CHARS = frozenset('<>"{}|^`\\\r\n\t')
 
 
@@ -1317,36 +1317,36 @@ def _fetch_vm_partition_rows(
 ) -> Optional[List[Dict[str, Any]]]:
     """Page threat rows out of the confirmed VM partition graphs.
 
-    Adaptive paging (KI-062): a page killed by the daemon's server-side store
-    deadline is retried at half the LIMIT (floor
-    :data:`_VM_PARTITION_QUERY_LIMIT_FLOOR`), after a short pause so the
-    managed store's post-kill "recovering" window can pass. Offsets advance by
-    rows actually received. Returns ``None`` when even floor-size pages fail —
-    the caller decides the fallback.
+    KI-062: a page killed by the daemon's 30s server-side store deadline gets
+    ONE delayed retry (a transient kill can be another query's recovery
+    window); a second failure returns ``None`` immediately — the query is
+    sort-bound, so smaller pages cannot help, and every extra attempt burns
+    30s of store time and extends the recovery window that would then starve
+    the caller's verified-view fallback too.
     """
     rows: List[Dict[str, Any]] = []
     for start in range(0, len(partitions), _VM_PARTITION_BATCH_SIZE):
         batch = partitions[start : start + _VM_PARTITION_BATCH_SIZE]
         offset = 0
-        limit = _VM_PARTITION_QUERY_LIMIT
+        retried = False
         while len(rows) < _MAX_ROWS:
             page = client.query(
-                _partition_threats_sparql(batch, limit=limit, offset=offset),
+                _partition_threats_sparql(batch, offset=offset),
                 cg_id,
                 view=None,
                 on_error=_QUERY_ERROR,
                 timeout=_VM_PARTITION_QUERY_TIMEOUT,
             )
             if page is _QUERY_ERROR:
-                if limit > _VM_PARTITION_QUERY_LIMIT_FLOOR:
-                    limit = max(_VM_PARTITION_QUERY_LIMIT_FLOOR, limit // 2)
-                    logger.debug("blackbox: partition page failed; retrying at limit=%d", limit)
+                if not retried:
+                    retried = True
+                    logger.debug("blackbox: partition page failed; one delayed retry")
                     if _VM_PARTITION_RETRY_DELAY_S > 0:
                         time.sleep(_VM_PARTITION_RETRY_DELAY_S)
-                    continue  # retry the SAME offset with a smaller page
-                return None  # floor-size page failed: genuinely starved
+                    continue  # retry the SAME page once
+                return None  # store deadline is structural here: hand off
             rows.extend(page)
-            if len(page) < limit:
+            if len(page) < _VM_PARTITION_QUERY_LIMIT:
                 break
             offset += len(page)
     return rows
@@ -1409,6 +1409,10 @@ def _fetch_tier(
                 "blackbox: VM partition read starved by store deadline; "
                 "falling back to verified-view lanes"
             )
+            # Let the store's post-kill recovery window clear before the lane
+            # queries start, or they inherit the same "not started" rejections.
+            if _VM_PARTITION_RETRY_DELAY_S > 0:
+                time.sleep(_VM_PARTITION_RETRY_DELAY_S)
             fallback = _fetch_paged_lanes(
                 client,
                 cg_id,
