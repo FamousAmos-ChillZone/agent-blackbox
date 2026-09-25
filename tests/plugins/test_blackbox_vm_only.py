@@ -436,6 +436,8 @@ def test_partition_kill_retries_once_then_falls_back_to_verified_view(monkeypatc
                 return on_error  # every partition page deadline-killed
             lane_views.append(view)
             if "IocSignal" in sparql and "defender:DependencySignal" not in sparql:
+                if "FILTER(STR(?threat) >" in sparql:
+                    return []  # cursor past our single row: lane exhausted
                 return [{
                     "threat": "urn:guardian:threat:y",
                     "rdfType": "urn:defender:IocSignal",
@@ -500,3 +502,81 @@ def test_partition_success_never_touches_fallback(monkeypatch):
     rows = ruleset._fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
     assert rows and any(r.get("identifier") == "ioc:domain:bad.example" for r in rows)
     assert constants.VIEW_VERIFIABLE_MEMORY not in lane_views
+
+
+def test_lane_pager_survives_daemon_row_cap(monkeypatch):
+    """KI-062: DKG daemons cap a response below the requested LIMIT (measured
+    on 10.0.19: 5,000 requested -> 1,000 returned). The lane pager must keep
+    paging until an EMPTY page — a short page is NOT exhaustion."""
+    monkeypatch.setattr(ruleset, "_VM_PARTITION_RETRY_DELAY_S", 0)
+    cg = "0xC/agent-blackbox-vm"
+    data_graph = f"did:dkg:context-graph:{cg}"
+    partition = f"{data_graph}/_verifiable_memory/0xc/1"
+    # 2,500 IOC threats served in daemon-capped pages of 1,000
+    all_subjects = [f"urn:guardian:threat:{i:05d}" for i in range(2500)]
+
+    class Client:
+        def query(self, sparql, _cg, on_error=None, view="unset", **kwargs):
+            if "dkg:assertionGraph" in sparql:
+                return [{"assertionGraph": partition, "status": "confirmed"}]
+            if "VALUES ?sourceGraph" in sparql:
+                return on_error  # partitions starved -> verified-view lanes
+            if "IocSignal" in sparql and "defender:DependencySignal" not in sparql:
+                after = ""
+                if "FILTER(STR(?threat) >" in sparql:
+                    after = sparql.split('FILTER(STR(?threat) > "')[1].split('"')[0]
+                remaining = [s for s in all_subjects if s > after]
+                return [
+                    {
+                        "threat": s,
+                        "rdfType": "urn:defender:IocSignal",
+                        "identifier": f"ioc:ip:10.0.{i // 250}.{i % 250}",
+                        "severity": "high",
+                        "category": "ip",
+                        "iocValue": f"10.0.{i // 250}.{i % 250}",
+                    }
+                    for i, s in enumerate(remaining[:1000])  # daemon row cap
+                ]
+            return []
+
+    rows = ruleset._fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
+    assert rows is not None
+    got = {r["threat"] for r in rows if "threat" in r}
+    assert len(got) == 2500, f"pager truncated at the daemon row cap: {len(got)}"
+
+
+def test_lane_pager_one_delayed_retry_per_page(monkeypatch):
+    """A lane page failing once (recovery window) is retried once and succeeds;
+    the retry budget resets per page."""
+    monkeypatch.setattr(ruleset, "_VM_PARTITION_RETRY_DELAY_S", 0.001)
+    cg = "0xC/agent-blackbox-vm"
+    data_graph = f"did:dkg:context-graph:{cg}"
+    partition = f"{data_graph}/_verifiable_memory/0xc/1"
+    lane_calls = {"n": 0}
+
+    class Client:
+        def query(self, sparql, _cg, on_error=None, view="unset", **kwargs):
+            if "dkg:assertionGraph" in sparql:
+                return [{"assertionGraph": partition, "status": "confirmed"}]
+            if "VALUES ?sourceGraph" in sparql:
+                return on_error
+            if "IocSignal" in sparql and "defender:DependencySignal" not in sparql:
+                lane_calls["n"] += 1
+                if lane_calls["n"] == 1:
+                    return on_error  # first attempt lands in the recovery window
+                if "FILTER(STR(?threat) >" in sparql:
+                    return []
+                return [{
+                    "threat": "urn:guardian:threat:r",
+                    "rdfType": "urn:defender:IocSignal",
+                    "identifier": "ioc:ip:9.9.9.9",
+                    "severity": "high",
+                    "category": "ip",
+                    "iocValue": "9.9.9.9",
+                }]
+            return []
+
+    rows = ruleset._fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
+    assert rows is not None
+    assert any(r.get("identifier") == "ioc:ip:9.9.9.9" for r in rows)
+    assert lane_calls["n"] >= 2  # failed once, retried, then paged to empty

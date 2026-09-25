@@ -1421,6 +1421,7 @@ def _fetch_tier(
                     *_defender_threats_sparql(limit, after),
                 ),
                 view=constants.VIEW_VERIFIABLE_MEMORY,
+                retry_delay_s=_VM_PARTITION_RETRY_DELAY_S,
             )
             if fallback is None or len(fallback) >= _MAX_ROWS:
                 return None
@@ -1460,12 +1461,14 @@ def _fetch_paged_lanes(
     *,
     view: Optional[str],
     agent_address: Optional[str] = None,
+    retry_delay_s: float = 0.0,
 ) -> Optional[List[Dict[str, Any]]]:
     rows: List[Dict[str, Any]] = []
     lane_count = len(query_lanes(1, ""))
     for lane_index in range(lane_count):
         after = ""
         fetched_subjects = 0
+        retried_page = False
         while fetched_subjects < _MAX_ROWS:
             kwargs: Dict[str, Any] = {"view": view, "on_error": _QUERY_ERROR}
             if agent_address:
@@ -1473,7 +1476,14 @@ def _fetch_paged_lanes(
             query = query_lanes(_PAGE_SIZE, after)[lane_index]
             page = client.query(query, cg_id, **kwargs)
             if page is _QUERY_ERROR:
+                if retry_delay_s > 0 and not retried_page:
+                    # One delayed retry per page: a page landing inside the
+                    # store's post-kill recovery window is transient (KI-062).
+                    retried_page = True
+                    time.sleep(retry_delay_s)
+                    continue
                 return None
+            retried_page = False
             rows.extend(page)
             page_subjects = list(
                 dict.fromkeys(
@@ -1490,8 +1500,11 @@ def _fetch_paged_lanes(
             if next_cursor <= after:
                 return None
             fetched_subjects += len(page_subjects)
-            if len(page_subjects) < _PAGE_SIZE:
-                break
+            # Keep paging until an EMPTY page. A short page does NOT mean the
+            # lane is exhausted: DKG daemons cap a response below the requested
+            # LIMIT (measured on 10.0.19: 5,000 requested -> 1,000 returned),
+            # and the old short-page break silently truncated every lane to its
+            # first page (the KI-052 "one _PAGE_SIZE compiled" signature).
             after = next_cursor
     return rows
 

@@ -164,6 +164,8 @@ def test_root_only_graph_schemas_are_queried_separately_and_merged():
             queries.append(sparql)
             if "dkg:assertionGraph" in sparql:
                 return []
+            if "FILTER(STR(?threat) >" in sparql:
+                return []  # cursor advanced past the single row: exhausted
             if "defender:DependencySignal" in sparql:
                 return [{
                     "threat": {"value": "urn:defender:signal:1"},
@@ -179,7 +181,9 @@ def test_root_only_graph_schemas_are_queried_separately_and_merged():
     rows = ruleset_mod._fetch_tier(_Client(), "cg", "verifiable-memory")
 
     assert len(rows) == 2
-    assert len(queries) == 8
+    # data-bearing lanes page until an EMPTY page (daemon row caps —
+    # KI-062), so the legacy + dependency lanes each add one cursor page
+    assert len(queries) == 10
     assert all("UNION" not in query for query in queries[1:])
     assert all("GRAPH <did:dkg:context-graph:cg>" in query for query in queries[1:])
 
@@ -229,6 +233,8 @@ def test_mixed_vm_store_merges_root_and_confirmed_partitions_without_duplicates(
                     {"threat": {"value": partition_only}},
                     {"threat": {"value": duplicate}},
                 ]
+            if "FILTER(STR(?threat) >" in sparql:
+                return []  # cursor advanced past the rows: lane exhausted
             if "defender:DependencySignal" in sparql:
                 return [
                     {"threat": {"value": root_only}},
