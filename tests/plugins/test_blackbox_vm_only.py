@@ -419,6 +419,7 @@ def test_partition_pager_shrinks_page_on_store_deadline(monkeypatch):
     """KI-062: a partition page that exceeds the daemon's server-side store
     deadline (DKG 10.0.19: 30s -> 503 STORE_OPERATION_TIMEOUT) is retried at a
     halved LIMIT instead of failing the whole tier."""
+    monkeypatch.setattr(ruleset, "_VM_PARTITION_RETRY_DELAY_S", 0)
     cg = "0xC/agent-blackbox-vm"
     data_graph = f"did:dkg:context-graph:{cg}"
     partition = f"{data_graph}/_verifiable_memory/0xc/1"
@@ -451,8 +452,45 @@ def test_partition_pager_shrinks_page_on_store_deadline(monkeypatch):
     assert len(attempts) >= 3
 
 
-def test_partition_pager_fails_only_at_floor(monkeypatch):
-    """A page that still errors AT the floor is a genuine failure -> None."""
+def test_partition_starvation_falls_back_to_verified_view_lanes(monkeypatch):
+    """KI-062: when even floor-size partition pages are refused (store stuck in
+    its post-kill "recovering" window), the tier is served from cursor-paged
+    lanes on the daemon's verifiable-memory view instead of failing."""
+    monkeypatch.setattr(ruleset, "_VM_PARTITION_RETRY_DELAY_S", 0)
+    cg = "0xC/agent-blackbox-vm"
+    data_graph = f"did:dkg:context-graph:{cg}"
+    partition = f"{data_graph}/_verifiable_memory/0xc/1"
+    lane_views = []
+
+    class Client:
+        def query(self, sparql, _cg, on_error=None, view="unset", **kwargs):
+            if "dkg:assertionGraph" in sparql:
+                return [{"assertionGraph": partition, "status": "confirmed"}]
+            if "VALUES ?sourceGraph" in sparql:
+                return on_error  # every partition page refused (recovering)
+            lane_views.append(view)
+            if "IocSignal" in sparql and "defender:DependencySignal" not in sparql:
+                return [{
+                    "threat": "urn:guardian:threat:y",
+                    "rdfType": "urn:defender:IocSignal",
+                    "identifier": "ioc:ip:1.2.3.4",
+                    "severity": "high",
+                    "category": "ip",
+                    "iocValue": "1.2.3.4",
+                }]
+            return []
+
+    rows = ruleset._fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
+    assert rows is not None
+    assert any(r.get("identifier") == "ioc:ip:1.2.3.4" for r in rows)
+    # The fallback lanes must query the daemon-verified view, never a broad read.
+    assert set(lane_views) == {constants.VIEW_VERIFIABLE_MEMORY}
+
+
+def test_partition_and_fallback_failure_keeps_last_good(monkeypatch):
+    """Both the partition path AND the view-lane fallback failing -> None
+    (caller preserves last-good; the tier is never fabricated or emptied)."""
+    monkeypatch.setattr(ruleset, "_VM_PARTITION_RETRY_DELAY_S", 0)
     cg = "0xC/agent-blackbox-vm"
     data_graph = f"did:dkg:context-graph:{cg}"
     partition = f"{data_graph}/_verifiable_memory/0xc/1"
@@ -461,8 +499,6 @@ def test_partition_pager_fails_only_at_floor(monkeypatch):
         def query(self, sparql, _cg, on_error=None, **kwargs):
             if "dkg:assertionGraph" in sparql:
                 return [{"assertionGraph": partition, "status": "confirmed"}]
-            if "VALUES ?sourceGraph" in sparql:
-                return on_error  # every page size fails
-            return []
+            return on_error  # everything else refused
 
     assert ruleset._fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY) is None

@@ -62,6 +62,11 @@ _VM_PARTITION_QUERY_TIMEOUT = 120.0
 # retries the same offset (the daemon's own sync uses the identical pattern);
 # only a failure at the floor is treated as a real error (KI-062).
 _VM_PARTITION_QUERY_LIMIT_FLOOR = 1_000
+# A killed query also flips the managed store into a short "recovering" window
+# that rejects EVERY immediate follow-up ("query was not started"), so retries
+# pause briefly instead of burning the shrink ladder against a closed door.
+# Tests set this to 0.
+_VM_PARTITION_RETRY_DELAY_S = 3.0
 _FORBIDDEN_IRI_CHARS = frozenset('<>"{}|^`\\\r\n\t')
 
 
@@ -1307,6 +1312,46 @@ def _latest_cached_ruleset(context_graph_id: str = "") -> Optional[Ruleset]:
     return cached
 
 
+def _fetch_vm_partition_rows(
+    client: DkgClient, cg_id: str, partitions: List[str]
+) -> Optional[List[Dict[str, Any]]]:
+    """Page threat rows out of the confirmed VM partition graphs.
+
+    Adaptive paging (KI-062): a page killed by the daemon's server-side store
+    deadline is retried at half the LIMIT (floor
+    :data:`_VM_PARTITION_QUERY_LIMIT_FLOOR`), after a short pause so the
+    managed store's post-kill "recovering" window can pass. Offsets advance by
+    rows actually received. Returns ``None`` when even floor-size pages fail —
+    the caller decides the fallback.
+    """
+    rows: List[Dict[str, Any]] = []
+    for start in range(0, len(partitions), _VM_PARTITION_BATCH_SIZE):
+        batch = partitions[start : start + _VM_PARTITION_BATCH_SIZE]
+        offset = 0
+        limit = _VM_PARTITION_QUERY_LIMIT
+        while len(rows) < _MAX_ROWS:
+            page = client.query(
+                _partition_threats_sparql(batch, limit=limit, offset=offset),
+                cg_id,
+                view=None,
+                on_error=_QUERY_ERROR,
+                timeout=_VM_PARTITION_QUERY_TIMEOUT,
+            )
+            if page is _QUERY_ERROR:
+                if limit > _VM_PARTITION_QUERY_LIMIT_FLOOR:
+                    limit = max(_VM_PARTITION_QUERY_LIMIT_FLOOR, limit // 2)
+                    logger.debug("blackbox: partition page failed; retrying at limit=%d", limit)
+                    if _VM_PARTITION_RETRY_DELAY_S > 0:
+                        time.sleep(_VM_PARTITION_RETRY_DELAY_S)
+                    continue  # retry the SAME offset with a smaller page
+                return None  # floor-size page failed: genuinely starved
+            rows.extend(page)
+            if len(page) < limit:
+                break
+            offset += len(page)
+    return rows
+
+
 def _fetch_tier(
     client: DkgClient,
     cg_id: str,
@@ -1351,36 +1396,31 @@ def _fetch_tier(
         if partition_graphs and not partitions:
             return None
 
-        partition_rows: List[Dict[str, Any]] = []
-        if partitions:
-            for start in range(0, len(partitions), _VM_PARTITION_BATCH_SIZE):
-                batch = partitions[start : start + _VM_PARTITION_BATCH_SIZE]
-                offset = 0
-                # Adaptive page size (KI-062): shrink to fit the daemon's
-                # server-side store deadline, then advance by rows received.
-                limit = _VM_PARTITION_QUERY_LIMIT
-                while len(partition_rows) < _MAX_ROWS:
-                    page = client.query(
-                        _partition_threats_sparql(batch, limit=limit, offset=offset),
-                        cg_id,
-                        view=None,
-                        on_error=_QUERY_ERROR,
-                        timeout=_VM_PARTITION_QUERY_TIMEOUT,
-                    )
-                    if page is _QUERY_ERROR:
-                        if limit > _VM_PARTITION_QUERY_LIMIT_FLOOR:
-                            limit = max(_VM_PARTITION_QUERY_LIMIT_FLOOR, limit // 2)
-                            logger.debug(
-                                "blackbox: partition page failed; retrying at limit=%d", limit
-                            )
-                            continue  # retry the SAME offset with a smaller page
-                        return None  # floor-size page failed: genuine error
-                    partition_rows.extend(page)
-                    if len(page) < limit:
-                        break
-                    offset += len(page)
-            if len(partition_rows) >= _MAX_ROWS:
+        partition_rows = _fetch_vm_partition_rows(client, cg_id, partitions)
+        if partition_rows is None or len(partition_rows) >= _MAX_ROWS:
+            # KI-062: the partition path was starved by the daemon's store
+            # deadline / recovery window (heavy initial-sync insert load).
+            # Fall back to cursor-paged lanes on the daemon's own
+            # ``verifiable-memory`` view — the surface ``threat_count`` and the
+            # dashboard already trust, which the daemon serves efficiently even
+            # while the raw store is saturated. The daemon is the authority for
+            # what that view contains, so verified-only semantics hold.
+            logger.warning(
+                "blackbox: VM partition read starved by store deadline; "
+                "falling back to verified-view lanes"
+            )
+            fallback = _fetch_paged_lanes(
+                client,
+                cg_id,
+                lambda limit, after: (
+                    _legacy_threats_sparql(limit, after),
+                    *_defender_threats_sparql(limit, after),
+                ),
+                view=constants.VIEW_VERIFIABLE_MEMORY,
+            )
+            if fallback is None or len(fallback) >= _MAX_ROWS:
                 return None
+            return _dedupe_threat_rows(fallback)
 
         root_rows = _fetch_paged_lanes(
             client,
