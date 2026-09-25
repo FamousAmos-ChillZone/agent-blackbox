@@ -457,3 +457,72 @@ def test_extract_binding_shapes():
 def test_normalize_bindings_nested_shape():
     result = {"results": {"bindings": [{"n": {"value": "3"}}]}}
     assert dkg_client.normalize_bindings(result) == [{"n": {"value": "3"}}]
+
+
+# ---------------------------------------------------------------------------
+# Signed requests (DKG >= 10.0.19 spec §18) — KI-061 regression guards
+# ---------------------------------------------------------------------------
+
+def _header(headers, name):
+    """Case-insensitive header lookup (urllib normalizes capitalization)."""
+    for k, v in headers.items():
+        if k.lower() == name.lower():
+            return v
+    return None
+
+
+def test_signed_request_headers_hmac_shape():
+    """The signature is HMAC-SHA256(token, METHOD\\nPATH\\nTS\\nNONCE\\nsha256(body))."""
+    import hashlib
+    import hmac as hmac_mod
+
+    headers = dkg_client.signed_request_headers("tok", "post", "/api/query?x=1", b'{"a":1}')
+    assert set(headers) == {"x-dkg-timestamp", "x-dkg-nonce", "x-dkg-signature"}
+    payload = "\n".join([
+        "POST",                       # method uppercased
+        "/api/query?x=1",             # pathname+search, exactly as sent
+        headers["x-dkg-timestamp"],
+        headers["x-dkg-nonce"],
+        hashlib.sha256(b'{"a":1}').hexdigest(),
+    ])
+    expected = hmac_mod.new(b"tok", payload.encode(), hashlib.sha256).hexdigest()
+    assert headers["x-dkg-signature"] == expected
+
+
+def test_request_sends_valid_signature_when_token_present():
+    """Every authed request carries a signature the daemon can verify (KI-061:
+    a bearer token alone gets an empty 400 from DKG 10.0.19)."""
+    import hashlib
+    import hmac as hmac_mod
+
+    pytest_mp = pytest.MonkeyPatch()
+    try:
+        captured = _capture(pytest_mp)
+        client = dkg_client.DkgClient(url="http://node", token="secret")
+        client.query("SELECT 1", "cg")
+        headers = captured["headers"]
+        ts = _header(headers, "x-dkg-timestamp")
+        nonce = _header(headers, "x-dkg-nonce")
+        sig = _header(headers, "x-dkg-signature")
+        assert ts and nonce and sig
+        payload = "\n".join([
+            "POST", "/api/query", ts, nonce,
+            hashlib.sha256(captured["body"].encode()).hexdigest(),
+        ])
+        assert sig == hmac_mod.new(b"secret", payload.encode(), hashlib.sha256).hexdigest()
+    finally:
+        pytest_mp.undo()
+
+
+def test_request_omits_signature_without_token():
+    """No token → no Authorization and no signing headers (public routes)."""
+    pytest_mp = pytest.MonkeyPatch()
+    try:
+        captured = _capture(pytest_mp)
+        client = dkg_client.DkgClient(url="http://node", token="")
+        client.status()
+        headers = captured["headers"]
+        assert _header(headers, "x-dkg-signature") is None
+        assert _header(headers, "Authorization") is None
+    finally:
+        pytest_mp.undo()

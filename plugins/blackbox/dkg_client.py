@@ -10,6 +10,8 @@ Every request uses a short timeout and raises
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -18,6 +20,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -121,6 +124,36 @@ def load_token(dkg_home: Optional[str] = None) -> Optional[str]:
     return None
 
 
+def signed_request_headers(token: str, method: str, path: str, body: Optional[bytes]) -> Dict[str, str]:
+    """Signed-request headers required by DKG >= 10.0.19 (daemon spec §18).
+
+    The daemon rejects any protected route without them (empty HTTP 400 —
+    ``missing-fields``): a bearer token alone stopped being sufficient in
+    10.0.19. The signature is ``HMAC-SHA256(token, canonical payload)`` where
+    the canonical payload is exactly::
+
+        METHOD \\n PATH(pathname+search) \\n TIMESTAMP \\n NONCE \\n sha256hex(BODY)
+
+    *path* must be the same pathname+query string used on the wire — the HMAC
+    binds it, so a signature cannot be replayed against another route. The
+    nonce is single-use (replay rejection) and the timestamp is epoch-ms.
+
+    Older daemons (<= 10.0.18) simply ignore these extra headers, so callers
+    always send them whenever a token is present — one client speaks to every
+    daemon generation with no version detection.
+    """
+    timestamp = str(int(time.time() * 1000))
+    nonce = uuid.uuid4().hex
+    body_hash = hashlib.sha256(body or b"").hexdigest()
+    payload = "\n".join([method.upper(), path, timestamp, nonce, body_hash])
+    signature = hmac.new(token.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return {
+        "x-dkg-timestamp": timestamp,
+        "x-dkg-nonce": nonce,
+        "x-dkg-signature": signature,
+    }
+
+
 class DkgClient:
     """Minimal DKG v10 HTTP client. Construct with an explicit url/token or
     let :meth:`from_env` resolve them."""
@@ -154,6 +187,9 @@ class DkgClient:
             headers["Content-Type"] = "application/json"
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
+            # DKG >= 10.0.19 requires HMAC-signed requests on protected routes
+            # (older daemons ignore the extra headers). See signed_request_headers.
+            headers.update(signed_request_headers(self.token, method, path, data))
         req = urllib.request.Request(f"{self.url}{path}", data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=timeout or _TIMEOUT) as resp:
