@@ -533,3 +533,53 @@ def test_auto_attach_env_override(monkeypatch):
     assert config_mod.load_blackbox_config().auto_attach is False
     monkeypatch.setenv("BLACKBOX_AUTO_ATTACH", "1")
     assert config_mod.load_blackbox_config().auto_attach is True
+
+
+@pytest.fixture
+def installed_copy(tmp_path, monkeypatch):
+    """A source plugin tree and an installed copy stamped at t=1000."""
+    import os
+
+    src = tmp_path / "src"
+    (src / "dashboard" / "static").mkdir(parents=True)
+    (src / "__init__.py").write_text("", encoding="utf-8")
+    (src / "dashboard" / "static" / "index.html").write_text("<html>", encoding="utf-8")
+    (src / "__pycache__").mkdir()
+    (src / "__pycache__" / "x.pyc").write_bytes(b"")
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    (dest / "__init__.py").write_text("", encoding="utf-8")
+    (dest / ".blackbox-install-stamp").write_text("v", encoding="utf-8")
+    for path in [*src.rglob("*"), *dest.rglob("*")]:
+        if path.is_file():
+            os.utime(path, (1000, 1000))
+    monkeypatch.setattr(attach, "_plugin_source_dir", lambda: src)
+    monkeypatch.setattr(attach, "_installed_plugin_version", lambda _dest: constants.__version__)
+    monkeypatch.setattr(attach, "_is_openclaw_plugin_dir", lambda _path: True)
+    return src, dest
+
+
+def test_installed_copy_is_current_when_nothing_changed(installed_copy):
+    _src, dest = installed_copy
+
+    assert attach._needs_copy(dest) is False
+
+
+def test_dashboard_only_change_refreshes_installed_copy(installed_copy):
+    """Regression: only *.py mtimes were compared, so an index.html-only fix
+    never reached existing installs (the served dashboard stayed stale)."""
+    import os
+
+    src, dest = installed_copy
+    os.utime(src / "dashboard" / "static" / "index.html", (2000, 2000))
+
+    assert attach._needs_copy(dest) is True
+
+
+def test_excluded_build_artifacts_do_not_trigger_refresh(installed_copy):
+    import os
+
+    src, dest = installed_copy
+    os.utime(src / "__pycache__" / "x.pyc", (2000, 2000))
+
+    assert attach._needs_copy(dest) is False

@@ -495,8 +495,15 @@ def _needs_copy(dest: Path) -> bool:
                 return True
         stamp = dest / _INSTALL_STAMP_MARKER
         installed_at = stamp.stat().st_mtime if stamp.exists() else init.stat().st_mtime
+        # Every file the copy ships counts, not just *.py: a dashboard-only
+        # change (static/index.html) must refresh the installed copy too, or
+        # existing installs keep serving the old page indefinitely.
         newest_src = max(
-            p.stat().st_mtime for p in src_dir.rglob("*.py") if "__pycache__" not in p.parts
+            p.stat().st_mtime
+            for p in src_dir.rglob("*")
+            if p.is_file()
+            and not _COPY_EXCLUDE_DIRS.intersection(p.relative_to(src_dir).parts)
+            and not p.name.endswith(_COPY_EXCLUDE_SUFFIXES)
         )
         return newest_src > installed_at
     except Exception:  # pragma: no cover - best effort
