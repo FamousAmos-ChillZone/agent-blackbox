@@ -6364,10 +6364,17 @@
   function renderGraphStatus(data) {
     data = data || {};
     var previousPublicTotal = graphTotalForTier("public");
+    var previousCommunityTotal = graphTotalForTier("community");
     var previousRulesetVersion = rulesetVersion(lastStatus);
     lastStatus = data;
     resetEmptyGraphOnFirstVerifiedThreats("public", previousPublicTotal);
     resetGraphOnRulesetRefresh("public", previousRulesetVersion);
+    // The community tier is LIVE: a newly compiled ruleset can carry new
+    // reports (or new reporters on a known threat). Without these resets the
+    // page kept the community list it first loaded — "No reports yet" under a
+    // tab count of 4 — until a full browser reload.
+    resetEmptyGraphOnFirstVerifiedThreats("community", previousCommunityTotal);
+    resetGraphOnRulesetRefresh("community", previousRulesetVersion);
     updateTierNote();
     var curated = data.curated_threats != null ? data.curated_threats
                 : data.curated != null ? data.curated

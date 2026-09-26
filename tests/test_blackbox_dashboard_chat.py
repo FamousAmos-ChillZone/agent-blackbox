@@ -495,6 +495,27 @@ def test_dashboard_refetches_empty_graph_when_first_verified_threats_arrive():
     assert 'resetEmptyGraphOnFirstVerifiedThreats("public", previousPublicTotal);' in render_status
 
 
+def test_dashboard_reloads_live_community_tier_when_ruleset_changes():
+    """Regression: the community list was loaded once and never refreshed, so a
+    tab cached while empty showed "No reports yet" under a live count of 4."""
+    html = (
+        Path(__file__).resolve().parents[1]
+        / "plugins"
+        / "blackbox"
+        / "dashboard"
+        / "static"
+        / "index.html"
+    ).read_text(encoding="utf-8")
+    render_status = html[html.index("function renderGraphStatus(data)"):]
+    render_status = render_status[:render_status.index("\n  // ---------- Poll loop")]
+
+    assert render_status.index('var previousCommunityTotal = graphTotalForTier("community");') < (
+        render_status.index("lastStatus = data;")
+    )
+    assert 'resetEmptyGraphOnFirstVerifiedThreats("community", previousCommunityTotal);' in render_status
+    assert 'resetGraphOnRulesetRefresh("community", previousRulesetVersion);' in render_status
+
+
 @pytest.mark.skip(reason="dashboard never joins private graphs")
 def test_ruleset_sync_once_uses_official_join_then_subscribe():
     class Cfg:
