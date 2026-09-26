@@ -318,3 +318,28 @@ def test_sparql_string_literal_neutralizes_hostile_input(hostile):
     # no raw quote/newline can terminate the literal early
     assert '"' not in body.replace('\\"', "")
     assert "\n" not in body and "\r" not in body
+
+
+def test_graph_entries_carry_reporter_stats_for_materialized_community_iocs():
+    """Regression: matchable community IOCs are listed via the ioc lookup dict,
+    which lacks corroboration stats, so the dashboard showed 0 reporters for an
+    IOC reported by two distinct nodes. Checked after the cache round trip the
+    dashboard actually reads."""
+    rs = Ruleset()
+    rs.community = {
+        "ioc:ip:203.0.113.66": {
+            "identifier": "ioc:ip:203.0.113.66", "severity": "critical",
+            "source": "community", "reporterCount": 2, "iocType": "ip",
+            "firstSeen": 100.0, "lastSeen": 200.0,
+        },
+    }
+    _materialize_community_rules(rs)
+    served = _deserialize(_serialize(rs))
+
+    entry = next(
+        item for item in served.graph_entries("community")
+        if item["identifier"] == "ioc:ip:203.0.113.66"
+    )
+
+    assert entry["reporterCount"] == 2
+    assert entry["lastSeen"] == 200.0

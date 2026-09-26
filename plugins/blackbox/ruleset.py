@@ -811,14 +811,24 @@ class Ruleset:
             if rule.get("source") != source or identifier in seen:
                 continue
             seen.add(identifier)
-            entries.append({
+            entry = {
                 "identifier": identifier,
                 "category": category,
                 "severity": str(rule.get("severity") or "info").lower(),
                 "name": rule.get("name") or "",
                 "subject": rule.get("subject") or "",
                 "source": source,
-            })
+            }
+            # Matchable community rules (ioc/dependency) are materialized into
+            # the lookup dicts WITHOUT their corroboration stats; take those
+            # from the community store, or the UI shows 0 reporters for every
+            # IOC — including ones reported by several distinct nodes.
+            stats = self.community.get(identifier) if source == "community" else None
+            if stats is not None:
+                entry["reporterCount"] = int(stats.get("reporterCount") or 0)
+                entry["firstSeen"] = stats.get("firstSeen")
+                entry["lastSeen"] = stats.get("lastSeen")
+            entries.append(entry)
         if source == "community":
             # The community STORE holds every aggregated report (including
             # display-only categories that never materialize into lookup
