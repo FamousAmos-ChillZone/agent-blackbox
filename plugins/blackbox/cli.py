@@ -642,22 +642,35 @@ def _managed_sync_lock():
         handle.close()
 
 
-def _dkg_sync_environment(cfg: BlackboxConfig) -> Dict[str, str]:
-    env = os.environ.copy()
-    sync_settings = dict(_DKG_STEADY_SYNC_SETTINGS)
+def _persisted_dkg_sync_settings(cfg: BlackboxConfig) -> Dict[str, str]:
+    """Return the node's persisted sync settings, keyed by DKG env-var name.
+
+    Values come from ``<dkg_home>/config.json`` (normalized to the env string
+    form: booleans as ``"1"``/``"0"``, integers as decimal strings). A setting
+    absent from the file is omitted, so callers can tell "not persisted" from
+    "persisted as X".
+    """
     try:
         persisted = json.loads(
             (Path(cfg.dkg_home) / "config.json").read_text(encoding="utf-8")
         )
     except (OSError, ValueError, TypeError):
-        persisted = {}
+        return {}
+    settings: Dict[str, str] = {}
     if isinstance(persisted, dict):
         for env_name, config_name in _DKG_CONFIG_SYNC_SETTINGS.items():
             value = persisted.get(config_name)
             if isinstance(value, bool):
-                sync_settings[env_name] = "1" if value else "0"
+                settings[env_name] = "1" if value else "0"
             elif isinstance(value, int):
-                sync_settings[env_name] = str(value)
+                settings[env_name] = str(value)
+    return settings
+
+
+def _dkg_sync_environment(cfg: BlackboxConfig) -> Dict[str, str]:
+    env = os.environ.copy()
+    sync_settings = dict(_DKG_STEADY_SYNC_SETTINGS)
+    sync_settings.update(_persisted_dkg_sync_settings(cfg))
     env.update(sync_settings)
     env["DKG_HOME"] = str(cfg.dkg_home)
     env.setdefault("DKG_CATCHUP_MAX_CONCURRENT_PEERS", "1")
@@ -677,7 +690,19 @@ def _managed_dkg_sync_mode_matches(
     cfg: BlackboxConfig,
     expected: Dict[str, str],
 ) -> bool:
-    """Return whether the live worker actually uses the persisted sync mode."""
+    """Return whether the live worker's EFFECTIVE sync settings equal *expected*.
+
+    DKG resolves each sync setting as environment variable, else
+    ``config.json``, else its built-in default (dkg-agent
+    ``sync/backpressure.js`` ``resolveBooleanSwitch`` /
+    ``resolveSyncGlobalBackpressure``). So a worker launched WITHOUT the
+    variables — e.g. by a systemd unit running ``dkg start --foreground`` —
+    still runs the persisted values. Comparing only the launch environment
+    (the pre-2026-09-26 behavior) misread every service-managed node as stale
+    and restarted it on every hourly sync (KI-059/KI-065): the source of the
+    "hourly self-exit". A variable that IS set still overrides config, so a
+    worker launched with a stale bootstrap override is still detected.
+    """
     try:
         pid = int(
             (Path(cfg.dkg_home) / "daemon.pid")
@@ -687,7 +712,12 @@ def _managed_dkg_sync_mode_matches(
         process_env = psutil.Process(pid).environ()
     except (OSError, TypeError, ValueError, psutil.Error):
         return False
-    return all(process_env.get(name) == value for name, value in expected.items())
+    persisted = _persisted_dkg_sync_settings(cfg)
+    for name, value in expected.items():
+        effective = process_env.get(name) or persisted.get(name)
+        if effective != value:
+            return False
+    return True
 
 
 def _managed_dkg_node_executable(cfg: BlackboxConfig) -> Optional[Path]:
@@ -799,8 +829,34 @@ def _set_persisted_dkg_steady_state(cfg: BlackboxConfig) -> bool:
     return True
 
 
+def _systemd_unit_of(pid: int, proc_root: Path = Path("/proc")) -> Optional[str]:
+    """Return the systemd ``.service`` unit supervising *pid*, if any.
+
+    Reads the process's cgroup (Linux only; ``None`` elsewhere or when the
+    process is not inside a service unit, e.g. a detached daemon or a user
+    shell). Example cgroup-v2 line: ``0::/system.slice/blackbox-dkg.service``.
+    """
+    try:
+        lines = (proc_root / str(pid) / "cgroup").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        leaf = line.rsplit("/", 1)[-1].strip()
+        if leaf.endswith(".service"):
+            return leaf
+    return None
+
+
 def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
-    """Restart the managed node with bounded native reconciliation enabled."""
+    """Restart the managed node with bounded native reconciliation enabled.
+
+    A node supervised by a systemd unit is restarted THROUGH systemd. Running
+    ``dkg stop``/``dkg start`` behind the unit's back kills the unit's main
+    process (systemd records a failure and restarts it), and the unit's
+    ``ExecStartPre`` ``dkg stop`` then kills the detached daemon this function
+    just started, so the node flaps and in-flight syncs hit a dead API
+    (KI-059/KI-065).
+    """
     env = _dkg_sync_environment(cfg)
     command = str(cfg.dkg_bin)
     old_pid: Optional[int] = None
@@ -812,6 +868,25 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
         )
     except (OSError, TypeError, ValueError):
         pass
+    unit = _systemd_unit_of(old_pid) if old_pid is not None else None
+    if unit is not None:
+        try:
+            restarted = subprocess.run(
+                ["systemctl", "restart", unit],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise RuntimeError(f"could not restart {unit}: {exc}") from exc
+        if restarted.returncode != 0:
+            detail = (restarted.stderr or restarted.stdout or "").strip()
+            raise RuntimeError(
+                f"could not restart {unit}" + (f": {detail[-500:]}" if detail else "")
+            )
+        _wait_for_managed_dkg_ready(cfg, "")
+        return
     try:
         subprocess.run(
             [command, "stop"],
@@ -880,7 +955,14 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
             "could not start the managed DKG node"
             + (f": {detail[-500:]}" if detail else "")
         )
+    _wait_for_managed_dkg_ready(cfg, (started.stderr or started.stdout or "").strip())
 
+
+def _wait_for_managed_dkg_ready(cfg: BlackboxConfig, detail: str) -> None:
+    """Block until the node API answers ``status`` (90s), else RuntimeError.
+
+    *detail* is the start command's output, appended to the error for context.
+    """
     client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
@@ -889,7 +971,6 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
             return
         except DkgError:
             time.sleep(1)
-    detail = (started.stderr or started.stdout or "").strip()
     raise RuntimeError(
         "managed DKG node did not become ready"
         + (f": {detail[-500:]}" if detail else "")
@@ -1796,6 +1877,14 @@ def _catchup_authoritative_vm(
                         "timed out",
                         "exceeded its",
                         "totaltimeoutms",
+                        # A node restart window (~20-40s) is transient: the
+                        # API refuses connections, or a fronting proxy
+                        # answers 502. Retrying within the deadline beats
+                        # failing the whole sync and leaving the ruleset
+                        # stale until the next hourly run (KI-065).
+                        "connection refused",
+                        "connection reset",
+                        "upstream node unreachable",
                     )
                 )
             )
