@@ -183,7 +183,7 @@ def capture_runtime_safety(dkg_home: str, dkg_bin: str) -> Optional[RuntimeSafet
     home, cli = str(Path(dkg_home).expanduser().resolve()), str(Path(dkg_bin).expanduser().resolve())
     candidates = []
     try:
-        candidates.append(psutil.Process(int((Path(home) / "daemon.pid").read_text().strip())))
+        candidates.append(psutil.Process(int((Path(home) / "daemon.pid").read_text(encoding="utf-8").strip())))
     except (OSError, ValueError, psutil.Error):
         pass
     seen = set()
@@ -276,7 +276,7 @@ def default_heap_mb() -> int:
         pass
     for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
         try:
-            limits.append(int(Path(path).read_text().strip()))
+            limits.append(int(Path(path).read_text(encoding="utf-8").strip()))
         except (OSError, ValueError):
             pass
     finite = [value for value in limits if 0 < value < 1 << 50]
