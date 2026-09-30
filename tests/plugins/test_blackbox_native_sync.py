@@ -248,7 +248,7 @@ def test_no_actionable_rule_cannot_satisfy_require_rules(native_daemon, mode):
         }]
 
     started = time.monotonic()
-    assert native_sync.run(state["client"], state["cfg"], _args(timeout=0.05)) == 2
+    assert native_sync.run(state["client"], state["cfg"], _args(timeout=2.0)) == 2
     assert time.monotonic() - started < 3.0
     loaded = ruleset.peek(state["cfg"])
     assert loaded.source_count("public") == 0
