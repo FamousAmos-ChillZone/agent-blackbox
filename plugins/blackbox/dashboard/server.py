@@ -28,8 +28,8 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
-from .. import sync_state
-from ..dkg_progress import read_durable_progress
+from ..sync import state as sync_state
+from ..sync.progress import read_durable_progress
 
 logger = logging.getLogger(__name__)
 
@@ -901,7 +901,8 @@ def create_app(*, manage_blackbox: bool = False):
     from fastapi import Body, FastAPI, Query
     from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 
-    from .. import attach, audit, ruleset, settings, sync_state
+    from .. import attach, audit, ruleset, settings
+    from ..sync import state as sync_state
     from ..kernel import constants
     from ..kernel.config import load_blackbox_config
     from ..kernel.dkg_client import DkgClient, extract_binding

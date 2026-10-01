@@ -21,11 +21,12 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
-from . import attach, audit, llm, quads, ruleset, settings, sync_state
+from . import attach, audit, llm, quads, ruleset, settings
+from .sync import state as sync_state
 from .kernel import constants
 from .kernel.config import BlackboxConfig, load_blackbox_config
 from .kernel.dkg_client import DkgClient, DkgError
-from .dkg_progress import capture_durable_progress_cursor, read_durable_progress
+from .sync.progress import capture_durable_progress_cursor, read_durable_progress
 
 logger = logging.getLogger(__name__)
 

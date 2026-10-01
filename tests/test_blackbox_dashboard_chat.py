@@ -93,7 +93,8 @@ def test_dashboard_public_graph_uses_vm_verified_ruleset_rows(monkeypatch):
 
 
 def test_dashboard_keeps_partial_vm_count_loading_during_curator_transfer(monkeypatch):
-    from plugins.blackbox import audit, ruleset, sync_state
+    from plugins.blackbox import audit, ruleset
+    from plugins.blackbox.sync import state as sync_state
     from plugins.blackbox.kernel import config, dkg_client
 
     cfg = SimpleNamespace(
@@ -151,7 +152,7 @@ def test_dashboard_keeps_partial_vm_count_loading_during_curator_transfer(monkey
 
 
 def test_running_sync_state_keeps_latest_committed_count(monkeypatch, tmp_path):
-    from plugins.blackbox import sync_state
+    from plugins.blackbox.sync import state as sync_state
 
     state_path = tmp_path / "authoritative-sync.json"
     monkeypatch.setattr(sync_state, "_path", lambda: state_path)
