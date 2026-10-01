@@ -19,7 +19,11 @@ import time
 
 import pytest
 
-from plugins.blackbox import audit, detection, hooks
+from plugins.blackbox import audit, detection
+from plugins.blackbox.guard import hooks
+from plugins.blackbox import community as community_pkg
+from plugins.blackbox.community import sharing as community_sharing
+from plugins.blackbox.guard import reporting as guard_reporting
 from plugins.blackbox.community import report_builder as report_builder
 from plugins.blackbox.kernel import threat_ids as threat_ids
 from plugins.blackbox.kernel import constants
@@ -42,7 +46,7 @@ def bb_home(monkeypatch, tmp_path):
 
 @pytest.fixture(autouse=True)
 def _fresh_reporter_cache(monkeypatch):
-    monkeypatch.setattr(hooks, "_reporter_cache", {})
+    monkeypatch.setattr(community_sharing, "_reporter_cache", {})
 
 
 class FakeClient:
@@ -99,7 +103,7 @@ def _finding(identifier="dep:npm:evil-pkg@1.0.0", source="public", **kw):
     ],
 )
 def test_policy_truth_table(cfg, source, identifier, reporter, expected):
-    policy = hooks.CommunitySharePolicy(cfg)
+    policy = community_sharing.CommunitySharePolicy(cfg)
     finding = {"identifier": identifier, "source": source}
     allowed, _why = policy.decide(finding, reporter)
     assert allowed is expected
@@ -112,7 +116,7 @@ def test_policy_truth_table(cfg, source, identifier, reporter, expected):
 
 def test_share_targets_community_graph_never_verified(bb_home):
     client = FakeClient()
-    hooks._share_sighting(client, CFG_ON, _finding().to_dict(), REPORTER)
+    community_sharing._share_sighting(client, CFG_ON, _finding().to_dict(), REPORTER)
     assert len(client.shares) == 1
     cg_id, _name, _q = client.shares[0]
     assert cg_id == DEV_GRAPH
@@ -128,15 +132,13 @@ def _run_pipeline(monkeypatch, cfg, findings, client=None, reporter=REPORTER):
     """Drive _report_and_audit with a fake client; capture spawned shares."""
     client = client or FakeClient()
     spawned = []
-    monkeypatch.setattr(hooks, "DkgClient", lambda *a, **k: client)
-    monkeypatch.setattr(hooks, "_reporter_address", lambda c: reporter)
+    monkeypatch.setattr(guard_reporting, "DkgClient", lambda *a, **k: client)
+    monkeypatch.setattr(community_pkg, "reporter_address", lambda c: reporter)
     monkeypatch.setattr(audit, "write_private_audit_ka", lambda *a, **k: None)
-    monkeypatch.setattr(
-        hooks,
-        "_spawn_community_share",
+    monkeypatch.setattr(community_pkg, "spawn_community_share",
         lambda c, cf, f, r: spawned.append((f["identifier"], r)),
     )
-    hooks._report_and_audit(cfg, "pre_tool_call", findings, {})
+    guard_reporting._report_and_audit(cfg, "pre_tool_call", findings, {})
     return spawned, client
 
 
@@ -194,13 +196,13 @@ def test_hook_returns_before_share_completes(monkeypatch, bb_home):
         finished.set()
 
     client = FakeClient()
-    monkeypatch.setattr(hooks, "DkgClient", lambda *a, **k: client)
-    monkeypatch.setattr(hooks, "_reporter_address", lambda c: REPORTER)
+    monkeypatch.setattr(guard_reporting, "DkgClient", lambda *a, **k: client)
+    monkeypatch.setattr(community_pkg, "reporter_address", lambda c: REPORTER)
     monkeypatch.setattr(audit, "write_private_audit_ka", lambda *a, **k: None)
-    monkeypatch.setattr(hooks, "_share_sighting", slow_share)
+    monkeypatch.setattr(community_sharing, "_share_sighting", slow_share)
 
     t0 = time.monotonic()
-    hooks._report_and_audit(CFG_ON, "pre_tool_call", [_finding()], {})
+    guard_reporting._report_and_audit(CFG_ON, "pre_tool_call", [_finding()], {})
     elapsed = time.monotonic() - t0
 
     assert elapsed < 1.0, f"hook blocked on the share ({elapsed:.2f}s)"
@@ -221,7 +223,7 @@ def test_no_evidence_text_in_emitted_quads(bb_home):
         fields={"ecosystem": "npm", "package_name": "evil-pkg", "package_version": "1.0.0"},
     )
     client = FakeClient()
-    hooks._share_sighting(client, CFG_ON, finding.to_dict(), REPORTER)
+    community_sharing._share_sighting(client, CFG_ON, finding.to_dict(), REPORTER)
     (_cg, _name, q) = client.shares[0]
     serialized = "\n".join(str(v) for quad in q for v in dict(quad).values())
     assert "SUPER-SECRET-PROMPT" not in serialized
@@ -265,7 +267,7 @@ def test_ascii_ioc_values_unchanged():
 
 
 def test_ledger_records_success(bb_home):
-    hooks._share_sighting(FakeClient(), CFG_ON, _finding().to_dict(), REPORTER)
+    community_sharing._share_sighting(FakeClient(), CFG_ON, _finding().to_dict(), REPORTER)
     rows = audit.read_share_ledger()
     assert len(rows) == 1
     assert rows[0]["ok"] is True
@@ -274,7 +276,7 @@ def test_ledger_records_success(bb_home):
 
 
 def test_ledger_records_failure_with_sanitized_error(bb_home):
-    hooks._share_sighting(FakeClient(fail=True), CFG_ON, _finding().to_dict(), REPORTER)
+    community_sharing._share_sighting(FakeClient(fail=True), CFG_ON, _finding().to_dict(), REPORTER)
     rows = audit.read_share_ledger()
     assert len(rows) == 1
     assert rows[0]["ok"] is False
@@ -283,4 +285,4 @@ def test_ledger_records_failure_with_sanitized_error(bb_home):
 
 
 def test_share_failure_is_fail_open(bb_home):
-    hooks._share_sighting(FakeClient(fail=True), CFG_ON, _finding().to_dict(), REPORTER)
+    community_sharing._share_sighting(FakeClient(fail=True), CFG_ON, _finding().to_dict(), REPORTER)

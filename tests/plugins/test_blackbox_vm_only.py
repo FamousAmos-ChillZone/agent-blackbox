@@ -6,7 +6,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from plugins.blackbox import cli, detection, hooks, ruleset
+from plugins.blackbox import cli, detection, ruleset
+from plugins.blackbox.guard import hooks
+from plugins.blackbox.guard import reporting as guard_reporting
 from plugins.blackbox.ruleset import disk_cache as ruleset_disk_cache
 from plugins.blackbox.ruleset import fetching as ruleset_fetching
 from plugins.blackbox.ruleset import refresh_cycle as ruleset_refresh
@@ -136,8 +138,8 @@ def test_detection_audit_never_shares(monkeypatch):
     monkeypatch.setattr(hooks.audit, "recently_reported", lambda _identifier: False)
     monkeypatch.setattr(hooks.audit, "mark_reported", lambda _identifier: None)
     monkeypatch.setattr(hooks.audit, "write_private_audit_ka", lambda *args: None)
-    monkeypatch.setattr(hooks, "DkgClient", lambda *args, **kwargs: Client())
-    hooks._report_and_audit(
+    monkeypatch.setattr(guard_reporting, "DkgClient", lambda *args, **kwargs: Client())
+    guard_reporting._report_and_audit(
         config.BlackboxConfig(report=True),
         "pre_tool_call",
         [detection.Finding(

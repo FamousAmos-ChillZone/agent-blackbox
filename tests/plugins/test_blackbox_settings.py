@@ -7,9 +7,9 @@ Covers the whole configurable-policy surface that ships together:
   ``detection.<category>`` + ``protected_paths`` config keys (garbage tolerated).
 * :func:`detection.detect_custom_fileaccess` — the user's local protected-path
   rules (``source="custom"``, always critical, never shared).
-* :func:`hooks._flag_worthy` applying the per-category policy, with custom rules
+* :func:`guard_reporting._flag_worthy` applying the per-category policy, with custom rules
   bypassing it; :func:`hooks.on_pre_tool_call` blocking on a custom rule in
-  block mode; and :func:`hooks._report_and_audit` keeping custom findings local
+  block mode; and :func:`guard_reporting._report_and_audit` keeping custom findings local
   (no SWM sighting).
 * :mod:`settings` write/read round-trip persisting to the tmpdir-isolated
   ``HERMES_HOME/config.yaml`` so a fresh ``load_blackbox_config`` sees it.
@@ -29,7 +29,11 @@ from _blackbox_loader import load_blackbox
 config_mod = load_blackbox("kernel.config")
 constants = load_blackbox("kernel.constants")
 detection = load_blackbox("detection")
-hooks = load_blackbox("hooks")
+hooks = load_blackbox("guard.hooks")
+community_pkg = load_blackbox("community")
+community_sharing = load_blackbox("community.sharing")
+guard_background = load_blackbox("guard.background")
+guard_reporting = load_blackbox("guard.reporting")
 ruleset_mod = load_blackbox("ruleset")
 settings = load_blackbox("settings")
 
@@ -305,7 +309,7 @@ def test_custom_fileaccess_empty_patterns_no_finding():
 
 
 # ---------------------------------------------------------------------------
-# 4. hooks._flag_worthy applies per-category policy; custom bypasses it
+# 4. guard_reporting._flag_worthy applies per-category policy; custom bypasses it
 # ---------------------------------------------------------------------------
 
 
@@ -322,21 +326,21 @@ def _finding(category, severity, source):
 
 def test_flag_worthy_drops_category_below_min_severity():
     cfg = config_mod.BlackboxConfig(categories={"dependency": {"min_severity": "critical"}})
-    kept = hooks._flag_worthy(cfg, [_finding("dependency", "high", "public")])
+    kept = guard_reporting._flag_worthy(cfg, [_finding("dependency", "high", "public")])
     assert kept == []  # high < the dependency critical floor
 
 
 def test_flag_worthy_keeps_category_at_min_severity():
     cfg = config_mod.BlackboxConfig(categories={"dependency": {"min_severity": "critical"}})
     findings = [_finding("dependency", "critical", "public")]
-    assert hooks._flag_worthy(cfg, findings) == findings
+    assert guard_reporting._flag_worthy(cfg, findings) == findings
 
 
 def test_flag_worthy_disabled_category_drops_public_confirmed():
     # A disabled category drops even a source=="public" confirmed finding —
     # the user explicitly turned this category off.
     cfg = config_mod.BlackboxConfig(categories={"dependency": {"enabled": False}})
-    kept = hooks._flag_worthy(cfg, [_finding("dependency", "critical", "public")])
+    kept = guard_reporting._flag_worthy(cfg, [_finding("dependency", "critical", "public")])
     assert kept == []
 
 
@@ -352,7 +356,7 @@ def test_flag_worthy_custom_bypasses_category_policy():
         confirmed=False,
         source="custom",
     )
-    kept = hooks._flag_worthy(cfg, [custom])
+    kept = guard_reporting._flag_worthy(cfg, [custom])
     assert kept == [custom]
 
 
@@ -369,8 +373,8 @@ def _empty_ruleset():
 
 def test_on_pre_tool_call_blocks_custom_protected_path(monkeypatch):
     monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: _empty_ruleset())
-    monkeypatch.setattr(hooks, "_report_and_audit", lambda *a, **k: None)
-    monkeypatch.setattr(hooks, "_spawn_osv_discovery", lambda *a, **k: None)
+    monkeypatch.setattr(guard_reporting, "_report_and_audit", lambda *a, **k: None)
+    monkeypatch.setattr(guard_background, "_spawn_osv_discovery", lambda *a, **k: None)
     monkeypatch.setattr(
         config_mod,
         "load_blackbox_config",
@@ -387,8 +391,8 @@ def test_on_pre_tool_call_blocks_custom_protected_path(monkeypatch):
 
 def test_on_pre_tool_call_benign_path_returns_none(monkeypatch):
     monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: _empty_ruleset())
-    monkeypatch.setattr(hooks, "_report_and_audit", lambda *a, **k: None)
-    monkeypatch.setattr(hooks, "_spawn_osv_discovery", lambda *a, **k: None)
+    monkeypatch.setattr(guard_reporting, "_report_and_audit", lambda *a, **k: None)
+    monkeypatch.setattr(guard_background, "_spawn_osv_discovery", lambda *a, **k: None)
     monkeypatch.setattr(
         config_mod,
         "load_blackbox_config",
@@ -419,7 +423,7 @@ def test_report_and_audit_never_shares_custom_finding(monkeypatch):
             shared["called"] = True
             return {}
 
-    monkeypatch.setattr(hooks, "DkgClient", FakeClient)
+    monkeypatch.setattr(guard_reporting, "DkgClient", FakeClient)
     monkeypatch.setattr(
         hooks.audit,
         "write_private_audit_ka",
@@ -438,7 +442,7 @@ def test_report_and_audit_never_shares_custom_finding(monkeypatch):
         confirmed=False,
         source="custom",
     )
-    hooks._report_and_audit(cfg, "pre_tool_call", [custom], {"tool_name": "read_file"})
+    guard_reporting._report_and_audit(cfg, "pre_tool_call", [custom], {"tool_name": "read_file"})
     assert shared["called"] is False
     assert private["called"] is False
 
@@ -457,11 +461,11 @@ def test_report_and_audit_shares_non_custom_finding(monkeypatch):
             shared["called"] = True
             return {}
 
-    monkeypatch.setattr(hooks, "DkgClient", FakeClient)
+    monkeypatch.setattr(guard_reporting, "DkgClient", FakeClient)
     monkeypatch.setattr(hooks.audit, "write_private_audit_ka", lambda *a, **k: None)
     monkeypatch.setattr(hooks.audit, "recently_reported", lambda ident: False)
     monkeypatch.setattr(hooks.audit, "allow_report", lambda *a, **k: True)
-    monkeypatch.setattr(hooks, "_reporter_address", lambda client: "0xabc")
+    monkeypatch.setattr(community_pkg, "reporter_address", lambda client: "0xabc")
 
     cfg = config_mod.BlackboxConfig(report=True)
     community = detection.Finding(
@@ -473,7 +477,7 @@ def test_report_and_audit_shares_non_custom_finding(monkeypatch):
         source="community",
         fields={"tool_name": "terminal", "arg_shape": "remote-script-pipe"},
     )
-    hooks._report_and_audit(cfg, "pre_tool_call", [community], {"tool_name": "terminal"})
+    guard_reporting._report_and_audit(cfg, "pre_tool_call", [community], {"tool_name": "terminal"})
     assert shared["called"] is True
 
 

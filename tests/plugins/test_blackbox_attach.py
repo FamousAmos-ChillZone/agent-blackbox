@@ -11,7 +11,8 @@ from _blackbox_loader import load_blackbox
 
 attach = load_blackbox("attach")
 constants = load_blackbox("kernel.constants")
-hooks = load_blackbox("hooks")
+hooks = load_blackbox("guard.hooks")
+guard_background = load_blackbox("guard.background")
 config_mod = load_blackbox("kernel.config")
 
 
@@ -480,8 +481,8 @@ def test_attach_all_reports_targets(fake_env):
 
 def test_auto_attach_due_stamps_and_throttles(tmp_path, monkeypatch):
     monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "ghome"))
-    assert hooks._auto_attach_due() is True
-    assert hooks._auto_attach_due() is False  # inside the interval
+    assert guard_background._auto_attach_due() is True
+    assert guard_background._auto_attach_due() is False  # inside the interval
 
 
 def test_auto_attach_due_runs_immediately_when_target_set_changes(tmp_path, monkeypatch):
@@ -490,11 +491,11 @@ def test_auto_attach_due_runs_immediately_when_target_set_changes(tmp_path, monk
     monkeypatch.setattr(attach, "discover_hermes_homes", lambda: list(targets))
     monkeypatch.setattr(attach, "discover_openclaw_workspaces", lambda: [])
 
-    assert hooks._auto_attach_due() is True
-    assert hooks._auto_attach_due() is False
+    assert guard_background._auto_attach_due() is True
+    assert guard_background._auto_attach_due() is False
 
     targets.append(tmp_path / ".hermes" / "profiles" / "new")
-    assert hooks._auto_attach_due() is True
+    assert guard_background._auto_attach_due() is True
 
 
 def test_session_start_spawns_attach_sweep_once(tmp_path, monkeypatch):

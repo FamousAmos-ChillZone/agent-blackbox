@@ -12,7 +12,7 @@ from _blackbox_loader import load_blackbox
 
 audit = load_blackbox("audit")
 detection = load_blackbox("detection")
-hooks = load_blackbox("hooks")
+hooks = load_blackbox("guard.hooks")
 action_parsing = load_blackbox("detection.action_parsing")
 shell_shapes = load_blackbox("detection.shell_shapes")
 ruleset_mod = load_blackbox("ruleset")
