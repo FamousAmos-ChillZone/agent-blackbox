@@ -24,7 +24,7 @@ __version__ = "1.1.0"
 #: Base IRI for the Blackbox ontology (``g:`` prefix in SPARQL). The legacy
 #: ``/guardian/`` path remains byte-stable because the published corpus already
 #: uses these predicate/type IRIs. The ``urn:guardian:`` subject schemes in
-#: quads.py remain stable for the same reason.
+#: kernel/threat_ids.py remain stable for the same reason.
 BLACKBOX_ONTOLOGY = "http://umanitek.ai/ontology/guardian/"
 
 # rdf:type IRIs -------------------------------------------------------------

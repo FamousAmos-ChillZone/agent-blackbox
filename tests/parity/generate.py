@@ -3,15 +3,17 @@
 ``identifier_fixtures.json`` is the ground truth that both the Python plugin
 (``tests/plugins/test_blackbox_parity.py``) and the OpenClaw TypeScript plugin
 (``integrations/openclaw/test/parity.mjs``) assert against. It is generated
-from ``plugins/blackbox/quads.py`` — the single source of truth for identifiers,
-URIs, arg shapes, dependency parsing, and report-quad structure.
+from the canonical Python modules — ``kernel/threat_ids.py`` (identifiers, URIs),
+``detection/shell_shapes.py`` + ``detection/action_parsing.py`` (arg shapes,
+dependency parsing) and ``community/report_builder.py`` (report-quad structure);
+these were one ``quads.py`` until the 2026-10-01 restructure.
 
 Run from a checkout with the plugin importable::
 
     python tests/parity/generate.py
 
-then re-run both parity suites. Regenerate whenever ``quads.py`` changes an
-identifier, URI, arg-shape, dependency parse, or report-quad shape.
+then re-run both parity suites. Regenerate whenever one of those modules changes
+an identifier, URI, arg-shape, dependency parse, or report-quad shape.
 """
 
 import json
@@ -178,7 +180,8 @@ report_quads = [{
 
 fixture = {
     "note": (
-        "Ground truth generated from plugins/blackbox/quads.py by "
+        "Ground truth generated from plugins/blackbox (kernel/threat_ids.py, "
+        "detection/, community/report_builder.py) by "
         "tests/parity/generate.py. The OpenClaw TypeScript plugin must reproduce "
         "these exactly. Guarded by tests/plugins/test_blackbox_parity.py (Python) "
         "and integrations/openclaw/test/parity.mjs (TypeScript)."

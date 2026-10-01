@@ -35,7 +35,7 @@ export interface FindingContext {
   truncated?: boolean;
 }
 
-// Bounds mirror plugins/blackbox/audit.py.
+// Bounds mirror plugins/blackbox/audit/ (findings.py, log_store.py).
 const CTX_MAX_TURNS = 16;
 const CTX_TURN_CHARS = 3000;
 const CTX_FIELD_CHARS = 6000;

@@ -40,5 +40,5 @@ def test_repo_agents_md_loads_whole_at_pinned_cap(monkeypatch):
         f"AGENTS.md is {full_len} chars as loaded but the pinned context-file cap "
         f"is {PIN}; it would be head/tail truncated in the system prompt. Trim the "
         f"guide, or raise the pin (_BLACKBOX_CONTEXT_FILE_MAX_CHARS in "
-        f"plugins/blackbox/cli.py + context_file_max_chars in the profile configs)."
+        f"plugins/blackbox/chat/command.py + context_file_max_chars in the profile configs)."
     )

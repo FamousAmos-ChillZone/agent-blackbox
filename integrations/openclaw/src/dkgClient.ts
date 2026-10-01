@@ -6,7 +6,7 @@
  * and callers treat that as "node unreachable, carry on" (never break the
  * agent loop).
  *
- * URL/token resolution mirrors the hermes `dkg_client.py`:
+ * URL/token resolution mirrors the hermes `kernel/dkg_client.py`:
  *   url   ← opts.url | $BLACKBOX_DKG_DAEMON_URL | $BLACKBOX_DKG_URL | http://127.0.0.1:9320
  *   token ← opts.token | $BLACKBOX_DKG_API_TOKEN | $BLACKBOX_DKG_AUTH_TOKEN | <Blackbox DKG home>/auth.token
  */

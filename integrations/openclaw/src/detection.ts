@@ -1,7 +1,8 @@
 /**
  * Ruleset-driven matcher — a faithful port of the canonical Python
- * `plugins/blackbox/quads.py` (arg-shape + dependency parsing) and
- * `plugins/blackbox/detection.py` (the matchers).
+ * `plugins/blackbox/detection/` — shell_shapes.py (arg-shape),
+ * action_parsing.py (dependency/file/skill parsing), content_scanners.py
+ * (injection/secret/skill-danger/IOC scans) and detectors.py (the matchers).
  *
  * Detection rules come ONLY from the synced threat graph (see ruleset.ts), in
  * two trust tiers: `source: "public"` (verifiable-memory, the curated source of
@@ -392,7 +393,7 @@ export function detectDependency(
 }
 
 // ---------------------------------------------------------------------------
-// Arg-shape normalization — port of quads.py
+// Arg-shape normalization — port of detection/shell_shapes.py
 // ---------------------------------------------------------------------------
 
 // A remote-download-piped-to-interpreter shape: `curl ... | sh`, `wget ... | bash`.
@@ -490,7 +491,7 @@ export function normalizeArgShape(toolName: string, args: unknown): string | nul
 
 // ---------------------------------------------------------------------------
 // Built-in injection heuristics (discovery layer — OWASP LLM01/LLM06)
-// Port of quads.py `_INJECTION_HEURISTICS` / `scan_injection_heuristics`.
+// Port of detection/content_scanners.py `_INJECTION_HEURISTICS` / `scan_injection_heuristics`.
 // ---------------------------------------------------------------------------
 
 // Each entry is [severity, owasp, regex]. The DISCOVERY nomination layer: a
@@ -501,7 +502,7 @@ const INJECTION_HEURISTICS: ReadonlyArray<readonly [BlackboxSeverity, string, Re
   // OpenClaw replaces model-control delimiters in external content with this
   // marker before plugins see the result. Preserve the security signal.
   ["high", "LLM01", /\[REMOVED_SPECIAL_TOKEN\]/],
-  // "ignore all previous instructions" and close variants (see quads.py).
+  // "ignore all previous instructions" and close variants (see detection/content_scanners.py).
   ["high", "LLM01", /(?:ignore|disregard|forget|skip|override)\s+(?:all\s+|any\s+|the\s+|these\s+)?(?:previous|prior|above|earlier|preceding|prior\s+)\s*(?:instruction|message|prompt|rule|context|direction|directive|command|guideline)s?/i],
   // Exfiltrate the system prompt / instructions.
   ["high", "LLM06", /(?:reveal|show|print|repeat|disclose|give|tell|share|send|output|expose|leak|what(?:'s|\s+is|\s+are)?|display)\b[\s\S]{0,40}\b(?:system\s+prompt|system\s+message|initial\s+(?:instruction|prompt)s?|your\s+(?:instructions|prompt|system\s+prompt|guidelines))/i],
@@ -591,8 +592,8 @@ export function discoverInjection(text: string, ruleset: Ruleset): Finding[] {
 
 // ---------------------------------------------------------------------------
 // Sensitive file-access categories (discovery layer)
-// Port of quads.py `_SENSITIVE_PATH_RULES` / `file_access_arg` /
-// `sensitive_path_category` + detection.py `detect_fileaccess`.
+// Port of detection/action_parsing.py `_SENSITIVE_PATH_RULES` / `file_access_arg` /
+// `sensitive_path_category` + detection/detectors.py `detect_fileaccess`.
 // ---------------------------------------------------------------------------
 
 // [category, severity, path-regex]. Matched against the accessed path only; the
@@ -741,8 +742,8 @@ export function detectFileaccess(toolName: string, args: unknown, ruleset: Rules
 
 // ---------------------------------------------------------------------------
 // Suspicious-skill danger-shape scanning (discovery layer)
-// Port of quads.py `_SKILL_CODE_RULES` / `_SKILL_PERMISSION_RULES` /
-// `skill_install_arg` / `scan_skill_dangers` + detection.py `detect_skill`.
+// Port of detection/content_scanners.py `_SKILL_CODE_RULES` / `_SKILL_PERMISSION_RULES` /
+// `scan_skill_dangers`, action_parsing.py `skill_install_arg` + detectors.py `detect_skill`.
 // ---------------------------------------------------------------------------
 
 // [dangerShape, severity, regex] over the skill's declared code/content.
@@ -1302,8 +1303,8 @@ function sampleAround(text: string, re: RegExp): string {
 }
 
 // ---------------------------------------------------------------------------
-// OSV dependency auto-discovery (discovery layer) — port of detection.py
-// `discover_dependency_candidates` + osv.py `lookup`.
+// OSV dependency auto-discovery (discovery layer) — port of detection/detectors.py
+// `discover_dependency_candidates` + detection/osv.py `lookup`.
 // ---------------------------------------------------------------------------
 
 /** `{advisoryId, severity}` when OSV knows a package@version vulnerable. */
@@ -1378,7 +1379,7 @@ export async function discoverDependencyCandidates(
 
 // ---------------------------------------------------------------------------
 // Custom (user-configured) protected-path detection
-// Port of detection.py `_protected_path_match` / `detect_custom_fileaccess`.
+// Port of detection/detectors.py `_protected_path_match` / `detect_custom_fileaccess`.
 // ---------------------------------------------------------------------------
 
 /**
@@ -1513,7 +1514,7 @@ export function detectCustomFileAccess(
 }
 
 // ---------------------------------------------------------------------------
-// Orchestrator — port of detection.py `detect_all` / `_graph_escalation`.
+// Orchestrator — port of detection/detectors.py `detect_all` / `_graph_escalation`.
 // ---------------------------------------------------------------------------
 
 /**

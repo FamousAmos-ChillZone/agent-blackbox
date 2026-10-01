@@ -1,7 +1,8 @@
 /**
  * Identifier + quad builders for the Blackbox threat graph.
  *
- * This file is a FAITHFUL port of the canonical Python `plugins/blackbox/quads.py`
+ * This file is a FAITHFUL port of the canonical Python `plugins/blackbox/kernel/threat_ids.py`
+ * (identifiers) and `kernel/rdf_terms.py` (terms) — formerly one `quads.py`
  * (the tested, shipped ground truth). A hermes node and an OpenClaw node that see
  * the same threat MUST compute the same subject URI, otherwise the cross-framework
  * threat-graph flywheel breaks (first-writer-wins on SWM root entities depends on
@@ -31,7 +32,7 @@ export const SEVERITY_RANK: Record<BlackboxSeverity, number> = {
   critical: 4,
 };
 
-// --- Ontology IRIs (shared vocabulary; identical to constants.py) ----------
+// --- Ontology IRIs (shared vocabulary; identical to kernel/constants.py) ----------
 // The legacy IRI path and `urn:guardian:` schemes below remain byte-stable so
 // the already-published corpus stays queryable.
 export const BLACKBOX_ONTOLOGY = "http://umanitek.ai/ontology/guardian/";

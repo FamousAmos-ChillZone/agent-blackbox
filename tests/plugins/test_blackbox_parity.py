@@ -2,7 +2,7 @@
 
 ``tests/parity/identifier_fixtures.json`` is the ground truth that the OpenClaw
 TypeScript plugin also asserts against (``integrations/openclaw/test/parity.mjs``).
-This test guards the Python side: if ``plugins/blackbox/quads.py`` ever changes
+This test guards the Python side: if ``plugins/blackbox/kernel/threat_ids.py`` or the ``detection/`` parsers ever change
 an identifier, URI, arg-shape, dependency parse, or report-quad shape, this test
 fails until the fixture is regenerated — forcing the TS mirror to be updated too.
 """
