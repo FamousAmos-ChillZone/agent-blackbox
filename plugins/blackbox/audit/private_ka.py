@@ -20,7 +20,7 @@ def write_private_audit_ka(client: Any, cg_id: str, event: str, finding: Dict[st
     Privacy split: the redacted-but-local evidence lives in the node's private
     working memory, never shared to SWM. Best-effort — failures are swallowed.
     """
-    from .kernel import rdf_terms, threat_ids
+    from ..kernel import rdf_terms, threat_ids
 
     try:
         ident = str(finding.get("identifier") or "unknown")
