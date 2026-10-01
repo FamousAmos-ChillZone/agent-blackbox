@@ -62,6 +62,8 @@ Prefer the running dashboard API on http://127.0.0.1:9700 (all read-only, JSON):
   lifecycle, API requests, tool calls with the real command, installs, flags).
 - `GET /api/agents` — connected/protected local agents. Count the `agents` array
   EXACTLY; never estimate from generic Hermes status or sessions.
+  `community_agents` (same response) lists OTHER nodes that reported into the
+  community graph — never count them as agents connected to this Blackbox.
 - `GET /api/reports` — this node's outbound community reports (the ledger).
 
 If the dashboard is NOT running (curl to :9700 fails), fall back to:

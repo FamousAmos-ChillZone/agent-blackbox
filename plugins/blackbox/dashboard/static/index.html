@@ -774,6 +774,8 @@
   }
   .agent-card:hover { border-color: var(--border-strong); }
   .agent-card.active { border-color: rgba(255,79,0,0.55); background: var(--elevated); }
+  .agent-card.self { border-color: color-mix(in srgb, var(--mint) 45%, transparent); }
+  .agent-self-tag { font-size: 11px; font-weight: 600; color: var(--mint); }
   /* "+ Attach agent" tile — matches card metrics; dashed border marks it as an action, not a live agent. */
   .agent-add-tile {
     display: flex;
@@ -2758,6 +2760,24 @@
       </div>
     </section>
 
+    <!-- Community graph — connected agents (remote reporters via the DKG) -->
+    <section class="section" aria-label="Community graph connected agents">
+      <div class="section-head">
+        <div class="section-htext">
+          <h2>Community graph &mdash; connected agents</h2>
+          <div class="section-note">Agents that have reported into the shared community graph, reached through the DKG. They are not connected to this Blackbox.</div>
+        </div>
+        <div class="head-right">
+          <span class="section-note" id="community-agents-note"></span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="agents-strip" id="community-agents-strip">
+          <div class="empty" style="padding:28px 20px; width:100%;">Loading community graph agents&hellip;</div>
+        </div>
+      </div>
+    </section>
+
     <!-- Threat graph (tabbed) -->
     <section class="section" aria-label="Threat graph">
       <div class="section-head graph-head">
@@ -3674,6 +3694,40 @@
       '<span class="agent-add-label">Attach agent</span>' +
     '</button>';
     strip.innerHTML = cards + addTile;
+  }
+
+  // ---------- Community graph — connected agents ----------
+  // Remote reporters on the community graph. Addresses/frameworks are
+  // self-described payload fields (display-only, LES-014): escaped, never
+  // trusted for anything.
+  function renderCommunityAgents(data) {
+    var list = (data && Array.isArray(data.community_agents)) ? data.community_agents : [];
+    var strip = $("community-agents-strip");
+    $("community-agents-note").textContent = list.length
+      ? list.length + " agent" + (list.length === 1 ? "" : "s") + " on the community graph"
+      : "";
+    if (!list.length) {
+      strip.innerHTML = '<div class="empty" style="padding:28px 20px; width:100%;">' +
+        '<strong>No community graph reports yet.</strong></div>';
+      return;
+    }
+    strip.innerHTML = list.map(function (a) {
+      var frameworks = Array.isArray(a.frameworks) ? a.frameworks : [];
+      var primary = frameworks[0] || "unknown";
+      var label = frameworks.map(fwLabel).join(" + ") || fwLabel(primary);
+      var addr = String(a.address || "");
+      var shortAddr = addr.length > 14 ? addr.slice(0, 8) + "\u2026" + addr.slice(-4) : addr;
+      var reports = Number(a.reports) || 0;
+      return '<div class="agent-card' + (a.is_self ? ' self' : '') + '">' +
+        '<span class="agent-avatar" style="--fw:' + fwColor(primary) + '">' + fwIcon(primary) + '</span>' +
+        '<div class="agent-info">' +
+          '<div class="agent-fw">' + esc(label) +
+            (a.is_self ? ' <span class="agent-self-tag">this node</span>' : '') + '</div>' +
+          '<div class="agent-addr" title="' + esc(addr) + '">' + esc(shortAddr) + '</div>' +
+          '<div class="agent-reports"><strong>' + num(reports) + '</strong> report' + (reports === 1 ? '' : 's') + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join("");
   }
 
   function renderAttachTargets(targets, note) {
@@ -6427,7 +6481,7 @@
       var allFail = res.every(function (r) { return r.status === "rejected"; });
 
       if (res[1].status === "fulfilled") renderGraphStatus(res[1].value);
-      if (res[2].status === "fulfilled") renderAgents(res[2].value);
+      if (res[2].status === "fulfilled") { renderAgents(res[2].value); renderCommunityAgents(res[2].value); }
       var anyGraph = false;
       if (res[3].status === "fulfilled") { localCache = res[3].value; anyGraph = true; }
 

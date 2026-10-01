@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Set, Tuple
 
 from ..sync import state as sync_state
 from ..sync import read_durable_progress
+from . import community_agents
 
 logger = logging.getLogger(__name__)
 
@@ -1660,7 +1661,8 @@ def create_app(*, manage_blackbox: bool = False):
 
     @app.get("/api/agents")
     def agents() -> Any:
-        """Local protected agents + distinct threat reporters in SWM.
+        """Local protected agents (``agents``) + community-graph reporters
+        (``community_agents``, see :mod:`.community_agents`).
 
         A "protected agent" is any framework that has written findings into this
         shared blackbox home. Each is shown separately even when several share
@@ -1747,59 +1749,38 @@ def create_app(*, manage_blackbox: bool = False):
                 "is_active": True,
             }
 
-        # Distinct threat reporters from the shared graph (may include remote
-        # agents). Groups over the slow shared-working-memory view, so served
-        # stale-while-revalidate; rows are cached raw and merged fresh below.
+        # Community-graph reporters (KI-006: remote agents are real). They feed
+        # the separate `community_agents` list — a remote reporter is NOT an
+        # agent connected to this Blackbox. Served stale-while-revalidate over
+        # the slow shared-working-memory view; raw rows cached, grouped fresh.
         def _load_reporters() -> Any:
             if not _node_reachable(cfg):
                 return None   # keep default cached briefly; retry next poll
+            if not getattr(cfg, "community_graph_id", ""):
+                return []
             try:
                 client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-                sparql = (
-                    "PREFIX g: <http://umanitek.ai/ontology/guardian/> "
-                    "SELECT ?reporter ?framework (COUNT(?r) AS ?n) WHERE { "
-                    "?r a g:ThreatReport . "
-                    "OPTIONAL { ?r g:reporter ?reporter } "
-                    "OPTIONAL { ?r g:framework ?framework } "
-                    "} GROUP BY ?reporter ?framework"
-                )
-                # B7 (KI-006): reporters live in the COMMUNITY graph now.
-                if not getattr(cfg, "community_graph_id", ""):
-                    return []
                 rows = client.query(
-                    sparql,
+                    community_agents.REPORTERS_SPARQL,
                     cfg.community_graph_id,
                     view=constants.VIEW_SHARED_WORKING_MEMORY,
                     on_error=None,
                 )
-                if rows is None:
-                    return None
             except Exception as exc:  # pragma: no cover - fail open
                 logger.debug("blackbox dashboard: agents query failed: %s", exc)
                 return None  # transient failure — keep the last cached reporters
-            reporters: List[Dict[str, Any]] = []
-            for row in rows:
-                addr = extract_binding(row.get("reporter"))
-                if not addr:
-                    continue
-                fw = (extract_binding(row.get("framework")) or "").lower() or "unknown"
-                try:
-                    n = int(extract_binding(row.get("n")) or "0")
-                except (TypeError, ValueError):
-                    n = 0
-                reporters.append({"framework": fw, "address": str(addr), "count": n})
-            return reporters
+            return None if rows is None else community_agents.parse_reporter_rows(rows)
 
-        # Distinct community reporters, stale-while-revalidate (KI-006: the
-        # hardcoded empty loop dies — remote agents are real now).
-        remote_reporters = _swr("agents:reporters", _load_reporters, []) or []
-        for rep in remote_reporters:
-            fw, addr, n = rep["framework"], rep["address"], rep["count"]
-            key = (fw, addr.lower())
+        reporters = _swr("agents:reporters", _load_reporters, []) or []
+        for rep in reporters:  # local agents' own report counts
+            key = (rep["framework"], rep["address"].lower())
             if key in found:
-                found[key]["reports"] = max(found[key].get("reports", 0), n)
-            else:
-                found[key] = {"framework": fw, "address": addr, "reports": n}
+                found[key]["reports"] = max(found[key].get("reports", 0), rep["count"])
+        community_out = [
+            {**agent, "address": _safe_text(agent["address"], 128),
+             "frameworks": [_safe_text(fw, 32) for fw in agent["frameworks"]]}
+            for agent in community_agents.group_community_agents(reporters, local_addr)
+        ]
 
         # Attached local workspaces — one card per protected workspace, so two
         # OpenClaw profiles on one node wallet render as two agents. Local-wallet
@@ -1859,6 +1840,7 @@ def create_app(*, manage_blackbox: bool = False):
         )
         return {
             "agents": agents_out,
+            "community_agents": community_out,
             "connected_count": connected_count,
             "protected_profile_count": protected_profile_count,
             "blackbox_runtime": blackbox_runtime,
