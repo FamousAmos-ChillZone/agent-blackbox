@@ -42,7 +42,7 @@ def extract_binding(value: Any) -> str:
 
     Handles the SPARQL-JSON ``{"value": "..."}`` object shape as well as the
     daemon's bare-string shape (IRIs bare, literals ``"..."``, typed literals
-    ``"x"^^<...>``, lang literals ``"x"@en``).
+    ``"x"^^<...>``, lang literals ``"x"@en``). Literal escapes are decoded.
     """
     if value is None:
         return ""
@@ -51,14 +51,47 @@ def extract_binding(value: Any) -> str:
         return str(inner) if inner is not None else ""
     if isinstance(value, str):
         if value.startswith('"'):
-            i = 1
-            while i < len(value):
-                if value[i] == '"' and value[i - 1] != "\\":
-                    break
-                i += 1
-            return value[1:i] if i < len(value) else value
+            return _unquote_literal(value)
         return value
     return str(value)
+
+
+#: N-Triples string escapes (ECHAR) -> the character each stands for.
+_NT_ESCAPES = {"t": "\t", "b": "\b", "n": "\n", "r": "\r", "f": "\f", '"': '"', "'": "'", "\\": "\\"}
+
+
+def _unquote_literal(term: str) -> str:
+    """The value of an N-Triples literal term (``"..."``, optionally followed
+    by ``^^<type>`` or ``@lang``) with its escapes decoded.
+
+    The daemon returns literals in this raw form, so any value containing a
+    quote or backslash — a signed envelope, a command shape — arrives
+    escaped. Scans one character at a time so an escaped backslash right
+    before the closing quote is read correctly. A term with no closing quote
+    is returned unchanged.
+    """
+    out: List[str] = []
+    i = 1
+    while i < len(term):
+        ch = term[i]
+        if ch == '"':
+            return "".join(out)
+        if ch == "\\" and i + 1 < len(term):
+            nxt = term[i + 1]
+            width = {"u": 4, "U": 8}.get(nxt)
+            if width and i + 2 + width <= len(term):
+                try:
+                    out.append(chr(int(term[i + 2:i + 2 + width], 16)))
+                    i += 2 + width
+                    continue
+                except ValueError:
+                    pass
+            out.append(_NT_ESCAPES.get(nxt, nxt))
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return term
 
 
 def normalize_bindings(result: Any) -> List[Dict[str, Any]]:

@@ -454,6 +454,23 @@ def test_extract_binding_shapes():
     assert dkg_client.extract_binding(None) == ""
 
 
+@pytest.mark.parametrize("term, value", [
+    (r'"say \"hi\""', 'say "hi"'),
+    (r'"a\\"', "a\\"),                       # escaped backslash right before the closing quote
+    (r'"tab\there\nline"', "tab\there\nline"),
+    (r'"\u00e9t\U000000E9"', "été"),
+    (r'"{\"v\":1,\"sig\":\"ab\"}"', '{"v":1,"sig":"ab"}'),   # a signed envelope as the daemon returns it
+    (r'"x\"y"^^<http://www.w3.org/2001/XMLSchema#string>', 'x"y'),
+    ('"unterminated', '"unterminated'),
+])
+def test_extract_binding_decodes_ntriples_escapes(term, value):
+    """Regression (2026-10-01, Refine R0c): the daemon returns literals in raw
+    N-Triples form; without decoding, any value containing a quote or a
+    backslash — e.g. a signed report envelope — came back still escaped, and
+    a literal ending in an escaped backslash was not even cut at the right quote."""
+    assert dkg_client.extract_binding(term) == value
+
+
 def test_normalize_bindings_nested_shape():
     result = {"results": {"bindings": [{"n": {"value": "3"}}]}}
     assert dkg_client.normalize_bindings(result) == [{"n": {"value": "3"}}]
