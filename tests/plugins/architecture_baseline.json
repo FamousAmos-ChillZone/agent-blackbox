@@ -17,7 +17,6 @@
     "audit/activity.py::read_local_activity": 138,
     "cli.py::setup_cli": 115,
     "community/reader.py::aggregate_community_reports": 52,
-    "community/report_builder.py::build_report_quads": 83,
     "community/report_command.py::_report_finding_from_args": 57,
     "community/report_command.py::cmd_report": 68,
     "curate/catalog_import.py::_entry_to_threat": 114,
