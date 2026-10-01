@@ -30,12 +30,12 @@ way, and every package used only through its public entry (`__init__.py`).
 | `attach` | finding Hermes homes and OpenClaw workspaces, copying the plugin in, enabling/disabling it; `blackbox attach` / `detach` | `attach/__init__.py` | `kernel` |
 | `detection` | the pure detectors, action parsing, content scanners, escalation shapes, OSV lookups, the LLM reviewer; `blackbox setup-llm` | `detection/__init__.py` | `kernel`, `attach` |
 | `audit` | local findings / activity logs, redaction, the private audit record, the outbound share ledger + cooldown + daily cap | `audit/__init__.py` | `kernel`, `detection` |
-| `community` | the outbound share gate and send, report quads, reading + aggregating community reports; `blackbox report` | `community/__init__.py` | `kernel`, `audit` |
+| `community` | the outbound share gate and send, report quads, reading + aggregating community reports, graph-wide statistics for the dashboard; `blackbox report` | `community/__init__.py` | `kernel`, `audit` |
 | `ruleset` | SPARQL reads of the verified graph, compiling rows into the `Ruleset`, disk + memory cache, cross-process refresh lock, merging the community tier | `ruleset/__init__.py` | `kernel`, `community` |
 | `sync` | the local node's catch-up of the verified graph, the managed DKG node process, sync state + progress bookmarks; `blackbox sync` | `sync/__init__.py` | `kernel`, `ruleset`, `community` |
 | `guard` | the five Hermes hooks, filtering + recording + sharing findings, per-session context, background OSV / LLM / auto-attach work | `guard/__init__.py` | `kernel`, `attach`, `audit`, `community`, `detection`, `ruleset` |
 | `chat` | `blackbox chat` — the managed Blackbox assistant profile | `chat/__init__.py` | `kernel`, `attach` |
-| `dashboard` | the local web UI (FastAPI, loopback-only) and its static assets; `blackbox dashboard` | `dashboard/__init__.py` | `kernel`, `attach`, `audit`, `ruleset`, `sync` |
+| `dashboard` | the local web UI (FastAPI, loopback-only) and its static assets; `blackbox dashboard` | `dashboard/__init__.py` | `kernel`, `attach`, `audit`, `community`, `ruleset`, `sync` |
 | `curate` | the curator node's tooling (Community Graph Refine, item R6); today only unused catalog-import helpers | `curate/__init__.py` | `kernel` |
 
 ## Root (the composition layer — Hermes' plugin layout, kept thin)

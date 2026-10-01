@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from plugins.blackbox import attach, audit
 from plugins.blackbox.dashboard import server
-from plugins.blackbox.dashboard.community_agents import (
+from plugins.blackbox.community.graph_stats import (
     group_community_agents,
     parse_reporter_rows,
 )
@@ -107,3 +107,42 @@ def test_community_agents_list_every_reporter_with_this_node_flagged(client):
     assert set(by_address) == {LOCAL.lower(), REMOTE.lower()}
     assert by_address[LOCAL.lower()]["is_self"] is True
     assert by_address[REMOTE.lower()]["reports"] == 6
+
+
+# ------------------------------------------------- extracted dashboard queries
+
+
+class _FakeClient:
+    """Answers every query with ``rows``; records what was asked."""
+
+    def __init__(self, rows):
+        self.rows = rows
+        self.asked = []
+
+    def query(self, sparql, graph_id, view=None, on_error=None):
+        self.asked.append((sparql, graph_id, view))
+        return self.rows
+
+
+def test_contributing_agent_count_reads_the_count():
+    from plugins.blackbox.community.graph_stats import contributing_agent_count
+    assert contributing_agent_count(_FakeClient([{"n": _binding("3")}]), GRAPH) == 3
+
+
+def test_contributing_agent_count_is_none_when_the_node_does_not_answer():
+    from plugins.blackbox.community.graph_stats import contributing_agent_count
+    assert contributing_agent_count(_FakeClient(None), GRAPH) is None
+
+
+def test_most_reported_threats_types_rows_and_defaults_severity():
+    from plugins.blackbox.community.graph_stats import most_reported_threats
+    client = _FakeClient([{"identifier": _binding("ioc:domain:x.example"), "reporters": _binding("4")}])
+    assert most_reported_threats(client, GRAPH, limit=7) == [
+        {"identifier": "ioc:domain:x.example", "reporters": 4, "severity": "info"}
+    ]
+    assert "LIMIT 7" in client.asked[0][0]
+
+
+def test_fetch_reporter_rows_keeps_none_for_a_silent_node():
+    from plugins.blackbox.community.graph_stats import fetch_reporter_rows
+    assert fetch_reporter_rows(_FakeClient(None), GRAPH) is None

@@ -30,7 +30,6 @@ from typing import Any, Dict, List, Set, Tuple
 
 from ..sync import state as sync_state
 from ..sync import read_durable_progress
-from . import community_agents
 
 logger = logging.getLogger(__name__)
 
@@ -902,7 +901,7 @@ def create_app(*, manage_blackbox: bool = False):
     from fastapi import Body, FastAPI, Query
     from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 
-    from .. import attach, audit, ruleset
+    from .. import attach, audit, community, ruleset
     from ..kernel import settings
     from ..sync import state as sync_state
     from ..kernel import constants
@@ -1662,7 +1661,7 @@ def create_app(*, manage_blackbox: bool = False):
     @app.get("/api/agents")
     def agents() -> Any:
         """Local protected agents (``agents``) + community-graph reporters
-        (``community_agents``, see :mod:`.community_agents`).
+        (``community_agents``, see :mod:`..community.graph_stats`).
 
         A "protected agent" is any framework that has written findings into this
         shared blackbox home. Each is shown separately even when several share
@@ -1760,16 +1759,10 @@ def create_app(*, manage_blackbox: bool = False):
                 return []
             try:
                 client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-                rows = client.query(
-                    community_agents.REPORTERS_SPARQL,
-                    cfg.community_graph_id,
-                    view=constants.VIEW_SHARED_WORKING_MEMORY,
-                    on_error=None,
-                )
+                return community.fetch_reporter_rows(client, cfg.community_graph_id)
             except Exception as exc:  # pragma: no cover - fail open
                 logger.debug("blackbox dashboard: agents query failed: %s", exc)
                 return None  # transient failure — keep the last cached reporters
-            return None if rows is None else community_agents.parse_reporter_rows(rows)
 
         reporters = _swr("agents:reporters", _load_reporters, []) or []
         for rep in reporters:  # local agents' own report counts
@@ -1779,7 +1772,7 @@ def create_app(*, manage_blackbox: bool = False):
         community_out = [
             {**agent, "address": _safe_text(agent["address"], 128),
              "frameworks": [_safe_text(fw, 32) for fw in agent["frameworks"]]}
-            for agent in community_agents.group_community_agents(reporters, local_addr)
+            for agent in community.group_community_agents(reporters, local_addr)
         ]
 
         # Attached local workspaces — one card per protected workspace, so two
@@ -2146,16 +2139,7 @@ def create_app(*, manage_blackbox: bool = False):
                 return None
             try:
                 client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-                rows = client.query(
-                    "PREFIX g: <http://umanitek.ai/ontology/guardian/> "
-                    "SELECT (COUNT(DISTINCT ?rep) AS ?n) WHERE { "
-                    "?r a g:ThreatReport ; g:reporter ?rep }",
-                    cfg.community_graph_id,
-                    view=constants.VIEW_SHARED_WORKING_MEMORY,
-                    on_error=None,
-                )
-                if rows:
-                    return int(extract_binding(rows[0].get("n")) or 0)
+                return community.contributing_agent_count(client, cfg.community_graph_id)
             except Exception as exc:  # pragma: no cover - fail open
                 logger.debug("blackbox dashboard: contributing-agents query failed: %s", exc)
             return None
@@ -2183,25 +2167,11 @@ def create_app(*, manage_blackbox: bool = False):
             out: List[Dict[str, Any]] = []
             try:
                 client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-                sparql = (
-                    "PREFIX g: <http://umanitek.ai/ontology/guardian/> "
-                    "SELECT ?identifier (COUNT(DISTINCT ?reporter) AS ?reporters) "
-                    "(SAMPLE(?severity) AS ?sev) WHERE { "
-                    "?r a g:ThreatReport . ?r g:identifier ?identifier . ?r g:reporter ?reporter . "
-                    "OPTIONAL { ?r g:severity ?severity . } } "
-                    f"GROUP BY ?identifier ORDER BY DESC(?reporters) LIMIT {int(limit)}"
-                )
-                rows = client.query(
-                    sparql,
-                    cfg.community_graph_id,
-                    view=constants.VIEW_SHARED_WORKING_MEMORY,
-                    on_error=[],
-                ) or []
-                for row in rows:
+                for threat in community.most_reported_threats(client, cfg.community_graph_id, limit):
                     out.append({
-                        "identifier": _safe_text(extract_binding(row.get("identifier"))),
-                        "reporters": int(extract_binding(row.get("reporters")) or "0"),
-                        "severity": _safe_text(extract_binding(row.get("sev")) or "info", 16),
+                        "identifier": _safe_text(threat["identifier"]),
+                        "reporters": threat["reporters"],
+                        "severity": _safe_text(threat["severity"], 16),
                     })
             except Exception as exc:  # pragma: no cover - fail open
                 logger.debug("blackbox dashboard: reports query failed: %s", exc)
