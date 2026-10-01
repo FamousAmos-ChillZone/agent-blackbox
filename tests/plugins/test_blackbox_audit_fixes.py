@@ -30,14 +30,18 @@ detection = load_blackbox("detection")
 llm = load_blackbox("detection.reviewer")
 quads = load_blackbox("quads")
 ruleset_mod = load_blackbox("ruleset")
+ruleset_disk_cache = load_blackbox("ruleset.disk_cache")
+ruleset_fetching = load_blackbox("ruleset.fetching")
+ruleset_locks = load_blackbox("ruleset.locks")
+ruleset_refresh = load_blackbox("ruleset.refresh_cycle")
 config_mod = load_blackbox("kernel.config")
 
 Ruleset = ruleset_mod.Ruleset
 
 
 def _hold_ruleset_file_lock(home, entered, release):
-    ruleset_mod.constants.blackbox_home = lambda: Path(home)
-    with ruleset_mod._ruleset_refresh_lock(blocking=True) as acquired:
+    ruleset_disk_cache.constants.blackbox_home = lambda: Path(home)
+    with ruleset_locks._ruleset_refresh_lock(blocking=True) as acquired:
         if not acquired:
             return
         entered.set()
@@ -138,8 +142,8 @@ class _Pager:
         return rows[off:off + lim]
 
 def test_ruleset_sync_is_uncapped(monkeypatch):
-    monkeypatch.setattr(ruleset_mod, "_write_cache", lambda rs: None)
-    monkeypatch.setattr(ruleset_mod, "_memory_cache", None)
+    monkeypatch.setattr(ruleset_disk_cache, "_write_cache", lambda rs: None)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache", None)
     pager = _Pager(16_250)
     rs = ruleset_mod.refresh(config_mod.BlackboxConfig(), pager)
     assert len(rs.dependency) == 16_250
@@ -154,7 +158,7 @@ def test_ruleset_sync_is_uncapped(monkeypatch):
     assert all("OFFSET 0" in query for query, _kwargs in partition_queries)
     assert all(kwargs["view"] is None for _query, kwargs in partition_queries)
     assert all(
-        kwargs["timeout"] == ruleset_mod._VM_PARTITION_QUERY_TIMEOUT
+        kwargs["timeout"] == ruleset_fetching._VM_PARTITION_QUERY_TIMEOUT
         for _query, kwargs in partition_queries
     )
 
@@ -179,10 +183,10 @@ def test_concurrent_ruleset_refresh_reuses_completed_generation(monkeypatch, tmp
         assert release.wait(5)
         return [row]
 
-    monkeypatch.setattr(ruleset_mod.constants, "blackbox_home", lambda: tmp_path)
-    monkeypatch.setattr(ruleset_mod, "_memory_cache", None)
-    monkeypatch.setattr(ruleset_mod, "_memory_cache_stamp", None)
-    monkeypatch.setattr(ruleset_mod, "_fetch_tier", slow_fetch)
+    monkeypatch.setattr(ruleset_disk_cache.constants, "blackbox_home", lambda: tmp_path)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache", None)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache_stamp", None)
+    monkeypatch.setattr(ruleset_fetching, "fetch_tier", slow_fetch)
 
     first = threading.Thread(
         target=lambda: results.append(ruleset_mod.refresh(config_mod.BlackboxConfig(), object()))
@@ -218,7 +222,7 @@ def test_post_barrier_refresh_does_not_reuse_pre_barrier_generation(
     release_stale_query = threading.Event()
     results = {}
     fetch_count = 0
-    real_cache_stamp = ruleset_mod._cache_file_stamp
+    real_cache_stamp = ruleset_refresh._cache_file_stamp
 
     def row(name):
         return {
@@ -245,11 +249,11 @@ def test_post_barrier_refresh_does_not_reuse_pre_barrier_generation(
         return stamp
 
     cfg = config_mod.BlackboxConfig(context_graph_id="owner/public")
-    monkeypatch.setattr(ruleset_mod.constants, "blackbox_home", lambda: tmp_path)
-    monkeypatch.setattr(ruleset_mod, "_memory_cache", None)
-    monkeypatch.setattr(ruleset_mod, "_memory_cache_stamp", None)
-    monkeypatch.setattr(ruleset_mod, "_fetch_tier", staged_fetch)
-    monkeypatch.setattr(ruleset_mod, "_cache_file_stamp", observed_cache_stamp)
+    monkeypatch.setattr(ruleset_disk_cache.constants, "blackbox_home", lambda: tmp_path)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache", None)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache_stamp", None)
+    monkeypatch.setattr(ruleset_fetching, "fetch_tier", staged_fetch)
+    monkeypatch.setattr(ruleset_refresh, "_cache_file_stamp", observed_cache_stamp)
 
     stale = threading.Thread(
         name="pre-barrier-refresh",
@@ -286,7 +290,7 @@ def test_forced_refresh_reports_lock_exhaustion(monkeypatch):
         assert blocking
         yield False
 
-    monkeypatch.setattr(ruleset_mod, "_ruleset_refresh_lock", unavailable_lock)
+    monkeypatch.setattr(ruleset_locks, "_ruleset_refresh_lock", unavailable_lock)
 
     with pytest.raises(
         ruleset_mod.RulesetRefreshLockUnavailable,
@@ -320,23 +324,22 @@ def test_forced_refresh_rejects_incomplete_vm_query_without_restamping_cache(
         "packageVersion": "1.0.0",
     }
     cfg = config_mod.BlackboxConfig(context_graph_id="owner/public")
-    monkeypatch.setattr(ruleset_mod.constants, "blackbox_home", lambda: tmp_path)
-    monkeypatch.setattr(ruleset_mod, "_memory_cache", None)
-    monkeypatch.setattr(ruleset_mod, "_memory_cache_stamp", None)
-    monkeypatch.setattr(ruleset_mod, "_fetch_tier", lambda *_args, **_kwargs: [row])
+    monkeypatch.setattr(ruleset_disk_cache.constants, "blackbox_home", lambda: tmp_path)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache", None)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache_stamp", None)
+    monkeypatch.setattr(ruleset_fetching, "fetch_tier", lambda *_args, **_kwargs: [row])
 
     prior = ruleset_mod.refresh(cfg, object())
-    cache_before = ruleset_mod._cache_path().read_bytes()
+    cache_before = ruleset_disk_cache._cache_path().read_bytes()
 
     monkeypatch.setattr(
-        ruleset_mod,
-        "_fetch_tier",
+        ruleset_fetching, "fetch_tier",
         lambda *_args, **_kwargs: fresh_result,
     )
     with pytest.raises(ruleset_mod.RulesetRefreshIncomplete, match=error):
         ruleset_mod.refresh(cfg, object(), force_query=True)
 
-    assert ruleset_mod._cache_path().read_bytes() == cache_before
+    assert ruleset_disk_cache._cache_path().read_bytes() == cache_before
     assert ruleset_mod.peek(cfg).synced_at == prior.synced_at
     assert "npm:last-good@1.0.0" in ruleset_mod.peek(cfg).dependency
 
@@ -349,10 +352,10 @@ def test_ruleset_cache_never_crosses_custom_context_graphs(monkeypatch, tmp_path
         "packageName": "graph-a",
         "packageVersion": "1.0.0",
     }
-    monkeypatch.setattr(ruleset_mod.constants, "blackbox_home", lambda: tmp_path)
-    monkeypatch.setattr(ruleset_mod, "_memory_cache", None)
-    monkeypatch.setattr(ruleset_mod, "_memory_cache_stamp", None)
-    monkeypatch.setattr(ruleset_mod, "_fetch_tier", lambda *_args, **_kwargs: [row])
+    monkeypatch.setattr(ruleset_disk_cache.constants, "blackbox_home", lambda: tmp_path)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache", None)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache_stamp", None)
+    monkeypatch.setattr(ruleset_fetching, "fetch_tier", lambda *_args, **_kwargs: [row])
 
     graph_a = config_mod.BlackboxConfig(context_graph_id="owner/graph-a")
     graph_b = config_mod.BlackboxConfig(context_graph_id="owner/graph-b")
@@ -360,7 +363,7 @@ def test_ruleset_cache_never_crosses_custom_context_graphs(monkeypatch, tmp_path
     assert first.context_graph_id == "owner/graph-a"
     assert first.source_count("public") == 1
 
-    monkeypatch.setattr(ruleset_mod, "_fetch_tier", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(ruleset_fetching, "fetch_tier", lambda *_args, **_kwargs: [])
     second = ruleset_mod.refresh(graph_b, object())
 
     assert second.context_graph_id == "owner/graph-b"
@@ -377,10 +380,10 @@ def test_legacy_unscoped_cache_is_not_valid_for_custom_graph(monkeypatch, tmp_pa
             }
         }
     )
-    monkeypatch.setattr(ruleset_mod.constants, "blackbox_home", lambda: tmp_path)
-    monkeypatch.setattr(ruleset_mod, "_memory_cache", None)
-    monkeypatch.setattr(ruleset_mod, "_memory_cache_stamp", None)
-    ruleset_mod._write_cache(prior)
+    monkeypatch.setattr(ruleset_disk_cache.constants, "blackbox_home", lambda: tmp_path)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache", None)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache_stamp", None)
+    ruleset_disk_cache._write_cache(prior)
 
     custom = ruleset_mod.peek(
         config_mod.BlackboxConfig(context_graph_id="owner/custom")
@@ -439,7 +442,7 @@ def test_windows_blocking_lock_retries_until_acquired(tmp_path):
     fake = FakeMsvcrt()
     sleeps = []
     with (tmp_path / "ruleset.lock").open("a+b") as handle:
-        assert ruleset_mod._acquire_windows_file_lock(
+        assert ruleset_locks._acquire_windows_file_lock(
             handle,
             blocking=True,
             msvcrt_module=fake,
@@ -473,7 +476,7 @@ def test_windows_blocking_lock_times_out_under_contention(tmp_path):
         clock["value"] += seconds
 
     with (tmp_path / "ruleset.lock").open("a+b") as handle:
-        assert not ruleset_mod._acquire_windows_file_lock(
+        assert not ruleset_locks._acquire_windows_file_lock(
             handle,
             blocking=True,
             msvcrt_module=fake,
@@ -492,21 +495,20 @@ def test_windows_ruleset_lock_does_not_claim_acquisition_after_timeout(
     tmp_path,
 ):
     monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
-    monkeypatch.setattr(ruleset_mod, "_is_windows_platform", lambda: True)
+    monkeypatch.setattr(ruleset_locks, "_is_windows_platform", lambda: True)
     monkeypatch.setattr(
-        ruleset_mod,
-        "_acquire_windows_file_lock",
+        ruleset_locks, "_acquire_windows_file_lock",
         lambda *_args, **_kwargs: False,
     )
 
-    with ruleset_mod._ruleset_refresh_lock(blocking=True) as acquired:
+    with ruleset_locks._ruleset_refresh_lock(blocking=True) as acquired:
         assert not acquired
 
 
 def test_empty_initial_sync_retries_cache_without_network_orchestration(monkeypatch):
-    monkeypatch.setattr(ruleset_mod, "_write_cache", lambda rs: None)
-    monkeypatch.setattr(ruleset_mod, "_memory_cache", None)
-    monkeypatch.setattr(ruleset_mod.time, "time", lambda: 1000.0)
+    monkeypatch.setattr(ruleset_disk_cache, "_write_cache", lambda rs: None)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache", None)
+    monkeypatch.setattr(ruleset_refresh.time, "time", lambda: 1000.0)
 
     class _Empty:
         def query(self, sparql, cg_id, view=None, on_error=None):
@@ -534,9 +536,9 @@ def test_empty_refresh_keeps_last_verified_rules(monkeypatch):
         },
         synced_at=100.0,
     )
-    monkeypatch.setattr(ruleset_mod, "_write_cache", writes.append)
-    monkeypatch.setattr(ruleset_mod, "_memory_cache", prior)
-    monkeypatch.setattr(ruleset_mod.time, "time", lambda: 1000.0)
+    monkeypatch.setattr(ruleset_disk_cache, "_write_cache", writes.append)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache", prior)
+    monkeypatch.setattr(ruleset_refresh.time, "time", lambda: 1000.0)
 
     class _Empty:
         def query(self, sparql, cg_id, view=None, on_error=None):
@@ -560,11 +562,11 @@ def test_empty_refresh_prefers_newer_nonempty_disk_cache(monkeypatch):
         },
         synced_at=900.0,
     )
-    monkeypatch.setattr(ruleset_mod, "_memory_cache", Ruleset(synced_at=950.0))
-    monkeypatch.setattr(ruleset_mod, "_read_cache", lambda: disk)
-    monkeypatch.setattr(ruleset_mod, "_write_cache", lambda _rs: None)
-    monkeypatch.setattr(ruleset_mod, "_cache_file_stamp", lambda: 2)
-    monkeypatch.setattr(ruleset_mod.time, "time", lambda: 1000.0)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache", Ruleset(synced_at=950.0))
+    monkeypatch.setattr(ruleset_disk_cache, "_read_cache", lambda: disk)
+    monkeypatch.setattr(ruleset_disk_cache, "_write_cache", lambda _rs: None)
+    monkeypatch.setattr(ruleset_refresh, "_cache_file_stamp", lambda: 2)
+    monkeypatch.setattr(ruleset_refresh.time, "time", lambda: 1000.0)
 
     class _Empty:
         def query(self, sparql, cg_id, view=None, on_error=None):
@@ -586,18 +588,18 @@ def test_peek_reloads_cache_replaced_by_another_process(monkeypatch):
         },
         synced_at=200.0,
     )
-    monkeypatch.setattr(ruleset_mod, "_memory_cache", Ruleset(synced_at=100.0))
-    monkeypatch.setattr(ruleset_mod, "_memory_cache_stamp", 1)
-    monkeypatch.setattr(ruleset_mod, "_cache_file_stamp", lambda: 2)
-    monkeypatch.setattr(ruleset_mod, "_read_cache", lambda: disk)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache", Ruleset(synced_at=100.0))
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache_stamp", 1)
+    monkeypatch.setattr(ruleset_refresh, "_cache_file_stamp", lambda: 2)
+    monkeypatch.setattr(ruleset_disk_cache, "_read_cache", lambda: disk)
 
     assert ruleset_mod.peek() is disk
-    assert ruleset_mod._memory_cache_stamp == 2
+    assert ruleset_refresh._memory_cache_stamp == 2
 
 
 def test_missing_community_does_not_restart_dkg_sync(monkeypatch):
-    monkeypatch.setattr(ruleset_mod, "_write_cache", lambda rs: None)
-    monkeypatch.setattr(ruleset_mod, "_memory_cache", None)
+    monkeypatch.setattr(ruleset_disk_cache, "_write_cache", lambda rs: None)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache", None)
 
     class _PublicOnly(_Pager):
         def subscribe_context_graph(self, cg_id):
@@ -614,10 +616,10 @@ def test_missing_community_does_not_restart_dkg_sync(monkeypatch):
 
 
 def test_vm_error_preserves_public_rules_without_loading_swm(monkeypatch):
-    monkeypatch.setattr(ruleset_mod, "_write_cache", lambda rs: None)
+    monkeypatch.setattr(ruleset_disk_cache, "_write_cache", lambda rs: None)
     prior = Ruleset(dependency={"npm:evil@1.0": {"identifier": "dep:npm:evil@1.0", "source": "public",
         "severity": "critical", "name": "m", "ecosystem": "npm", "packageName": "evil", "packageVersion": "1.0"}})
-    monkeypatch.setattr(ruleset_mod, "_memory_cache", prior)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache", prior)
 
     class _Partial:
         def query(self, sparql, cg_id, view=None, on_error=None):

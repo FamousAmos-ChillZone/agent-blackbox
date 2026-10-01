@@ -17,17 +17,14 @@ from __future__ import annotations
 import pytest
 
 from plugins.blackbox import detection, ruleset as rs_mod
+from plugins.blackbox.community import reader as community_reader
+from plugins.blackbox.ruleset import refresh_cycle as ruleset_refresh
 from plugins.blackbox.kernel.config import BlackboxConfig
-from plugins.blackbox.ruleset import (
-    CommunityRule,
-    Ruleset,
-    _aggregate_community_reports,
-    _apply_community_tier,
-    _deserialize,
-    _materialize_community_rules,
-    _serialize,
-    sparql_string_literal,
-)
+from plugins.blackbox.community import CommunityRule, aggregate_community_reports
+from plugins.blackbox.kernel.sparql_text import sparql_string_literal
+from plugins.blackbox.ruleset import Ruleset
+from plugins.blackbox.ruleset.disk_cache import _deserialize, _serialize
+from plugins.blackbox.ruleset.refresh_cycle import _apply_community_tier, _materialize_community_rules
 
 
 DEV_GRAPH = "0x51E5dE758A45c8b64048E29918421F0bdD6D5d5C/agent-blackbox-community-dev"
@@ -52,14 +49,14 @@ def _report_row(identifier, reporter, severity="high", **extra):
 
 def test_three_reporters_count_three():
     rows = [_report_row("dep:npm:evil@1", f"0xr{i}") for i in range(3)]
-    rules = _aggregate_community_reports(rows, {})
+    rules = aggregate_community_reports(rows, {})
     assert len(rules) == 1
     assert rules[0].reporter_count == 3
 
 
 def test_same_reporter_twice_counts_once():
     rows = [_report_row("dep:npm:evil@1", "0xr1"), _report_row("dep:npm:evil@1", "0xR1")]
-    rules = _aggregate_community_reports(rows, {})
+    rules = aggregate_community_reports(rows, {})
     assert rules[0].reporter_count == 1  # case-normalized address
 
 
@@ -69,14 +66,14 @@ def test_severity_is_max_across_reporters():
         _report_row("dep:npm:evil@1", "0xr2", severity="critical"),
         _report_row("dep:npm:evil@1", "0xr3", severity="low"),
     ]
-    assert _aggregate_community_reports(rows, {})[0].severity == "critical"
+    assert aggregate_community_reports(rows, {})[0].severity == "critical"
 
 
 def test_identifier_literals_stay_distinct_even_when_slugs_collide():
     """KI-027: these two collapse to the same slugged URN; the literal must not."""
     a = "ioc:url:https://evil.example/x?a=1"
     b = "ioc:url:https://evil.example/x/a/1"
-    rules = _aggregate_community_reports(
+    rules = aggregate_community_reports(
         [_report_row(a, "0xr1"), _report_row(b, "0xr2")], {}
     )
     assert len(rules) == 2
@@ -84,19 +81,19 @@ def test_identifier_literals_stay_distinct_even_when_slugs_collide():
 
 def test_first_seen_carries_over_from_prior_cache():
     """KI-012: first_seen is OUR observation history, not reporter-supplied."""
-    rules = _aggregate_community_reports(
+    rules = aggregate_community_reports(
         [_report_row("dep:npm:evil@1", "0xr1")], {"dep:npm:evil@1": 1000.0}
     )
     assert rules[0].first_seen == 1000.0
 
 
 def test_bounded_ingest_keeps_corroborated_head(monkeypatch):
-    monkeypatch.setattr(rs_mod, "_COMMUNITY_MAX_RULES", 3)
+    monkeypatch.setattr(community_reader, "_COMMUNITY_MAX_RULES", 3)
     rows = []
     for i in range(6):
         for r in range(i + 1):  # identifier i has i+1 reporters
             rows.append(_report_row(f"dep:npm:pkg{i}@1", f"0xr{r}"))
-    rules = _aggregate_community_reports(rows, {})
+    rules = aggregate_community_reports(rows, {})
     assert len(rules) == 3
     assert [r.reporter_count for r in rules] == [6, 5, 4]  # the head, not the tail
 
@@ -252,7 +249,7 @@ class FakeClient:
 
 
 def test_apply_community_tier_populates_store_and_subscribes(monkeypatch):
-    monkeypatch.setattr(rs_mod, "_latest_cached_ruleset", lambda cg: None)
+    monkeypatch.setattr(ruleset_refresh, "_latest_cached_ruleset", lambda cg: None)
     rs = Ruleset()
     client = FakeClient(report_rows=[_report_row("ioc:domain:evil.example", "0xr1", iocType="domain")])
     _apply_community_tier(rs, client, CFG)
@@ -262,7 +259,7 @@ def test_apply_community_tier_populates_store_and_subscribes(monkeypatch):
 
 
 def test_pause_flag_suppresses_ingest(monkeypatch):
-    monkeypatch.setattr(rs_mod, "_latest_cached_ruleset", lambda cg: None)
+    monkeypatch.setattr(ruleset_refresh, "_latest_cached_ruleset", lambda cg: None)
     rs = Ruleset()
     client = FakeClient(report_rows=[_report_row("dep:npm:evil@1", "0xr1")], paused=True)
     _apply_community_tier(rs, client, CFG)
@@ -276,14 +273,14 @@ def test_fetch_failure_keeps_last_good(monkeypatch):
         "dep:npm:old@1": {"identifier": "dep:npm:old@1", "severity": "high",
                           "source": "community", "reporterCount": 4, "firstSeen": 5.0}
     }
-    monkeypatch.setattr(rs_mod, "_latest_cached_ruleset", lambda cg: prior)
+    monkeypatch.setattr(ruleset_refresh, "_latest_cached_ruleset", lambda cg: prior)
     rs = Ruleset()
     _apply_community_tier(rs, FakeClient(fail=True), CFG)
     assert rs.community == prior.community
 
 
 def test_empty_graph_degrades_to_zero_rules(monkeypatch):
-    monkeypatch.setattr(rs_mod, "_latest_cached_ruleset", lambda cg: None)
+    monkeypatch.setattr(ruleset_refresh, "_latest_cached_ruleset", lambda cg: None)
     rs = Ruleset()
     _apply_community_tier(rs, FakeClient(report_rows=[]), CFG)
     assert rs.community == {}

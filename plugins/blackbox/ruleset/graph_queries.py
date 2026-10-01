@@ -1,0 +1,310 @@
+"""SPARQL builders for reading the VERIFIED threat graph.
+
+Pure string builders — no I/O. Every untrusted value that reaches a query goes
+through :func:`..kernel.sparql_text.sparql_string_literal`; IRIs are checked against
+``_FORBIDDEN_IRI_CHARS``. Used by :mod:`.fetching` (paged reads) and
+:mod:`.compiler` (legacy proof reads).
+"""
+
+from __future__ import annotations
+
+import json
+from typing import List
+
+_SELECT_COLUMNS = """?threat ?rdfType ?identifier ?severity ?name ?description
+       ?pattern ?toolName ?argShape ?packageName ?packageVersion
+       ?packageEcosystem ?advisoryId ?curated ?category ?skillName
+       ?skillVersion ?dangerShape ?kind ?iocValue ?targetSubject
+       ?correctionAction ?canonicalType ?observationCategory
+       ?lifecycleStatus ?normalizedValue ?provenanceJson ?sourceId"""
+
+_DEFENDER_PREFIXES = """PREFIX defender: <urn:defender:>
+PREFIX dp: <urn:defender:p:>
+PREFIX blackbox: <urn:blackbox:>
+PREFIX bp: <urn:blackbox:p:>
+PREFIX schema: <http://schema.org/>
+"""
+_VM_PARTITION_QUERY_LIMIT = 50_000
+_FORBIDDEN_IRI_CHARS = frozenset('<>"{}|^`\\\r\n\t')
+
+
+def _threat_cursor_filter(after: str) -> str:
+    if not after:
+        return ""
+    return f"FILTER(STR(?threat) > {json.dumps(after, ensure_ascii=True)})"
+
+
+def _defender_page_sparql(
+    signal_type: str,
+    properties: str,
+    limit: int,
+    after: str,
+    graph_uri: str = "",
+) -> str:
+    cursor_filter = _threat_cursor_filter(after)
+    body = f"""    {{
+        SELECT ?threat WHERE {{
+            ?threat a defender:{signal_type} .
+            {cursor_filter}
+        }}
+        ORDER BY STR(?threat)
+        LIMIT {int(limit)}
+    }}
+    BIND(defender:{signal_type} AS ?rdfType)
+{properties}"""
+    if graph_uri:
+        body = f"  GRAPH <{graph_uri}> {{\n{body}\n  }}"
+    return f"""{_DEFENDER_PREFIXES}
+SELECT DISTINCT {_SELECT_COLUMNS}
+WHERE {{
+{body}
+}}
+ORDER BY STR(?threat)
+"""
+
+
+def _source_observations_sparql(
+    limit: int,
+    after: str = "",
+    graph_uri: str = "",
+) -> str:
+    """Fetch compact IOC observations without pulling citation triples."""
+    cursor_filter = _threat_cursor_filter(after)
+    body = f"""    {{
+        SELECT ?threat WHERE {{
+            ?threat a blackbox:SourceObservation .
+            {cursor_filter}
+        }}
+        ORDER BY STR(?threat)
+        LIMIT {int(limit)}
+    }}
+    BIND(blackbox:SourceObservation AS ?rdfType)
+    OPTIONAL {{ ?threat bp:canonicalType ?canonicalType . }}
+    OPTIONAL {{ ?threat bp:category ?observationCategory . }}
+    OPTIONAL {{ ?threat bp:lifecycleStatus ?lifecycleStatus . }}
+    OPTIONAL {{ ?threat bp:normalizedValue ?normalizedValue . }}
+    OPTIONAL {{ ?threat bp:provenanceJson ?provenanceJson . }}
+    OPTIONAL {{ ?threat bp:sourceId ?sourceId . }}"""
+    if graph_uri:
+        body = f"  GRAPH <{graph_uri}> {{\n{body}\n  }}"
+    return f"""{_DEFENDER_PREFIXES}
+SELECT DISTINCT {_SELECT_COLUMNS}
+WHERE {{
+{body}
+}}
+ORDER BY STR(?threat)
+"""
+
+
+def _threats_sparql(limit: int, after: str = "", graph_uri: str = "") -> str:
+    return _defender_page_sparql(
+        "DependencySignal",
+        """    OPTIONAL { ?threat dp:kind ?kind . }
+    OPTIONAL { ?threat dp:severity ?severity . }
+    OPTIONAL { ?threat schema:name ?name . }
+    OPTIONAL { ?threat schema:description ?description . }
+    OPTIONAL { ?threat dp:package ?packageName . }
+    OPTIONAL { ?threat dp:version ?packageVersion . }
+    OPTIONAL { ?threat dp:ecosystem ?packageEcosystem . }
+    OPTIONAL { ?threat dp:advisoryId ?advisoryId . }""",
+        limit,
+        after,
+        graph_uri,
+    )
+
+
+def _defender_threats_sparql(
+    limit: int,
+    after: str = "",
+    graph_uri: str = "",
+) -> tuple:
+    return (
+        _threats_sparql(limit, after, graph_uri),
+        _defender_page_sparql(
+            "InjectionSignal",
+            """    OPTIONAL { ?threat dp:kind ?kind . }
+    OPTIONAL { ?threat dp:severity ?severity . }
+    OPTIONAL { ?threat schema:name ?name . }
+    OPTIONAL { ?threat schema:description ?description . }
+    OPTIONAL { ?threat dp:pattern ?pattern . }""",
+            limit,
+            after,
+            graph_uri,
+        ),
+        _defender_page_sparql(
+            "SkillSignal",
+            """    OPTIONAL { ?threat dp:kind ?kind . }
+    OPTIONAL { ?threat dp:severity ?severity . }
+    OPTIONAL { ?threat schema:name ?name . }
+    OPTIONAL { ?threat schema:description ?description . }""",
+            limit,
+            after,
+            graph_uri,
+        ),
+        _defender_page_sparql(
+            "IocSignal",
+            """    OPTIONAL { ?threat dp:kind ?kind . }
+    OPTIONAL { ?threat dp:severity ?severity . }
+    OPTIONAL { ?threat schema:name ?name . }
+    OPTIONAL { ?threat schema:description ?description . }
+    OPTIONAL { ?threat dp:iocType ?category . }
+    OPTIONAL { ?threat dp:value ?iocValue . }""",
+            limit,
+            after,
+            graph_uri,
+        ),
+        _defender_page_sparql(
+            "CorrectionSignal",
+            """    OPTIONAL { ?threat dp:targetSubject ?targetSubject . }
+    OPTIONAL { ?threat dp:action ?correctionAction . }""",
+            limit,
+            after,
+            graph_uri,
+        ),
+        _source_observations_sparql(limit, after, graph_uri),
+    )
+
+
+def _legacy_threats_sparql(
+    limit: int,
+    after: str = "",
+    graph_uri: str = "",
+) -> str:
+    cursor_filter = _threat_cursor_filter(after)
+    body = f"""  {{
+    SELECT ?threat WHERE {{
+      ?threat g:identifier ?cursorIdentifier .
+      {cursor_filter}
+    }}
+    ORDER BY STR(?threat)
+    LIMIT {int(limit)}
+  }}
+  ?threat g:identifier ?identifier .
+  OPTIONAL {{ ?threat a ?rdfType . }}
+  OPTIONAL {{ ?threat g:kind ?kind . }}
+  OPTIONAL {{ ?threat g:severity ?severity . }}
+  OPTIONAL {{ ?threat schema:name ?name . }}
+  OPTIONAL {{ ?threat schema:description ?description . }}
+  OPTIONAL {{ ?threat g:pattern ?pattern . }}
+  OPTIONAL {{ ?threat g:toolName ?toolName . }}
+  OPTIONAL {{ ?threat g:argShape ?argShape . }}
+  OPTIONAL {{ ?threat g:packageName ?packageName . }}
+  OPTIONAL {{ ?threat g:packageVersion ?packageVersion . }}
+  OPTIONAL {{ ?threat g:packageEcosystem ?packageEcosystem . }}
+  OPTIONAL {{ ?threat schema:identifier ?advisoryId . }}
+  OPTIONAL {{ ?threat g:curated ?curated . }}
+  OPTIONAL {{ ?threat g:category ?category . }}
+  OPTIONAL {{ ?threat g:skillName ?skillName . }}
+  OPTIONAL {{ ?threat g:skillVersion ?skillVersion . }}
+  OPTIONAL {{ ?threat g:dangerShape ?dangerShape . }}"""
+    if graph_uri:
+        body = f"  GRAPH <{graph_uri}> {{\n{body}\n  }}"
+    return f"""PREFIX g: <http://umanitek.ai/ontology/guardian/>
+PREFIX schema: <http://schema.org/>
+SELECT DISTINCT {_SELECT_COLUMNS}
+WHERE {{
+{body}
+}}
+ORDER BY STR(?threat)
+"""
+
+
+def _context_graph_data_uri(cg_id: str) -> str:
+    value = str(cg_id or "").strip()
+    if not value or any(char in value for char in _FORBIDDEN_IRI_CHARS):
+        return ""
+    return f"did:dkg:context-graph:{value}"
+
+
+def _verified_partitions_sparql(cg_id: str) -> str:
+    data_graph = _context_graph_data_uri(cg_id)
+    if not data_graph:
+        return ""
+    vm_prefix = f"{data_graph}/_verifiable_memory/"
+    return f"""PREFIX dkg: <http://dkg.io/ontology/>
+SELECT DISTINCT ?assertionGraph ?status WHERE {{
+  GRAPH <{data_graph}/_meta> {{
+    ?ka dkg:assertionGraph ?assertionGraph .
+    OPTIONAL {{ ?ka dkg:status ?status . }}
+  }}
+  FILTER(STRSTARTS(STR(?assertionGraph), {json.dumps(vm_prefix)}))
+}}
+ORDER BY ?assertionGraph
+"""
+
+
+def _partition_threats_sparql(
+    graph_uris: List[str],
+    *,
+    limit: int = _VM_PARTITION_QUERY_LIMIT,
+    offset: int = 0,
+) -> str:
+    values = " ".join(f"<{uri}>" for uri in graph_uris)
+    return f"""{_DEFENDER_PREFIXES}PREFIX g: <http://umanitek.ai/ontology/guardian/>
+SELECT DISTINCT ?sourceGraph {_SELECT_COLUMNS}
+WHERE {{
+  VALUES ?sourceGraph {{ {values} }}
+  GRAPH ?sourceGraph {{
+    {{
+      ?threat a ?rdfType .
+      VALUES ?rdfType {{
+        defender:DependencySignal defender:InjectionSignal
+        defender:SkillSignal defender:IocSignal defender:CorrectionSignal
+        blackbox:SourceObservation
+      }}
+    }} UNION {{
+      ?threat g:identifier ?identifier .
+      OPTIONAL {{ ?threat a ?rdfType . }}
+    }}
+    OPTIONAL {{ ?threat dp:kind ?kind . }}
+    OPTIONAL {{ ?threat g:kind ?kind . }}
+    OPTIONAL {{ ?threat dp:severity ?severity . }}
+    OPTIONAL {{ ?threat g:severity ?severity . }}
+    OPTIONAL {{ ?threat schema:name ?name . }}
+    OPTIONAL {{ ?threat schema:description ?description . }}
+    OPTIONAL {{ ?threat dp:pattern ?pattern . }}
+    OPTIONAL {{ ?threat g:pattern ?pattern . }}
+    OPTIONAL {{ ?threat g:toolName ?toolName . }}
+    OPTIONAL {{ ?threat g:argShape ?argShape . }}
+    OPTIONAL {{ ?threat dp:package ?packageName . }}
+    OPTIONAL {{ ?threat g:packageName ?packageName . }}
+    OPTIONAL {{ ?threat dp:version ?packageVersion . }}
+    OPTIONAL {{ ?threat g:packageVersion ?packageVersion . }}
+    OPTIONAL {{ ?threat dp:ecosystem ?packageEcosystem . }}
+    OPTIONAL {{ ?threat g:packageEcosystem ?packageEcosystem . }}
+    OPTIONAL {{ ?threat dp:advisoryId ?advisoryId . }}
+    OPTIONAL {{ ?threat schema:identifier ?advisoryId . }}
+    OPTIONAL {{ ?threat g:curated ?curated . }}
+    OPTIONAL {{ ?threat dp:iocType ?category . }}
+    OPTIONAL {{ ?threat g:category ?category . }}
+    OPTIONAL {{ ?threat g:skillName ?skillName . }}
+    OPTIONAL {{ ?threat g:skillVersion ?skillVersion . }}
+    OPTIONAL {{ ?threat g:dangerShape ?dangerShape . }}
+    OPTIONAL {{ ?threat dp:value ?iocValue . }}
+    OPTIONAL {{ ?threat dp:targetSubject ?targetSubject . }}
+    OPTIONAL {{ ?threat dp:action ?correctionAction . }}
+    OPTIONAL {{ ?threat bp:canonicalType ?canonicalType . }}
+    OPTIONAL {{ ?threat bp:category ?observationCategory . }}
+    OPTIONAL {{ ?threat bp:lifecycleStatus ?lifecycleStatus . }}
+    OPTIONAL {{ ?threat bp:normalizedValue ?normalizedValue . }}
+    OPTIONAL {{ ?threat bp:provenanceJson ?provenanceJson . }}
+    OPTIONAL {{ ?threat bp:sourceId ?sourceId . }}
+  }}
+}}
+ORDER BY ?sourceGraph ?threat
+LIMIT {int(limit)}
+OFFSET {int(offset)}
+"""
+
+
+# ---------------------------------------------------------------------------
+# Legacy proof verification (backward compatibility)
+# ---------------------------------------------------------------------------
+
+# This fallback keeps already-published proof-era rows effective.
+_PROOFS_SPARQL = """PREFIX g: <http://umanitek.ai/ontology/guardian/>
+SELECT ?proof ?root ?member WHERE {
+  ?proof a g:CurationProof .
+  ?proof g:anchorRoot ?root .
+  ?proof g:anchorMember ?member .
+}"""

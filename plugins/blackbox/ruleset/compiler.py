@@ -1,0 +1,266 @@
+"""The compiled ruleset and how rows become one.
+
+:class:`Ruleset` holds the O(1) lookup dicts detection matches against
+(dependency, ioc, injection, escalation, fileaccess, skill) plus the
+community display tier. :func:`build_from_rows` compiles verified rows (via
+:mod:`.row_adapters`) and :func:`verified_identifiers` answers the legacy proof check.
+
+Usage: ``rs = build_from_rows(rows, cfg)``; detection reads ``rs.dependency`` etc.
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from dataclasses import dataclass, field
+from typing import Any, Dict, List
+from ..kernel import constants
+from .. import quads
+from ..kernel.dkg_client import DkgClient, extract_binding
+from . import graph_queries
+from . import row_adapters
+
+logger = logging.getLogger(__name__)
+
+def _fetch_proofs(client: DkgClient, cg_id: str) -> Dict[str, Dict[str, Any]]:
+    """Legacy proofs from the VM view: subject -> {root, members}. Fail-open
+    to {} — no proofs simply means no community row can be promoted."""
+    try:
+        rows = client.query(graph_queries._PROOFS_SPARQL, cg_id, view=constants.VIEW_VERIFIABLE_MEMORY, on_error=None)
+    except Exception as exc:  # pragma: no cover - fail open
+        logger.debug("blackbox: proof query failed: %s", exc)
+        return {}
+    proofs: Dict[str, Dict[str, Any]] = {}
+    for row in rows or []:
+        subj = extract_binding(row.get("proof"))
+        root = extract_binding(row.get("root"))
+        member = extract_binding(row.get("member"))
+        if not (subj and root and member):
+            continue
+        entry = proofs.setdefault(subj, {"root": root, "members": set()})
+        if entry["root"] == root:
+            entry["members"].add(member)
+    return proofs
+
+
+def verified_identifiers(community_rows: List[Dict[str, Any]], proofs: Dict[str, Dict[str, Any]]) -> set:
+    """Identifiers of SWM threat rows covered by a matching VM proof.
+
+    A proof verifies only when EVERY member is present locally and the batch
+    root recomputed over their anchor hashes equals the published root — a
+    tampered or missing row invalidates its whole batch, never silently
+    passes. Verified identifiers earn the blockable ``public`` tier.
+    """
+    candidates: List[Dict[str, str]] = []
+    for row in community_rows:
+        # Hash only threat-subject rows: reports (urn:guardian:report:*) share
+        # the identifier and would shadow the threat row's hash.
+        if not extract_binding(row.get("threat")).startswith("urn:guardian:threat:"):
+            continue
+        candidates.append({k: extract_binding(row.get(k)) for k in quads.ANCHOR_FIELDS})
+    if not candidates or not proofs:
+        return set()
+    hashes = quads.anchor_hashes_from_rows(candidates)
+    ok: set = set()
+    for entry in proofs.values():
+        members = entry["members"]
+        if not members or not members.issubset(hashes.keys()):
+            continue
+        root = quads.anchor_root((ident, hashes[ident]) for ident in members)
+        if root == entry["root"]:
+            ok |= members
+    return ok
+
+
+@dataclass
+class Ruleset:
+    """Compiled detection rules. See :mod:`detection` for how each is used."""
+
+    injection: List[Dict[str, Any]] = field(default_factory=list)
+    escalation: List[Dict[str, Any]] = field(default_factory=list)
+    dependency: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    fileaccess: List[Dict[str, Any]] = field(default_factory=list)
+    skill: List[Dict[str, Any]] = field(default_factory=list)
+    # IOC rules keyed by full identifier (``ioc:{type}:{value}``) for O(1) lookup.
+    ioc: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    graph_threats: List[Dict[str, Any]] = field(default_factory=list)
+    #: Community tier (B5): aggregated reports keyed by identifier LITERAL —
+    #: the corroboration/display store ({identifier: rule-dict with
+    #: reporterCount/firstSeen/lastSeen/...}). Matchable subsets are also
+    #: materialized into ``dependency``/``ioc``; community rules can only
+    #: ever flag (confirmed stays False downstream).
+    community: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    #: True when the curator fleet-wide pause flag suppressed community
+    #: ingest this refresh (KI-036) — surfaced in status/dashboard.
+    community_paused: bool = False
+    synced_at: float = 0.0
+    context_graph_id: str = ""
+    _graph_entries_cache: Dict[str, List[Dict[str, Any]]] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+
+    def counts(self) -> Dict[str, int]:
+        return {
+            "injection": len(self.injection),
+            "escalation": len(self.escalation),
+            "dependency": len(self.dependency),
+            "fileaccess": len(self.fileaccess),
+            "skill": len(self.skill),
+            "ioc": len(self.ioc),
+            "community": len(self.community),
+        }
+
+    def iter_rules(self):
+        """Yield ``(category, rule)`` for every rule across all categories, so
+        callers (e.g. the dashboard) can filter/count by ``rule["source"]``
+        straight from the synced cache instead of re-querying the node."""
+        for r in self.injection:
+            yield "injection", r
+        for r in self.escalation:
+            yield "escalation", r
+        for r in self.dependency.values():
+            yield "dependency", r
+        for r in self.fileaccess:
+            yield "fileaccess", r
+        for r in self.skill:
+            yield "skill", r
+        for r in self.ioc.values():
+            yield "ioc", r
+
+    def source_count(self, source: str) -> int:
+        """How many rules are tagged with *source* (``public`` | ``community``)."""
+        return sum(1 for _cat, r in self.iter_rules() if r.get("source") == source)
+
+    def graph_entries(self, source: str) -> List[Dict[str, Any]]:
+        cached = self._graph_entries_cache.get(source)
+        if cached is not None:
+            return cached
+        entries = [item for item in self.graph_threats if item.get("source") == source]
+        seen = {item.get("identifier") for item in entries}
+        for category, rule in self.iter_rules():
+            identifier = rule.get("identifier")
+            if rule.get("source") != source or identifier in seen:
+                continue
+            seen.add(identifier)
+            entry = {
+                "identifier": identifier,
+                "category": category,
+                "severity": str(rule.get("severity") or "info").lower(),
+                "name": rule.get("name") or "",
+                "subject": rule.get("subject") or "",
+                "source": source,
+            }
+            # Matchable community rules (ioc/dependency) are materialized into
+            # the lookup dicts WITHOUT their corroboration stats; take those
+            # from the community store, or the UI shows 0 reporters for every
+            # IOC — including ones reported by several distinct nodes.
+            stats = self.community.get(identifier) if source == "community" else None
+            if stats is not None:
+                entry["reporterCount"] = int(stats.get("reporterCount") or 0)
+                entry["firstSeen"] = stats.get("firstSeen")
+                entry["lastSeen"] = stats.get("lastSeen")
+            entries.append(entry)
+        if source == "community":
+            # The community STORE holds every aggregated report (including
+            # display-only categories that never materialize into lookup
+            # dicts) with reporter counts + recency for the UI (KI-037).
+            for identifier, rule in self.community.items():
+                if identifier in seen:
+                    continue
+                seen.add(identifier)
+                entries.append({
+                    "identifier": identifier,
+                    "category": rule.get("category")
+                    or (identifier.split(":", 1)[0] if ":" in identifier else "other"),
+                    "severity": str(rule.get("severity") or "info").lower(),
+                    "name": rule.get("name") or identifier,
+                    "subject": "",
+                    "source": "community",
+                    "reporterCount": int(rule.get("reporterCount") or 0),
+                    "firstSeen": rule.get("firstSeen"),
+                    "lastSeen": rule.get("lastSeen"),
+                })
+        self._graph_entries_cache[source] = entries
+        return entries
+
+    def graph_count(self, source: str) -> int:
+        return len(self.graph_entries(source))
+
+
+def build_from_rows(rows: List[Dict[str, Any]], source: str = "public") -> Ruleset:
+    """Build a :class:`Ruleset` from ``(rows, source)`` pairs or plain rows.
+
+    *rows* may be a flat list of binding rows (all tagged *source*) or a list
+    of ``(row, source)`` tuples as produced by :func:`refresh`. Precedence is
+    identifier-first-wins with public beating community, so a community row can
+    never shadow (or escalate/downgrade) a curated public rule.
+    """
+    rs = Ruleset(synced_at=time.time())
+    inj_seen: set = set()
+    esc_seen: set = set()
+    fa_seen: set = set()
+    skill_seen: set = set()
+    graph_seen: set = set()
+    tagged_rows = []
+    suppressed_subjects: set = set()
+    for item in rows:
+        if isinstance(item, tuple):
+            row, row_source = item
+        else:
+            row, row_source = item, source
+        tagged_rows.append((row, row_source))
+        if row_source != "public":
+            continue
+        if extract_binding(row.get("rdfType")) != constants.DEFENDER_CORRECTION_TYPE_IRI:
+            continue
+        action = extract_binding(row.get("correctionAction")).strip().lower()
+        target = extract_binding(row.get("targetSubject")).strip()
+        if action == constants.DEFENDER_CORRECTION_SUPPRESS and target:
+            suppressed_subjects.add(target)
+
+    for row, row_source in tagged_rows:
+        if extract_binding(row.get("threat")) in suppressed_subjects:
+            continue
+        graph_entry = row_adapters._row_to_graph_entry(row, row_source)
+        if graph_entry:
+            graph_key = (row_source, graph_entry["identifier"])
+            if graph_key not in graph_seen:
+                graph_seen.add(graph_key)
+                rs.graph_threats.append(graph_entry)
+        mapped = row_adapters._row_to_rule(row, row_source)
+        if not mapped:
+            continue
+        category, key, rule = mapped
+        if category == "injection":
+            if key not in inj_seen:
+                inj_seen.add(key)
+                rs.injection.append(rule)
+        elif category == "escalation":
+            if key not in esc_seen:
+                esc_seen.add(key)
+                rs.escalation.append(rule)
+        elif category == "fileaccess":
+            if key not in fa_seen:
+                fa_seen.add(key)
+                rs.fileaccess.append(rule)
+        elif category == "skill":
+            if key not in skill_seen:
+                skill_seen.add(key)
+                rs.skill.append(rule)
+        elif category == "ioc":
+            existing = rs.ioc.get(key)
+            # Public (curated) rules always win over community rows.
+            if existing is None or (
+                existing.get("source") == "community" and rule.get("source") == "public"
+            ):
+                rs.ioc[key] = rule
+        else:
+            existing = rs.dependency.get(key)
+            # Public (curated) rules always win over community rows.
+            if existing is None or (
+                existing.get("source") == "community" and rule.get("source") == "public"
+            ):
+                rs.dependency[key] = rule
+    return rs

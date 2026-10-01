@@ -7,6 +7,9 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from plugins.blackbox import cli, detection, hooks, ruleset
+from plugins.blackbox.ruleset import disk_cache as ruleset_disk_cache
+from plugins.blackbox.ruleset import fetching as ruleset_fetching
+from plugins.blackbox.ruleset import refresh_cycle as ruleset_refresh
 from plugins.blackbox.kernel import config, constants
 from plugins.blackbox.dashboard import server
 
@@ -31,7 +34,7 @@ def test_refresh_queries_only_verifiable_memory(monkeypatch, tmp_path):
             return []
 
     monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
-    monkeypatch.setattr(ruleset, "_memory_cache", None)
+    monkeypatch.setattr(ruleset_refresh, "_memory_cache", None)
     cfg = config.BlackboxConfig()
     ruleset.refresh(cfg, Client())
 
@@ -57,7 +60,7 @@ def test_cached_community_rules_are_discarded():
         ],
     }
 
-    restored = ruleset._deserialize(cached)
+    restored = ruleset_disk_cache._deserialize(cached)
 
     assert [r["identifier"] for r in restored.injection] == ["public"]
     assert [r["identifier"] for r in restored.graph_threats] == ["public"]
@@ -421,8 +424,8 @@ def test_partition_kill_retries_once_then_falls_back_to_verified_view(monkeypatc
     exactly ONE delayed retry (sort-bound query — smaller pages can't help),
     then the tier is served from cursor-paged lanes on the daemon's
     verifiable-memory view."""
-    monkeypatch.setattr(ruleset, "_VM_PARTITION_RETRY_DELAY_S", 0)
-    monkeypatch.setattr(ruleset, "_VM_FALLBACK_PAUSE_S", 0)
+    monkeypatch.setattr(ruleset_fetching, "_VM_PARTITION_RETRY_DELAY_S", 0)
+    monkeypatch.setattr(ruleset_fetching, "_VM_FALLBACK_PAUSE_S", 0)
     cg = "0xC/agent-blackbox-vm"
     data_graph = f"did:dkg:context-graph:{cg}"
     partition = f"{data_graph}/_verifiable_memory/0xc/1"
@@ -450,7 +453,7 @@ def test_partition_kill_retries_once_then_falls_back_to_verified_view(monkeypatc
                 }]
             return []
 
-    rows = ruleset._fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
+    rows = ruleset_fetching.fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
     assert rows is not None
     assert any(r.get("identifier") == "ioc:ip:1.2.3.4" for r in rows)
     # one attempt + one delayed retry, never a shrink ladder
@@ -462,8 +465,8 @@ def test_partition_kill_retries_once_then_falls_back_to_verified_view(monkeypatc
 def test_partition_and_fallback_failure_keeps_last_good(monkeypatch):
     """Both the partition path AND the view-lane fallback failing -> None
     (caller preserves last-good; the tier is never fabricated or emptied)."""
-    monkeypatch.setattr(ruleset, "_VM_PARTITION_RETRY_DELAY_S", 0)
-    monkeypatch.setattr(ruleset, "_VM_FALLBACK_PAUSE_S", 0)
+    monkeypatch.setattr(ruleset_fetching, "_VM_PARTITION_RETRY_DELAY_S", 0)
+    monkeypatch.setattr(ruleset_fetching, "_VM_FALLBACK_PAUSE_S", 0)
     cg = "0xC/agent-blackbox-vm"
     data_graph = f"did:dkg:context-graph:{cg}"
     partition = f"{data_graph}/_verifiable_memory/0xc/1"
@@ -474,14 +477,14 @@ def test_partition_and_fallback_failure_keeps_last_good(monkeypatch):
                 return [{"assertionGraph": partition, "status": "confirmed"}]
             return on_error  # everything else refused
 
-    assert ruleset._fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY) is None
+    assert ruleset_fetching.fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY) is None
 
 
 def test_partition_success_never_touches_fallback(monkeypatch):
     """Healthy partition reads compile exactly as before — no lane queries on
     the verified view, preserving the confirmed-partition trust path."""
-    monkeypatch.setattr(ruleset, "_VM_PARTITION_RETRY_DELAY_S", 0)
-    monkeypatch.setattr(ruleset, "_VM_FALLBACK_PAUSE_S", 0)
+    monkeypatch.setattr(ruleset_fetching, "_VM_PARTITION_RETRY_DELAY_S", 0)
+    monkeypatch.setattr(ruleset_fetching, "_VM_FALLBACK_PAUSE_S", 0)
     cg = "0xC/agent-blackbox-vm"
     data_graph = f"did:dkg:context-graph:{cg}"
     partition = f"{data_graph}/_verifiable_memory/0xc/1"
@@ -503,7 +506,7 @@ def test_partition_success_never_touches_fallback(monkeypatch):
             lane_views.append(view)
             return []
 
-    rows = ruleset._fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
+    rows = ruleset_fetching.fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
     assert rows and any(r.get("identifier") == "ioc:domain:bad.example" for r in rows)
     assert constants.VIEW_VERIFIABLE_MEMORY not in lane_views
 
@@ -512,8 +515,8 @@ def test_lane_pager_survives_daemon_row_cap(monkeypatch):
     """KI-062: DKG daemons cap a response below the requested LIMIT (measured
     on 10.0.19: 5,000 requested -> 1,000 returned). The lane pager must keep
     paging until an EMPTY page — a short page is NOT exhaustion."""
-    monkeypatch.setattr(ruleset, "_VM_PARTITION_RETRY_DELAY_S", 0)
-    monkeypatch.setattr(ruleset, "_VM_FALLBACK_PAUSE_S", 0)
+    monkeypatch.setattr(ruleset_fetching, "_VM_PARTITION_RETRY_DELAY_S", 0)
+    monkeypatch.setattr(ruleset_fetching, "_VM_FALLBACK_PAUSE_S", 0)
     cg = "0xC/agent-blackbox-vm"
     data_graph = f"did:dkg:context-graph:{cg}"
     partition = f"{data_graph}/_verifiable_memory/0xc/1"
@@ -544,7 +547,7 @@ def test_lane_pager_survives_daemon_row_cap(monkeypatch):
                 ]
             return []
 
-    rows = ruleset._fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
+    rows = ruleset_fetching.fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
     assert rows is not None
     got = {r["threat"] for r in rows if "threat" in r}
     assert len(got) == 2500, f"pager truncated at the daemon row cap: {len(got)}"
@@ -553,8 +556,8 @@ def test_lane_pager_survives_daemon_row_cap(monkeypatch):
 def test_lane_pager_one_delayed_retry_per_page(monkeypatch):
     """A lane page failing once (recovery window) is retried once and succeeds;
     the retry budget resets per page."""
-    monkeypatch.setattr(ruleset, "_VM_PARTITION_RETRY_DELAY_S", 0.001)
-    monkeypatch.setattr(ruleset, "_VM_FALLBACK_PAUSE_S", 0)
+    monkeypatch.setattr(ruleset_fetching, "_VM_PARTITION_RETRY_DELAY_S", 0.001)
+    monkeypatch.setattr(ruleset_fetching, "_VM_FALLBACK_PAUSE_S", 0)
     cg = "0xC/agent-blackbox-vm"
     data_graph = f"did:dkg:context-graph:{cg}"
     partition = f"{data_graph}/_verifiable_memory/0xc/1"
@@ -582,7 +585,7 @@ def test_lane_pager_one_delayed_retry_per_page(monkeypatch):
                 }]
             return []
 
-    rows = ruleset._fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
+    rows = ruleset_fetching.fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
     assert rows is not None
     assert any(r.get("identifier") == "ioc:ip:9.9.9.9" for r in rows)
     assert lane_calls["n"] >= 2  # failed once, retried, then paged to empty

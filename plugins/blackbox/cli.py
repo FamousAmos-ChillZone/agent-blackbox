@@ -24,7 +24,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from . import attach, audit, quads, ruleset, settings
 from .detection import reviewer as llm
 from .sync import state as sync_state
-from .kernel import constants
+from .kernel import constants, sparql_text
 from .kernel.config import BlackboxConfig, load_blackbox_config
 from .kernel.dkg_client import DkgClient, DkgError
 from .sync.progress import capture_durable_progress_cursor, read_durable_progress
@@ -2612,7 +2612,7 @@ def _report_status(cfg) -> int:
                 sparql = (
                     "PREFIX g: <http://umanitek.ai/ontology/guardian/> "
                     "SELECT (COUNT(?r) AS ?n) WHERE { ?r a g:ThreatReport ; "
-                    f"g:reporter {ruleset.sparql_string_literal(reporter.lower())} }}"
+                    f"g:reporter {sparql_text.sparql_string_literal(reporter.lower())} }}"
                 )
                 res = client.query(
                     sparql, cfg.community_graph_id,

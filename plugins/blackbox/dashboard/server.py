@@ -2108,7 +2108,7 @@ def create_app(*, manage_blackbox: bool = False):
                 client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
                 identity = client.agent_identity()
                 agent_address = str(identity.get("agentAddress") or "")
-                rows = ruleset._fetch_tier(
+                rows = ruleset.fetch_tier(
                     client,
                     cfg.context_graph_id,
                     view,

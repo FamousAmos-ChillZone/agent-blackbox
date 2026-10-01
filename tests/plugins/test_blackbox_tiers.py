@@ -15,6 +15,10 @@ from _blackbox_loader import load_blackbox
 detection = load_blackbox("detection")
 quads = load_blackbox("quads")
 ruleset_mod = load_blackbox("ruleset")
+ruleset_disk_cache = load_blackbox("ruleset.disk_cache")
+ruleset_fetching = load_blackbox("ruleset.fetching")
+ruleset_graph_queries = load_blackbox("ruleset.graph_queries")
+ruleset_row_adapters = load_blackbox("ruleset.row_adapters")
 audit = load_blackbox("audit")
 hooks = load_blackbox("hooks")
 config_mod = load_blackbox("kernel.config")
@@ -115,9 +119,9 @@ def test_defender_entities_are_expanded_into_individual_rules():
     assert rs.graph_count("public") == 1000
     assert rs.graph_entries("public") is rs.graph_entries("public")
     assert len({rule["identifier"] for _category, rule in rs.iter_rules()}) == 1000
-    sparql = ruleset_mod._threats_sparql(1000)
+    sparql = ruleset_graph_queries._threats_sparql(1000)
     assert "defender:DependencySignal" in sparql
-    split_sparql = "\n".join(ruleset_mod._defender_threats_sparql(1000))
+    split_sparql = "\n".join(ruleset_graph_queries._defender_threats_sparql(1000))
     assert "defender:InjectionSignal" in split_sparql
     assert "defender:SkillSignal" in split_sparql
     assert "blackbox:SourceObservation" in split_sparql
@@ -178,7 +182,7 @@ def test_root_only_graph_schemas_are_queried_separately_and_merged():
                 "identifier": {"value": "dep:npm:legacy@1.0.0"},
             }]
 
-    rows = ruleset_mod._fetch_tier(_Client(), "cg", "verifiable-memory")
+    rows = ruleset_fetching.fetch_tier(_Client(), "cg", "verifiable-memory")
 
     assert len(rows) == 2
     # data-bearing lanes page until an EMPTY page (daemon row caps —
@@ -206,7 +210,7 @@ def test_tentative_vm_partitions_fail_closed_without_broad_view():
                 "status": {"value": "tentative"},
             }]
 
-    assert ruleset_mod._fetch_tier(_Client(), "cg", "verifiable-memory") is None
+    assert ruleset_fetching.fetch_tier(_Client(), "cg", "verifiable-memory") is None
     assert len(calls) == 1
     assert calls[0][1]["view"] is None
 
@@ -242,9 +246,9 @@ def test_mixed_vm_store_merges_root_and_confirmed_partitions_without_duplicates(
                 ]
             return []
 
-    rows = ruleset_mod._fetch_tier(_Client(), "cg", "verifiable-memory")
+    rows = ruleset_fetching.fetch_tier(_Client(), "cg", "verifiable-memory")
 
-    assert [ruleset_mod.extract_binding(row.get("threat")) for row in rows] == [
+    assert [ruleset_fetching.extract_binding(row.get("threat")) for row in rows] == [
         partition_only,
         duplicate,
         root_only,
@@ -323,7 +327,7 @@ def test_graph_keeps_threat_with_invalid_detection_pattern():
     assert rs.counts()["injection"] == 0
     assert rs.graph_count("public") == 1
     assert rs.graph_entries("public")[0]["category"] == "injection"
-    restored = ruleset_mod._deserialize(ruleset_mod._serialize(rs))
+    restored = ruleset_disk_cache._deserialize(ruleset_disk_cache._serialize(rs))
     assert restored.graph_count("public") == 1
 
 
@@ -339,7 +343,7 @@ def test_published_regex_escapes_are_normalized_without_broadening():
     }
 
     rs = ruleset_mod.build_from_rows([row], source="public")
-    restored = ruleset_mod._deserialize(ruleset_mod._serialize(rs))
+    restored = ruleset_disk_cache._deserialize(ruleset_disk_cache._serialize(rs))
 
     assert detection.detect_injection("2 > 1", rs) == []
     assert detection.detect_injection("2 > 1", restored) == []
@@ -367,7 +371,7 @@ def test_legacy_skill_title_recovers_concrete_name_only():
 
     assert rs.skill[0]["skillName"] == "totally-safe-helper"
     assert rs.skill[1]["skillName"] == ""
-    assert ruleset_mod._skill_name_from_title("Environment-variable exfil MCP") == ""
+    assert ruleset_row_adapters._skill_name_from_title("Environment-variable exfil MCP") == ""
 
 
 def test_versionless_historical_skill_flags_medium_with_cautious_wording():
