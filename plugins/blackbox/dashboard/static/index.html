@@ -2765,10 +2765,7 @@
       <div class="section-head">
         <div class="section-htext">
           <h2>Community graph &mdash; connected agents</h2>
-          <div class="section-note">Agents that have reported into the shared community graph, reached through the DKG. They are not connected to this Blackbox.</div>
-        </div>
-        <div class="head-right">
-          <span class="section-note" id="community-agents-note"></span>
+          <div class="section-note">Agents that have reported into the shared community graph, reached through the DKG. They are not connected to this Blackbox. <span id="community-agents-note"></span></div>
         </div>
       </div>
       <div class="panel">
@@ -3704,7 +3701,7 @@
     var list = (data && Array.isArray(data.community_agents)) ? data.community_agents : [];
     var strip = $("community-agents-strip");
     $("community-agents-note").textContent = list.length
-      ? list.length + " agent" + (list.length === 1 ? "" : "s") + " on the community graph"
+      ? "\u00b7 " + list.length + " agent" + (list.length === 1 ? "" : "s") + " so far."
       : "";
     if (!list.length) {
       strip.innerHTML = '<div class="empty" style="padding:28px 20px; width:100%;">' +
