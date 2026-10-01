@@ -38,7 +38,7 @@ def test_refresh_queries_only_verifiable_memory(monkeypatch, tmp_path):
             return []
 
     monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
-    monkeypatch.setattr(ruleset_refresh, "_memory_cache", None)
+    monkeypatch.setattr(ruleset_refresh, "_memory", ruleset_refresh._new_memory())
     cfg = config.BlackboxConfig()
     ruleset.refresh(cfg, Client())
 

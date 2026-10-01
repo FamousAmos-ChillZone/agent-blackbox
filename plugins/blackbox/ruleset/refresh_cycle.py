@@ -1,7 +1,7 @@
 """Refreshing the compiled ruleset: fetch -> compile -> merge community tier -> cache.
 
-Owns the in-memory generation (``_memory_cache`` + stamp, guarded by
-``_memory_lock``), the refresh cycle (:func:`refresh`, background refresh,
+Owns the in-memory generation (``_memory``, a :class:`RulesetCache`), the
+refresh cycle (:func:`refresh`, background refresh,
 tier restore on partial failure) and the read accessors :func:`get` and
 :func:`peek`. The community tier is merged here from the ``community``
 package's public reader — the ruleset depends on community, never the reverse.
@@ -26,6 +26,7 @@ from . import disk_cache
 from . import errors
 from . import fetching
 from . import locks
+from .memory_cache import RulesetCache
 
 logger = logging.getLogger(__name__)
 
@@ -116,17 +117,21 @@ def _materialize_community_rules(rs: "compiler.Ruleset") -> None:
 # Refresh
 # ---------------------------------------------------------------------------
 
-_memory_lock = threading.Lock()
-_memory_cache: Optional[compiler.Ruleset] = None
-_memory_cache_stamp: Optional[int] = None
-_refreshing = False
-
-
 def _cache_file_stamp() -> Optional[int]:
     try:
         return disk_cache._cache_path().stat().st_mtime_ns
     except OSError:
         return None
+
+
+def _new_memory() -> RulesetCache:
+    # Late-bound lambdas: tests (and nothing else) patch these module names.
+    return RulesetCache(stamp=lambda: _cache_file_stamp(), load=lambda: disk_cache._read_cache())
+
+
+_memory = _new_memory()
+_refreshing = False
+_refreshing_lock = threading.Lock()  # guards the spawn-one-background-refresh flag
 
 
 def _matches_context_graph(rs: Optional[compiler.Ruleset], context_graph_id: str) -> bool:
@@ -146,21 +151,7 @@ def _matches_context_graph(rs: Optional[compiler.Ruleset], context_graph_id: str
 
 def _latest_cached_ruleset(context_graph_id: str = "") -> Optional[compiler.Ruleset]:
     """Return the matching memory/disk generation, reloading replacements."""
-    global _memory_cache, _memory_cache_stamp
-    stamp = _cache_file_stamp()
-    with _memory_lock:
-        cached = _memory_cache
-        known_stamp = _memory_cache_stamp
-    if cached is not None and stamp == known_stamp:
-        if context_graph_id and not _matches_context_graph(cached, context_graph_id):
-            return None
-        return cached
-    disk = disk_cache._read_cache()
-    with _memory_lock:
-        if disk is not None:
-            _memory_cache = disk
-            cached = disk
-        _memory_cache_stamp = stamp
+    cached = _memory.current()
     if context_graph_id and not _matches_context_graph(cached, context_graph_id):
         return None
     return cached
@@ -217,7 +208,6 @@ def _refresh_unlocked(
     require_complete: bool = False,
 ) -> compiler.Ruleset:
     """Refresh while the caller holds :func:`_ruleset_refresh_lock`."""
-    global _memory_cache, _memory_cache_stamp
     config = config or load_blackbox_config()
     context_graph_id = config.context_graph_id
     client = client or DkgClient(url=config.dkg_url, dkg_home=config.dkg_home)
@@ -248,7 +238,7 @@ def _refresh_unlocked(
         disk_prior = disk_cache._read_cache()
         candidates = [
             item
-            for item in (_memory_cache, disk_prior)
+            for item in (_memory.memory_only(), disk_prior)
             if _matches_context_graph(item, context_graph_id)
         ]
         prior = max(candidates, key=lambda item: item.source_count("public"), default=None)
@@ -256,9 +246,7 @@ def _refresh_unlocked(
             prior.context_graph_id = context_graph_id
             prior.synced_at = time.time()
             disk_cache._write_cache(prior)
-            with _memory_lock:
-                _memory_cache = prior
-                _memory_cache_stamp = _cache_file_stamp()
+            _memory.store(prior)
             return prior
 
     if all(rows is None for rows in fetched.values()):
@@ -268,9 +256,7 @@ def _refresh_unlocked(
             existing.context_graph_id = context_graph_id
             existing.synced_at = time.time()
             disk_cache._write_cache(existing)
-            with _memory_lock:
-                _memory_cache = existing
-                _memory_cache_stamp = _cache_file_stamp()
+            _memory.store(existing)
             return existing
 
     rows: List[Any] = []
@@ -301,9 +287,7 @@ def _refresh_unlocked(
             _restore_tiers(rs, prior, errored)
 
     disk_cache._write_cache(rs)
-    with _memory_lock:
-        _memory_cache = rs
-        _memory_cache_stamp = _cache_file_stamp()
+    _memory.store(rs)
     return rs
 
 
@@ -353,7 +337,7 @@ def get(config: Optional[BlackboxConfig] = None) -> compiler.Ruleset:
     Never blocks on the network: a stale cache is returned immediately while a
     single background thread refreshes it for the next call.
     """
-    global _memory_cache, _memory_cache_stamp, _refreshing
+    global _refreshing
     config = config or load_blackbox_config()
     cached = _latest_cached_ruleset(config.context_graph_id)
     if cached is None:
@@ -363,16 +347,14 @@ def get(config: Optional[BlackboxConfig] = None) -> compiler.Ruleset:
             if _matches_context_graph(disk, config.context_graph_id)
             else compiler.Ruleset(context_graph_id=config.context_graph_id)
         )
-        with _memory_lock:
-            _memory_cache = cached
-            _memory_cache_stamp = _cache_file_stamp()
+        _memory.store(cached)
     age = time.time() - cached.synced_at
     refresh_after = max(1.0, float(config.sync_interval or 1))
     if cached.source_count("public") > 0:
         refresh_after = max(refresh_after, _NONEMPTY_REFRESH_MIN_S)
     # Atomic check-and-set under the lock so two callers can't both spawn.
     should_spawn = False
-    with _memory_lock:
+    with _refreshing_lock:
         if age > refresh_after and not _refreshing:
             _refreshing = True
             should_spawn = True
@@ -382,7 +364,7 @@ def get(config: Optional[BlackboxConfig] = None) -> compiler.Ruleset:
                 target=_background_refresh, args=(config,), name="blackbox-ruleset", daemon=True
             ).start()
         except Exception:  # pragma: no cover
-            with _memory_lock:
+            with _refreshing_lock:
                 _refreshing = False
     return cached
 
@@ -394,7 +376,6 @@ def peek(config: Optional[BlackboxConfig] = None) -> compiler.Ruleset:
     dashboard's catch-up watcher use this read-only path so a large initial DKG
     transfer cannot accidentally fan out additional Blazegraph queries.
     """
-    global _memory_cache, _memory_cache_stamp
     config = config or load_blackbox_config()
     cached = _latest_cached_ruleset(config.context_graph_id)
     if cached is None:
@@ -404,7 +385,5 @@ def peek(config: Optional[BlackboxConfig] = None) -> compiler.Ruleset:
             if _matches_context_graph(disk, config.context_graph_id)
             else compiler.Ruleset(context_graph_id=config.context_graph_id)
         )
-        with _memory_lock:
-            _memory_cache = cached
-            _memory_cache_stamp = _cache_file_stamp()
+        _memory.store(cached)
     return cached
