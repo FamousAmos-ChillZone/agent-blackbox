@@ -26,53 +26,68 @@ def test_fixture_exists():
 
 
 def test_identifier_parity():
-    q = load_blackbox("quads")
+    action_parsing = load_blackbox("detection.action_parsing")
+    report_builder = load_blackbox("community.report_builder")
+    shell_shapes = load_blackbox("detection.shell_shapes")
+    threat_ids = load_blackbox("kernel.threat_ids")
     for case in _fixture()["identifiers"]:
         kind, args = case["kind"], case["in"]
         if kind == "dependency":
-            ident = q.dependency_identifier(**args)
+            ident = threat_ids.dependency_identifier(**args)
         elif kind == "injection":
-            ident = q.injection_identifier(**args)
+            ident = threat_ids.injection_identifier(**args)
         elif kind == "fileaccess":
-            ident = q.fileaccess_identifier(**args)
+            ident = threat_ids.fileaccess_identifier(**args)
         elif kind == "skill_version":
-            ident = q.skill_version_identifier(**args)
+            ident = threat_ids.skill_version_identifier(**args)
         elif kind == "skill_shape":
-            ident = q.skill_shape_identifier(**args)
+            ident = threat_ids.skill_shape_identifier(**args)
         else:
-            ident = q.escalation_identifier(**args)
+            ident = threat_ids.escalation_identifier(**args)
         assert ident == case["identifier"], f"{kind} {args}"
-        assert q.threat_uri(ident) == case["threatUri"], f"threat_uri {ident}"
+        assert threat_ids.threat_uri(ident) == case["threatUri"], f"threat_uri {ident}"
 
 
 def test_report_uri_parity():
-    q = load_blackbox("quads")
+    action_parsing = load_blackbox("detection.action_parsing")
+    report_builder = load_blackbox("community.report_builder")
+    shell_shapes = load_blackbox("detection.shell_shapes")
+    threat_ids = load_blackbox("kernel.threat_ids")
     for case in _fixture()["reportUris"]:
         assert (
-            q.report_uri(case["identifier"], case["reporter"]) == case["reportUri"]
+            threat_ids.report_uri(case["identifier"], case["reporter"]) == case["reportUri"]
         ), case["identifier"]
 
 
 def test_arg_shape_parity():
-    q = load_blackbox("quads")
+    action_parsing = load_blackbox("detection.action_parsing")
+    report_builder = load_blackbox("community.report_builder")
+    shell_shapes = load_blackbox("detection.shell_shapes")
+    threat_ids = load_blackbox("kernel.threat_ids")
     for case in _fixture()["argShapes"]:
         assert (
-            q.normalize_arg_shape(case["tool"], case["args"]) == case["shape"]
+            shell_shapes.normalize_arg_shape(case["tool"], case["args"]) == case["shape"]
         ), case["args"]
 
 
 def test_dependency_parse_parity():
-    q = load_blackbox("quads")
+    action_parsing = load_blackbox("detection.action_parsing")
+    report_builder = load_blackbox("community.report_builder")
+    shell_shapes = load_blackbox("detection.shell_shapes")
+    threat_ids = load_blackbox("kernel.threat_ids")
     for case in _fixture()["dependencyParses"]:
         assert (
-            q.parse_dependency_installs(case["command"]) == case["packages"]
+            action_parsing.parse_dependency_installs(case["command"]) == case["packages"]
         ), case["command"]
 
 
 def test_report_quads_parity():
-    q = load_blackbox("quads")
+    action_parsing = load_blackbox("detection.action_parsing")
+    report_builder = load_blackbox("community.report_builder")
+    shell_shapes = load_blackbox("detection.shell_shapes")
+    threat_ids = load_blackbox("kernel.threat_ids")
     for case in _fixture()["reportQuads"]:
-        quads = q.build_report_quads(**case["in"])
+        quads = report_builder.build_report_quads(**case["in"])
         rows = sorted(
             (
                 {"subject": x["subject"], "predicate": x["predicate"], "object": x["object"]}

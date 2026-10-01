@@ -21,7 +21,9 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from . import audit, detection, quads, ruleset
+from . import audit, detection, ruleset
+from . import community
+from .kernel import threat_ids
 from .kernel import config as config_mod, constants
 from .kernel.config import BlackboxConfig
 from .kernel.dkg_client import DkgClient, DkgError
@@ -195,12 +197,12 @@ def _share_sighting(
     node keeps a durable record of its contributions. Fail-open.
     """
     identifier = str(finding.get("identifier") or "")
-    subject = quads.report_uri(identifier, reporter)
-    name = f"report-{quads.stable_hash(identifier + reporter, 16)}"
+    subject = threat_ids.report_uri(identifier, reporter)
+    name = f"report-{threat_ids.stable_hash(identifier + reporter, 16)}"
     try:
         # Reports contain signatures, never raw prompts, paths, or source files.
         fields = finding.get("fields") if isinstance(finding.get("fields"), dict) else {}
-        q = quads.build_report_quads(
+        q = community.build_report_quads(
             identifier=identifier,
             category=str(finding.get("category") or ""),
             severity=str(finding.get("severity") or "info"),
@@ -472,20 +474,20 @@ def _record_activity(tool_name: str, args: Any) -> None:
     detection: everything is logged regardless of whether it flags.
     """
     try:
-        access = quads.file_access_arg(tool_name, args)
+        access = detection.file_access_arg(tool_name, args)
         if access:
             audit.record_file_access(access["tool"], access["path"], access["mode"])
             return
-        if (tool_name or "").strip().lower() not in quads._SHELL_TOOLS:
+        if (tool_name or "").strip().lower() not in detection.SHELL_TOOLS:
             return
-        command = quads._command_from_args(tool_name, args)
+        command = detection.command_from_args(tool_name, args)
         if not command:
             return
-        for path in quads.parse_shell_reads(command):
+        for path in detection.parse_shell_reads(command):
             audit.record_file_access("shell", path, "read")
-        for url in quads.parse_downloads(command):
+        for url in detection.parse_downloads(command):
             audit.record_file_access("shell", url, "download")
-        for dep in quads.parse_dependency_installs(command):
+        for dep in detection.parse_dependency_installs(command):
             audit.record_dependency(dep["ecosystem"], dep["name"], dep.get("version", ""), "shell")
     except Exception as exc:  # pragma: no cover - fail open
         logger.debug("blackbox: activity visibility log failed: %s", exc)
@@ -639,7 +641,7 @@ def _spawn_llm_review(cfg: BlackboxConfig, text: str, detail: Dict[str, Any]) ->
                 return
             reason = verdict.get("reason") or "LLM flagged prompt injection"
             finding = detection.Finding(
-                identifier=f"injection:llm:{quads.stable_hash(reason, 12)}",
+                identifier=f"injection:llm:{threat_ids.stable_hash(reason, 12)}",
                 category="injection",
                 severity=verdict.get("severity", "high"),
                 title="Prompt injection (LLM review)",

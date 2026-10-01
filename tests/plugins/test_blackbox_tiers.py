@@ -13,7 +13,6 @@ from _blackbox_loader import load_blackbox
 
 
 detection = load_blackbox("detection")
-quads = load_blackbox("quads")
 ruleset_mod = load_blackbox("ruleset")
 ruleset_disk_cache = load_blackbox("ruleset.disk_cache")
 ruleset_fetching = load_blackbox("ruleset.fetching")

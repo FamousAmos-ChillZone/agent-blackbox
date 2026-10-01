@@ -12,7 +12,7 @@ import logging
 import re
 from typing import Any, Dict, Optional
 from ..kernel import constants
-from .. import quads
+from ..kernel import threat_ids
 from ..kernel.dkg_client import extract_binding
 
 logger = logging.getLogger(__name__)
@@ -64,8 +64,8 @@ def _row_identity(row: Dict[str, Any]) -> tuple:
         lifecycle = extract_binding(row.get("lifecycleStatus")).strip().lower()
         ioc_type = extract_binding(row.get("canonicalType")).strip().lower()
         ioc_value = extract_binding(row.get("normalizedValue"))
-        if lifecycle == "active" and ioc_type in quads.IOC_TYPES and ioc_value:
-            identifier = quads.ioc_identifier(ioc_type, ioc_value)
+        if lifecycle == "active" and ioc_type in threat_ids.IOC_TYPES and ioc_value:
+            identifier = threat_ids.ioc_identifier(ioc_type, ioc_value)
     return subject, rdf_type, identifier
 
 
@@ -156,7 +156,7 @@ def _row_to_rule(row: Dict[str, Any], source: str = "public") -> Optional[tuple]
                 eco, pkg, ver = eco2.lower(), pkg2.lower(), ver2
             except ValueError:
                 return None
-        key = quads.dependency_key(eco, pkg, ver)
+        key = threat_ids.dependency_key(eco, pkg, ver)
         return ("dependency", key, {
             **common,
             "ecosystem": eco,

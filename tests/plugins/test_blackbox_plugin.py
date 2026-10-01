@@ -16,7 +16,6 @@ audit = load_blackbox("audit")
 ruleset_mod = load_blackbox("ruleset")
 config_mod = load_blackbox("kernel.config")
 constants = load_blackbox("kernel.constants")
-quads = load_blackbox("quads")
 cli_mod = load_blackbox("cli")
 
 PRIVATE_CONTEXT_GRAPH_ID = (

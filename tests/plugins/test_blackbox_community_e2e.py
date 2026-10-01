@@ -19,7 +19,8 @@ import time
 
 import pytest
 
-from plugins.blackbox import quads
+from plugins.blackbox.community import report_builder as report_builder
+from plugins.blackbox.kernel import threat_ids as threat_ids
 from plugins.blackbox.kernel.dkg_client import DkgClient, extract_binding
 
 
@@ -73,11 +74,11 @@ def test_report_from_a_visible_on_b_with_distinct_identities():
     assert rep_a != rep_b, "two nodes must carry DISTINCT identities (KI-017)"
 
     identifier = f"ioc:domain:e2e-{int(time.time())}.example"
-    q = quads.build_report_quads(
+    q = report_builder.build_report_quads(
         identifier=identifier, category="ioc", severity="high",
         reporter_address=rep_a, framework="hermes", ioc_type="domain",
     )
-    name = f"report-{quads.stable_hash(identifier + rep_a, 16)}"
+    name = f"report-{threat_ids.stable_hash(identifier + rep_a, 16)}"
     shared_at = time.monotonic()
     a.share_knowledge_asset(CG, name, q)
 
@@ -93,11 +94,11 @@ def test_report_from_a_visible_on_b_with_distinct_identities():
         pytest.fail("report from A never became visible on B within 600s")
 
     # Second reporter raises the DISTINCT count to 2 — the consensus primitive.
-    q2 = quads.build_report_quads(
+    q2 = report_builder.build_report_quads(
         identifier=identifier, category="ioc", severity="high",
         reporter_address=rep_b, framework="hermes", ioc_type="domain",
     )
-    b.share_knowledge_asset(CG, f"report-{quads.stable_hash(identifier + rep_b, 16)}", q2)
+    b.share_knowledge_asset(CG, f"report-{threat_ids.stable_hash(identifier + rep_b, 16)}", q2)
     deadline = time.monotonic() + 600
     while time.monotonic() < deadline:
         reporters = {rep for (ident, rep) in _visible_identifiers(b) if ident == identifier}
@@ -122,11 +123,11 @@ def test_burst_respects_daily_cap_at_the_graph():
     base = int(time.time())
     idents = [f"ioc:domain:burst-{base}-{i}.example" for i in range(3)]
     for ident in idents:
-        q = quads.build_report_quads(
+        q = report_builder.build_report_quads(
             identifier=ident, category="ioc", severity="high",
             reporter_address=rep, framework="hermes", ioc_type="domain",
         )
-        name = f"report-{quads.stable_hash(ident + rep, 16)}"
+        name = f"report-{threat_ids.stable_hash(ident + rep, 16)}"
         a.share_knowledge_asset(CG, name, q)
         a.share_knowledge_asset(CG, name, q)  # idempotent repeat — must not duplicate
 

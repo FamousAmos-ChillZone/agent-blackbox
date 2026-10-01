@@ -8,7 +8,6 @@ from _blackbox_loader import load_blackbox
 server = load_blackbox("dashboard.server")
 sync_state = load_blackbox("sync.state")
 detection = load_blackbox("detection")
-quads = load_blackbox("quads")
 
 
 def test_dashboard_theme_setting_is_persistent_and_applied_before_paint():

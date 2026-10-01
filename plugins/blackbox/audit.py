@@ -22,8 +22,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from . import detection
 from .kernel import constants
-from . import quads
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ def sanitize_text(value: str, max_len: int = _MAX_TEXT) -> str:
     ``Bearer`` tokens, so a secret never lands raw in the audit log.
     """
     text = _BEARER_RE.sub("Bearer [REDACTED]", str(value))
-    text = quads.redact_secret_values(text)
+    text = detection.redact_secret_values(text)
     if len(text) > max_len:
         return text[:max_len] + "...[truncated]"
     return text
@@ -783,17 +783,17 @@ def write_private_audit_ka(client: Any, cg_id: str, event: str, finding: Dict[st
     Privacy split: the redacted-but-local evidence lives in the node's private
     working memory, never shared to SWM. Best-effort — failures are swallowed.
     """
-    from . import quads
+    from .kernel import rdf_terms, threat_ids
 
     try:
         ident = str(finding.get("identifier") or "unknown")
-        ts = quads.datetime_literal()
-        subj = f"urn:guardian:audit:{quads.stable_hash(ident + str(time.time()), 24)}"
+        ts = rdf_terms.datetime_literal()
+        subj = f"urn:guardian:audit:{threat_ids.stable_hash(ident + str(time.time()), 24)}"
         q = [
             {"subject": subj, "predicate": constants.RDF_TYPE, "object": f"{constants.BLACKBOX_ONTOLOGY}AuditRecord"},
-            {"subject": subj, "predicate": constants.IDENTIFIER_PRED, "object": quads.literal(ident)},
-            {"subject": subj, "predicate": constants.SEVERITY_PRED, "object": quads.literal(str(finding.get("severity") or "info"))},
-            {"subject": subj, "predicate": constants.SCHEMA_DESCRIPTION_PRED, "object": quads.literal(sanitize_text(str(finding.get("evidence") or ""), 1200))},
+            {"subject": subj, "predicate": constants.IDENTIFIER_PRED, "object": rdf_terms.literal(ident)},
+            {"subject": subj, "predicate": constants.SEVERITY_PRED, "object": rdf_terms.literal(str(finding.get("severity") or "info"))},
+            {"subject": subj, "predicate": constants.SCHEMA_DESCRIPTION_PRED, "object": rdf_terms.literal(sanitize_text(str(finding.get("evidence") or ""), 1200))},
             {"subject": subj, "predicate": constants.SCHEMA_DATE_MODIFIED_PRED, "object": ts},
         ]
         # Private: create+write+seal in WM, do NOT share to SWM.

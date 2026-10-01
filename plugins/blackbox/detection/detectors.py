@@ -21,7 +21,10 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
 
-from .. import quads
+from . import action_parsing
+from . import content_scanners
+from . import shell_shapes
+from ..kernel import threat_ids
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +140,7 @@ def detect_escalation(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     shape) was compared. We compute the observed shape once and require an
     exact (tool_name, arg_shape) match against a cached rule.
     """
-    arg_shape = quads.normalize_arg_shape(tool_name or "", args)
+    arg_shape = shell_shapes.normalize_arg_shape(tool_name or "", args)
     if not arg_shape:
         return []
     tool_lower = (tool_name or "").strip().lower()
@@ -171,8 +174,8 @@ def detect_escalation(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     # candidate escalation nominated to the community graph — except for shapes
     # that overlap routine behaviour (e.g. `curl … | bash` installers), which
     # only ever match an explicitly curated rule, never self-nominate.
-    if not out and arg_shape not in quads.NO_AUTO_NOMINATE_SHAPES:
-        candidate_id = quads.escalation_identifier(tool_lower, arg_shape)
+    if not out and arg_shape not in shell_shapes.NO_AUTO_NOMINATE_SHAPES:
+        candidate_id = threat_ids.escalation_identifier(tool_lower, arg_shape)
         out.append(
             Finding(
                 identifier=candidate_id,
@@ -218,15 +221,15 @@ def detect_dependency(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
         return []
     out: List[Finding] = []
     seen: set = set()
-    for dep in quads.parse_dependency_installs(command):
+    for dep in action_parsing.parse_dependency_installs(command):
         version = dep.get("version") or ""
         eco = dep["ecosystem"].lower()
-        name = quads.canonical_package_name(eco, dep["name"])
+        name = threat_ids.canonical_package_name(eco, dep["name"])
         # Exact pinned version first, then a package-level ``@*`` rule — whole-package
         # malware / typosquats where EVERY version is bad, including an unpinned
         # ``install <pkg>`` (which has no version to key on).
-        candidates = [quads.dependency_key(eco, dep["name"], version)] if version else []
-        candidates.append(quads.dependency_key(eco, dep["name"], "*"))
+        candidates = [threat_ids.dependency_key(eco, dep["name"], version)] if version else []
+        candidates.append(threat_ids.dependency_key(eco, dep["name"], "*"))
         key = next((k for k in candidates if k in dependency_rules), None)
         if key is None or key in seen:
             continue
@@ -277,10 +280,10 @@ def discover_injection(text: str, ruleset: Any) -> List[Finding]:
             known.add(ident)
     out: List[Finding] = []
     seen: set = set()
-    for hit in quads.scan_injection_heuristics(text or ""):
+    for hit in content_scanners.scan_injection_heuristics(text or ""):
         signature = hit["pattern"]                 # heuristic regex source (shareable)
         phrase = hit.get("phrase", "")             # matched user text (local only)
-        identifier = quads.injection_identifier(signature)
+        identifier = threat_ids.injection_identifier(signature)
         if identifier in known or identifier in seen:
             continue
         seen.add(identifier)
@@ -309,15 +312,15 @@ def detect_fileaccess(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     candidate. PRIVACY: the finding carries ONLY the category + tool — never
     the exact path or file contents.
     """
-    access = quads.file_access_arg(tool_name, args)
+    access = action_parsing.file_access_arg(tool_name, args)
     if not access:
         return []
-    hit = quads.sensitive_path_category(access["path"], args)
+    hit = action_parsing.sensitive_path_category(access["path"], args)
     if not hit:
         return []
     tool = access["tool"]
     category = hit["category"]
-    identifier = quads.fileaccess_identifier(tool, category)
+    identifier = threat_ids.fileaccess_identifier(tool, category)
     severity = hit["severity"]
     source = "heuristic"
     name = None
@@ -351,7 +354,7 @@ def detect_skill(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     dangerous-code shapes; and over-broad permission grants. PRIVACY: a finding
     carries the skill name + matched danger shape — never the full skill source.
     """
-    skill = quads.skill_install_arg(tool_name, args)
+    skill = action_parsing.skill_install_arg(tool_name, args)
     if not skill:
         return []
     out: List[Finding] = []
@@ -363,7 +366,7 @@ def detect_skill(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
         rule_name = str(rule.get("skillName", "")).strip().lower()
         rule_ver = str(rule.get("skillVersion", "")).strip()
         if rule_name and rule_name == name.lower() and (not rule_ver or rule_ver == version):
-            ident = rule.get("identifier") or quads.skill_version_identifier(name, version)
+            ident = rule.get("identifier") or threat_ids.skill_version_identifier(name, version)
             if ident in seen:
                 continue
             seen.add(ident)
@@ -392,9 +395,9 @@ def detect_skill(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
                 )
             )
     # (b)+(c) built-in dangerous-code / over-broad-permission discovery.
-    for danger in quads.scan_skill_dangers(skill["code"], skill["permissions"]):
+    for danger in content_scanners.scan_skill_dangers(skill["code"], skill["permissions"]):
         shape = danger["dangerShape"]
-        ident = quads.skill_shape_identifier(name, shape)
+        ident = threat_ids.skill_shape_identifier(name, shape)
         if ident in seen:
             continue
         seen.add(ident)
@@ -433,7 +436,7 @@ def detect_ioc(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
         return []
     out: List[Finding] = []
     seen: set = set()
-    for ident in quads.iter_ioc_candidates(text):
+    for ident in content_scanners.iter_ioc_candidates(text):
         rule = ioc_rules.get(ident)
         if rule is None or ident in seen:
             continue
@@ -475,7 +478,7 @@ def discover_dependency_candidates(tool_name: str, args: Any, ruleset: Any, osv_
     dependency_rules = getattr(ruleset, "dependency", {}) or {}
     out: List[Finding] = []
     seen: set = set()
-    for dep in quads.parse_dependency_installs(command):
+    for dep in action_parsing.parse_dependency_installs(command):
         version = dep.get("version") or ""
         if not version:
             continue
@@ -491,7 +494,7 @@ def discover_dependency_candidates(tool_name: str, args: Any, ruleset: Any, osv_
             hit = None
         if not hit:
             continue
-        identifier = quads.dependency_identifier(eco, name, version)
+        identifier = threat_ids.dependency_identifier(eco, name, version)
         out.append(
             Finding(
                 identifier=identifier,
@@ -554,7 +557,7 @@ def detect_custom_fileaccess(
     patterns = [p for p in (protected_paths or []) if str(p or "").strip()]
     if not patterns:
         return []
-    access = quads.file_access_arg(tool_name, args)
+    access = action_parsing.file_access_arg(tool_name, args)
     if not access:
         return []
     for pattern in patterns:
@@ -562,7 +565,7 @@ def detect_custom_fileaccess(
             tool = access["tool"]
             return [
                 Finding(
-                    identifier=quads.fileaccess_identifier(tool, "user-protected"),
+                    identifier=threat_ids.fileaccess_identifier(tool, "user-protected"),
                     category="fileaccess",
                     severity="critical",
                     title="Access to a user-protected path",
@@ -590,10 +593,10 @@ def detect_secret_exposure(tool_name: str, args: Any) -> List[Finding]:
     text = injection_scan_text(args)
     if not text:
         return []
-    hits = quads.scan_secret_values(text)
+    hits = content_scanners.scan_secret_values(text)
     if not hits:
         return []
-    egress = quads.looks_like_egress(text)
+    egress = content_scanners.looks_like_egress(text)
     out: List[Finding] = []
     for hit in hits:
         severity = "critical" if (egress and hit["severity"] != "critical") else hit["severity"]

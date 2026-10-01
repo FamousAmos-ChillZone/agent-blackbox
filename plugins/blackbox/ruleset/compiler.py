@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 from ..kernel import constants
-from .. import quads
+from . import anchors
 from ..kernel.dkg_client import DkgClient, extract_binding
 from . import graph_queries
 from . import row_adapters
@@ -57,16 +57,16 @@ def verified_identifiers(community_rows: List[Dict[str, Any]], proofs: Dict[str,
         # the identifier and would shadow the threat row's hash.
         if not extract_binding(row.get("threat")).startswith("urn:guardian:threat:"):
             continue
-        candidates.append({k: extract_binding(row.get(k)) for k in quads.ANCHOR_FIELDS})
+        candidates.append({k: extract_binding(row.get(k)) for k in anchors.ANCHOR_FIELDS})
     if not candidates or not proofs:
         return set()
-    hashes = quads.anchor_hashes_from_rows(candidates)
+    hashes = anchors.anchor_hashes_from_rows(candidates)
     ok: set = set()
     for entry in proofs.values():
         members = entry["members"]
         if not members or not members.issubset(hashes.keys()):
             continue
-        root = quads.anchor_root((ident, hashes[ident]) for ident in members)
+        root = anchors.anchor_root((ident, hashes[ident]) for ident in members)
         if root == entry["root"]:
             ok |= members
     return ok

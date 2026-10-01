@@ -28,7 +28,10 @@ audit = load_blackbox("audit")
 constants = load_blackbox("kernel.constants")
 detection = load_blackbox("detection")
 llm = load_blackbox("detection.reviewer")
-quads = load_blackbox("quads")
+action_parsing = load_blackbox("detection.action_parsing")
+report_builder = load_blackbox("community.report_builder")
+shell_shapes = load_blackbox("detection.shell_shapes")
+threat_ids = load_blackbox("kernel.threat_ids")
 ruleset_mod = load_blackbox("ruleset")
 ruleset_disk_cache = load_blackbox("ruleset.disk_cache")
 ruleset_fetching = load_blackbox("ruleset.fetching")
@@ -64,15 +67,15 @@ def test_multiline_injection_in_tool_args_still_matches():
 
 
 def test_pypi_name_is_separator_insensitive_but_others_are_not():
-    assert quads.dependency_key("pypi", "foo_bar", "1.0") == quads.dependency_key("pypi", "foo-bar", "1.0")
-    assert quads.dependency_key("pypi", "Foo.Bar", "1.0") == quads.dependency_key("pypi", "foo-bar", "1.0")
+    assert threat_ids.dependency_key("pypi", "foo_bar", "1.0") == threat_ids.dependency_key("pypi", "foo-bar", "1.0")
+    assert threat_ids.dependency_key("pypi", "Foo.Bar", "1.0") == threat_ids.dependency_key("pypi", "foo-bar", "1.0")
     # npm is case-insensitive only; rubygems keeps separators distinct.
-    assert quads.canonical_package_name("npm", "Foo-Bar") == "foo-bar"
-    assert quads.canonical_package_name("rubygems", "foo_bar") != quads.canonical_package_name("rubygems", "foo-bar")
+    assert threat_ids.canonical_package_name("npm", "Foo-Bar") == "foo-bar"
+    assert threat_ids.canonical_package_name("rubygems", "foo_bar") != threat_ids.canonical_package_name("rubygems", "foo-bar")
 
 
 def test_pypi_graph_threat_fires_for_underscore_variant():
-    rid = quads.dependency_identifier("pypi", "foo-bar", "1.0")
+    rid = threat_ids.dependency_identifier("pypi", "foo-bar", "1.0")
     rule = {"identifier": rid, "packageEcosystem": "pypi", "packageName": "foo-bar",
             "packageVersion": "1.0", "severity": "critical", "name": "malware", "source": "public"}
     rs = ruleset_mod.build_from_rows([({"identifier": {"value": rid}, "packageEcosystem": {"value": "pypi"},
@@ -83,16 +86,16 @@ def test_pypi_graph_threat_fires_for_underscore_variant():
 
 
 def test_wget_convert_links_not_flagged_but_curl_insecure_is():
-    assert quads.normalize_arg_shape("shell", {"command": "wget -k https://site"}) is None
-    assert quads.normalize_arg_shape("shell", {"command": "curl -k https://site"}) == "insecure-tls-fetch"
+    assert shell_shapes.normalize_arg_shape("shell", {"command": "wget -k https://site"}) is None
+    assert shell_shapes.normalize_arg_shape("shell", {"command": "curl -k https://site"}) == "insecure-tls-fetch"
 
 
 def test_rm_long_form_flags_system_paths():
-    assert quads.normalize_arg_shape("shell", {"command": "rm --recursive --force ~/"}) == "rm-rf-system-paths"
+    assert shell_shapes.normalize_arg_shape("shell", {"command": "rm --recursive --force ~/"}) == "rm-rf-system-paths"
 
 
 def test_npmrc_with_token_is_critical():
-    hit = quads.sensitive_path_category("/home/u/.npmrc", {"content": "//r/:_authToken=abc123"})
+    hit = action_parsing.sensitive_path_category("/home/u/.npmrc", {"content": "//r/:_authToken=abc123"})
     assert hit and hit["severity"] == "critical"
 
 
@@ -644,7 +647,7 @@ def test_malware_severity_floored_to_critical():
 
 
 def test_report_quads_carry_kind():
-    q = quads.build_report_quads(identifier="dep:npm:evil@1.0", category="dependency",
+    q = report_builder.build_report_quads(identifier="dep:npm:evil@1.0", category="dependency",
                                  severity="critical", reporter_address="0xabc", kind="malware")
     assert any(t.get("predicate") == constants.KIND_PRED for t in q)
 
@@ -670,7 +673,7 @@ def test_injection_sighting_carries_no_raw_prompt():
     assert finding_a.identifier == finding_b.identifier
     assert finding_a.fields == finding_b.fields
 
-    shared = str(quads.build_report_quads(
+    shared = str(report_builder.build_report_quads(
         identifier=finding_a.identifier,
         category=finding_a.category,
         severity=finding_a.severity,

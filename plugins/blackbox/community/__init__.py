@@ -1,4 +1,4 @@
-"""Community — the shared community threat graph (read side so far).
+"""Community — the shared community threat graph.
 
 Every protected agent can report what it sees; every other agent reads it.
 Community findings only ever FLAG — they never block — and community strings
@@ -12,6 +12,8 @@ Public surface:
 * :func:`community_pause_active` / ``COMMUNITY_PAUSE_SUBJECT`` — the curator's
   fleet-wide ingest pause flag (read-only for us).
 * :func:`community_report_count` — how many reports the graph holds.
+* :func:`build_report_quads` / :func:`build_false_positive_quads` — the
+  privacy-safe statements a report or dispute shares (write side).
 
 Usage::
 
@@ -22,6 +24,7 @@ Usage::
 
 from __future__ import annotations
 
+from .report_builder import build_false_positive_quads, build_report_quads
 from .reader import (
     COMMUNITY_PAUSE_SUBJECT,
     CommunityRule,
@@ -35,6 +38,8 @@ __all__ = [
     "COMMUNITY_PAUSE_SUBJECT",
     "CommunityRule",
     "aggregate_community_reports",
+    "build_false_positive_quads",
+    "build_report_quads",
     "community_pause_active",
     "community_report_count",
     "fetch_community_report_rows",

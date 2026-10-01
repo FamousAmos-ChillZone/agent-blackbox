@@ -6,7 +6,7 @@ from _blackbox_loader import load_blackbox
 
 
 detection = load_blackbox("detection")
-quads = load_blackbox("quads")
+threat_ids = load_blackbox("kernel.threat_ids")
 ruleset_mod = load_blackbox("ruleset")
 
 
@@ -19,7 +19,7 @@ def _ruleset(injection=None, escalation=None, dependency=None):
 
 
 def _inj_rule(src, severity="high", name="test"):
-    return {"identifier": quads.injection_identifier(src), "pattern": re.compile(src, re.IGNORECASE),
+    return {"identifier": threat_ids.injection_identifier(src), "pattern": re.compile(src, re.IGNORECASE),
             "pattern_src": src, "severity": severity, "name": name}
 
 
@@ -55,7 +55,7 @@ def test_detect_injection_caps_oversize_text():
 def test_detect_escalation_requires_both_tool_and_shape():
     # Rule for terminal + remote-script-pipe.
     rule = {
-        "identifier": quads.escalation_identifier("terminal", "remote-script-pipe"),
+        "identifier": threat_ids.escalation_identifier("terminal", "remote-script-pipe"),
         "toolName": "terminal", "argShape": "remote-script-pipe", "severity": "critical", "name": "curl|sh",
     }
     rs = _ruleset(escalation=[rule])

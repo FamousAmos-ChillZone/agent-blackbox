@@ -47,9 +47,9 @@ class DkgError(RuntimeError):
 def _validate_quads_literal_sizes(quads: List[Quad]) -> None:
     """Mirror DKG's writable-literal preflight before sending write payloads."""
     try:
-        from .. import quads as quad_terms
+        from . import rdf_terms
 
-        quad_terms.assert_quads_literal_size(quads, label="quads")
+        rdf_terms.assert_quads_literal_size(quads, label="quads")
     except ValueError as exc:
         raise DkgError(str(exc)) from exc
 

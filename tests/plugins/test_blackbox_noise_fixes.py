@@ -13,18 +13,19 @@ from _blackbox_loader import load_blackbox
 audit = load_blackbox("audit")
 detection = load_blackbox("detection")
 hooks = load_blackbox("hooks")
-quads = load_blackbox("quads")
+action_parsing = load_blackbox("detection.action_parsing")
+shell_shapes = load_blackbox("detection.shell_shapes")
 ruleset_mod = load_blackbox("ruleset")
 
 Ruleset = ruleset_mod.Ruleset
 
 
 def _shape(cmd):
-    return quads.normalize_arg_shape("shell", {"command": cmd})
+    return shell_shapes.normalize_arg_shape("shell", {"command": cmd})
 
 
 def _cat(path):
-    r = quads.sensitive_path_category(path)
+    r = action_parsing.sensitive_path_category(path)
     return f"{r['category']}/{r['severity']}" if r else None
 
 
@@ -95,7 +96,7 @@ def test_injection_exfil_requires_egress_intent():
 
 def test_browser_cookies_only_real_profiles():
     def cat(p):
-        r = quads.sensitive_path_category(p)
+        r = action_parsing.sensitive_path_category(p)
         return r["category"] if r else None
     # A project file literally named Cookies / Login Data is NOT a browser store.
     assert cat("Cookies") is None
@@ -118,9 +119,9 @@ def test_skill_bare_shell_exec_is_low_not_high():
 
 
 def test_shell_reads_downloads_installs_parsed():
-    assert quads.parse_shell_reads("cat ~/.ssh/id_rsa && head -5 package.json") == ["~/.ssh/id_rsa", "package.json"]
-    assert quads.parse_downloads("curl -fsSL https://cdn.example.com/x.jpg -o x.jpg") == ["https://cdn.example.com/x.jpg"]
-    deps = quads.parse_dependency_installs("npm install react && pip install requests==2.31.0")
+    assert action_parsing.parse_shell_reads("cat ~/.ssh/id_rsa && head -5 package.json") == ["~/.ssh/id_rsa", "package.json"]
+    assert action_parsing.parse_downloads("curl -fsSL https://cdn.example.com/x.jpg -o x.jpg") == ["https://cdn.example.com/x.jpg"]
+    deps = action_parsing.parse_dependency_installs("npm install react && pip install requests==2.31.0")
     assert {(d["ecosystem"], d["name"]) for d in deps} == {("npm", "react"), ("pypi", "requests")}
 
 

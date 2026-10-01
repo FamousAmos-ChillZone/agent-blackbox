@@ -17,7 +17,7 @@ import threading
 import time
 from typing import Any, List, Optional
 from ..kernel import constants
-from .. import quads
+from ..kernel import threat_ids
 from ..kernel.config import BlackboxConfig, load_blackbox_config
 from ..kernel.dkg_client import DkgClient
 from .. import community
@@ -95,7 +95,7 @@ def _materialize_community_rules(rs: "compiler.Ruleset") -> None:
                     eco, pkg = eco.lower(), pkg.lower()
                 except ValueError:
                     continue
-            key = quads.dependency_key(eco, pkg, ver)
+            key = threat_ids.dependency_key(eco, pkg, ver)
             if key not in rs.dependency:  # public beats community
                 rs.dependency[key] = {
                     **rule,

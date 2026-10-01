@@ -19,7 +19,9 @@ import time
 
 import pytest
 
-from plugins.blackbox import audit, detection, hooks, quads
+from plugins.blackbox import audit, detection, hooks
+from plugins.blackbox.community import report_builder as report_builder
+from plugins.blackbox.kernel import threat_ids as threat_ids
 from plugins.blackbox.kernel import constants
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.kernel.dkg_client import DkgError
@@ -233,7 +235,7 @@ def test_no_evidence_text_in_emitted_quads(bb_home):
 
 
 def test_ioc_report_carries_ioc_type():
-    q = quads.build_report_quads(
+    q = report_builder.build_report_quads(
         identifier="ioc:domain:evil.example",
         category="ioc",
         severity="high",
@@ -245,16 +247,16 @@ def test_ioc_report_carries_ioc_type():
 
 
 def test_idn_and_punycode_domains_share_one_identifier():
-    assert quads.ioc_identifier("domain", "münchen.example") == quads.ioc_identifier(
+    assert threat_ids.ioc_identifier("domain", "münchen.example") == threat_ids.ioc_identifier(
         "domain", "xn--mnchen-3ya.example"
     )
-    assert quads.ioc_identifier("url", "https://münchen.example/pfad") == quads.ioc_identifier(
+    assert threat_ids.ioc_identifier("url", "https://münchen.example/pfad") == threat_ids.ioc_identifier(
         "url", "https://xn--mnchen-3ya.example/pfad"
     )
 
 
 def test_ascii_ioc_values_unchanged():
-    assert quads.ioc_identifier("domain", "Evil.Example.") == "ioc:domain:evil.example"
+    assert threat_ids.ioc_identifier("domain", "Evil.Example.") == "ioc:domain:evil.example"
 
 
 # ---------------------------------------------------------------------------

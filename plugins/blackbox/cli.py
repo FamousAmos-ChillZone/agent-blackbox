@@ -21,7 +21,9 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
-from . import attach, audit, quads, ruleset, settings
+from . import attach, audit, ruleset, settings
+from . import community
+from .kernel import threat_ids
 from .detection import reviewer as llm
 from .sync import state as sync_state
 from .kernel import constants, sparql_text
@@ -190,7 +192,7 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
         "--false-positive", dest="false_positive", metavar="IDENTIFIER",
         help="Dispute a community threat: submit a false-positive signal for IDENTIFIER",
     )
-    report.add_argument("--ioc-type", dest="ioc_type", choices=list(quads.IOC_TYPES),
+    report.add_argument("--ioc-type", dest="ioc_type", choices=list(threat_ids.IOC_TYPES),
                         help="ioc: indicator type")
     report.add_argument("--value", help="ioc: the indicator value (domain/url/ip/hash/...)")
     report.add_argument("--pattern", help="injection: regex source")
@@ -2460,13 +2462,13 @@ def _report_finding_from_args(args: argparse.Namespace) -> "tuple[Optional[dict]
         return None, f"--type {rtype} requires {', '.join(missing)}"
     fields: Dict[str, Any] = {}
     if rtype == "injection":
-        identifier = quads.injection_identifier(args.pattern)
+        identifier = threat_ids.injection_identifier(args.pattern)
         fields = {"pattern": args.pattern, "owasp_category": args.owasp}
     elif rtype == "escalation":
-        identifier = quads.escalation_identifier(args.tool, args.arg_shape)
+        identifier = threat_ids.escalation_identifier(args.tool, args.arg_shape)
         fields = {"tool_name": args.tool, "arg_shape": args.arg_shape}
     elif rtype == "dependency":
-        identifier = quads.dependency_identifier(args.ecosystem, args.name, args.version)
+        identifier = threat_ids.dependency_identifier(args.ecosystem, args.name, args.version)
         fields = {
             "ecosystem": args.ecosystem,
             "package_name": args.name,
@@ -2475,13 +2477,13 @@ def _report_finding_from_args(args: argparse.Namespace) -> "tuple[Optional[dict]
             "kind": args.kind,
         }
     elif rtype == "fileaccess":
-        identifier = quads.fileaccess_identifier(args.tool, args.category)
+        identifier = threat_ids.fileaccess_identifier(args.tool, args.category)
         fields = {"tool_name": args.tool, "file_category": args.category}
     elif rtype == "skill":
         if args.skill_version:
-            identifier = quads.skill_version_identifier(args.skill_name, args.skill_version)
+            identifier = threat_ids.skill_version_identifier(args.skill_name, args.skill_version)
         elif args.danger_shape:
-            identifier = quads.skill_shape_identifier(args.skill_name, args.danger_shape)
+            identifier = threat_ids.skill_shape_identifier(args.skill_name, args.danger_shape)
         else:
             return None, "--type skill requires --skill-version or --danger-shape"
         fields = {
@@ -2490,7 +2492,7 @@ def _report_finding_from_args(args: argparse.Namespace) -> "tuple[Optional[dict]
             "danger_shape": args.danger_shape,
         }
     else:  # ioc
-        identifier = quads.ioc_identifier(args.ioc_type, args.value)
+        identifier = threat_ids.ioc_identifier(args.ioc_type, args.value)
         fields = {"ioc_type": args.ioc_type}
     return {
         "identifier": identifier,
@@ -2539,9 +2541,9 @@ def _cmd_report(args: argparse.Namespace) -> int:
     if not audit.allow_report(cfg.daily_report_limit):
         print(f"Daily report cap reached ({cfg.daily_report_limit}); try again tomorrow.")
         return 2
-    subject = quads.report_uri(identifier, reporter)
-    name = f"report-{quads.stable_hash(identifier + reporter, 16)}"
-    q = quads.build_report_quads(
+    subject = threat_ids.report_uri(identifier, reporter)
+    name = f"report-{threat_ids.stable_hash(identifier + reporter, 16)}"
+    q = community.build_report_quads(
         identifier=identifier,
         category=finding["category"],
         severity=finding["severity"],
@@ -2577,9 +2579,9 @@ def _submit_false_positive(client: DkgClient, cfg, identifier: str, reporter: st
     if not identifier:
         print("Provide the threat identifier to dispute.")
         return 2
-    q = quads.build_false_positive_quads(identifier=identifier, reporter_address=reporter)
-    name = f"fp-{quads.stable_hash(identifier + reporter, 16)}"
-    subject = quads.report_uri(identifier, reporter) + ":fp"
+    q = community.build_false_positive_quads(identifier=identifier, reporter_address=reporter)
+    name = f"fp-{threat_ids.stable_hash(identifier + reporter, 16)}"
+    subject = threat_ids.report_uri(identifier, reporter) + ":fp"
     try:
         client.share_knowledge_asset(cfg.community_graph_id, name, q)
     except Exception as exc:
@@ -3266,9 +3268,9 @@ def _entry_to_threat(entry: Dict[str, Any]) -> tuple:
             if not value.lower().startswith(("sha256:", "sha1:", "sha512:", "md5:")):
                 value = f"{ioc_type}:{value}"
             ioc_type = "hash"
-        if ioc_type not in quads.IOC_TYPES or not value:
+        if ioc_type not in threat_ids.IOC_TYPES or not value:
             raise ValueError("ioc needs a supported ioc_type + value")
-        identifier = quads.ioc_identifier(ioc_type, value)
+        identifier = threat_ids.ioc_identifier(ioc_type, value)
         threat = entry.get("threat") or entry.get("title") or entry.get("name")
         return "ioc", identifier, {
             "severity": constants.normalize_severity(entry.get("severity"), "high"),
@@ -3281,7 +3283,7 @@ def _entry_to_threat(entry: Dict[str, Any]) -> tuple:
         pattern = str(entry.get("pattern") or "").strip()
         if not pattern:
             raise ValueError("injection needs pattern")
-        identifier = quads.injection_identifier(pattern)
+        identifier = threat_ids.injection_identifier(pattern)
         return "injection", identifier, {
             "severity": constants.normalize_severity(entry.get("severity"), "high"),
             "name": entry.get("title") or entry.get("name") or f"Injection {pattern[:40]}",
@@ -3294,7 +3296,7 @@ def _entry_to_threat(entry: Dict[str, Any]) -> tuple:
         shape = str(entry.get("argShape") or entry.get("arg_shape") or "").strip()
         if not tool or not shape:
             raise ValueError("escalation needs toolName + argShape")
-        identifier = quads.escalation_identifier(tool, shape)
+        identifier = threat_ids.escalation_identifier(tool, shape)
         return "escalation", identifier, {
             "severity": constants.normalize_severity(entry.get("severity"), "high"),
             "name": entry.get("title") or entry.get("name") or f"{tool} :: {shape}",
@@ -3312,7 +3314,7 @@ def _entry_to_threat(entry: Dict[str, Any]) -> tuple:
             raise ValueError("dependency needs ecosystem, name, version")
         if name.startswith("@"):
             name = "@" + name.lstrip("@")
-        identifier = quads.dependency_identifier(ecosystem, name, version)
+        identifier = threat_ids.dependency_identifier(ecosystem, name, version)
         raw_kind = str(entry.get("kind") or "").strip().lower()
         kind = (
             raw_kind
@@ -3337,7 +3339,7 @@ def _entry_to_threat(entry: Dict[str, Any]) -> tuple:
         file_category = str(entry.get("category") or entry.get("file_category") or "").strip()
         if not tool or not file_category:
             raise ValueError("fileaccess needs tool + category")
-        identifier = quads.fileaccess_identifier(tool, file_category)
+        identifier = threat_ids.fileaccess_identifier(tool, file_category)
         return "fileaccess", identifier, {
             "severity": constants.normalize_severity(entry.get("severity"), "high"),
             "name": entry.get("title") or entry.get("name") or f"{tool} :: {file_category}",
@@ -3356,9 +3358,9 @@ def _entry_to_threat(entry: Dict[str, Any]) -> tuple:
         if not skill_name or not (skill_version or danger_shape):
             raise ValueError("skill needs name + (version or dangerShape)")
         if skill_version:
-            identifier = quads.skill_version_identifier(skill_name, skill_version)
+            identifier = threat_ids.skill_version_identifier(skill_name, skill_version)
         else:
-            identifier = quads.skill_shape_identifier(skill_name, danger_shape)
+            identifier = threat_ids.skill_shape_identifier(skill_name, danger_shape)
         return "skill", identifier, {
             "severity": constants.normalize_severity(entry.get("severity"), "high"),
             "name": entry.get("title") or f"Skill {skill_name}",
@@ -3392,20 +3394,20 @@ def _build_candidate(args: argparse.Namespace) -> tuple:
     if args.type == "injection":
         if not args.pattern:
             raise ValueError("injection report requires --pattern")
-        ident = quads.injection_identifier(args.pattern)
+        ident = threat_ids.injection_identifier(args.pattern)
         return ident, {"pattern": args.pattern, "owasp_category": args.owasp}
     if args.type == "escalation":
         if not args.tool or not args.arg_shape:
             raise ValueError("escalation report requires --tool and --arg-shape")
-        ident = quads.escalation_identifier(args.tool, args.arg_shape)
+        ident = threat_ids.escalation_identifier(args.tool, args.arg_shape)
         return ident, {"tool_name": args.tool, "arg_shape": args.arg_shape}
     if args.type == "dependency":
         if not (args.ecosystem and args.name and args.version):
             raise ValueError("dependency report requires --ecosystem, --name, --version")
-        ident = quads.dependency_identifier(args.ecosystem, args.name, args.version)
+        ident = threat_ids.dependency_identifier(args.ecosystem, args.name, args.version)
         return ident, {
             "ecosystem": args.ecosystem.lower(),
-            "package_name": quads.canonical_package_name(args.ecosystem, args.name),
+            "package_name": threat_ids.canonical_package_name(args.ecosystem, args.name),
             "package_version": args.version,
             "advisory_id": args.advisory_id,
             "kind": getattr(args, "kind", None),
@@ -3413,7 +3415,7 @@ def _build_candidate(args: argparse.Namespace) -> tuple:
     if args.type == "fileaccess":
         if not (args.tool and args.category):
             raise ValueError("fileaccess report requires --tool and --category")
-        ident = quads.fileaccess_identifier(args.tool, args.category)
+        ident = threat_ids.fileaccess_identifier(args.tool, args.category)
         return ident, {
             "tool_name": args.tool.strip().lower(),
             "file_category": args.category.strip().lower(),
@@ -3424,9 +3426,9 @@ def _build_candidate(args: argparse.Namespace) -> tuple:
                 "skill report requires --skill-name and one of --skill-version / --danger-shape"
             )
         if args.skill_version:
-            ident = quads.skill_version_identifier(args.skill_name, args.skill_version)
+            ident = threat_ids.skill_version_identifier(args.skill_name, args.skill_version)
         else:
-            ident = quads.skill_shape_identifier(args.skill_name, args.danger_shape)
+            ident = threat_ids.skill_shape_identifier(args.skill_name, args.danger_shape)
         return ident, {
             "skill_name": args.skill_name.strip().lower(),
             "skill_version": (args.skill_version or "").strip() or None,
