@@ -3043,7 +3043,7 @@ def test_blackbox_chat_profile_writes_identity_and_attaches(tmp_path, monkeypatc
     assert "Hermes default identity" in (profile_dir / "SOUL.md.before-blackbox-chat").read_text(
         encoding="utf-8"
     )
-    assert cli_mod.attach._load_yaml(profile_dir / "config.yaml")["context_file_max_chars"] == 100_000
+    assert cli_mod.yaml_files.load_yaml(profile_dir / "config.yaml")["context_file_max_chars"] == 100_000
     assert calls == [profile_dir]
 
 
@@ -3070,7 +3070,7 @@ def test_blackbox_chat_cwd_prefers_recorded_source_root(tmp_path, monkeypatch):
     (installed / ".blackbox-source-root").write_text(str(repo), encoding="utf-8")
 
     monkeypatch.setattr(cli_mod, "__file__", str(installed / "cli.py"))
-    monkeypatch.setattr(cli_mod.attach, "_repo_root", lambda: tmp_path / "wrong")
+    monkeypatch.setattr(cli_mod.attach, "repo_root", lambda: tmp_path / "wrong")
 
     assert cli_mod._blackbox_chat_cwd() == repo.resolve()
 

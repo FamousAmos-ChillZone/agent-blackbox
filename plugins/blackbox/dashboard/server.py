@@ -1026,7 +1026,7 @@ def create_app(*, manage_blackbox: bool = False):
                 with log_path.open("a", encoding="utf-8") as log_handle:
                     process = subprocess.Popen(
                         _blackbox_runtime_argv(),
-                        cwd=str(attach._repo_root()),
+                        cwd=str(attach.repo_root()),
                         env=_blackbox_runtime_env(),
                         stdin=subprocess.DEVNULL,
                         stdout=log_handle,
@@ -1428,7 +1428,7 @@ def create_app(*, manage_blackbox: bool = False):
         try:
             proc = subprocess.run(
                 argv,
-                cwd=str(attach._repo_root()),
+                cwd=str(attach.repo_root()),
                 text=True,
                 capture_output=True,
                 timeout=120,

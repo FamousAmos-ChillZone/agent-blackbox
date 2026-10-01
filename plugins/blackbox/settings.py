@@ -19,6 +19,7 @@ import threading
 from typing import Any, Dict, List, Tuple
 
 from .kernel import constants
+from .kernel import yaml_files
 from .kernel.config import DETECTION_CATEGORIES, load_blackbox_config
 
 logger = logging.getLogger(__name__)
@@ -211,15 +212,13 @@ def _persist_locked(updates: Dict[str, Any]) -> bool:
 
     # Standalone fallback: plain YAML read-modify-write of the active home.
     try:
-        from . import attach
-
         path = constants.hermes_home() / "config.yaml"
-        data = attach._load_yaml(path)
+        data = yaml_files.load_yaml(path)
         if not isinstance(data, dict):
             data = {}
         entry = _dig(data, _GEAR_KEYS)
         _apply(entry, updates)
-        attach._dump_yaml(path, data)
+        yaml_files.dump_yaml(path, data)
         return True
     except Exception as exc:  # pragma: no cover - fail open
         logger.debug("blackbox.settings: YAML config write failed: %s", exc)

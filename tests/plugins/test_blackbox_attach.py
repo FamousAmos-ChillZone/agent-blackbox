@@ -10,6 +10,8 @@ from _blackbox_loader import load_blackbox
 
 
 attach = load_blackbox("attach")
+attach_openclaw_bridge = load_blackbox("attach.openclaw_bridge")
+attach_plugin_copy = load_blackbox("attach.plugin_copy")
 constants = load_blackbox("kernel.constants")
 hooks = load_blackbox("guard.hooks")
 guard_background = load_blackbox("guard.background")
@@ -153,8 +155,8 @@ def test_copy_plugin_tree_records_source_checkout(tmp_path, monkeypatch):
     (src / "cli.py").write_text("", encoding="utf-8")
     dest = tmp_path / "dest"
 
-    monkeypatch.setattr(attach, "_bundle_openclaw_plugin", lambda _src, _dest: None)
-    attach._copy_plugin_tree(src, dest)
+    monkeypatch.setattr(attach_plugin_copy, "_bundle_openclaw_plugin", lambda _src, _dest: None)
+    attach_plugin_copy.copy_plugin_tree(src, dest)
 
     assert (dest / ".blackbox-source-root").read_text(encoding="utf-8") == str(repo)
 
@@ -379,7 +381,7 @@ def test_attach_openclaw_replaces_stale_blackbox_path_but_keeps_other_plugins(fa
     assert stale_canonical_checkout not in paths
     assert str(pre_blackbox_plugin) in paths
     assert missing_pre_blackbox_plugin not in paths
-    assert any(attach._same_openclaw_load_path(path, attach._openclaw_load_paths_entry()) for path in paths)
+    assert any(attach_openclaw_bridge._same_openclaw_load_path(path, attach_openclaw_bridge._openclaw_load_paths_entry()) for path in paths)
 
 
 def test_attach_openclaw_accepts_custom_config_file(fake_env):
@@ -401,7 +403,7 @@ def test_copy_plugin_tree_bundles_openclaw(tmp_path):
     # must be bundled INTO the copy — otherwise OpenClaw has nothing to load
     # (the "Attach failed" root cause). _copy_plugin_tree pulls it from the repo.
     dest = tmp_path / "plugins" / "blackbox"
-    attach._copy_plugin_tree(attach._plugin_source_dir(), dest)
+    attach_plugin_copy.copy_plugin_tree(attach_plugin_copy._plugin_source_dir(), dest)
     bundle = dest / "_openclaw"
     assert (bundle / "openclaw.plugin.json").is_file()
     assert (bundle / "src" / "index.ts").is_file()
@@ -421,10 +423,10 @@ def test_copy_plugin_tree_bundles_from_explicit_checkout_source(tmp_path, monkey
     (src / "kernel" / "constants.py").write_text("__version__ = '1.0.0'\n", encoding="utf-8")
     (integration / "openclaw.plugin.json").write_text('{"id":"blackbox"}\n', encoding="utf-8")
     (integration / "index.ts").write_text("export {};\n", encoding="utf-8")
-    monkeypatch.setattr(attach, "_repo_openclaw_dir", lambda: tmp_path / "missing")
+    monkeypatch.setattr(attach_plugin_copy, "_repo_openclaw_dir", lambda: tmp_path / "missing")
 
     dest = tmp_path / "installed" / "plugins" / "blackbox"
-    attach._copy_plugin_tree(src, dest)
+    attach_plugin_copy.copy_plugin_tree(src, dest)
 
     assert (dest / "_openclaw" / "openclaw.plugin.json").is_file()
     assert (dest / ".blackbox-install-stamp").is_file()
@@ -436,11 +438,11 @@ def test_openclaw_load_path_resolves_from_installed_copy(tmp_path, monkeypatch):
     # not return None — None made attach_openclaw report ok=False ("Attach
     # failed") for every installed user.
     installed = tmp_path / "plugins" / "blackbox"
-    attach._copy_plugin_tree(attach._plugin_source_dir(), installed)  # bundles _openclaw
-    monkeypatch.setattr(attach, "_plugin_source_dir", lambda: installed)
+    attach_plugin_copy.copy_plugin_tree(attach_plugin_copy._plugin_source_dir(), installed)  # bundles _openclaw
+    monkeypatch.setattr(attach_plugin_copy, "_plugin_source_dir", lambda: installed)
     # repo_root is now tmp_path — no integrations/openclaw there.
-    assert not (attach._repo_root() / "integrations" / "openclaw").exists()
-    assert attach._openclaw_load_paths_entry() == str(installed / "_openclaw")
+    assert not (attach_plugin_copy.repo_root() / "integrations" / "openclaw").exists()
+    assert attach_openclaw_bridge._openclaw_load_paths_entry() == str(installed / "_openclaw")
 
 
 def test_openclaw_plugin_source_none_without_bundle_or_repo(tmp_path, monkeypatch):
@@ -448,8 +450,8 @@ def test_openclaw_plugin_source_none_without_bundle_or_repo(tmp_path, monkeypatc
     # honest "unprotected"), never a crash.
     bare = tmp_path / "plugins" / "blackbox"
     bare.mkdir(parents=True)
-    monkeypatch.setattr(attach, "_plugin_source_dir", lambda: bare)
-    assert attach._openclaw_load_paths_entry() is None
+    monkeypatch.setattr(attach_plugin_copy, "_plugin_source_dir", lambda: bare)
+    assert attach_openclaw_bridge._openclaw_load_paths_entry() is None
 
 
 def test_detach_openclaw_removes_block(fake_env):
@@ -555,16 +557,16 @@ def installed_copy(tmp_path, monkeypatch):
     for path in [*src.rglob("*"), *dest.rglob("*")]:
         if path.is_file():
             os.utime(path, (1000, 1000))
-    monkeypatch.setattr(attach, "_plugin_source_dir", lambda: src)
-    monkeypatch.setattr(attach, "_installed_plugin_version", lambda _dest: constants.__version__)
-    monkeypatch.setattr(attach, "_is_openclaw_plugin_dir", lambda _path: True)
+    monkeypatch.setattr(attach_plugin_copy, "_plugin_source_dir", lambda: src)
+    monkeypatch.setattr(attach_plugin_copy, "_installed_plugin_version", lambda _dest: constants.__version__)
+    monkeypatch.setattr(attach_plugin_copy, "_is_openclaw_plugin_dir", lambda _path: True)
     return src, dest
 
 
 def test_installed_copy_is_current_when_nothing_changed(installed_copy):
     _src, dest = installed_copy
 
-    assert attach._needs_copy(dest) is False
+    assert attach_plugin_copy._needs_copy(dest) is False
 
 
 def test_dashboard_only_change_refreshes_installed_copy(installed_copy):
@@ -575,7 +577,7 @@ def test_dashboard_only_change_refreshes_installed_copy(installed_copy):
     src, dest = installed_copy
     os.utime(src / "dashboard" / "static" / "index.html", (2000, 2000))
 
-    assert attach._needs_copy(dest) is True
+    assert attach_plugin_copy._needs_copy(dest) is True
 
 
 def test_excluded_build_artifacts_do_not_trigger_refresh(installed_copy):
@@ -584,4 +586,4 @@ def test_excluded_build_artifacts_do_not_trigger_refresh(installed_copy):
     src, dest = installed_copy
     os.utime(src / "__pycache__" / "x.pyc", (2000, 2000))
 
-    assert attach._needs_copy(dest) is False
+    assert attach_plugin_copy._needs_copy(dest) is False

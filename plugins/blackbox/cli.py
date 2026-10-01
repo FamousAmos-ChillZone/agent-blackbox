@@ -24,6 +24,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from . import attach, audit, ruleset, settings
 from . import community
 from .kernel import threat_ids
+from .kernel import yaml_files
 from .detection import reviewer as llm
 from .sync import state as sync_state
 from .kernel import constants, sparql_text
@@ -365,7 +366,7 @@ def _blackbox_chat_cwd() -> Optional[Path]:
     except Exception:
         pass
     try:
-        candidates.append(attach._repo_root())
+        candidates.append(attach.repo_root())
     except Exception:
         pass
     for candidate in candidates:
@@ -404,7 +405,7 @@ def _write_blackbox_soul(profile_dir: Path) -> None:
 
 def _ensure_blackbox_context_cap(profile_dir: Path) -> None:
     config_path = profile_dir / "config.yaml"
-    if attach.yaml is None:
+    if yaml_files.yaml is None:
         if not config_path.exists():
             config_path.parent.mkdir(parents=True, exist_ok=True)
             config_path.write_text(
@@ -412,12 +413,12 @@ def _ensure_blackbox_context_cap(profile_dir: Path) -> None:
                 encoding="utf-8",
             )
         return
-    data = attach._load_yaml(config_path)
+    data = yaml_files.load_yaml(config_path)
     current = data.get("context_file_max_chars")
     if isinstance(current, int) and current >= _BLACKBOX_CONTEXT_FILE_MAX_CHARS:
         return
     data["context_file_max_chars"] = _BLACKBOX_CONTEXT_FILE_MAX_CHARS
-    attach._dump_yaml(config_path, data)
+    yaml_files.dump_yaml(config_path, data)
 
 
 def _blackbox_chat_argv(chat_args: Optional[List[str]], profile: str = _BLACKBOX_CHAT_PROFILE) -> List[str]:
@@ -529,8 +530,8 @@ def _print_attached_targets() -> None:
     attached_hermes = []
     for home in attach.discover_hermes_homes():
         try:
-            data = attach._load_yaml(home / "config.yaml")
-            if attach._enabled_list_has(data, "blackbox"):
+            data = yaml_files.load_yaml(home / "config.yaml")
+            if attach.enabled_list_has(data, "blackbox"):
                 attached_hermes.append(str(home))
         except Exception:
             continue
@@ -2920,7 +2921,7 @@ def _hermes_llm_candidate() -> Optional[Dict[str, str]]:
         if resolved_home in seen:
             continue
         seen.add(resolved_home)
-        home_cfg = attach._load_yaml(resolved_home / "config.yaml")
+        home_cfg = yaml_files.load_yaml(resolved_home / "config.yaml")
         home_env = {**os.environ, **_load_env_file(resolved_home / ".env")}
         source = f"Hermes ({resolved_home})"
         candidate = _candidate_from_hermes_config(home_cfg, home_env, source)

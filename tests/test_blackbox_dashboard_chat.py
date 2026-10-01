@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from plugins.blackbox import attach
+from plugins.blackbox.attach import plugin_copy as attach_plugin_copy
 from plugins.blackbox.dashboard import server
 
 
@@ -927,7 +928,7 @@ def test_blackbox_dashboard_chat_starts_session(monkeypatch):
 
     monkeypatch.setattr(server.shutil, "which", lambda name: "/bin/hermes")
     monkeypatch.setattr(server.subprocess, "run", fake_run)
-    monkeypatch.setattr(attach, "_repo_root", lambda: Path("/tmp/repo"))
+    monkeypatch.setattr(attach_plugin_copy, "repo_root", lambda: Path("/tmp/repo"))
 
     client = TestClient(server.create_app(), base_url="http://127.0.0.1")
     token = client.get("/api/session").json()["token"]
@@ -947,7 +948,7 @@ def test_blackbox_dashboard_chat_resumes_session(monkeypatch):
 
     monkeypatch.setattr(server.shutil, "which", lambda name: "/bin/hermes")
     monkeypatch.setattr(server.subprocess, "run", fake_run)
-    monkeypatch.setattr(attach, "_repo_root", lambda: Path("/tmp/repo"))
+    monkeypatch.setattr(attach_plugin_copy, "repo_root", lambda: Path("/tmp/repo"))
 
     client = TestClient(server.create_app(), base_url="http://127.0.0.1")
     token = client.get("/api/session").json()["token"]
