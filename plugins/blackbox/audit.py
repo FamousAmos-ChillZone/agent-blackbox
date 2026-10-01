@@ -37,7 +37,6 @@ _SECRET_KEY_RE = re.compile(
     r"|client[_-]?secret|access[_-]?token|refresh[_-]?token)",
     re.IGNORECASE,
 )
-_BEARER_RE = re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
 
 
 def sanitize_text(value: str, max_len: int = _MAX_TEXT) -> str:
@@ -46,8 +45,7 @@ def sanitize_text(value: str, max_len: int = _MAX_TEXT) -> str:
     Uses the canonical secret-value patterns from :mod:`quads` plus opaque
     ``Bearer`` tokens, so a secret never lands raw in the audit log.
     """
-    text = _BEARER_RE.sub("Bearer [REDACTED]", str(value))
-    text = quads.redact_secret_values(text)
+    text = quads.redact_secret_values(str(value))
     if len(text) > max_len:
         return text[:max_len] + "...[truncated]"
     return text

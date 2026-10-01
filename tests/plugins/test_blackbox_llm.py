@@ -107,7 +107,8 @@ def test_parse_verdict_tolerates_prose_and_fences():
 
 
 def test_redact_strips_secrets():
-    out = llm._redact("key sk-ABCDEF0123456789ZZ and api_key: hunter2secretvalue")
+    from plugins.blackbox.quads import redact_secret_values  # KI-178: the one redactor
+    out = redact_secret_values("key sk-ABCDEF0123456789ZZ and api_key: hunter2secretvalue")
     assert "sk-ABCDEF" not in out
     assert "hunter2secretvalue" not in out
     assert "[REDACTED]" in out
