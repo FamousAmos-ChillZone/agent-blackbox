@@ -24,6 +24,7 @@ guard_background = load_blackbox("guard.background")
 guard_reporting = load_blackbox("guard.reporting")
 config_mod = load_blackbox("kernel.config")
 cli = load_blackbox("cli")
+catalog_import = load_blackbox("curate.catalog_import")
 
 
 def _ruleset(**kw):
@@ -565,7 +566,7 @@ def test_allow_report_daily_counter_independent_of_cooldown():
     assert audit.recently_reported("id-never-reported") is False
 
 
-# --- cli._build_candidate for the new report types -----------------------------
+# --- catalog_import._build_candidate for the new report types -----------------------------
 
 
 def _ns(**kw):
@@ -579,7 +580,7 @@ def _ns(**kw):
 
 
 def test_build_candidate_fileaccess():
-    ident, kwargs = cli._build_candidate(
+    ident, kwargs = catalog_import._build_candidate(
         _ns(type="fileaccess", tool="read_file", category="ssh-private-key")
     )
     assert ident == "fileaccess:read_file:ssh-private-key"
@@ -590,13 +591,13 @@ def test_build_candidate_fileaccess_missing_flags_raises():
     import pytest
 
     with pytest.raises(ValueError):
-        cli._build_candidate(_ns(type="fileaccess", tool="read_file"))
+        catalog_import._build_candidate(_ns(type="fileaccess", tool="read_file"))
     with pytest.raises(ValueError):
-        cli._build_candidate(_ns(type="fileaccess", category="ssh-private-key"))
+        catalog_import._build_candidate(_ns(type="fileaccess", category="ssh-private-key"))
 
 
 def test_build_candidate_skill_version():
-    ident, kwargs = cli._build_candidate(_ns(type="skill", skill_name="X", skill_version="1.0.0"))
+    ident, kwargs = catalog_import._build_candidate(_ns(type="skill", skill_name="X", skill_version="1.0.0"))
     assert ident == "skill:x@1.0.0"
     assert kwargs["skill_name"] == "x"
     assert kwargs["skill_version"] == "1.0.0"
@@ -604,7 +605,7 @@ def test_build_candidate_skill_version():
 
 
 def test_build_candidate_skill_danger_shape():
-    ident, kwargs = cli._build_candidate(_ns(type="skill", skill_name="X", danger_shape="shell-exec"))
+    ident, kwargs = catalog_import._build_candidate(_ns(type="skill", skill_name="X", danger_shape="shell-exec"))
     assert ident == "skill:x:shell-exec"
     assert kwargs["skill_name"] == "x"
     assert kwargs["danger_shape"] == "shell-exec"
@@ -615,6 +616,6 @@ def test_build_candidate_skill_missing_flags_raises():
     import pytest
 
     with pytest.raises(ValueError):
-        cli._build_candidate(_ns(type="skill", skill_name="x"))  # no version, no shape
+        catalog_import._build_candidate(_ns(type="skill", skill_name="x"))  # no version, no shape
     with pytest.raises(ValueError):
-        cli._build_candidate(_ns(type="skill", skill_version="1.0.0"))  # no name
+        catalog_import._build_candidate(_ns(type="skill", skill_version="1.0.0"))  # no name

@@ -14,6 +14,9 @@ import argparse
 import pytest
 
 from plugins.blackbox import audit, cli
+from plugins.blackbox.kernel import display_safety as display_safety
+from plugins.blackbox.community import report_command as report_command
+from plugins.blackbox.sync import command as sync_command
 from plugins.blackbox.kernel.config import BlackboxConfig
 
 
@@ -59,14 +62,14 @@ def test_subscribe_includes_shared_memory():
     """KI-007: community reports live in SWM; the default subscribe excludes it."""
     cfg = BlackboxConfig(report=True, community_graph_id=DEV_GRAPH)
     client = FakeClient()
-    ok, _ = cli._ensure_community_subscription(client, cfg)
+    ok, _ = report_command.ensure_community_subscription(client, cfg)
     assert ok is True
     assert client.subscribes == [(DEV_GRAPH, True)]
 
 
 def test_no_graph_id_means_no_subscribe():
     client = FakeClient()
-    ok, detail = cli._ensure_community_subscription(client, BlackboxConfig())
+    ok, detail = report_command.ensure_community_subscription(client, BlackboxConfig())
     assert ok is False
     assert client.subscribes == []
     assert "no community graph" in detail
@@ -74,7 +77,7 @@ def test_no_graph_id_means_no_subscribe():
 
 def test_subscribe_failure_is_fail_open():
     cfg = BlackboxConfig(report=True, community_graph_id=DEV_GRAPH)
-    ok, detail = cli._ensure_community_subscription(FakeClient(subscribe_fails=True), cfg)
+    ok, detail = report_command.ensure_community_subscription(FakeClient(subscribe_fails=True), cfg)
     assert ok is False
     assert "failed" in detail  # reported, never raised
 
@@ -84,7 +87,7 @@ def test_join_requested_when_curator_peer_known():
         report=True, community_graph_id=DEV_GRAPH, community_graph_peer_id=CURATOR_PEER
     )
     client = FakeClient()
-    ok, _ = cli._ensure_community_subscription(client, cfg)
+    ok, _ = report_command.ensure_community_subscription(client, cfg)
     assert ok is True
     assert client.joins == [(DEV_GRAPH, CURATOR_PEER)]
 
@@ -93,7 +96,7 @@ def test_join_failure_never_breaks_subscription():
     cfg = BlackboxConfig(
         report=True, community_graph_id=DEV_GRAPH, community_graph_peer_id=CURATOR_PEER
     )
-    ok, _ = cli._ensure_community_subscription(FakeClient(join_fails=True), cfg)
+    ok, _ = report_command.ensure_community_subscription(FakeClient(join_fails=True), cfg)
     assert ok is True
 
 
@@ -104,7 +107,7 @@ def test_join_failure_never_breaks_subscription():
 
 def test_status_lines_sharing_on(bb_home, capsys):
     cfg = BlackboxConfig(report=True, community_graph_id=DEV_GRAPH, daily_report_limit=50)
-    cli._print_community_status(cfg)
+    report_command.print_community_status(cfg)
     out = capsys.readouterr().out
     assert DEV_GRAPH in out
     assert "threat sharing:    on (min severity high, cap 50/day)" in out
@@ -113,13 +116,13 @@ def test_status_lines_sharing_on(bb_home, capsys):
 
 def test_status_lines_sharing_off(bb_home, capsys):
     cfg = BlackboxConfig(report=False, community_graph_id=DEV_GRAPH)
-    cli._print_community_status(cfg)
+    report_command.print_community_status(cfg)
     out = capsys.readouterr().out
     assert "threat sharing:    off (config key `report` is false)" in out
 
 
 def test_status_lines_unconfigured(bb_home, capsys):
-    cli._print_community_status(BlackboxConfig())
+    report_command.print_community_status(BlackboxConfig())
     out = capsys.readouterr().out
     assert "not configured" in out
     assert "threat sharing" not in out  # no misleading sharing line without a graph
@@ -131,7 +134,7 @@ def test_status_shows_last_share_from_ledger(bb_home, capsys):
         subject="urn:guardian:report:0xabc:deadbeef", asset_name="report-x", ok=True,
     )
     cfg = BlackboxConfig(report=True, community_graph_id=DEV_GRAPH)
-    cli._print_community_status(cfg)
+    report_command.print_community_status(cfg)
     out = capsys.readouterr().out
     assert "reports shared:    1" in out
     assert "dep:npm:evil@1" in out
@@ -145,7 +148,7 @@ def test_ledger_identifiers_render_ansi_safe(bb_home, capsys):
         subject="urn:guardian:report:0xabc:deadbeef", asset_name="report-x", ok=True,
     )
     cfg = BlackboxConfig(report=True, community_graph_id=DEV_GRAPH)
-    cli._print_community_status(cfg)
+    report_command.print_community_status(cfg)
     out = capsys.readouterr().out
     assert "\x1b" not in out
     assert "\x07" not in out
@@ -153,7 +156,7 @@ def test_ledger_identifiers_render_ansi_safe(bb_home, capsys):
 
 def test_term_safe_strips_controls_and_clamps():
     hostile = "evil\x1b[31mred\x9b2Jwipe" + "A" * 500
-    safe = cli._term_safe(hostile, limit=100)
+    safe = display_safety.term_safe(hostile, limit=100)
     assert "\x1b" not in safe and "\x9b" not in safe
     assert len(safe) <= 100
 

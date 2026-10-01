@@ -9,7 +9,8 @@ Callers use this package's surface only:
   ``parse_downloads``, ``parse_shell_reads``, ``file_access_arg``,
   ``command_from_args`` / ``SHELL_TOOLS``; and ``redact_secret_values``.
 * :mod:`.osv` — OSV.dev dependency lookups (3 s timeout, background only).
-* :mod:`.reviewer` — the opt-in LLM second opinion (advisory, never blocks).
+* :mod:`.reviewer` — the opt-in LLM second opinion (advisory, never blocks);
+  :func:`cmd_setup_llm` configures it (``blackbox setup-llm``).
 
 Usage::
 
@@ -22,6 +23,7 @@ from __future__ import annotations
 from . import osv, reviewer
 from .action_parsing import file_access_arg, parse_dependency_installs, parse_downloads, parse_shell_reads
 from .content_scanners import redact_secret_values
+from .reviewer_setup import cmd_setup_llm
 from .detectors import (
     Finding,
     detect_all,
@@ -42,6 +44,7 @@ from .shell_shapes import SHELL_TOOLS, command_from_args
 __all__ = [
     "SHELL_TOOLS",
     "Finding",
+    "cmd_setup_llm",
     "command_from_args",
     "detect_all",
     "detect_custom_fileaccess",

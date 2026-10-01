@@ -901,7 +901,8 @@ def create_app(*, manage_blackbox: bool = False):
     from fastapi import Body, FastAPI, Query
     from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 
-    from .. import attach, audit, ruleset, settings
+    from .. import attach, audit, ruleset
+    from . import settings
     from ..sync import state as sync_state
     from ..kernel import constants
     from ..kernel.config import load_blackbox_config

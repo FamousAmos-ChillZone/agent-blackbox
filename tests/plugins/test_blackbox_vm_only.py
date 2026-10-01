@@ -7,6 +7,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from plugins.blackbox import cli, detection, ruleset
+from plugins.blackbox.community import report_command as report_command
+from plugins.blackbox.sync import command as sync_command
 from plugins.blackbox.guard import hooks
 from plugins.blackbox.guard import reporting as guard_reporting
 from plugins.blackbox.ruleset import disk_cache as ruleset_disk_cache
@@ -114,7 +116,7 @@ def test_report_command_submits_nothing_when_community_dormant(monkeypatch, caps
     """Contract update (community-graph build B6): the command is REAL now,
     but with no community graph configured (the shipped default) it must
     refuse loudly, submit nothing, and never even create a DKG client."""
-    monkeypatch.setattr(cli, "DkgClient", lambda *a, **k: (_ for _ in ()).throw(
+    monkeypatch.setattr(sync_command, "DkgClient", lambda *a, **k: (_ for _ in ()).throw(
         AssertionError("report must not create a DKG client while dormant")
     ))
     monkeypatch.delenv("BLACKBOX_COMMUNITY_GRAPH_ID", raising=False)
@@ -122,7 +124,7 @@ def test_report_command_submits_nothing_when_community_dormant(monkeypatch, caps
 
     args = Namespace(status=False, type="ioc", ioc_type="domain", value="evil.example",
                      false_positive=None, severity="high")
-    assert cli._cmd_report(args) == 2
+    assert report_command.cmd_report(args) == 2
     out = capsys.readouterr().out
     assert "Nothing was submitted" in out
     assert "dormant" in out

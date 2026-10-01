@@ -15,6 +15,8 @@ Public surface:
 * :class:`CommunitySharePolicy`, ``NEVER_SHARED_SOURCES`` — THE outbound gate;
   :func:`spawn_community_share` sends an allowed finding; :func:`reporter_address`
   resolves this node's reporting identity (never a fallback).
+* :func:`cmd_report` (``blackbox report``), :func:`print_community_status`
+  (the status block), :func:`ensure_community_subscription` (join on sync).
 * :func:`build_report_quads` / :func:`build_false_positive_quads` — the
   privacy-safe statements a report or dispute shares (write side).
 
@@ -28,6 +30,7 @@ Usage::
 from __future__ import annotations
 
 from .report_builder import build_false_positive_quads, build_report_quads
+from .report_command import cmd_report, ensure_community_subscription, print_community_status
 from .sharing import NEVER_SHARED_SOURCES, CommunitySharePolicy, reporter_address, spawn_community_share
 from .reader import (
     COMMUNITY_PAUSE_SUBJECT,
@@ -46,9 +49,12 @@ __all__ = [
     "aggregate_community_reports",
     "build_false_positive_quads",
     "build_report_quads",
+    "cmd_report",
+    "ensure_community_subscription",
     "community_pause_active",
     "community_report_count",
     "fetch_community_report_rows",
+    "print_community_status",
     "reporter_address",
     "spawn_community_share",
 ]

@@ -22,6 +22,7 @@ from _blackbox_loader import load_blackbox
 
 
 cli_mod = load_blackbox("cli")
+reviewer_setup = load_blackbox("detection.reviewer_setup")
 config_mod = load_blackbox("kernel.config")
 detection = load_blackbox("detection")
 hooks = load_blackbox("guard.hooks")
@@ -30,7 +31,7 @@ guard_background = load_blackbox("guard.background")
 guard_reporting = load_blackbox("guard.reporting")
 llm = load_blackbox("detection.reviewer")
 ruleset_mod = load_blackbox("ruleset")
-settings = load_blackbox("settings")
+settings = load_blackbox("dashboard.settings")
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +281,7 @@ def test_setup_llm_reuses_hermes_model_config(monkeypatch):
     )
     monkeypatch.setattr(hconfig, "load_env", lambda: {"OPENAI_API_KEY": "sk-hermes"})
 
-    candidate = cli_mod._hermes_llm_candidate()
+    candidate = reviewer_setup._hermes_llm_candidate()
     assert candidate == {
         "source": "Hermes",
         "provider": "openai",
@@ -305,9 +306,9 @@ def test_setup_llm_reuses_discovered_hermes_home_config(tmp_path, monkeypatch):
     (home / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-profile\n", encoding="utf-8")
     monkeypatch.setattr(hconfig, "load_config", lambda: {})
     monkeypatch.setattr(hconfig, "load_env", lambda: {})
-    monkeypatch.setattr(cli_mod.attach, "discover_hermes_homes", lambda: [home])
+    monkeypatch.setattr(reviewer_setup.attach, "discover_hermes_homes", lambda: [home])
 
-    candidate = cli_mod._hermes_llm_candidate()
+    candidate = reviewer_setup._hermes_llm_candidate()
     assert candidate == {
         "source": f"Hermes ({home.resolve()})",
         "provider": "anthropic",
@@ -331,9 +332,9 @@ def test_setup_llm_reuses_openclaw_json_config(tmp_path, monkeypatch):
         """,
         encoding="utf-8",
     )
-    monkeypatch.setattr(cli_mod.attach, "discover_openclaw_workspaces", lambda: [ws])
+    monkeypatch.setattr(reviewer_setup.attach, "discover_openclaw_workspaces", lambda: [ws])
 
-    candidate = cli_mod._openclaw_llm_candidate()
+    candidate = reviewer_setup._openclaw_llm_candidate()
     assert candidate["source"] == f"OpenClaw ({ws})"
     assert candidate["provider"] == "anthropic"
     assert candidate["model"] == "claude-haiku-4-5-20251001"
@@ -343,8 +344,7 @@ def test_setup_llm_reuses_openclaw_json_config(tmp_path, monkeypatch):
 def test_setup_llm_auto_persists_reused_config(monkeypatch):
     saved = []
     monkeypatch.setattr(
-        cli_mod,
-        "_auto_llm_candidate",
+        reviewer_setup, "_auto_llm_candidate",
         lambda: (
             "Hermes",
             {
@@ -360,9 +360,9 @@ def test_setup_llm_auto_persists_reused_config(monkeypatch):
         "write_settings",
         lambda payload: saved.append(payload) or {"ok": True},
     )
-    monkeypatch.setattr(cli_mod, "settings", settings)
+    monkeypatch.setattr(reviewer_setup, "settings", settings)
 
-    rc = cli_mod._cmd_setup_llm(
+    rc = reviewer_setup.cmd_setup_llm(
         SimpleNamespace(disable=False, provider=None, model=None, key_source=None, api_key=None, auto=True, configure=False)
     )
 
@@ -396,14 +396,14 @@ def test_setup_llm_configure_prompts_even_with_reusable_config(monkeypatch):
             return "gpt-4.1-mini"
         return ""
 
-    monkeypatch.setattr(cli_mod, "_auto_llm_candidate", fail_auto)
-    monkeypatch.setattr(cli_mod, "_tty", lambda: SimpleNamespace(close=lambda: None))
-    monkeypatch.setattr(cli_mod, "_ask", fake_ask)
-    monkeypatch.setattr(cli_mod, "_ask_secret", lambda prompt, tty: "sk-new")
+    monkeypatch.setattr(reviewer_setup, "_auto_llm_candidate", fail_auto)
+    monkeypatch.setattr(reviewer_setup, "_tty", lambda: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(reviewer_setup, "_ask", fake_ask)
+    monkeypatch.setattr(reviewer_setup, "_ask_secret", lambda prompt, tty: "sk-new")
     monkeypatch.setattr(settings, "write_settings", lambda payload: saved.append(payload) or {"ok": True})
-    monkeypatch.setattr(cli_mod, "settings", settings)
+    monkeypatch.setattr(reviewer_setup, "settings", settings)
 
-    rc = cli_mod._cmd_setup_llm(
+    rc = reviewer_setup.cmd_setup_llm(
         SimpleNamespace(disable=False, provider=None, model=None, key_source=None, api_key=None, auto=False, configure=True)
     )
 

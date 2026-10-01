@@ -15,6 +15,7 @@ import argparse
 import pytest
 
 from plugins.blackbox import audit, cli
+from plugins.blackbox.community import report_command as report_command
 from plugins.blackbox.kernel import constants
 from plugins.blackbox.kernel.config import BlackboxConfig
 
@@ -70,9 +71,9 @@ def _args(**kw):
 def wired(monkeypatch, bb_home):
     """Community on, identity resolved, fake client captured."""
     client = FakeClient()
-    monkeypatch.setattr(cli, "load_blackbox_config", lambda: CFG_ON)
-    monkeypatch.setattr(cli, "DkgClient", lambda **kw: client)
-    monkeypatch.setattr(cli, "_resolve_reporter", lambda c: REPORTER)
+    monkeypatch.setattr(report_command, "load_blackbox_config", lambda: CFG_ON)
+    monkeypatch.setattr(report_command, "DkgClient", lambda **kw: client)
+    monkeypatch.setattr(report_command, "_resolve_reporter", lambda c: REPORTER)
     return client
 
 
@@ -93,7 +94,7 @@ def wired(monkeypatch, bb_home):
     ],
 )
 def test_incomplete_args_rejected_and_nothing_submitted(wired, kwargs, missing, capsys):
-    rc = cli._cmd_report(_args(**kwargs))
+    rc = report_command.cmd_report(_args(**kwargs))
     out = capsys.readouterr().out
     assert rc == 2
     assert missing in out
@@ -102,7 +103,7 @@ def test_incomplete_args_rejected_and_nothing_submitted(wired, kwargs, missing, 
 
 
 def test_skill_requires_version_or_shape(wired, capsys):
-    rc = cli._cmd_report(_args(type="skill", skill_name="helper-pack"))
+    rc = report_command.cmd_report(_args(type="skill", skill_name="helper-pack"))
     assert rc == 2
     assert "skill-version" in capsys.readouterr().out or True
     assert wired.shares == []
@@ -114,7 +115,7 @@ def test_skill_requires_version_or_shape(wired, capsys):
 
 
 def test_manual_report_lands_via_shared_pipeline(wired, capsys):
-    rc = cli._cmd_report(
+    rc = report_command.cmd_report(
         _args(type="dependency", ecosystem="npm", name="Evil-Pkg", version="1.4.2", kind="malware")
     )
     out = capsys.readouterr().out
@@ -134,10 +135,10 @@ def test_manual_report_lands_via_shared_pipeline(wired, capsys):
 
 def test_share_failure_exits_nonzero_and_ledgers(monkeypatch, bb_home, capsys):
     client = FakeClient(fail=True)
-    monkeypatch.setattr(cli, "load_blackbox_config", lambda: CFG_ON)
-    monkeypatch.setattr(cli, "DkgClient", lambda **kw: client)
-    monkeypatch.setattr(cli, "_resolve_reporter", lambda c: REPORTER)
-    rc = cli._cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example"))
+    monkeypatch.setattr(report_command, "load_blackbox_config", lambda: CFG_ON)
+    monkeypatch.setattr(report_command, "DkgClient", lambda **kw: client)
+    monkeypatch.setattr(report_command, "_resolve_reporter", lambda c: REPORTER)
+    rc = report_command.cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example"))
     assert rc == 1
     assert "FAILED" in capsys.readouterr().out
     rows = audit.read_share_ledger()
@@ -146,8 +147,8 @@ def test_share_failure_exits_nonzero_and_ledgers(monkeypatch, bb_home, capsys):
 
 def test_cooldown_short_circuits_resubmission(wired, capsys):
     args = _args(type="ioc", ioc_type="domain", value="evil.example")
-    assert cli._cmd_report(args) == 0
-    assert cli._cmd_report(args) == 0
+    assert report_command.cmd_report(args) == 0
+    assert report_command.cmd_report(args) == 0
     assert len(wired.shares) == 1
     assert "cooldown" in capsys.readouterr().out.lower()
 
@@ -159,10 +160,10 @@ def test_cooldown_short_circuits_resubmission(wired, capsys):
 
 def test_gate_off_is_loud_not_silent(monkeypatch, bb_home, capsys):
     monkeypatch.setattr(
-        cli, "load_blackbox_config",
+        report_command, "load_blackbox_config",
         lambda: BlackboxConfig(report=False, community_graph_id=DEV_GRAPH),
     )
-    rc = cli._cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example"))
+    rc = report_command.cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example"))
     out = capsys.readouterr().out
     assert rc == 2
     assert "OFF" in out
@@ -170,10 +171,10 @@ def test_gate_off_is_loud_not_silent(monkeypatch, bb_home, capsys):
 
 
 def test_ghost_identity_refused(monkeypatch, bb_home, capsys):
-    monkeypatch.setattr(cli, "load_blackbox_config", lambda: CFG_ON)
-    monkeypatch.setattr(cli, "DkgClient", lambda **kw: FakeClient())
-    monkeypatch.setattr(cli, "_resolve_reporter", lambda c: "node")
-    rc = cli._cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example"))
+    monkeypatch.setattr(report_command, "load_blackbox_config", lambda: CFG_ON)
+    monkeypatch.setattr(report_command, "DkgClient", lambda **kw: FakeClient())
+    monkeypatch.setattr(report_command, "_resolve_reporter", lambda c: "node")
+    rc = report_command.cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example"))
     assert rc == 1
     assert "ghost identity" in capsys.readouterr().out
 
@@ -188,21 +189,21 @@ def test_status_reads_ledger_offline(monkeypatch, bb_home, capsys):
         identifier="dep:npm:evil@1", category="dependency", severity="high",
         subject="urn:guardian:report:0xabc:dead", asset_name="report-x", ok=True,
     )
-    monkeypatch.setattr(cli, "load_blackbox_config", lambda: BlackboxConfig())
-    rc = cli._cmd_report(_args(status=True))
+    monkeypatch.setattr(report_command, "load_blackbox_config", lambda: BlackboxConfig())
+    rc = report_command.cmd_report(_args(status=True))
     out = capsys.readouterr().out
     assert rc == 0
     assert "dep:npm:evil@1" in out
 
 
 def test_status_handles_empty_history(monkeypatch, bb_home, capsys):
-    monkeypatch.setattr(cli, "load_blackbox_config", lambda: BlackboxConfig())
-    assert cli._cmd_report(_args(status=True)) == 0
+    monkeypatch.setattr(report_command, "load_blackbox_config", lambda: BlackboxConfig())
+    assert report_command.cmd_report(_args(status=True)) == 0
     assert "No community reports" in capsys.readouterr().out
 
 
 def test_false_positive_emits_dispute_quads(wired, capsys):
-    rc = cli._cmd_report(_args(false_positive="dep:npm:innocent@2.0.0"))
+    rc = report_command.cmd_report(_args(false_positive="dep:npm:innocent@2.0.0"))
     out = capsys.readouterr().out
     assert rc == 0
     assert len(wired.shares) == 1
