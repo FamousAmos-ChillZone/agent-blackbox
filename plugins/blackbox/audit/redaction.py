@@ -1,15 +1,15 @@
 """Redaction for anything written to the local audit logs.
 
 :func:`sanitize_text` caps and scrubs one string (secret-shaped values, bearer
-tokens); :func:`redact` walks nested values. (Two other redaction copies exist
-in the plugin — unifying them is quality item G1.)
+tokens); :func:`redact` walks nested values. Secret VALUE patterns come from
+``kernel.redaction`` — the one implementation (G1).
 """
 
 from __future__ import annotations
 
 import re
 from typing import Any, Dict
-from .. import detection
+from ..kernel.redaction import redact_secret_values
 
 # ---------------------------------------------------------------------------
 # Redaction (ported verbatim from the original plugin/node-ui regexes)
@@ -28,11 +28,11 @@ _BEARER_RE = re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
 def sanitize_text(value: str, max_len: int = _MAX_TEXT) -> str:
     """Redact common secret shapes from *value* and truncate to *max_len*.
 
-    Uses the canonical secret-value patterns from :mod:`quads` plus opaque
+    Uses the canonical secret-value patterns from ``kernel.redaction`` plus opaque
     ``Bearer`` tokens, so a secret never lands raw in the audit log.
     """
     text = _BEARER_RE.sub("Bearer [REDACTED]", str(value))
-    text = detection.redact_secret_values(text)
+    text = redact_secret_values(text)
     if len(text) > max_len:
         return text[:max_len] + "...[truncated]"
     return text

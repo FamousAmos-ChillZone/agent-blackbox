@@ -7,7 +7,7 @@ Callers use this package's surface only:
   :mod:`.detectors`) — pure, microsecond-scale, no I/O.
 * Action parsing used by the hook's activity log — ``parse_dependency_installs``,
   ``parse_downloads``, ``parse_shell_reads``, ``file_access_arg``,
-  ``command_from_args`` / ``SHELL_TOOLS``; and ``redact_secret_values``.
+  ``command_from_args`` / ``SHELL_TOOLS``.
 * :mod:`.osv` — OSV.dev dependency lookups (3 s timeout, background only).
 * :mod:`.reviewer` — the opt-in LLM second opinion (advisory, never blocks);
   :func:`cmd_setup_llm` configures it (``blackbox setup-llm``).
@@ -22,7 +22,6 @@ from __future__ import annotations
 
 from . import osv, reviewer
 from .action_parsing import file_access_arg, parse_dependency_installs, parse_downloads, parse_shell_reads
-from .content_scanners import redact_secret_values
 from .reviewer_setup import cmd_setup_llm
 from .detectors import (
     Finding,
@@ -63,6 +62,5 @@ __all__ = [
     "parse_dependency_installs",
     "parse_downloads",
     "parse_shell_reads",
-    "redact_secret_values",
     "reviewer",
 ]

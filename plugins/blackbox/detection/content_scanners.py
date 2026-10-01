@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List
 from . import shell_shapes
-from ..kernel import threat_ids
+from ..kernel import redaction, threat_ids
 
 # ---------------------------------------------------------------------------
 # Built-in injection heuristics (discovery layer — OWASP LLM01/LLM06)
@@ -93,27 +93,6 @@ def scan_injection_heuristics(text: str) -> List[Dict[str, str]]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# Secret VALUE detection — an actual key/token/private-key present in tool args.
-# This is the "the agent is handling/leaking a real secret" signal, distinct
-# from touching a secret FILE. Format-anchored so only unambiguous secret shapes
-# match (a legit `Authorization: Bearer <opaque>` API call is NOT flagged, but a
-# recognizable provider key or a private-key block is).
-# ---------------------------------------------------------------------------
-
-_SECRET_VALUE_RULES = (
-    ("private-key", "critical", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----")),
-    ("aws-access-key", "high", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
-    ("anthropic-api-key", "high", re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}")),
-    ("openai-api-key", "high", re.compile(r"\bsk-(?!ant-)(?:proj-)?[A-Za-z0-9_-]{20,}")),
-    ("github-token", "high", re.compile(r"\b(?:gh[pousr]|github_pat)_[A-Za-z0-9_]{20,}")),
-    ("slack-token", "high", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}")),
-    ("google-api-key", "high", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
-    ("stripe-key", "high", re.compile(r"\b(?:sk|rk)_live_[0-9a-zA-Z]{20,}")),
-    ("gcp-service-account-key", "high", re.compile(r'"type"\s*:\s*"service_account"')),
-    ("jwt", "medium", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")),
-)
-
 # Commands that SEND data off-box — a secret value alongside one of these is
 # exfiltration (critical/block), not routine handling.
 _EGRESS_RE = re.compile(
@@ -128,14 +107,14 @@ def scan_secret_values(text: str) -> List[Dict[str, str]]:
     """Return recognizable secret VALUES present in *text* as ``[{type, severity}]``.
 
     Deterministic; the caller carries only the secret TYPE off-box, NEVER the
-    value (see :func:`redact_secret_values`).
+    value (see ``kernel.redaction.redact_secret_values``).
     """
     if not text:
         return []
     scan = text[:_MAX_INJECTION_SCAN]
     out: List[Dict[str, str]] = []
     seen: set = set()
-    for typ, severity, pattern in _SECRET_VALUE_RULES:
+    for typ, severity, pattern in redaction.SECRET_VALUE_RULES:
         if typ in seen:
             continue
         try:
@@ -150,14 +129,6 @@ def scan_secret_values(text: str) -> List[Dict[str, str]]:
 def looks_like_egress(text: str) -> bool:
     """True when *text* contains a command that sends data off the machine."""
     return bool(text and _EGRESS_RE.search(text))
-
-
-def redact_secret_values(text: str) -> str:
-    """Replace every recognizable secret value in *text* with a typed marker."""
-    out = str(text)
-    for typ, _severity, pattern in _SECRET_VALUE_RULES:
-        out = pattern.sub(f"[REDACTED_{typ.upper().replace('-', '_')}]", out)
-    return out
 
 
 # ---------------------------------------------------------------------------

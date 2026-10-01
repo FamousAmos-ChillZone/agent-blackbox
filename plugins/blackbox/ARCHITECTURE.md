@@ -26,10 +26,10 @@ way, and every package used only through its public entry (`__init__.py`).
 
 | Module | Owns | Entry | May depend on |
 |---|---|---|---|
-| `kernel` | constants + ontology IRIs, config and settings, the DKG HTTP client, threat identifiers, RDF terms, SPARQL escaping, YAML files, terminal-safe display | `kernel/__init__.py` (each kernel module is public) | — |
+| `kernel` | constants + ontology IRIs, config and settings, the DKG HTTP client, threat identifiers, RDF terms, SPARQL escaping, YAML files, terminal-safe display, this node's identity, secret redaction | `kernel/__init__.py` (each kernel module is public) | — |
 | `attach` | finding Hermes homes and OpenClaw workspaces, copying the plugin in, enabling/disabling it; `blackbox attach` / `detach` | `attach/__init__.py` | `kernel` |
 | `detection` | the pure detectors, action parsing, content scanners, escalation shapes, OSV lookups, the LLM reviewer; `blackbox setup-llm` | `detection/__init__.py` | `kernel`, `attach` |
-| `audit` | local findings / activity logs, redaction, the private audit record, the outbound share ledger + cooldown + daily cap | `audit/__init__.py` | `kernel`, `detection` |
+| `audit` | local findings / activity logs, redaction, the private audit record, the outbound share ledger + cooldown + daily cap | `audit/__init__.py` | `kernel` |
 | `community` | the outbound share gate and send, report quads, reading + aggregating community reports, graph-wide statistics for the dashboard; `blackbox report` | `community/__init__.py` | `kernel`, `audit` |
 | `ruleset` | SPARQL reads of the verified graph, compiling rows into the `Ruleset`, disk + memory cache, cross-process refresh lock, merging the community tier | `ruleset/__init__.py` | `kernel`, `community` |
 | `sync` | the local node's catch-up of the verified graph, the managed DKG node process, sync state + progress bookmarks; `blackbox sync` | `sync/__init__.py` | `kernel`, `ruleset`, `community` |
