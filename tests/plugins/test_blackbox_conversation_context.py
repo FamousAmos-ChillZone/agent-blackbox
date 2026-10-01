@@ -13,6 +13,8 @@ import pytest
 from _blackbox_loader import load_blackbox
 
 audit = load_blackbox("audit")
+audit_findings = load_blackbox("audit.findings")
+audit_log_store = load_blackbox("audit.log_store")
 config_mod = load_blackbox("kernel.config")
 detection = load_blackbox("detection")
 hooks = load_blackbox("hooks")
@@ -44,22 +46,22 @@ def _finding_dict(**over):
 
 
 def test_bounded_context_redacts_and_caps():
-    ctx = audit._bounded_context({
+    ctx = audit_findings._bounded_context({
         "turns": [{"role": "user", "text": "key sk-ABCDEFGHIJKLMNOP1234567890 here"}] * 40,
         "input": "y" * 20000,
         "result": "",
         "truncated": True,
     })
-    assert len(ctx["turns"]) <= audit._CONTEXT_MAX_TURNS            # turn count bounded
+    assert len(ctx["turns"]) <= audit_findings._CONTEXT_MAX_TURNS            # turn count bounded
     assert "sk-ABCDEFGHIJKLMNOP" not in json.dumps(ctx)             # secret stripped
-    assert len(ctx["input"]) <= audit._CONTEXT_FIELD_CHARS + len("...[truncated]")
+    assert len(ctx["input"]) <= audit_findings._CONTEXT_FIELD_CHARS + len("...[truncated]")
     assert "result" not in ctx                                     # empty field dropped
     assert ctx["truncated"] is True
 
 
 def test_bounded_context_empty_is_none():
-    assert audit._bounded_context({"turns": [], "input": ""}) is None
-    assert audit._bounded_context("not a dict") is None
+    assert audit_findings._bounded_context({"turns": [], "input": ""}) is None
+    assert audit_findings._bounded_context("not a dict") is None
 
 
 def test_record_round_trips_context_and_redacts():
@@ -84,7 +86,7 @@ def test_record_round_trips_context_and_redacts():
 def test_openclaw_style_line_is_lifted():
     # Raw ``findings.openclaw.jsonl`` line: context lives under ``detail.context``
     # and must lift uniformly.
-    home = audit._home()
+    home = audit_log_store._home()
     line = {
         "ts": 1234.0, "iso": "2026-07-06T00:00:00Z", "event": "before_tool_call",
         "framework": "openclaw",
