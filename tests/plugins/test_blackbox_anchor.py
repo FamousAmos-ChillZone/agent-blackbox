@@ -6,7 +6,7 @@ from _blackbox_loader import load_blackbox
 
 
 cli = load_blackbox("cli")
-constants = load_blackbox("constants")
+constants = load_blackbox("kernel.constants")
 quads = load_blackbox("quads")
 ruleset = load_blackbox("ruleset")
 

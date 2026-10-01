@@ -901,9 +901,10 @@ def create_app(*, manage_blackbox: bool = False):
     from fastapi import Body, FastAPI, Query
     from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 
-    from .. import attach, audit, constants, ruleset, settings, sync_state
-    from ..config import load_blackbox_config
-    from ..dkg_client import DkgClient, extract_binding
+    from .. import attach, audit, ruleset, settings, sync_state
+    from ..kernel import constants
+    from ..kernel.config import load_blackbox_config
+    from ..kernel.dkg_client import DkgClient, extract_binding
 
     app = FastAPI(title="Agent Blackbox", docs_url=None, redoc_url=None)
 

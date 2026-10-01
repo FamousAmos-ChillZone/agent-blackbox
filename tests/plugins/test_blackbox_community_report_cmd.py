@@ -14,8 +14,9 @@ import argparse
 
 import pytest
 
-from plugins.blackbox import audit, cli, constants
-from plugins.blackbox.config import BlackboxConfig
+from plugins.blackbox import audit, cli
+from plugins.blackbox.kernel import constants
+from plugins.blackbox.kernel.config import BlackboxConfig
 
 
 DEV_GRAPH = "0x51E5dE758A45c8b64048E29918421F0bdD6D5d5C/agent-blackbox-community-dev"

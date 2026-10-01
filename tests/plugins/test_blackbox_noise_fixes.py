@@ -126,7 +126,7 @@ def test_shell_reads_downloads_installs_parsed():
 
 def test_record_activity_logs_shell_installs_and_reads():
     import json
-    from plugins.blackbox import constants
+    from plugins.blackbox.kernel import constants
     hooks._record_activity("shell", {"command": "npm install left-pad && cat ~/.ssh/config"})
     # The install lands in the structured lib-inventory log...
     deps = [json.loads(ln) for ln in (constants.blackbox_home() / "dependencies.jsonl").read_text().splitlines() if ln.strip()]

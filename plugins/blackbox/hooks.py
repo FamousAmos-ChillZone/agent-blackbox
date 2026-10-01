@@ -21,9 +21,10 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from . import audit, config as config_mod, constants, detection, quads, ruleset
-from .config import BlackboxConfig
-from .dkg_client import DkgClient, DkgError
+from . import audit, detection, quads, ruleset
+from .kernel import config as config_mod, constants
+from .kernel.config import BlackboxConfig
+from .kernel.dkg_client import DkgClient, DkgError
 
 logger = logging.getLogger(__name__)
 

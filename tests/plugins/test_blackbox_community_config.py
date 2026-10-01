@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from plugins.blackbox import config as bb_config
-from plugins.blackbox import constants
+from plugins.blackbox.kernel import config as bb_config
+from plugins.blackbox.kernel import constants
 
 
 DEV_GRAPH = "0x51E5dE758A45c8b64048E29918421F0bdD6D5d5C/agent-blackbox-community-dev"

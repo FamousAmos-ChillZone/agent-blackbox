@@ -1037,7 +1037,7 @@ function Install-BlackboxDkgPackage {
         Write-Warn2 "Could not determine the installed DKG package version."
         return $false
     }
-    & $script:VenvPython -m plugins.blackbox.dkg_version $installedVersion
+    & $script:VenvPython -m plugins.blackbox.kernel.dkg_version $installedVersion
     if ($LASTEXITCODE -ne 0) {
         Write-Warn2 "DKG $installedVersion is too old for direct verified Blackbox recovery; version 10.0.9+ is required."
         return $false

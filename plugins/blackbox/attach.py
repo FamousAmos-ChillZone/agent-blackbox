@@ -23,7 +23,7 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import constants
+from .kernel import constants
 
 logger = logging.getLogger(__name__)
 _BLACKBOX_CHAT_PROFILE = "blackbox"
@@ -460,8 +460,12 @@ def _enabled_list_has(data: Dict[str, Any], name: str) -> bool:
 
 
 def _installed_plugin_version(dest: Path) -> Optional[str]:
-    """Read ``__version__`` from an installed copy's ``constants.py`` (cheap parse)."""
-    const_path = dest / "constants.py"
+    """Read ``__version__`` from an installed copy's ``kernel/constants.py`` (cheap parse).
+
+    An install made before the kernel/ layout has no such file, so it reads as
+    ``None`` — a version mismatch — and is replaced by a fresh copy.
+    """
+    const_path = dest / "kernel" / "constants.py"
     if not const_path.exists():
         return None
     try:
@@ -981,7 +985,7 @@ def load_blackbox_config_snapshot() -> Dict[str, Any]:
     testable without a full hermes config.
     """
     try:
-        from .config import load_blackbox_config
+        from .kernel.config import load_blackbox_config
 
         cfg = load_blackbox_config()
         return {

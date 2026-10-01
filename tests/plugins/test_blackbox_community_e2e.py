@@ -20,7 +20,7 @@ import time
 import pytest
 
 from plugins.blackbox import quads
-from plugins.blackbox.dkg_client import DkgClient, extract_binding
+from plugins.blackbox.kernel.dkg_client import DkgClient, extract_binding
 
 
 pytestmark = pytest.mark.integration

@@ -6,7 +6,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from plugins.blackbox import cli, config, constants, detection, hooks, ruleset
+from plugins.blackbox import cli, detection, hooks, ruleset
+from plugins.blackbox.kernel import config, constants
 from plugins.blackbox.dashboard import server
 
 

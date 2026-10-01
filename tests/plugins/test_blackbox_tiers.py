@@ -17,7 +17,7 @@ quads = load_blackbox("quads")
 ruleset_mod = load_blackbox("ruleset")
 audit = load_blackbox("audit")
 hooks = load_blackbox("hooks")
-config_mod = load_blackbox("config")
+config_mod = load_blackbox("kernel.config")
 cli = load_blackbox("cli")
 
 

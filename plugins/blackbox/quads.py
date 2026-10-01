@@ -20,7 +20,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
-from . import constants
+from .kernel import constants
 
 
 # A quad is a ``{subject, predicate, object}`` dict. ``object`` is a ready N-Triples

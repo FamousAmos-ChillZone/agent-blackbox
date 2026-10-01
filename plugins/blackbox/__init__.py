@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from . import cli as _cli
 from . import hooks as _hooks
-from .constants import __version__
+from .kernel.constants import __version__
 
 __all__ = ["register", "__version__"]
 

@@ -22,7 +22,7 @@ from _blackbox_loader import load_blackbox
 
 
 cli_mod = load_blackbox("cli")
-config_mod = load_blackbox("config")
+config_mod = load_blackbox("kernel.config")
 detection = load_blackbox("detection")
 hooks = load_blackbox("hooks")
 llm = load_blackbox("llm")

@@ -25,9 +25,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from . import constants, quads
-from .config import BlackboxConfig, load_blackbox_config
-from .dkg_client import DkgClient, extract_binding
+from .kernel import constants
+from . import quads
+from .kernel.config import BlackboxConfig, load_blackbox_config
+from .kernel.dkg_client import DkgClient, extract_binding
 
 logger = logging.getLogger(__name__)
 

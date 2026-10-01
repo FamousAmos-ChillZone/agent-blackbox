@@ -10,9 +10,9 @@ from _blackbox_loader import load_blackbox
 
 
 attach = load_blackbox("attach")
-constants = load_blackbox("constants")
+constants = load_blackbox("kernel.constants")
 hooks = load_blackbox("hooks")
-config_mod = load_blackbox("config")
+config_mod = load_blackbox("kernel.config")
 
 
 def test_openclaw_package_declares_enforced_minimum_host_version():
@@ -416,7 +416,8 @@ def test_copy_plugin_tree_bundles_from_explicit_checkout_source(tmp_path, monkey
     integration.mkdir(parents=True)
     (repo / ".git").mkdir()
     (src / "__init__.py").write_text("", encoding="utf-8")
-    (src / "constants.py").write_text("__version__ = '1.0.0'\n", encoding="utf-8")
+    (src / "kernel").mkdir()
+    (src / "kernel" / "constants.py").write_text("__version__ = '1.0.0'\n", encoding="utf-8")
     (integration / "openclaw.plugin.json").write_text('{"id":"blackbox"}\n', encoding="utf-8")
     (integration / "index.ts").write_text("export {};\n", encoding="utf-8")
     monkeypatch.setattr(attach, "_repo_openclaw_dir", lambda: tmp_path / "missing")

@@ -18,8 +18,8 @@ import logging
 import threading
 from typing import Any, Dict, List, Tuple
 
-from . import constants
-from .config import DETECTION_CATEGORIES, load_blackbox_config
+from .kernel import constants
+from .kernel.config import DETECTION_CATEGORIES, load_blackbox_config
 
 logger = logging.getLogger(__name__)
 

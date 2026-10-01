@@ -10,7 +10,8 @@ from plugins.blackbox.dashboard import server
 
 
 def test_dashboard_public_graph_uses_vm_verified_ruleset_rows(monkeypatch):
-    from plugins.blackbox import audit, config, dkg_client, ruleset
+    from plugins.blackbox import audit, ruleset
+    from plugins.blackbox.kernel import config, dkg_client
 
     cfg = SimpleNamespace(
         mode="audit",
@@ -92,7 +93,8 @@ def test_dashboard_public_graph_uses_vm_verified_ruleset_rows(monkeypatch):
 
 
 def test_dashboard_keeps_partial_vm_count_loading_during_curator_transfer(monkeypatch):
-    from plugins.blackbox import audit, config, dkg_client, ruleset, sync_state
+    from plugins.blackbox import audit, ruleset, sync_state
+    from plugins.blackbox.kernel import config, dkg_client
 
     cfg = SimpleNamespace(
         mode="audit",
@@ -233,7 +235,8 @@ def test_dashboard_automatic_sync_runs_canonical_verified_cli(monkeypatch):
 
 
 def test_dashboard_lists_more_than_five_thousand_vm_threats_with_exact_totals(monkeypatch):
-    from plugins.blackbox import config, ruleset
+    from plugins.blackbox.kernel import config
+    from plugins.blackbox import ruleset
 
     cfg = SimpleNamespace(
         mode="audit",
@@ -269,7 +272,8 @@ def test_dashboard_lists_more_than_five_thousand_vm_threats_with_exact_totals(mo
 
 
 def test_dashboard_graph_search_filters_the_full_verified_cache(monkeypatch):
-    from plugins.blackbox import config, ruleset
+    from plugins.blackbox.kernel import config
+    from plugins.blackbox import ruleset
 
     cfg = SimpleNamespace(
         mode="audit",
@@ -1025,7 +1029,8 @@ def test_attach_targets_do_not_duplicate_errored_supported_agents(monkeypatch):
 
 
 def test_agent_cards_distinguish_attached_from_active(monkeypatch):
-    from plugins.blackbox import audit, config, constants, dkg_client
+    from plugins.blackbox import audit
+    from plugins.blackbox.kernel import config, constants, dkg_client
 
     cfg = SimpleNamespace(
         dkg_url="http://127.0.0.1:9320",

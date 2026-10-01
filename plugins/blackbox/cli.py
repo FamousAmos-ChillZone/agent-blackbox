@@ -21,9 +21,10 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
-from . import attach, audit, constants, llm, quads, ruleset, settings, sync_state
-from .config import BlackboxConfig, load_blackbox_config
-from .dkg_client import DkgClient, DkgError
+from . import attach, audit, llm, quads, ruleset, settings, sync_state
+from .kernel import constants
+from .kernel.config import BlackboxConfig, load_blackbox_config
+from .kernel.dkg_client import DkgClient, DkgError
 from .dkg_progress import capture_durable_progress_cursor, read_durable_progress
 
 logger = logging.getLogger(__name__)
@@ -2616,7 +2617,7 @@ def _report_status(cfg) -> int:
                     view=constants.VIEW_SHARED_WORKING_MEMORY, on_error=None,
                 )
                 if res:
-                    from .dkg_client import extract_binding
+                    from .kernel.dkg_client import extract_binding
                     print(f"On the community graph: {extract_binding(res[0].get('n')) or 0} report(s) under your address.")
         except Exception as exc:
             logger.debug("blackbox: report --status graph read failed: %s", exc)

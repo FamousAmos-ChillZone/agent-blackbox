@@ -9,7 +9,7 @@ import pytest
 from _blackbox_loader import load_blackbox
 
 
-dkg_client = load_blackbox("dkg_client")
+dkg_client = load_blackbox("kernel.dkg_client")
 
 
 class _FakeResponse:

@@ -6,7 +6,7 @@ from _blackbox_loader import load_blackbox
 
 
 quads = load_blackbox("quads")
-constants = load_blackbox("constants")
+constants = load_blackbox("kernel.constants")
 
 
 def test_dependency_identifier_lowercases_eco_and_name():

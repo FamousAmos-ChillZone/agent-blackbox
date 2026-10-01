@@ -19,9 +19,10 @@ import time
 
 import pytest
 
-from plugins.blackbox import audit, constants, detection, hooks, quads
-from plugins.blackbox.config import BlackboxConfig
-from plugins.blackbox.dkg_client import DkgError
+from plugins.blackbox import audit, detection, hooks, quads
+from plugins.blackbox.kernel import constants
+from plugins.blackbox.kernel.config import BlackboxConfig
+from plugins.blackbox.kernel.dkg_client import DkgError
 
 
 DEV_GRAPH = "0x51E5dE758A45c8b64048E29918421F0bdD6D5d5C/agent-blackbox-community-dev"

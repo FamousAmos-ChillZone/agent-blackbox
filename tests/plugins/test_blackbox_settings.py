@@ -26,8 +26,8 @@ import pytest
 from _blackbox_loader import load_blackbox
 
 
-config_mod = load_blackbox("config")
-constants = load_blackbox("constants")
+config_mod = load_blackbox("kernel.config")
+constants = load_blackbox("kernel.constants")
 detection = load_blackbox("detection")
 hooks = load_blackbox("hooks")
 ruleset_mod = load_blackbox("ruleset")

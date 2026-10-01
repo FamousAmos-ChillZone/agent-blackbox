@@ -1327,7 +1327,7 @@ install_blackbox_dkg_package() {
         warn "Could not determine the installed DKG package version."
         return 1
     fi
-    if ! "$VENV_DIR/bin/python" -m plugins.blackbox.dkg_version "$installed_version"; then
+    if ! "$VENV_DIR/bin/python" -m plugins.blackbox.kernel.dkg_version "$installed_version"; then
         warn "DKG $installed_version is too old for direct verified Blackbox recovery; version 10.0.9+ is required."
         return 1
     fi

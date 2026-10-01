@@ -17,7 +17,7 @@ from __future__ import annotations
 import pytest
 
 from plugins.blackbox import detection, ruleset as rs_mod
-from plugins.blackbox.config import BlackboxConfig
+from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.ruleset import (
     CommunityRule,
     Ruleset,

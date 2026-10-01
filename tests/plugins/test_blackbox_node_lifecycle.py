@@ -13,7 +13,7 @@ import json
 import pytest
 from _blackbox_loader import load_blackbox
 
-config_mod = load_blackbox("config")
+config_mod = load_blackbox("kernel.config")
 cli_mod = load_blackbox("cli")
 
 _STEADY_CONFIG = {

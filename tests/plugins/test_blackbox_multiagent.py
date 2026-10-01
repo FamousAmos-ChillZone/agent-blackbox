@@ -13,7 +13,7 @@ import time
 from _blackbox_loader import load_blackbox
 
 audit = load_blackbox("audit")
-constants = load_blackbox("constants")
+constants = load_blackbox("kernel.constants")
 
 
 def _write_line(path, *, framework, identifier, severity, ts, category="injection", workspace=None):

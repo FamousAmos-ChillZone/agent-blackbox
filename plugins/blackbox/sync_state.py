@@ -10,7 +10,7 @@ from typing import Any, Dict
 
 import psutil
 
-from . import constants
+from .kernel import constants
 
 _STALE_RUNNING_SECONDS = 3_600
 

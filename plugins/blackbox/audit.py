@@ -22,7 +22,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import constants, quads
+from .kernel import constants
+from . import quads
 
 logger = logging.getLogger(__name__)
 
