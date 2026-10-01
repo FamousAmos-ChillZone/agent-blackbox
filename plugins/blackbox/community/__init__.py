@@ -41,6 +41,8 @@ from .graph_stats import (
     group_community_agents,
     most_reported_threats,
 )
+from .verification import ReportVerifier, VerifiedReport, verify_report_rows
+from .report_signer import network_environment
 from .reader import (
     COMMUNITY_PAUSE_SUBJECT,
     CommunityRule,
@@ -55,6 +57,8 @@ __all__ = [
     "NEVER_SHARED_SOURCES",
     "CommunitySharePolicy",
     "CommunityRule",
+    "ReportVerifier",
+    "VerifiedReport",
     "aggregate_community_reports",
     "build_false_positive_quads",
     "build_report_quads",
@@ -66,7 +70,9 @@ __all__ = [
     "fetch_reporter_rows",
     "group_community_agents",
     "most_reported_threats",
+    "network_environment",
     "fetch_community_report_rows",
     "print_community_status",
     "spawn_community_share",
+    "verify_report_rows",
 ]

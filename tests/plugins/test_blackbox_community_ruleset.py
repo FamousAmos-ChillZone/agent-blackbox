@@ -19,7 +19,10 @@ import pytest
 from plugins.blackbox import detection, ruleset as rs_mod
 from plugins.blackbox.community import reader as community_reader
 from plugins.blackbox.kernel.config import BlackboxConfig
-from plugins.blackbox.community import CommunityRule, aggregate_community_reports
+from plugins.blackbox.community import CommunityRule, VerifiedReport, aggregate_community_reports
+from plugins.blackbox.kernel.constants import normalize_severity
+
+from _community_rows import NETWORK, Reporter, signed_row
 from plugins.blackbox.kernel.sparql_text import sparql_string_literal
 from plugins.blackbox.ruleset import Ruleset
 from plugins.blackbox.ruleset.disk_cache import _deserialize, _serialize
@@ -31,15 +34,13 @@ DEV_GRAPH = "0x51E5dE758A45c8b64048E29918421F0bdD6D5d5C/agent-blackbox-community
 CFG = BlackboxConfig(report=True, community_graph_id=DEV_GRAPH)
 
 
-def _report_row(identifier, reporter, severity="high", **extra):
-    row = {
-        "r": f"urn:guardian:report:{reporter}:{abs(hash(identifier)) % 10**8:08x}",
-        "identifier": identifier,
-        "reporter": reporter,
-        "severity": severity,
-    }
-    row.update(extra)
-    return row
+def _report(identifier, author, severity="high", reporter=None, **fields):
+    """A report that already passed verification (R0c): *author* is the signer key."""
+    return VerifiedReport(
+        subject=f"urn:guardian:report:{reporter or author}:{abs(hash(identifier)) % 10**8:08x}",
+        identifier=identifier, author=author, reporter=reporter or author,
+        severity=normalize_severity(severity), fields=tuple(sorted(fields.items())),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -48,23 +49,34 @@ def _report_row(identifier, reporter, severity="high", **extra):
 
 
 def test_three_reporters_count_three():
-    rows = [_report_row("dep:npm:evil@1", f"0xr{i}") for i in range(3)]
+    rows = [_report("dep:npm:evil@1", f"0xr{i}") for i in range(3)]
     rules = aggregate_community_reports(rows, {})
     assert len(rules) == 1
     assert rules[0].reporter_count == 3
 
 
-def test_same_reporter_twice_counts_once():
-    rows = [_report_row("dep:npm:evil@1", "0xr1"), _report_row("dep:npm:evil@1", "0xR1")]
+def test_same_signer_twice_counts_once():
+    rows = [_report("dep:npm:evil@1", "key-1"), _report("dep:npm:evil@1", "key-1")]
     rules = aggregate_community_reports(rows, {})
-    assert rules[0].reporter_count == 1  # case-normalized address
+    assert rules[0].reporter_count == 1
+
+
+def test_one_signer_under_many_reporter_strings_counts_once():
+    """KI-067/110: the reporter field is self-described — counting keys on the signer."""
+    rows = [_report("dep:npm:evil@1", "key-1", reporter=f"0xfake{i}") for i in range(10)]
+    assert aggregate_community_reports(rows, {})[0].reporter_count == 1
+
+
+def test_two_signers_count_two():
+    rows = [_report("dep:npm:evil@1", "key-1"), _report("dep:npm:evil@1", "key-2")]
+    assert aggregate_community_reports(rows, {})[0].reporter_count == 2
 
 
 def test_severity_is_max_across_reporters():
     rows = [
-        _report_row("dep:npm:evil@1", "0xr1", severity="medium"),
-        _report_row("dep:npm:evil@1", "0xr2", severity="critical"),
-        _report_row("dep:npm:evil@1", "0xr3", severity="low"),
+        _report("dep:npm:evil@1", "0xr1", severity="medium"),
+        _report("dep:npm:evil@1", "0xr2", severity="critical"),
+        _report("dep:npm:evil@1", "0xr3", severity="low"),
     ]
     assert aggregate_community_reports(rows, {})[0].severity == "critical"
 
@@ -74,7 +86,7 @@ def test_identifier_literals_stay_distinct_even_when_slugs_collide():
     a = "ioc:url:https://evil.example/x?a=1"
     b = "ioc:url:https://evil.example/x/a/1"
     rules = aggregate_community_reports(
-        [_report_row(a, "0xr1"), _report_row(b, "0xr2")], {}
+        [_report(a, "0xr1"), _report(b, "0xr2")], {}
     )
     assert len(rules) == 2
 
@@ -82,7 +94,7 @@ def test_identifier_literals_stay_distinct_even_when_slugs_collide():
 def test_first_seen_carries_over_from_prior_cache():
     """KI-012: first_seen is OUR observation history, not reporter-supplied."""
     rules = aggregate_community_reports(
-        [_report_row("dep:npm:evil@1", "0xr1")], {"dep:npm:evil@1": 1000.0}
+        [_report("dep:npm:evil@1", "0xr1")], {"dep:npm:evil@1": 1000.0}
     )
     assert rules[0].first_seen == 1000.0
 
@@ -92,7 +104,7 @@ def test_bounded_ingest_keeps_corroborated_head(monkeypatch):
     rows = []
     for i in range(6):
         for r in range(i + 1):  # identifier i has i+1 reporters
-            rows.append(_report_row(f"dep:npm:pkg{i}@1", f"0xr{r}"))
+            rows.append(_report(f"dep:npm:pkg{i}@1", f"0xr{r}"))
     rules = aggregate_community_reports(rows, {})
     assert len(rules) == 3
     assert [r.reporter_count for r in rules] == [6, 5, 4]  # the head, not the tail
@@ -234,6 +246,10 @@ class FakeClient:
         self._paused = paused
         self._fail = fail
         self.subscribed = []
+        self.network = NETWORK
+
+    def status(self):
+        return {"networkId": self.network}
 
     def subscribe_context_graph(self, cg_id, include_shared_memory=False):
         self.subscribed.append((cg_id, include_shared_memory))
@@ -250,7 +266,7 @@ class FakeClient:
 
 def test_apply_community_tier_populates_store_and_subscribes(monkeypatch):
     rs = Ruleset()
-    client = FakeClient(report_rows=[_report_row("ioc:domain:evil.example", "0xr1", iocType="domain")])
+    client = FakeClient(report_rows=[signed_row("ioc:domain:evil.example", Reporter("0xr1"), ioc_type="domain")])
     _apply_community_tier(rs, client, CFG)
     assert "ioc:domain:evil.example" in rs.community
     assert rs.community["ioc:domain:evil.example"]["reporterCount"] == 1
@@ -259,7 +275,7 @@ def test_apply_community_tier_populates_store_and_subscribes(monkeypatch):
 
 def test_pause_flag_suppresses_ingest(monkeypatch):
     rs = Ruleset()
-    client = FakeClient(report_rows=[_report_row("dep:npm:evil@1", "0xr1")], paused=True)
+    client = FakeClient(report_rows=[signed_row("dep:npm:evil@1", Reporter("0xr1"))], paused=True)
     _apply_community_tier(rs, client, CFG)
     assert rs.community == {}
     assert rs.community_paused is True
@@ -281,6 +297,66 @@ def test_empty_graph_degrades_to_zero_rules(monkeypatch):
     _apply_community_tier(rs, FakeClient(report_rows=[]), CFG)
     assert rs.community == {}
     assert rs.community_paused is False
+
+
+# ---------------------------------------------------------------------------
+# R0c: only verified reports count (KI-067/102/110/144)
+# ---------------------------------------------------------------------------
+
+
+def _tier(rows, network=NETWORK, prior=None):
+    rs = Ruleset()
+    client = FakeClient(report_rows=rows)
+    client.network = network
+    _apply_community_tier(rs, client, CFG, prior)
+    return rs.community
+
+
+def test_unsigned_row_is_not_counted():
+    row = signed_row("ioc:domain:evil.example", Reporter("0xr1"))
+    del row["signedStatement"]
+    assert _tier([row]) == {}
+
+
+def test_forged_reporter_field_is_dropped():
+    row = signed_row("ioc:domain:evil.example", Reporter("0xr1"))
+    row["reporter"] = "0xsomeoneelse"
+    assert _tier([row]) == {}
+
+
+def test_tampered_evidence_is_dropped():
+    row = signed_row("dep:npm:evil@1.0.0", Reporter("0xr1"), package_name="evil", package_version="1.0.0", ecosystem="npm")
+    row["packageVersion"] = "2.0.0"
+    assert _tier([row]) == {}
+
+
+def test_signature_from_another_network_is_dropped():
+    row = signed_row("ioc:domain:evil.example", Reporter("0xr1"), environment="some-test-network")
+    assert _tier([row]) == {}
+
+
+def test_signature_for_another_graph_is_dropped():
+    row = signed_row("ioc:domain:evil.example", Reporter("0xr1"), graph="0xabc/other-graph")
+    assert _tier([row]) == {}
+
+
+def test_one_key_posing_as_ten_addresses_counts_once():
+    """THE KI-067 attack: one node, ten reporter identities, one key."""
+    key = Reporter("0x0").key
+    rows = [signed_row("ioc:domain:evil.example", Reporter(f"0xpose{i}", key)) for i in range(10)]
+    assert _tier(rows)["ioc:domain:evil.example"]["reporterCount"] == 1
+
+
+def test_two_real_reporters_count_two():
+    rows = [signed_row("ioc:domain:evil.example", Reporter("0xr1")), signed_row("ioc:domain:evil.example", Reporter("0xr2"))]
+    assert _tier(rows)["ioc:domain:evil.example"]["reporterCount"] == 2
+
+
+def test_unknown_network_keeps_last_good():
+    prior = Ruleset()
+    prior.community = {"ioc:domain:old.example": {"identifier": "ioc:domain:old.example", "severity": "high",
+                                                  "source": "community", "reporterCount": 2, "firstSeen": 5.0}}
+    assert _tier([signed_row("ioc:domain:evil.example", Reporter("0xr1"))], network="", prior=prior) == prior.community
 
 
 def test_no_community_graph_configured_is_a_noop():

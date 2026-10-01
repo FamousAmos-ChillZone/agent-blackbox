@@ -15,11 +15,12 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, extract_binding
 from ..kernel import sparql_text
+from .verification import VerifiedReport
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +124,7 @@ def _community_reports_sparql(after: str) -> str:
 PREFIX g: <http://umanitek.ai/ontology/guardian/>
 SELECT ?r ?identifier ?reporter ?severity ?kind ?iocType ?toolName ?argShape
        ?packageName ?packageVersion ?packageEcosystem ?category ?skillName
-       ?dangerShape ?pattern WHERE {{
+       ?dangerShape ?pattern ?signedStatement WHERE {{
   ?r a g:ThreatReport ;
      g:identifier ?identifier ;
      g:reporter ?reporter ;
@@ -139,6 +140,7 @@ SELECT ?r ?identifier ?reporter ?severity ?kind ?iocType ?toolName ?argShape
   OPTIONAL {{ ?r g:skillName ?skillName }}
   OPTIONAL {{ ?r g:dangerShape ?dangerShape }}
   OPTIONAL {{ ?r g:pattern ?pattern }}
+  OPTIONAL {{ ?r g:signedStatement ?signedStatement }}
   {cursor}
 }} ORDER BY STR(?r) LIMIT {_COMMUNITY_PAGE_SIZE}
 """
@@ -196,49 +198,36 @@ def fetch_community_report_rows(client: DkgClient, cfg: BlackboxConfig) -> Optio
     return rows
 
 
-_COMMUNITY_EVIDENCE_VARS = (
-    "kind", "iocType", "toolName", "argShape", "packageName",
-    "packageVersion", "packageEcosystem", "category", "skillName",
-    "dangerShape", "pattern",
-)
-
-
 def aggregate_community_reports(
-    raw_rows: List[Dict[str, Any]], prior_first_seen: Dict[str, float]
+    reports: Iterable[VerifiedReport], prior_first_seen: Dict[str, float]
 ) -> List[CommunityRule]:
-    """Fold report rows into per-identifier CommunityRules.
+    """Fold VERIFIED reports into per-identifier CommunityRules.
 
-    Aggregation keys on the exact identifier LITERAL (KI-027 — slugged
-    threat URNs can collide; the literal cannot). Reporter counting is
-    per-distinct reporter string; severity is the max seen; first_seen
-    carries over from this node's previous cache so it reflects OUR first
-    observation, not an attacker-supplied date (KI-012).
+    Only :class:`~.verification.VerifiedReport` values reach here — a raw row
+    cannot be counted (R0c). Aggregation keys on the exact identifier literal
+    (KI-027); ``reporter_count`` is the number of distinct SIGNERS (the
+    self-described reporter string never counts, KI-067/110); severity is the
+    max seen; evidence comes from the signed payload; first_seen carries over
+    from this node's previous cache, never a reporter-supplied date (KI-012).
     """
     now = time.time()
     grouped: Dict[str, Dict[str, Any]] = {}
-    for row in raw_rows:
-        identifier = extract_binding(row.get("identifier")).strip()
-        reporter = extract_binding(row.get("reporter")).strip().lower()
-        if not identifier or not reporter:
-            continue
+    for report in reports:
         slot = grouped.setdefault(
-            identifier,
-            {"reporters": set(), "severity": "info", "fields": {}},
+            report.identifier,
+            {"authors": set(), "severity": "info", "fields": {}},
         )
-        slot["reporters"].add(reporter)
-        severity = constants.normalize_severity(extract_binding(row.get("severity")))
-        if constants.SEVERITY_RANK.get(severity, 0) > constants.SEVERITY_RANK.get(slot["severity"], 0):
-            slot["severity"] = severity
-        for var in _COMMUNITY_EVIDENCE_VARS:
-            value = extract_binding(row.get(var))
-            if value and var not in slot["fields"]:
-                slot["fields"][var] = value
+        slot["authors"].add(report.author)
+        if constants.SEVERITY_RANK.get(report.severity, 0) > constants.SEVERITY_RANK.get(slot["severity"], 0):
+            slot["severity"] = report.severity
+        for var, value in report.fields:
+            slot["fields"].setdefault(var, value)
     rules = [
         CommunityRule(
             identifier=identifier,
             category=identifier.split(":", 1)[0],
             severity=slot["severity"],
-            reporter_count=len(slot["reporters"]),
+            reporter_count=len(slot["authors"]),
             first_seen=float(prior_first_seen.get(identifier, now)),
             last_seen=now,
             fields=tuple(sorted(slot["fields"].items())),

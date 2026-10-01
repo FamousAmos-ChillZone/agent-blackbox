@@ -13,7 +13,7 @@ Usage (inside ruleset/): ``community_tier.apply_community_tier(rs, client, cfg, 
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Dict, Optional
 
 from .. import community
 from ..kernel import threat_ids
@@ -52,25 +52,49 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
             client.subscribe_context_graph(cfg.community_graph_id, include_shared_memory=True)
         except Exception:
             pass
-        prior_first_seen = {}
-        if prior is not None:
-            prior_first_seen = {
-                ident: float(rule.get("firstSeen", 0) or 0)
-                for ident, rule in prior.community.items()
-                if rule.get("firstSeen")
-            }
         raw = community.fetch_community_report_rows(client, cfg)
-        if raw is None:
-            # Fetch failed: keep last-good community rows (fail-open).
-            if prior is not None and prior.community:
-                rs.community = dict(prior.community)
-                materialize_community_rules(rs)
+        environment = _node_environment(client) if raw is not None else ""
+        if raw is None or not environment:
+            # Fetch failed, or the network is unknown so nothing can be
+            # verified: keep last-good community rows (fail-open).
+            _keep_last_good(rs, prior)
             return
-        rules = community.aggregate_community_reports(raw, prior_first_seen)
+        # R0c: only reports whose signature verifies for THIS network and
+        # graph are counted; the self-described reporter field never is.
+        verifier = community.ReportVerifier(environment, cfg.community_graph_id)
+        reports, _dropped = community.verify_report_rows(raw, verifier)
+        rules = community.aggregate_community_reports(reports, _first_seen_history(prior))
         rs.community = {rule.identifier: rule.as_rule() for rule in rules}
         materialize_community_rules(rs)
     except Exception as exc:  # pragma: no cover - fail open at the tier boundary
         logger.debug("blackbox: community tier skipped: %s", exc)
+
+
+def _node_environment(client: DkgClient) -> str:
+    """This node's network id — what community signatures must be bound to."""
+    try:
+        return community.network_environment(client.status())
+    except Exception as exc:  # node unreachable: treated as "cannot verify now"
+        logger.debug("blackbox: node status unavailable for community verification: %s", exc)
+        return ""
+
+
+def _first_seen_history(prior: Optional[compiler.Ruleset]) -> Dict[str, float]:
+    """identifier -> when THIS node first saw it (KI-012: our observation,
+    never a reporter-supplied date), carried over from the previous generation."""
+    if prior is None:
+        return {}
+    return {
+        ident: float(rule.get("firstSeen", 0) or 0)
+        for ident, rule in prior.community.items()
+        if rule.get("firstSeen")
+    }
+
+
+def _keep_last_good(rs: compiler.Ruleset, prior: Optional[compiler.Ruleset]) -> None:
+    if prior is not None and prior.community:
+        rs.community = dict(prior.community)
+        materialize_community_rules(rs)
 
 
 def materialize_community_rules(rs: compiler.Ruleset) -> None:

@@ -63,6 +63,13 @@ class ReportSigner:
         ).to_text()
 
 
+def network_environment(status: Optional[Mapping[str, object]]) -> str:
+    """The signing environment for a node status: its DKG network id ("" when
+    unknown). THE one definition — writers sign with it, readers verify with
+    it, so the two can never disagree."""
+    return str((status or {}).get("networkId") or "")
+
+
 def resolve_report_signer(client: DkgClient, graph: str) -> Optional[ReportSigner]:
     """This node's signer for *graph*, or None when it cannot sign.
 
@@ -72,7 +79,7 @@ def resolve_report_signer(client: DkgClient, graph: str) -> Optional[ReportSigne
     if not graph:
         return None
     try:
-        network = str((client.status() or {}).get("networkId") or "")
+        network = network_environment(client.status())
     except Exception as exc:  # any node failure means "cannot sign now"
         logger.warning("blackbox: cannot sign reports — node status unavailable: %s", exc)
         return None
