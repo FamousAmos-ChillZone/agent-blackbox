@@ -17,7 +17,7 @@ imports a feature (enforced by tests/plugins/test_blackbox_architecture.py).
 * :mod:`.identity` — this node's reporting identity (agent address; fails closed).
 * :mod:`.threat_ids` — deterministic threat identifiers and URIs.
 * :mod:`.rdf_terms` — N-Triples terms, ``Quad``, literal size caps.
-* :mod:`.sparql_text` — THE SPARQL string escaper and the row ceiling.
+* :mod:`.sparql_text` — SPARQL in and out: THE string escaper, the row ceiling, and decoding the daemon's result cells and rows.
 * :mod:`.yaml_files` — safe YAML config read/write (atomic).
 * :mod:`.display_safety` — terminal-safe printing of untrusted text.
 

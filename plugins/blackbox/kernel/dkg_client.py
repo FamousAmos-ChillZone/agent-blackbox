@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import constants
+from .sparql_text import extract_binding, normalize_bindings  # re-exported: callers import them from here
 
 logger = logging.getLogger(__name__)
 
@@ -638,48 +639,3 @@ SELECT (COUNT(DISTINCT ?threat) AS ?n) WHERE {
     def register_agent(self, name: str, framework: str = "hermes") -> Dict[str, Any]:
         """Register a new agent on the node → ``{agentAddress, authToken, ...}``."""
         return self._request("POST", "/api/agent/register", {"name": name, "framework": framework})
-
-
-# ---------------------------------------------------------------------------
-# SPARQL binding normalization
-# ---------------------------------------------------------------------------
-
-
-def extract_binding(value: Any) -> str:
-    """Unwrap a single SPARQL binding cell to a plain string.
-
-    Handles the SPARQL-JSON ``{"value": "..."}`` object shape as well as the
-    daemon's bare-string shape (IRIs bare, literals ``"..."``, typed literals
-    ``"x"^^<...>``, lang literals ``"x"@en``).
-    """
-    if value is None:
-        return ""
-    if isinstance(value, dict):
-        inner = value.get("value")
-        return str(inner) if inner is not None else ""
-    if isinstance(value, str):
-        if value.startswith('"'):
-            i = 1
-            while i < len(value):
-                if value[i] == '"' and value[i - 1] != "\\":
-                    break
-                i += 1
-            return value[1:i] if i < len(value) else value
-        return value
-    return str(value)
-
-
-def normalize_bindings(result: Any) -> List[Dict[str, Any]]:
-    """Extract a list of binding rows from any of the daemon's response shapes."""
-    if not isinstance(result, dict):
-        return []
-    rows = None
-    if isinstance(result.get("bindings"), list):
-        rows = result["bindings"]
-    elif isinstance(result.get("results"), dict) and isinstance(result["results"].get("bindings"), list):
-        rows = result["results"]["bindings"]
-    elif isinstance(result.get("result"), dict) and isinstance(result["result"].get("bindings"), list):
-        rows = result["result"]["bindings"]
-    if not isinstance(rows, list):
-        return []
-    return [row for row in rows if isinstance(row, dict)]

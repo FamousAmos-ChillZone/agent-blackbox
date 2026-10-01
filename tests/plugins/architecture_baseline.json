@@ -4,7 +4,7 @@
     "dashboard/server.py": 2382,
     "detection/detectors.py": 671,
     "kernel/config.py": 441,
-    "kernel/dkg_client.py": 685,
+    "kernel/dkg_client.py": 641,
     "sync/command.py": 1449,
     "sync/managed_node.py": 427
   },
