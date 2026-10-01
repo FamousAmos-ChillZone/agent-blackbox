@@ -30,7 +30,7 @@ config_mod = load_blackbox("kernel.config")
 constants = load_blackbox("kernel.constants")
 detection = load_blackbox("detection")
 hooks = load_blackbox("guard.hooks")
-community_pkg = load_blackbox("community")
+kernel_identity = load_blackbox("kernel.identity")
 community_sharing = load_blackbox("community.sharing")
 guard_background = load_blackbox("guard.background")
 guard_reporting = load_blackbox("guard.reporting")
@@ -465,7 +465,7 @@ def test_report_and_audit_shares_non_custom_finding(monkeypatch):
     monkeypatch.setattr(hooks.audit, "write_private_audit_ka", lambda *a, **k: None)
     monkeypatch.setattr(hooks.audit, "recently_reported", lambda ident: False)
     monkeypatch.setattr(hooks.audit, "allow_report", lambda *a, **k: True)
-    monkeypatch.setattr(community_pkg, "reporter_address", lambda client: "0xabc")
+    monkeypatch.setattr(kernel_identity, "reporter_address", lambda client: "0xabc")
 
     cfg = config_mod.BlackboxConfig(report=True)
     community = detection.Finding(

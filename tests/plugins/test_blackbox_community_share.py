@@ -23,6 +23,7 @@ from plugins.blackbox import audit, detection
 from plugins.blackbox.guard import hooks
 from plugins.blackbox import community as community_pkg
 from plugins.blackbox.community import sharing as community_sharing
+from plugins.blackbox.kernel import identity as kernel_identity
 from plugins.blackbox.guard import reporting as guard_reporting
 from plugins.blackbox.community import report_builder as report_builder
 from plugins.blackbox.kernel import threat_ids as threat_ids
@@ -46,7 +47,7 @@ def bb_home(monkeypatch, tmp_path):
 
 @pytest.fixture(autouse=True)
 def _fresh_reporter_cache(monkeypatch):
-    monkeypatch.setattr(community_sharing, "_reporter_cache", {})
+    monkeypatch.setattr(kernel_identity, "_reporter_cache", {})
 
 
 class FakeClient:
@@ -133,7 +134,7 @@ def _run_pipeline(monkeypatch, cfg, findings, client=None, reporter=REPORTER):
     client = client or FakeClient()
     spawned = []
     monkeypatch.setattr(guard_reporting, "DkgClient", lambda *a, **k: client)
-    monkeypatch.setattr(community_pkg, "reporter_address", lambda c: reporter)
+    monkeypatch.setattr(kernel_identity, "reporter_address", lambda c: reporter)
     monkeypatch.setattr(audit, "write_private_audit_ka", lambda *a, **k: None)
     monkeypatch.setattr(community_pkg, "spawn_community_share",
         lambda c, cf, f, r: spawned.append((f["identifier"], r)),
@@ -197,7 +198,7 @@ def test_hook_returns_before_share_completes(monkeypatch, bb_home):
 
     client = FakeClient()
     monkeypatch.setattr(guard_reporting, "DkgClient", lambda *a, **k: client)
-    monkeypatch.setattr(community_pkg, "reporter_address", lambda c: REPORTER)
+    monkeypatch.setattr(kernel_identity, "reporter_address", lambda c: REPORTER)
     monkeypatch.setattr(audit, "write_private_audit_ka", lambda *a, **k: None)
     monkeypatch.setattr(community_sharing, "_share_sighting", slow_share)
 

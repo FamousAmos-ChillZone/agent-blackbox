@@ -13,6 +13,7 @@ import logging
 from typing import Any, Dict, List, Optional
 from .. import audit, detection
 from .. import community
+from ..kernel import identity
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient
 
@@ -59,7 +60,7 @@ def _report_and_audit(cfg: BlackboxConfig, event: str, findings: List[detection.
     except Exception:
         client = None
     policy = community.CommunitySharePolicy(cfg)
-    reporter = community.reporter_address(client) if client is not None else None
+    reporter = identity.reporter_address(client) if client is not None else None
     for finding in finding_dicts:
         # Custom rules, LLM opinions, and secret findings stay local — no private
         # KA, no sighting. Secret values must never risk reaching the shared graph.

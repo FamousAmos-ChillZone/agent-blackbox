@@ -13,8 +13,8 @@ Public surface:
   fleet-wide ingest pause flag (read-only for us).
 * :func:`community_report_count` — how many reports the graph holds.
 * :class:`CommunitySharePolicy`, ``NEVER_SHARED_SOURCES`` — THE outbound gate;
-  :func:`spawn_community_share` sends an allowed finding; :func:`reporter_address`
-  resolves this node's reporting identity (never a fallback).
+  :func:`spawn_community_share` sends an allowed finding. This node's
+  reporting identity is resolved by ``kernel.identity.reporter_address``.
 * :func:`cmd_report` (``blackbox report``), :func:`print_community_status`
   (the status block), :func:`ensure_community_subscription` (join on sync).
 * :func:`build_report_quads` / :func:`build_false_positive_quads` — the
@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from .report_builder import build_false_positive_quads, build_report_quads
 from .report_command import cmd_report, ensure_community_subscription, print_community_status
-from .sharing import NEVER_SHARED_SOURCES, CommunitySharePolicy, reporter_address, spawn_community_share
+from .sharing import NEVER_SHARED_SOURCES, CommunitySharePolicy, spawn_community_share
 from .graph_stats import (
     contributing_agent_count,
     fetch_reporter_rows,
@@ -68,6 +68,5 @@ __all__ = [
     "most_reported_threats",
     "fetch_community_report_rows",
     "print_community_status",
-    "reporter_address",
     "spawn_community_share",
 ]
