@@ -12,6 +12,8 @@ imports a feature (enforced by tests/plugins/test_blackbox_architecture.py).
 * :mod:`.dkg_version` — installed-node version check (run by the installers as
   ``python -m plugins.blackbox.kernel.dkg_version``).
 * :mod:`.redaction` — THE secret-value patterns and redactor (G1).
+* :mod:`.signing` — THE signed-statement envelope (Ed25519, domain-separated).
+* :mod:`.reporter_key` — this node's reporter signing key (0600, created on first use).
 * :mod:`.identity` — this node's reporting identity (agent address; fails closed).
 * :mod:`.threat_ids` — deterministic threat identifiers and URIs.
 * :mod:`.rdf_terms` — N-Triples terms, ``Quad``, literal size caps.
