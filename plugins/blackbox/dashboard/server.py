@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
 from ..sync import state as sync_state
-from ..sync.progress import read_durable_progress
+from ..sync import read_durable_progress
 
 logger = logging.getLogger(__name__)
 
@@ -902,7 +902,7 @@ def create_app(*, manage_blackbox: bool = False):
     from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 
     from .. import attach, audit, ruleset
-    from . import settings
+    from ..kernel import settings
     from ..sync import state as sync_state
     from ..kernel import constants
     from ..kernel.config import load_blackbox_config

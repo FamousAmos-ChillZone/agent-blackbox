@@ -83,7 +83,7 @@ def test_mutation_without_token_rejected(client):
 
 
 def test_mutation_with_token_passes_boundary(client, monkeypatch):
-    from plugins.blackbox.dashboard import settings as settings_mod
+    from plugins.blackbox.kernel import settings as settings_mod
 
     saved = {}
     monkeypatch.setattr(settings_mod, "_persist", lambda updates: saved.update(updates) or True)

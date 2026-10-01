@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 from .. import attach
-from ..dashboard import settings
+from ..kernel import settings
 from ..kernel import yaml_files
 from . import reviewer as llm
 from ..kernel.config import load_blackbox_config

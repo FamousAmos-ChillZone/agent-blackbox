@@ -35,7 +35,7 @@ community_sharing = load_blackbox("community.sharing")
 guard_background = load_blackbox("guard.background")
 guard_reporting = load_blackbox("guard.reporting")
 ruleset_mod = load_blackbox("ruleset")
-settings = load_blackbox("dashboard.settings")
+settings = load_blackbox("kernel.settings")
 
 
 # ---------------------------------------------------------------------------

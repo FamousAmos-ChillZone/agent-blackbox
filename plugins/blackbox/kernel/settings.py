@@ -18,9 +18,9 @@ import logging
 import threading
 from typing import Any, Dict, List, Tuple
 
-from ..kernel import constants
-from ..kernel import yaml_files
-from ..kernel.config import DETECTION_CATEGORIES, load_blackbox_config
+from . import constants
+from . import yaml_files
+from .config import DETECTION_CATEGORIES, load_blackbox_config
 
 logger = logging.getLogger(__name__)
 
