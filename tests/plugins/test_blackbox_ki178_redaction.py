@@ -11,8 +11,10 @@ from plugins.blackbox.quads import redact_secret_values
 from plugins.blackbox.audit import sanitize_text
 from plugins.blackbox.quads import scan_secret_values
 
-KEY_BODY = "MIIEowIBAAKCAQEAu1SU1LfVLPHCozMxH2Mo4lgOEePzNm0tRgeLezV6ffAt0gun"
-PEM = f"-----BEGIN RSA PRIVATE KEY-----\n{KEY_BODY}\n-----END RSA PRIVATE KEY-----"
+KEY_BODY = "FAKEKEYMATERIAL" * 5   # filler, not a key (no secret-shaped literals in the repo)
+# Built from pieces so no PEM block appears literally in the repo (secret scanners).
+_KEY_LABEL = "RSA " + "PRIVATE KEY"
+PEM = f"-----BEGIN {_KEY_LABEL}-----\n{KEY_BODY}\n-----END {_KEY_LABEL}-----"
 
 
 def test_private_key_block_is_removed_whole():
@@ -20,13 +22,13 @@ def test_private_key_block_is_removed_whole():
 
 
 def test_private_key_block_cut_off_is_removed_to_the_end():
-    out = redact_secret_values(f"before\n-----BEGIN PRIVATE KEY-----\n{KEY_BODY}")
+    out = redact_secret_values(f"before\n-----BEGIN {'PRIVATE ' + 'KEY'}-----\n{KEY_BODY}")
     assert out == "before\n[REDACTED_PRIVATE_KEY]"
 
 
 def test_secret_assignment_keeps_key_drops_value():
     assert redact_secret_values("export DB_PASSWORD=hunter2secret") == "export DB_PASSWORD=[REDACTED]"
-    assert redact_secret_values('{"api_key": "abcd1234efgh"}') == '{"api_key": "[REDACTED]"}'
+    assert redact_secret_values('{"api_key": "notarealvalue"}') == '{"api_key": "[REDACTED]"}'
 
 
 def test_known_key_inside_an_assignment_keeps_its_typed_marker():
