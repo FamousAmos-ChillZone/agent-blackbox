@@ -16,7 +16,7 @@ from ..kernel import threat_ids
 from ..kernel import constants, sparql_text
 from ..kernel.config import load_blackbox_config
 from ..kernel.dkg_client import DkgClient
-from ..kernel import display_safety
+from ..kernel import display_safety, identity
 
 logger = logging.getLogger(__name__)
 
@@ -164,8 +164,8 @@ def cmd_report(args: argparse.Namespace) -> int:
         print("Nothing was submitted.")
         return 2
     client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-    reporter = _resolve_reporter(client)
-    if not reporter or reporter == "node" or not reporter.startswith("0x"):
+    reporter = identity.reporter_address(client)
+    if not reporter or not reporter.startswith("0x"):
         print("No resolved node identity — refusing to report as a shared ghost identity.")
         print("Start the DKG node (or finish setup) and retry.")
         return 1
@@ -251,7 +251,7 @@ def _report_status(cfg) -> int:
     if cfg.community_graph_id:
         try:
             client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-            reporter = _resolve_reporter(client)
+            reporter = identity.reporter_address(client)
             if reporter and reporter.startswith("0x"):
                 sparql = (
                     "PREFIX g: <http://umanitek.ai/ontology/guardian/> "
@@ -268,20 +268,3 @@ def _report_status(cfg) -> int:
         except Exception as exc:
             logger.debug("blackbox: report --status graph read failed: %s", exc)
     return 0
-
-
-def _resolve_reporter(client: DkgClient) -> str:
-    # agent_identity is the definitive token→address resolution; status() is a
-    # best-effort fallback for older daemons (same order as hooks._reporter_address).
-    for resolver in (client.agent_identity, client.status):
-        try:
-            info = resolver()
-        except Exception:
-            continue
-        if not isinstance(info, dict):
-            continue
-        for key in ("agentAddress", "defaultAgentAddress", "address"):
-            val = info.get(key)
-            if isinstance(val, str) and val:
-                return val
-    return "node"

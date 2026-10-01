@@ -17,6 +17,7 @@ import pytest
 from plugins.blackbox import audit, cli
 from plugins.blackbox.community import report_command as report_command
 from plugins.blackbox.kernel import constants
+from plugins.blackbox.kernel import identity as kernel_identity
 from plugins.blackbox.kernel.config import BlackboxConfig
 
 
@@ -73,7 +74,7 @@ def wired(monkeypatch, bb_home):
     client = FakeClient()
     monkeypatch.setattr(report_command, "load_blackbox_config", lambda: CFG_ON)
     monkeypatch.setattr(report_command, "DkgClient", lambda **kw: client)
-    monkeypatch.setattr(report_command, "_resolve_reporter", lambda c: REPORTER)
+    monkeypatch.setattr(kernel_identity, "reporter_address", lambda c: REPORTER)
     return client
 
 
@@ -137,7 +138,7 @@ def test_share_failure_exits_nonzero_and_ledgers(monkeypatch, bb_home, capsys):
     client = FakeClient(fail=True)
     monkeypatch.setattr(report_command, "load_blackbox_config", lambda: CFG_ON)
     monkeypatch.setattr(report_command, "DkgClient", lambda **kw: client)
-    monkeypatch.setattr(report_command, "_resolve_reporter", lambda c: REPORTER)
+    monkeypatch.setattr(kernel_identity, "reporter_address", lambda c: REPORTER)
     rc = report_command.cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example"))
     assert rc == 1
     assert "FAILED" in capsys.readouterr().out
@@ -171,9 +172,10 @@ def test_gate_off_is_loud_not_silent(monkeypatch, bb_home, capsys):
 
 
 def test_ghost_identity_refused(monkeypatch, bb_home, capsys):
+    """No resolvable identity -> refuse; there is no placeholder to report under."""
     monkeypatch.setattr(report_command, "load_blackbox_config", lambda: CFG_ON)
     monkeypatch.setattr(report_command, "DkgClient", lambda **kw: FakeClient())
-    monkeypatch.setattr(report_command, "_resolve_reporter", lambda c: "node")
+    monkeypatch.setattr(kernel_identity, "reporter_address", lambda c: None)
     rc = report_command.cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example"))
     assert rc == 1
     assert "ghost identity" in capsys.readouterr().out
