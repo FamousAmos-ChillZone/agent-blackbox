@@ -25,7 +25,7 @@ GRAPH = "0x51E5dE758A45c8b64048E29918421F0bdD6D5d5C/agent-blackbox-community-dev
 @dataclass(frozen=True)
 class Reporter:
     address: str
-    key: Ed25519PrivateKey = field(default_factory=Ed25519PrivateKey.generate)
+    key: Ed25519PrivateKey = field(default_factory=Ed25519PrivateKey.generate)  # gitleaks:allow — annotation; keys are generated per test
 
     @property
     def author(self) -> str:

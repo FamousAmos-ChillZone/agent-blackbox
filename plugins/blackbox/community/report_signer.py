@@ -47,7 +47,7 @@ class ReportSigner:
     ``graph`` — the community graph id. Build with :func:`resolve_report_signer`.
     """
 
-    private_key: Ed25519PrivateKey
+    private_key: Ed25519PrivateKey  # gitleaks:allow — a type annotation, not a secret
     environment: str
     graph: str
 

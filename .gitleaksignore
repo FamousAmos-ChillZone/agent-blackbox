@@ -1,0 +1,17 @@
+# Reviewed false positives (2026-10-01) — already-pushed commits that cannot change without
+# rewriting history. None is a real secret: two are Python type annotations
+# (a key variable typed as an Ed25519 private key), the rest are deliberately fake secrets in redaction tests.
+# Those tests now build their fakes at runtime, so no new commit carries such literals.
+# Format: commit:file:rule:line (gitleaks fingerprint).
+41d3acb03efad08cd5d39df97399bec54fcac966:plugins/blackbox/community/report_signer.py:generic-api-key:50
+9ad0c7f47210bea7d11ff6d15489af832cca372b:tests/plugins/test_blackbox_kernel_redaction.py:generic-api-key:15
+9ad0c7f47210bea7d11ff6d15489af832cca372b:tests/plugins/test_blackbox_kernel_redaction.py:generic-api-key:32
+9ad0c7f47210bea7d11ff6d15489af832cca372b:tests/plugins/test_blackbox_kernel_redaction.py:private-key:16
+9ad0c7f47210bea7d11ff6d15489af832cca372b:tests/plugins/test_blackbox_llm.py:generic-api-key:126
+bf9047579d3c9f7e8109eee4c265e0f0a5cf072e:tests/plugins/test_blackbox_ki178_redaction.py:generic-api-key:14
+bf9047579d3c9f7e8109eee4c265e0f0a5cf072e:tests/plugins/test_blackbox_ki178_redaction.py:generic-api-key:29
+bf9047579d3c9f7e8109eee4c265e0f0a5cf072e:tests/plugins/test_blackbox_ki178_redaction.py:private-key:15
+e7d0fd58976017b9850b18c52eae9894480bbce6:tests/plugins/test_blackbox_ki178_redaction.py:generic-api-key:14
+e7d0fd58976017b9850b18c52eae9894480bbce6:tests/plugins/test_blackbox_ki178_redaction.py:generic-api-key:29
+e7d0fd58976017b9850b18c52eae9894480bbce6:tests/plugins/test_blackbox_ki178_redaction.py:private-key:15
+fe2fa1bb1b6bb07024a50f6412e5e09bbb609b25:tests/plugins/_community_rows.py:generic-api-key:28
