@@ -32,6 +32,9 @@ def bb_home(monkeypatch, tmp_path):
     return tmp_path / "bbhome"
 
 
+TEST_NETWORK = "test-network-id"
+
+
 class FakeClient:
     def __init__(self, fail=False):
         self.shares = []
@@ -41,7 +44,7 @@ class FakeClient:
         return {"agentAddress": REPORTER}
 
     def status(self):
-        return {}
+        return {"networkId": TEST_NETWORK}  # real nodes always report one; signing needs it (R0b)
 
     def share_knowledge_asset(self, cg_id, name, q, **kw):
         if self.fail:

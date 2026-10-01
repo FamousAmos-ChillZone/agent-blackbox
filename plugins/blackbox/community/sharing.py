@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 from .. import audit
 from .. import community
 from ..kernel import threat_ids
+from . import report_signer
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, DkgError
 
@@ -94,11 +95,16 @@ def _share_sighting(
     Targets ``cfg.community_graph_id`` — never the verified graph: the
     two-graph separation is the product's core trust boundary. Every attempt
     (success or failure) lands in the local reports ledger (KI-015) so the
-    node keeps a durable record of its contributions. Fail-open.
+    node keeps a durable record of its contributions. A node that cannot sign
+    does not share (R0b): the refusal is ledgered like any failure. Fail-open.
     """
     identifier = str(finding.get("identifier") or "")
     subject = threat_ids.report_uri(identifier, reporter)
     name = f"report-{threat_ids.stable_hash(identifier + reporter, 16)}"
+    signer = report_signer.resolve_report_signer(client, cfg.community_graph_id)
+    if signer is None:
+        _ledger_share(finding, subject, name, ok=False, error="cannot sign reports (no network id or reporter key)")
+        return
     try:
         # Reports contain signatures, never raw prompts, paths, or source files.
         fields = finding.get("fields") if isinstance(finding.get("fields"), dict) else {}
@@ -108,6 +114,7 @@ def _share_sighting(
             severity=str(finding.get("severity") or "info"),
             reporter_address=reporter,
             framework=_FRAMEWORK,
+            signer=signer,
             **{k: v for k, v in fields.items() if v is not None},
         )
         client.share_knowledge_asset(cfg.community_graph_id, name, q)

@@ -50,6 +50,9 @@ def _fresh_reporter_cache(monkeypatch):
     monkeypatch.setattr(kernel_identity, "_reporter_cache", {})
 
 
+TEST_NETWORK = "test-network-id"
+
+
 class FakeClient:
     """Captures share calls; resolves a real-looking identity."""
 
@@ -61,7 +64,7 @@ class FakeClient:
         return {"agentAddress": REPORTER}
 
     def status(self):
-        return {}
+        return {"networkId": TEST_NETWORK}  # real nodes always report one; signing needs it (R0b)
 
     def share_knowledge_asset(self, cg_id, name, q, **kw):
         if self.fail:

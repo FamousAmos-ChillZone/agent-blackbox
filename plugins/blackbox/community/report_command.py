@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from .. import audit
-from . import report_builder
+from . import report_builder, report_signer
 from ..kernel import threat_ids
 from ..kernel import constants, sparql_text
 from ..kernel.config import load_blackbox_config
@@ -164,13 +164,12 @@ def cmd_report(args: argparse.Namespace) -> int:
         print("Nothing was submitted.")
         return 2
     client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-    reporter = identity.reporter_address(client)
-    if not reporter or not reporter.startswith("0x"):
-        print("No resolved node identity — refusing to report as a shared ghost identity.")
-        print("Start the DKG node (or finish setup) and retry.")
+    resolved = _reporting_identity(client, cfg.community_graph_id)
+    if resolved is None:
         return 1
+    reporter, signer = resolved
     if args.false_positive:
-        return _submit_false_positive(client, cfg, args.false_positive, reporter)
+        return _submit_false_positive(client, cfg, args.false_positive, reporter, signer)
     finding, err = _report_finding_from_args(args)
     if finding is None:
         print(f"Invalid report: {err}")
@@ -191,6 +190,7 @@ def cmd_report(args: argparse.Namespace) -> int:
         severity=finding["severity"],
         reporter_address=reporter,
         framework="hermes",
+        signer=signer,
         **finding["fields"],
     )
     try:
@@ -215,13 +215,30 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
-def _submit_false_positive(client: DkgClient, cfg, identifier: str, reporter: str) -> int:
+def _reporting_identity(client: DkgClient, graph: str) -> Optional[Tuple[str, report_signer.ReportSigner]]:
+    """(reporter address, signer) for a manual report, or None after telling
+    the operator why nothing can be submitted (no identity, or cannot sign)."""
+    reporter = identity.reporter_address(client)
+    if not reporter or not reporter.startswith("0x"):
+        print("No resolved node identity — refusing to report as a shared ghost identity.")
+        print("Start the DKG node (or finish setup) and retry.")
+        return None
+    signer = report_signer.resolve_report_signer(client, graph)
+    if signer is None:
+        print("Cannot sign the report (the node reports no network id, or the reporter key is unusable).")
+        print("Nothing was submitted — an unsigned report would not be counted by anyone.")
+        return None
+    return reporter, signer
+
+
+def _submit_false_positive(client: DkgClient, cfg, identifier: str, reporter: str,
+                           signer: report_signer.ReportSigner) -> int:
     """Dispute a community threat (lifecycle: DISPUTE — the Q8 veto writer)."""
     identifier = identifier.strip()
     if not identifier:
         print("Provide the threat identifier to dispute.")
         return 2
-    q = report_builder.build_false_positive_quads(identifier=identifier, reporter_address=reporter)
+    q = report_builder.build_false_positive_quads(identifier=identifier, reporter_address=reporter, signer=signer)
     name = f"fp-{threat_ids.stable_hash(identifier + reporter, 16)}"
     subject = threat_ids.report_uri(identifier, reporter) + ":fp"
     try:

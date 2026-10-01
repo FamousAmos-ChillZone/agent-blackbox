@@ -53,6 +53,9 @@ SOURCE_PRED = f"{BLACKBOX_ONTOLOGY}source"
 REPORTS_THREAT_PRED = f"{BLACKBOX_ONTOLOGY}reportsThreat"
 REPORTER_PRED = f"{BLACKBOX_ONTOLOGY}reporter"
 FRAMEWORK_PRED = f"{BLACKBOX_ONTOLOGY}framework"
+#: The signed envelope (kernel.signing) a community report or dispute carries;
+#: readers believe its author only after verifying it (Refine R0b, 2026-10).
+SIGNED_STATEMENT_PRED = f"{BLACKBOX_ONTOLOGY}signedStatement"
 
 # threat kind: distinguishes active malware from a mere vulnerability. Only
 # ``malware`` blocks (at/above block_severity); ``vulnerability`` always flags

@@ -3246,11 +3246,14 @@ def test_share_sighting_forwards_candidate_fields(monkeypatch, tmp_path):
     monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
 
     class FakeClient:
+        def status(self):
+            return {"networkId": "test-network-id"}  # signing needs it (R0b)
+
         def share_knowledge_asset(self, cg, name, q):
             shared["quads"] = q
             return {}
 
-    cfg = config_mod.BlackboxConfig()
+    cfg = config_mod.BlackboxConfig(community_graph_id="0xabc/agent-blackbox-community-test")
     finding = {
         "identifier": "fileaccess:read_file:ssh-private-key",
         "category": "fileaccess", "severity": "critical", "confirmed": False,
