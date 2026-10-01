@@ -278,7 +278,10 @@ def test_managed_sync_keeps_existing_steady_node_running(monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli_mod,
         "_managed_dkg_sync_mode_matches",
-        lambda _cfg, expected: expected == cli_mod._DKG_NATIVE_SYNC_SETTINGS,
+        lambda _cfg, expected: expected == {
+            **cli_mod._DKG_NATIVE_SYNC_SETTINGS,
+            "DKG_EXPERIMENTAL_EXACT_BATCH_STREAM": "1",
+        },
     )
     monkeypatch.setattr(cli_mod, "_restart_managed_dkg", restart)
     monkeypatch.setattr(cli_mod, "_cmd_sync_impl", sync_impl)

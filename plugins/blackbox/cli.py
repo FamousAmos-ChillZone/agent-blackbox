@@ -42,6 +42,8 @@ _DKG_NATIVE_SYNC_SETTINGS = {
     "DKG_VM_RECONCILER_ENABLED": "1",
 }
 
+_DKG_EXACT_BATCH_STREAM_ENV = "DKG_EXPERIMENTAL_EXACT_BATCH_STREAM"
+
 _DKG_CONFIG_SYNC_SETTINGS = {
     "DKG_SYNC_ON_CONNECT_ENABLED": "syncOnConnectEnabled",
     "DKG_SYNC_RECONCILER_ENABLED": "syncReconcilerEnabled",
@@ -576,12 +578,24 @@ def _dkg_steady_sync_settings(cfg: BlackboxConfig) -> Dict[str, str]:
     )
 
 
+def _dkg_runtime_sync_settings(cfg: BlackboxConfig) -> Dict[str, str]:
+    """Enable exact-batch streaming only for the default public native path."""
+    from . import native_sync
+
+    settings = _dkg_steady_sync_settings(cfg)
+    if native_sync.handles_default_public(cfg):
+        settings[_DKG_EXACT_BATCH_STREAM_ENV] = os.environ.get(
+            _DKG_EXACT_BATCH_STREAM_ENV, "1"
+        )
+    return settings
+
+
 def _dkg_sync_environment(cfg: BlackboxConfig) -> Dict[str, str]:
     env = os.environ.copy()
     # Capture this installation's typed guards before stop. Never replay the
     # daemon's raw environment or Node loader flags into its replacement.
     dkg_runtime_safety.prepare_restart_environment(env, cfg.dkg_home, cfg.dkg_bin)
-    sync_settings = _dkg_steady_sync_settings(cfg)
+    sync_settings = _dkg_runtime_sync_settings(cfg)
     try:
         persisted = json.loads(
             (Path(cfg.dkg_home) / "config.json").read_text(encoding="utf-8")
@@ -614,7 +628,7 @@ def _managed_dkg_sync_mode_matches(
     cfg: BlackboxConfig,
     expected: Dict[str, str],
 ) -> bool:
-    """Return whether the live worker actually uses the persisted sync mode."""
+    """Return whether the live worker actually uses the requested sync mode."""
     try:
         pid = int(
             (Path(cfg.dkg_home) / "daemon.pid")
@@ -624,7 +638,13 @@ def _managed_dkg_sync_mode_matches(
         process_env = psutil.Process(pid).environ()
     except (OSError, TypeError, ValueError, psutil.Error):
         return False
-    return all(process_env.get(name) == value for name, value in expected.items())
+    # DKG treats an absent experimental flag as disabled, so an explicit 0
+    # need not restart a worker that already has streaming disabled.
+    return all(
+        process_env.get(name, "0" if name == _DKG_EXACT_BATCH_STREAM_ENV else None)
+        == value
+        for name, value in expected.items()
+    )
 
 
 def _managed_dkg_node_executable(cfg: BlackboxConfig) -> Optional[Path]:
@@ -858,8 +878,8 @@ def _cmd_sync_with_managed_dkg(cfg: BlackboxConfig, args: argparse.Namespace) ->
     A running steady-state node may already be advancing a durable checkpoint.
     Do not restart it merely to reserve the single sync slot: the pinned request
     can wait behind that work, while the existing transfer keeps making progress.
-    A restart is required only to repair an unreachable node or an installation
-    left in the obsolete bootstrap-only mode by an interrupted older command.
+    A restart repairs an unreachable node, an obsolete bootstrap-only mode,
+    or a worker that has not adopted the requested runtime sync policy.
     """
     with _managed_sync_lock() as acquired:
         if not acquired:
@@ -878,7 +898,7 @@ def _cmd_sync_with_managed_dkg(cfg: BlackboxConfig, args: argparse.Namespace) ->
         terminal_state: Dict[str, Any] = {}
         steady_changed = _set_persisted_dkg_steady_state(cfg)
         if steady_changed or not _managed_dkg_sync_mode_matches(
-            cfg, _dkg_steady_sync_settings(cfg)
+            cfg, _dkg_runtime_sync_settings(cfg)
         ):
             _restart_managed_dkg(cfg)
         result = _cmd_sync_impl(args)
