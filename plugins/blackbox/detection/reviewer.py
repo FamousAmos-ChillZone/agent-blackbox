@@ -28,7 +28,7 @@ from typing import Any, Dict, Optional
 
 from utils import model_forces_max_completion_tokens
 
-from ..kernel import constants
+from ..kernel import constants, redaction
 
 logger = logging.getLogger(__name__)
 
@@ -42,17 +42,6 @@ DEFAULT_MODELS = {
     "openai": "gpt-4.1-mini",
     "anthropic": "claude-haiku-4-5-20251001",
 }
-
-# Redact obvious secrets from text before it leaves the machine. Mirrors the
-# audit-log redaction so an injected prompt full of keys isn't forwarded raw.
-_SECRET_RES = (
-    re.compile(r"sk-[A-Za-z0-9_-]{16,}"),                         # OpenAI-style keys
-    re.compile(r"\b(?:gh[pousr]|github_pat)_[A-Za-z0-9_]{16,}"),  # GitHub tokens
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),                          # AWS access-key id
-    re.compile(r"\bey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),  # JWT
-    re.compile(r"\bBearer\s+[A-Za-z0-9._~+/-]{12,}=*", re.IGNORECASE),               # bearer tokens
-    re.compile(r"\b[A-Za-z0-9_-]*(?:api[_-]?key|token|secret|password)[\"'\s:=]+[A-Za-z0-9._-]{8,}", re.IGNORECASE),
-)
 
 _SYSTEM_PROMPT = (
     "You are a high-precision security classifier for an AI agent. Decide whether "
@@ -101,13 +90,6 @@ def available(cfg: Any) -> bool:
     return bool(getattr(cfg, "llm_ready", False))
 
 
-def _redact(text: str) -> str:
-    out = text
-    for rx in _SECRET_RES:
-        out = rx.sub("[REDACTED]", out)
-    return out
-
-
 def review_injection(text: str, cfg: Any) -> Optional[Dict[str, Any]]:
     """Ask the configured LLM whether *text* is a prompt-injection attempt.
 
@@ -120,8 +102,9 @@ def review_injection(text: str, cfg: Any) -> Optional[Dict[str, Any]]:
     if _PACKAGE_COMMAND_RE.search(text) and not _INJECTION_CUE_RE.search(text):
         return None
     # Redact BEFORE truncating: a secret straddling the cutoff must not survive
-    # as a partial. Redact a small margin past the cap, then truncate.
-    payload_text = _redact(text[: _MAX_REVIEW_CHARS + 256])[:_MAX_REVIEW_CHARS]
+    # as a partial. Redact a margin past the cap, then truncate (a private-key
+    # block cut by the margin is still removed to the end of the text).
+    payload_text = redaction.redact_secret_values(text[: _MAX_REVIEW_CHARS + 256])[:_MAX_REVIEW_CHARS]
     try:
         provider = cfg.llm_provider.strip().lower()
         if provider == "openai":

@@ -692,7 +692,7 @@ def test_injection_sighting_carries_no_raw_prompt():
 
 
 def test_redaction_covers_more_secret_shapes():
-    red = llm._redact
+    from plugins.blackbox.kernel.redaction import redact_secret_values as red  # G1: the one redactor
     assert "AKIAIOSFODNN7EXAMPLE" not in red("key AKIAIOSFODNN7EXAMPLE")
     assert "ghp_1234567890abcdefghij" not in red("pat ghp_1234567890abcdefghij")
     assert "eyJhbGciOiJI" not in red("jwt eyJhbGciOiJI.eyJzdWIiOiIx.SflKxwRJSMeKKF2")

@@ -22,17 +22,15 @@ _SECRET_KEY_RE = re.compile(
     r"|client[_-]?secret|access[_-]?token|refresh[_-]?token)",
     re.IGNORECASE,
 )
-_BEARER_RE = re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
 
 
 def sanitize_text(value: str, max_len: int = _MAX_TEXT) -> str:
     """Redact common secret shapes from *value* and truncate to *max_len*.
 
-    Uses the canonical secret-value patterns from ``kernel.redaction`` plus opaque
-    ``Bearer`` tokens, so a secret never lands raw in the audit log.
+    Redacts with ``kernel.redaction`` (the one implementation) BEFORE
+    truncating, so a secret never lands raw — or half-cut — in the audit log.
     """
-    text = _BEARER_RE.sub("Bearer [REDACTED]", str(value))
-    text = redact_secret_values(text)
+    text = redact_secret_values(str(value))
     if len(text) > max_len:
         return text[:max_len] + "...[truncated]"
     return text
