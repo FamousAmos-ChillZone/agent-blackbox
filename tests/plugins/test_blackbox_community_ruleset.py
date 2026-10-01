@@ -18,13 +18,13 @@ import pytest
 
 from plugins.blackbox import detection, ruleset as rs_mod
 from plugins.blackbox.community import reader as community_reader
-from plugins.blackbox.ruleset import refresh_cycle as ruleset_refresh
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.community import CommunityRule, aggregate_community_reports
 from plugins.blackbox.kernel.sparql_text import sparql_string_literal
 from plugins.blackbox.ruleset import Ruleset
 from plugins.blackbox.ruleset.disk_cache import _deserialize, _serialize
-from plugins.blackbox.ruleset.refresh_cycle import _apply_community_tier, _materialize_community_rules
+from plugins.blackbox.ruleset.community_tier import apply_community_tier as _apply_community_tier
+from plugins.blackbox.ruleset.community_tier import materialize_community_rules as _materialize_community_rules
 
 
 DEV_GRAPH = "0x51E5dE758A45c8b64048E29918421F0bdD6D5d5C/agent-blackbox-community-dev"
@@ -249,7 +249,6 @@ class FakeClient:
 
 
 def test_apply_community_tier_populates_store_and_subscribes(monkeypatch):
-    monkeypatch.setattr(ruleset_refresh, "_latest_cached_ruleset", lambda cg: None)
     rs = Ruleset()
     client = FakeClient(report_rows=[_report_row("ioc:domain:evil.example", "0xr1", iocType="domain")])
     _apply_community_tier(rs, client, CFG)
@@ -259,7 +258,6 @@ def test_apply_community_tier_populates_store_and_subscribes(monkeypatch):
 
 
 def test_pause_flag_suppresses_ingest(monkeypatch):
-    monkeypatch.setattr(ruleset_refresh, "_latest_cached_ruleset", lambda cg: None)
     rs = Ruleset()
     client = FakeClient(report_rows=[_report_row("dep:npm:evil@1", "0xr1")], paused=True)
     _apply_community_tier(rs, client, CFG)
@@ -273,14 +271,12 @@ def test_fetch_failure_keeps_last_good(monkeypatch):
         "dep:npm:old@1": {"identifier": "dep:npm:old@1", "severity": "high",
                           "source": "community", "reporterCount": 4, "firstSeen": 5.0}
     }
-    monkeypatch.setattr(ruleset_refresh, "_latest_cached_ruleset", lambda cg: prior)
     rs = Ruleset()
-    _apply_community_tier(rs, FakeClient(fail=True), CFG)
+    _apply_community_tier(rs, FakeClient(fail=True), CFG, prior)
     assert rs.community == prior.community
 
 
 def test_empty_graph_degrades_to_zero_rules(monkeypatch):
-    monkeypatch.setattr(ruleset_refresh, "_latest_cached_ruleset", lambda cg: None)
     rs = Ruleset()
     _apply_community_tier(rs, FakeClient(report_rows=[]), CFG)
     assert rs.community == {}

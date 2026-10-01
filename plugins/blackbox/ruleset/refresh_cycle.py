@@ -3,8 +3,8 @@
 Owns the in-memory generation (``_memory``, a :class:`RulesetCache`), the
 refresh cycle (:func:`refresh`, background refresh,
 tier restore on partial failure) and the read accessors :func:`get` and
-:func:`peek`. The community tier is merged here from the ``community``
-package's public reader — the ruleset depends on community, never the reverse.
+:func:`peek`. The community tier is merged by :mod:`.community_tier` after the
+verified build — the ruleset depends on community, never the reverse.
 
 Usage: ``ruleset.get(cfg)`` (cached, refreshes in the background when stale) ·
 ``ruleset.refresh(cfg, force=True)`` · ``ruleset.peek(cfg)`` (never fetches).
@@ -17,100 +17,17 @@ import threading
 import time
 from typing import Any, List, Optional
 from ..kernel import constants
-from ..kernel import threat_ids
 from ..kernel.config import BlackboxConfig, load_blackbox_config
 from ..kernel.dkg_client import DkgClient
-from .. import community
 from . import compiler
 from . import disk_cache
 from . import errors
 from . import fetching
+from . import community_tier
 from . import locks
 from .memory_cache import RulesetCache
 
 logger = logging.getLogger(__name__)
-
-
-def _apply_community_tier(rs: "compiler.Ruleset", client: DkgClient, cfg: BlackboxConfig) -> None:
-    """Enrich a freshly built ruleset with the community tier. Fail-open.
-
-    Populates ``rs.community`` (the corroboration/display store, keyed by
-    identifier literal) and materializes MATCHABLE community rules into the
-    ``dependency``/``ioc`` O(1) lookup dicts only — identifier-equality
-    matching, never pattern execution (KI-004). Public rules always win a
-    key collision (merge precedence). Injection/escalation/fileaccess/skill
-    community reports stay display-and-corroboration only in v1: their
-    local detections derive the same deterministic identifiers, so
-    corroboration works without ever interpreting community content.
-    """
-    if not cfg.community_graph_id:
-        return
-    try:
-        if community.community_pause_active(client, cfg):
-            logger.warning("blackbox: community ingest PAUSED by curator flag")
-            rs.community_paused = True
-            return
-        # KI-034: updated existing installs must join without a manual sync.
-        try:
-            client.subscribe_context_graph(cfg.community_graph_id, include_shared_memory=True)
-        except Exception:
-            pass
-        prior = _latest_cached_ruleset(cfg.context_graph_id)
-        prior_first_seen = {}
-        if prior is not None:
-            prior_first_seen = {
-                ident: float(rule.get("firstSeen", 0) or 0)
-                for ident, rule in prior.community.items()
-                if rule.get("firstSeen")
-            }
-        raw = community.fetch_community_report_rows(client, cfg)
-        if raw is None:
-            # Fetch failed: keep last-good community rows (fail-open).
-            if prior is not None and prior.community:
-                rs.community = dict(prior.community)
-                _materialize_community_rules(rs)
-            return
-        rules = community.aggregate_community_reports(raw, prior_first_seen)
-        rs.community = {rule.identifier: rule.as_rule() for rule in rules}
-        _materialize_community_rules(rs)
-    except Exception as exc:  # pragma: no cover - fail open at the tier boundary
-        logger.debug("blackbox: community tier skipped: %s", exc)
-
-
-def _materialize_community_rules(rs: "compiler.Ruleset") -> None:
-    """Copy matchable community rules into the dependency/ioc lookup dicts.
-
-    Only identifier-keyed O(1) structures — nothing community-sourced ever
-    reaches a pattern compile or scan list. Public rules keep precedence.
-    """
-    for identifier, rule in rs.community.items():
-        if identifier.startswith("dep:"):
-            eco = str(rule.get("packageEcosystem") or "").lower()
-            pkg = str(rule.get("packageName") or "").lower()
-            ver = str(rule.get("packageVersion") or "")
-            if not (eco and pkg and ver):
-                try:
-                    _, rest = identifier.split(":", 1)
-                    eco, tail = rest.split(":", 1)
-                    pkg, ver = tail.rsplit("@", 1)
-                    eco, pkg = eco.lower(), pkg.lower()
-                except ValueError:
-                    continue
-            key = threat_ids.dependency_key(eco, pkg, ver)
-            if key not in rs.dependency:  # public beats community
-                rs.dependency[key] = {
-                    **rule,
-                    "ecosystem": eco,
-                    "packageName": pkg,
-                    "packageVersion": ver,
-                    "advisoryId": "",
-                    "kind": rule.get("kind") or None,
-                }
-        elif identifier.startswith("ioc:"):
-            if identifier not in rs.ioc:  # public beats community
-                parts = identifier.split(":", 2)
-                fallback_type = parts[1] if len(parts) >= 3 else ""
-                rs.ioc[identifier] = {**rule, "iocType": str(rule.get("iocType") or fallback_type)}
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +188,7 @@ def _refresh_unlocked(
     # structural). Entirely fail-open — a community problem never degrades
     # the verified ruleset.
     if client is not None and config.community_graph_id:
-        _apply_community_tier(rs, client, config)
+        community_tier.apply_community_tier(rs, client, config, _latest_cached_ruleset(config.context_graph_id))
     if empty_success:
         # A fresh node's subscribe/catch-up is async. Do not cache "0 rules" as
         # fresh for the full sync interval; retry soon so the dashboard updates
