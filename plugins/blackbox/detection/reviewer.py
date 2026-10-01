@@ -28,7 +28,7 @@ from typing import Any, Dict, Optional
 
 from utils import model_forces_max_completion_tokens
 
-from .kernel import constants
+from ..kernel import constants
 
 logger = logging.getLogger(__name__)
 

@@ -21,7 +21,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
 
-from . import quads
+from .. import quads
 
 logger = logging.getLogger(__name__)
 
@@ -428,7 +428,7 @@ def detect_ioc(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     ioc_rules = getattr(ruleset, "ioc", {}) or {}
     if not ioc_rules:
         return []
-    text = _injection_scan_text(args)
+    text = injection_scan_text(args)
     if not text:
         return []
     out: List[Finding] = []
@@ -587,7 +587,7 @@ def detect_secret_exposure(tool_name: str, args: Any) -> List[Finding]:
     critical (blockable). Findings are ``source="secret"``: local-only (the
     value never leaves the machine — only the TYPE is recorded) and blockable.
     """
-    text = _injection_scan_text(args)
+    text = injection_scan_text(args)
     if not text:
         return []
     hits = quads.scan_secret_values(text)
@@ -614,7 +614,7 @@ def detect_secret_exposure(tool_name: str, args: Any) -> List[Finding]:
     return out
 
 
-def _injection_scan_text(args: Any) -> str:
+def injection_scan_text(args: Any) -> str:
     """Flatten tool-call *args* into raw text for injection scanning.
 
     ``json.dumps`` escapes real newlines/tabs inside string values to the
@@ -653,7 +653,7 @@ def detect_all(tool_name: str, args: Any, ruleset: Any, discover: bool = True) -
     findings: List[Finding] = []
     findings.extend(detect_escalation(tool_name, args, ruleset))
     findings.extend(detect_dependency(tool_name, args, ruleset))
-    args_text = _injection_scan_text(args)
+    args_text = injection_scan_text(args)
     findings.extend(detect_injection(args_text, ruleset))
     if discover:
         findings.extend(discover_injection(args_text, ruleset))

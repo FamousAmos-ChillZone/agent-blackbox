@@ -27,7 +27,7 @@ from _blackbox_loader import load_blackbox
 audit = load_blackbox("audit")
 constants = load_blackbox("kernel.constants")
 detection = load_blackbox("detection")
-llm = load_blackbox("llm")
+llm = load_blackbox("detection.reviewer")
 quads = load_blackbox("quads")
 ruleset_mod = load_blackbox("ruleset")
 config_mod = load_blackbox("kernel.config")

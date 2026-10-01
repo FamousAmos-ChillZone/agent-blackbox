@@ -25,7 +25,7 @@ cli_mod = load_blackbox("cli")
 config_mod = load_blackbox("kernel.config")
 detection = load_blackbox("detection")
 hooks = load_blackbox("hooks")
-llm = load_blackbox("llm")
+llm = load_blackbox("detection.reviewer")
 ruleset_mod = load_blackbox("ruleset")
 settings = load_blackbox("settings")
 

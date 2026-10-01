@@ -21,7 +21,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
-from . import attach, audit, llm, quads, ruleset, settings
+from . import attach, audit, quads, ruleset, settings
+from .detection import reviewer as llm
 from .sync import state as sync_state
 from .kernel import constants
 from .kernel.config import BlackboxConfig, load_blackbox_config

@@ -15,7 +15,7 @@ detection = load_blackbox("detection")
 quads = load_blackbox("quads")
 ruleset_mod = load_blackbox("ruleset")
 audit = load_blackbox("audit")
-osv = load_blackbox("osv")
+osv = load_blackbox("detection.osv")
 
 
 def _ruleset(**kw):

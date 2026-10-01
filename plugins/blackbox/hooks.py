@@ -391,7 +391,7 @@ def _tool_context(session_id: str, args: Any) -> Optional[Dict[str, Any]]:
     if turns:
         ctx["turns"] = turns
     try:
-        scanned = detection._injection_scan_text(args)
+        scanned = detection.injection_scan_text(args)
     except Exception:  # pragma: no cover - fail open
         scanned = ""
     if scanned.strip():
@@ -495,7 +495,7 @@ def _spawn_osv_discovery(cfg: BlackboxConfig, rs: Any, tool_name: str, args: Any
     """Run OSV dependency auto-discovery on a daemon thread (never blocks)."""
     import threading
 
-    from . import osv
+    from .detection import osv
 
     def _run() -> None:
         try:
@@ -630,7 +630,7 @@ def _spawn_llm_review(cfg: BlackboxConfig, text: str, detail: Dict[str, Any]) ->
     """
     import threading
 
-    from . import llm
+    from .detection import reviewer as llm
 
     def _run() -> None:
         try:
