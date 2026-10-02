@@ -34,7 +34,8 @@ Usage::
 from __future__ import annotations
 
 from .report_builder import build_false_positive_quads, build_report_quads
-from .report_command import cmd_report, ensure_community_subscription, print_community_status
+from .membership import ensure_community_subscription
+from .report_command import cmd_report, print_community_status
 from .sharing import NEVER_SHARED_SOURCES, CommunitySharePolicy, spawn_community_share
 from .graph_stats import community_agents, contributing_agent_count, most_reported_threats, reports_signed_by
 from .verification import ReportVerifier, VerifiedReport, verify_report_rows

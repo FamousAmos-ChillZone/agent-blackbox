@@ -15,6 +15,7 @@ import pytest
 
 from plugins.blackbox import audit, cli
 from plugins.blackbox.kernel import display_safety as display_safety
+from plugins.blackbox.community import membership
 from plugins.blackbox.community import report_command as report_command
 from plugins.blackbox.sync import command as sync_command
 from plugins.blackbox.kernel.config import BlackboxConfig
@@ -62,14 +63,14 @@ def test_subscribe_includes_shared_memory():
     """KI-007: community reports live in SWM; the default subscribe excludes it."""
     cfg = BlackboxConfig(report=True, community_graph_id=DEV_GRAPH)
     client = FakeClient()
-    ok, _ = report_command.ensure_community_subscription(client, cfg)
+    ok, _ = membership.ensure_community_subscription(client, cfg)
     assert ok is True
     assert client.subscribes == [(DEV_GRAPH, True)]
 
 
 def test_no_graph_id_means_no_subscribe():
     client = FakeClient()
-    ok, detail = report_command.ensure_community_subscription(client, BlackboxConfig())
+    ok, detail = membership.ensure_community_subscription(client, BlackboxConfig())
     assert ok is False
     assert client.subscribes == []
     assert "no community graph" in detail
@@ -77,7 +78,7 @@ def test_no_graph_id_means_no_subscribe():
 
 def test_subscribe_failure_is_fail_open():
     cfg = BlackboxConfig(report=True, community_graph_id=DEV_GRAPH)
-    ok, detail = report_command.ensure_community_subscription(FakeClient(subscribe_fails=True), cfg)
+    ok, detail = membership.ensure_community_subscription(FakeClient(subscribe_fails=True), cfg)
     assert ok is False
     assert "failed" in detail  # reported, never raised
 
@@ -87,7 +88,7 @@ def test_join_requested_when_curator_peer_known():
         report=True, community_graph_id=DEV_GRAPH, community_graph_peer_id=CURATOR_PEER
     )
     client = FakeClient()
-    ok, _ = report_command.ensure_community_subscription(client, cfg)
+    ok, _ = membership.ensure_community_subscription(client, cfg)
     assert ok is True
     assert client.joins == [(DEV_GRAPH, CURATOR_PEER)]
 
@@ -96,7 +97,7 @@ def test_join_failure_never_breaks_subscription():
     cfg = BlackboxConfig(
         report=True, community_graph_id=DEV_GRAPH, community_graph_peer_id=CURATOR_PEER
     )
-    ok, _ = report_command.ensure_community_subscription(FakeClient(join_fails=True), cfg)
+    ok, _ = membership.ensure_community_subscription(FakeClient(join_fails=True), cfg)
     assert ok is True
 
 

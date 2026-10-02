@@ -21,31 +21,6 @@ from ..kernel import display_safety, identity, reporter_key
 
 logger = logging.getLogger(__name__)
 
-def ensure_community_subscription(client: DkgClient, cfg) -> "tuple[bool, str]":
-    """Idempotently subscribe (and enroll) this node into the community graph.
-
-    Fail-open: community connectivity must never break sync. Subscription
-    includes shared memory (B1-proven: community reports LIVE in SWM, and the
-    default subscribe excludes it — KI-007). When a curator peer is known,
-    a join request is forwarded once (KI-040: SWM participation is
-    enrollment-mediated even on open graphs; the daemon no-ops when already
-    a member). Returns (ok, detail-for-logs).
-    """
-    if not cfg.community_graph_id:
-        return False, "no community graph configured"
-    try:
-        client.subscribe_context_graph(cfg.community_graph_id, include_shared_memory=True)
-    except Exception as exc:
-        logger.debug("blackbox: community subscribe failed: %s", exc)
-        return False, f"subscribe failed: {exc}"
-    if cfg.community_graph_peer_id:
-        try:
-            client.request_join(cfg.community_graph_id, cfg.community_graph_peer_id)
-        except Exception as exc:  # join is best-effort; open enrollment auto-approves
-            logger.debug("blackbox: community join request failed: %s", exc)
-    return True, "subscribed"
-
-
 def print_community_status(cfg) -> None:
     """The truthful community lines for `blackbox status` (B4).
 
