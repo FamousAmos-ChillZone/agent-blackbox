@@ -14,7 +14,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List
-from ..kernel import constants
+from ..kernel import constants, threat_ids
 from . import anchors
 from ..kernel.dkg_client import DkgClient, extract_binding
 from . import graph_queries
@@ -196,8 +196,7 @@ class Ruleset:
                 seen.add(identifier)
                 entry = {
                     "identifier": identifier,
-                    "category": rule.get("category")
-                    or (identifier.split(":", 1)[0] if ":" in identifier else "other"),
+                    "category": rule.get("category") or threat_ids.category_for(identifier),
                     "severity": str(rule.get("severity") or "info").lower(),
                     "name": rule.get("name") or identifier,
                     "subject": "",

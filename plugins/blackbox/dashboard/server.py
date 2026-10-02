@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Set, Tuple
 from ..sync import state as sync_state
 from ..sync import read_durable_progress
 from . import community_routes
-from .safe_payloads import safe_identifier, safe_text
+from .safe_payloads import graph_tier_item, safe_identifier, safe_text
 
 logger = logging.getLogger(__name__)
 
@@ -1963,30 +1963,9 @@ def create_app(*, manage_blackbox: bool = False):
         # and retains a compatibility join for any legacy CurationProof assets.
         if tier in {"public", "community"}:
             rs = ruleset.peek(cfg)
-            if tier == "community":
-                # Community strings are attacker-authored: sanitized at the
-                # serving boundary, reporterCount + recency carried for the UI.
-                all_threats = [
-                    {
-                        "identifier": safe_identifier(item.get("identifier")),
-                        "category": item.get("category") or "other",
-                        "severity": str(item.get("severity") or "info").lower(),
-                        "name": safe_text(item.get("name") or ""),
-                        "reporterCount": int(item.get("reporterCount") or 0),
-                        "lastSeen": item.get("lastSeen"),
-                    }
-                    for item in _graph_entries(rs, tier)
-                ]
-            else:
-                all_threats = [
-                    {
-                        "identifier": item.get("identifier"),
-                        "category": item.get("category") or "other",
-                        "severity": str(item.get("severity") or "info").lower(),
-                        "name": item.get("name") or "",
-                    }
-                    for item in _graph_entries(rs, tier)
-                ]
+            # One shaping function: category from the identifier, community
+            # strings sanitized, R3 stage fields carried (KI-197 / KI-198).
+            all_threats = [graph_tier_item(item, community=tier == "community") for item in _graph_entries(rs, tier)]
             needle = str(q or "").strip().casefold()
             wanted_category = str(category or "").strip().casefold()
             wanted_ecosystem = str(ecosystem or "").strip().casefold()

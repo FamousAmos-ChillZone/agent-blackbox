@@ -19,7 +19,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List
 
-from ..kernel import constants
+from ..kernel import constants, threat_ids
 from .verification import VerifiedReport
 
 logger = logging.getLogger(__name__)
@@ -123,7 +123,7 @@ def aggregate_community_reports(
     rules = [
         CommunityRule(
             identifier=identifier,
-            category=identifier.split(":", 1)[0],
+            category=threat_ids.category_for(identifier),
             severity=slot["severity"],
             reporter_count=len(slot["authors"]),
             first_seen=float(prior_first_seen.get(identifier, now)),

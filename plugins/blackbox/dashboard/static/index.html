@@ -2631,7 +2631,10 @@
     .table-scroll table:not(.audit-table) tbody { display: block; }
     .table-scroll table:not(.audit-table) tbody tr:not(:has(td[colspan])) {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
+      /* Two equal, shrinkable tracks: an `auto` track let one unbreakable
+         42-character address claim the row and squeeze the other column to
+         18 px (KI-200, found by the phone-width browser pass). */
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 9px 12px;
       padding: 14px 12px;
       border-bottom: 1px solid var(--border);
@@ -2641,6 +2644,7 @@
       min-width: 0;
       padding: 0;
       border: 0;
+      overflow-wrap: anywhere;
     }
     .table-scroll table:not(.audit-table) tbody tr:not(:has(td[colspan])) td:nth-child(1) { grid-column: 1; grid-row: 1; }
     .table-scroll table:not(.audit-table) tbody tr:not(:has(td[colspan])) td:nth-child(2) { grid-column: 1; grid-row: 2; }
@@ -4247,8 +4251,12 @@
       if (!byCat[ck]) byCat[ck] = [];
       byCat[ck].push(t);
     });
-      var categoryKeys = Object.keys(categoryTotals);
-      Object.keys(byCat).forEach(function (ck) { if (categoryKeys.indexOf(ck) < 0) categoryKeys.push(ck); });
+      // Server keys are normalized through catKey before they ever index CATS (KI-197).
+      var categoryKeys = [];
+      Object.keys(categoryTotals).concat(Object.keys(byCat)).forEach(function (k) {
+        var ck = catKey(k);
+        if (categoryKeys.indexOf(ck) < 0) categoryKeys.push(ck);
+      });
       categoryKeys.sort(function (a, b) {
         return (Number(categoryTotals[b]) || (byCat[b] || []).length) -
           (Number(categoryTotals[a]) || (byCat[a] || []).length);

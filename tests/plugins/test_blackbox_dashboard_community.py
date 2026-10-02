@@ -33,7 +33,8 @@ def _community_ruleset() -> Ruleset:
             "identifier": "ioc:domain:evil.example", "severity": "high",
             "source": "community", "reporterCount": 3, "iocType": "domain",
             "firstSeen": 1000.0, "lastSeen": 2000.0, "name": "ioc:domain:evil.example",
-            "category": "ioc",
+            "category": "ioc", "stage": "corroborated", "enforcement": "flag",
+            "stageReason": "corroborated by 1 partner and 2 established cluster(s)", "disputed": "no",
         },
         "dep:npm:evil@1": {
             "identifier": "dep:npm:evil@1", "severity": "critical",
@@ -171,3 +172,15 @@ def test_agents_endpoint_returns_ok(client):
     resp = client.get("/api/agents")
     assert resp.status_code == 200
     assert "agents" in resp.json()
+
+
+def test_graph_tier_community_categories_are_canonical_and_carry_the_stage(client):
+    """KI-197: a store entry named `dep` reaches the page as `dependency` (the only names the colour
+    table knows); KI-198: the R3 stage fields the leaves show are served, not dropped."""
+    graph = client.get("/api/graph?tier=community").json()
+    by_id = {t["identifier"]: t for t in graph["threats"]}
+    assert by_id["dep:npm:evil@1"]["category"] == "dependency"
+    assert set(graph["category_totals"]) <= {"dependency", "injection", "escalation", "fileaccess", "skill", "secret", "ioc", "other"}
+    evil = by_id["ioc:domain:evil.example"]
+    assert (evil["stage"], evil["enforcement"], evil["disputed"]) == ("corroborated", "flag", "no")
+    assert evil["stageReason"].startswith("corroborated by")

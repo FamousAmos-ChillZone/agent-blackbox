@@ -529,3 +529,12 @@ def test_ties_go_to_the_oldest_observation(monkeypatch):
     new = _report("ioc:domain:new.example", "k2")
     rules = aggregate_community_reports([new, old], {"ioc:domain:old.example": 5.0})
     assert [r.identifier for r in rules] == ["ioc:domain:old.example"]
+
+
+def test_aggregated_rules_carry_the_canonical_category_name():
+    """KI-197: the community store names categories as the schema and the UI do (`dependency`, never `dep`)."""
+    from _community_rows import GRAPH, NETWORK, Reporter, signed_row
+    from plugins.blackbox.community.verification import ReportVerifier, verify_report_rows
+    reports, _ = verify_report_rows([signed_row("dep:npm:x@1", Reporter("0xa")), signed_row("ioc:ip:203.0.113.7", Reporter("0xb"))],
+                                    ReportVerifier(NETWORK, GRAPH))
+    assert sorted(r.category for r in aggregate_community_reports(reports, {})) == ["dependency", "ioc"]

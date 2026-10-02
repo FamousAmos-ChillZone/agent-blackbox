@@ -9,9 +9,9 @@ modules can use it without importing the server.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Mapping
 
-from ..kernel import display_safety
+from ..kernel import display_safety, threat_ids
 
 #: The ingest cap on an identifier (community.report_schema.MAX_IDENTIFIER_CHARS; the kernel may not import it).
 MAX_IDENTIFIER_CHARS = 512
@@ -40,6 +40,36 @@ def safe_identifier(value: Any) -> str:
     defanged or annotated the way free text is — ingest already refuses
     identifiers that are not a clean single token (§07)."""
     return display_safety.strip_controls(value)[:MAX_IDENTIFIER_CHARS]
+
+
+def graph_tier_item(item: Mapping[str, Any], *, community: bool) -> Dict[str, Any]:
+    """One ``/api/graph`` threat as the client payload carries it.
+
+    The category ALWAYS comes from the identifier (``threat_ids.category_for``):
+    the page's colour table knows only those names, and a community-store
+    entry once reached it as ``dep`` and crashed the community tab (KI-197).
+    Community items are attacker-adjacent, so their strings are sanitized, and
+    they carry the R3 stage fields the page's leaf nodes show (the endpoint
+    used to drop them, KI-198).
+    """
+    identifier = str(item.get("identifier") or "")
+    name = str(item.get("name") or "")
+    out: Dict[str, Any] = {
+        "identifier": safe_identifier(identifier) if community else identifier,
+        "category": threat_ids.category_for(identifier),
+        "severity": str(item.get("severity") or "info").lower(),
+        "name": safe_text(name) if community else name,
+    }
+    if community:
+        out.update({
+            "reporterCount": int(item.get("reporterCount") or 0),
+            "lastSeen": item.get("lastSeen"),
+            "stage": safe_text(item.get("stage"), 16),
+            "stageReason": safe_text(item.get("stageReason"), 200),
+            "enforcement": safe_text(item.get("enforcement"), 16),
+            "disputed": safe_text(item.get("disputed"), 4),
+        })
+    return out
 
 
 def sanitized_ledger(limit: int = 50) -> List[Dict[str, Any]]:
