@@ -87,6 +87,13 @@ class ReporterKeyStore:
     def _create(self) -> Ed25519PrivateKey:
         key = Ed25519PrivateKey.generate()
         pem = key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+        if not self._link_new(pem):
+            return self._read()   # another process created the key meanwhile: keep theirs
+        return key
+
+    def _link_new(self, pem: bytes) -> bool:
+        """Atomically create the key file holding *pem* (0600 from the first
+        byte); False when a key file already exists (it is never replaced)."""
         self._path.parent.mkdir(parents=True, exist_ok=True)
         # Unique per creator (process AND thread), so concurrent first uses never collide.
         tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(8)}")
@@ -97,10 +104,9 @@ class ReporterKeyStore:
         finally:
             os.close(fd)
         try:
-            # Another process may have created the key meanwhile: keep theirs.
-            os.link(tmp, self._path)
+            os.link(tmp, self._path)   # refuses to overwrite an existing key
         except FileExistsError:
-            return self._read()
+            return False
         finally:
             tmp.unlink(missing_ok=True)
-        return key
+        return True
