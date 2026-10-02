@@ -269,12 +269,8 @@ def cmd_report(args: argparse.Namespace) -> int:
         signer=signer,
         **finding["fields"],
     )
-    outcome, detail = sharing.send_report(client, cfg.community_graph_id, name, q)
-    audit.record_share_outcome(
-        identifier=identifier, category=finding["category"], severity=finding["severity"],
-        subject=subject, asset_name=name, ok=outcome is sharing.ShareOutcome.ACCEPTED,
-        error=detail, outcome=outcome.value,
-    )
+    outcome, detail = _send_and_record(client, cfg, identifier=identifier, category=finding["category"],
+                                       severity=finding["severity"], subject=subject, name=name, quads=q)
     if outcome is sharing.ShareOutcome.FAILED:
         print(f"Share FAILED: {display_safety.term_safe(detail, 160)}")
         print("The attempt is recorded in your local reports ledger.")
@@ -287,6 +283,20 @@ def cmd_report(args: argparse.Namespace) -> int:
     print(f"  identifier: {display_safety.term_safe(identifier)}")
     print(f"  subject:    {display_safety.term_safe(subject)}")
     return 0
+
+
+def _send_and_record(client: DkgClient, cfg, *, identifier: str, category: str, severity: str,
+                     subject: str, name: str, quads: List[Dict[str, str]]) -> Tuple["sharing.ShareOutcome", str]:
+    """Send one built statement to the community graph and record the attempt
+    in the local share ledger, success or failure (KI-015). Returns
+    (outcome, detail) for the caller to report."""
+    outcome, detail = sharing.send_report(client, cfg.community_graph_id, name, quads)
+    audit.record_share_outcome(
+        identifier=identifier, category=category, severity=severity,
+        subject=subject, asset_name=name, ok=outcome is sharing.ShareOutcome.ACCEPTED,
+        error=detail, outcome=outcome.value,
+    )
+    return outcome, detail
 
 
 def _reporting_identity(client: DkgClient, graph: str) -> Optional[Tuple[str, report_signer.ReportSigner]]:
@@ -319,12 +329,8 @@ def _submit_false_positive(client: DkgClient, cfg, identifier: str, reason: Opti
                                                   reason=reason, signer=signer)
     name = f"fp-{threat_ids.stable_hash(identifier + reporter, 16)}"
     subject = threat_ids.report_uri(identifier, reporter) + ":fp"
-    outcome, detail = sharing.send_report(client, cfg.community_graph_id, name, q)
-    audit.record_share_outcome(
-        identifier=identifier, category="false-positive", severity="info",
-        subject=subject, asset_name=name, ok=outcome is sharing.ShareOutcome.ACCEPTED,
-        error=detail, outcome=outcome.value,
-    )
+    outcome, detail = _send_and_record(client, cfg, identifier=identifier, category="false-positive",
+                                       severity="info", subject=subject, name=name, quads=q)
     if outcome is sharing.ShareOutcome.FAILED:
         print(f"Dispute FAILED: {display_safety.term_safe(detail, 160)}")
         print("The attempt is recorded in your local reports ledger.")
