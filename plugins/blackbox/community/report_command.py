@@ -271,11 +271,13 @@ def _report_status(cfg) -> int:
             client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
             store = reporter_key.ReporterKeyStore()
             own_author = store.public_key_hex() if store.path.exists() else ""
-            reports = graph_reader.read_verified_reports(client, cfg)
-            if reports is not None and own_author:
+            read = graph_reader.read_verified_reports(client, cfg)
+            if not read.available:
+                print(f"Community graph unavailable right now: {display_safety.term_safe(read.reason, 160)}")
+            elif own_author:
                 # R0d: count what THIS node's key signed and the graph verified —
                 # never rows that merely claim our address.
-                count = graph_stats.reports_signed_by(reports, own_author)
+                count = graph_stats.reports_signed_by(read.reports, own_author)
                 print(f"On the community graph: {count} verified report(s) signed by this node.")
         except Exception as exc:
             logger.debug("blackbox: report --status graph read failed: %s", exc)

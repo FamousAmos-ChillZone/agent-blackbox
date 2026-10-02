@@ -471,6 +471,18 @@ def test_extract_binding_decodes_ntriples_escapes(term, value):
     assert dkg_client.extract_binding(term) == value
 
 
+def test_malformed_query_reply_is_a_failure_for_sentinel_callers(monkeypatch):
+    """R0 tri-state: an unrecognized reply ({}) must not read as an empty graph
+    for a caller that asked to tell failure from empty; default callers still get []."""
+    client = dkg_client.DkgClient(url="http://127.0.0.1:1", dkg_home="/nonexistent")
+    monkeypatch.setattr(client, "_request", lambda *a, **k: {})
+    sentinel = object()
+    assert client.query("SELECT ?x WHERE {}", "g", on_error=sentinel) is sentinel
+    assert client.query("SELECT ?x WHERE {}", "g") == []
+    monkeypatch.setattr(client, "_request", lambda *a, **k: {"bindings": []})
+    assert client.query("SELECT ?x WHERE {}", "g", on_error=sentinel) == []
+
+
 def test_normalize_bindings_nested_shape():
     result = {"results": {"bindings": [{"n": {"value": "3"}}]}}
     assert dkg_client.normalize_bindings(result) == [{"n": {"value": "3"}}]

@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 # Safety ceiling so a misbehaving node can never spin the pager forever.
@@ -96,8 +96,15 @@ def _unquote_literal(term: str) -> str:
 
 def normalize_bindings(result: Any) -> List[Dict[str, Any]]:
     """Extract a list of binding rows from any of the daemon's response shapes."""
+    rows = recognized_bindings(result)
+    return [] if rows is None else rows
+
+
+def recognized_bindings(result: Any) -> Optional[List[Dict[str, Any]]]:
+    """The binding rows of a response in a shape the daemon is known to use,
+    or None for anything else (a malformed reply is NOT an empty result)."""
     if not isinstance(result, dict):
-        return []
+        return None
     rows = None
     if isinstance(result.get("bindings"), list):
         rows = result["bindings"]
@@ -106,5 +113,15 @@ def normalize_bindings(result: Any) -> List[Dict[str, Any]]:
     elif isinstance(result.get("result"), dict) and isinstance(result["result"].get("bindings"), list):
         rows = result["result"]["bindings"]
     if not isinstance(rows, list):
-        return []
+        return None
     return [row for row in rows if isinstance(row, dict)]
+
+
+def rows_or_fallback(result: Any, on_error: Any) -> Any:
+    """What a query returns: the rows of a recognized response, else the
+    caller's *on_error* (``[]`` when None). A caller that passes a sentinel
+    therefore sees a malformed reply as a failure, never as an empty graph."""
+    rows = recognized_bindings(result)
+    if rows is None:
+        return [] if on_error is None else on_error
+    return rows

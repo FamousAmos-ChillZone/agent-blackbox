@@ -66,8 +66,8 @@ def _visible_identifiers(client: DkgClient) -> "set[tuple[str, str]]":
     """(identifier, signer) for every report that VERIFIES on *client* —
     the one reader every product surface uses (R0c/R0d), never the
     self-described reporter field (KI-110)."""
-    reports = community.read_verified_reports(client, BlackboxConfig(community_graph_id=CG)) or []
-    return {(report.identifier, report.author) for report in reports}
+    read = community.read_verified_reports(client, BlackboxConfig(community_graph_id=CG))
+    return {(report.identifier, report.author) for report in read.reports}
 
 
 @needs_nodes

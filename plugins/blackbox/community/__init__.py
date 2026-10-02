@@ -46,6 +46,8 @@ from .reader import (
     community_pause_active,
     community_report_count,
     fetch_community_report_rows,
+    CommunityRead,
+    ReadState,
     read_verified_reports,
 )
 
@@ -53,7 +55,9 @@ __all__ = [
     "COMMUNITY_PAUSE_SUBJECT",
     "NEVER_SHARED_SOURCES",
     "CommunitySharePolicy",
+    "CommunityRead",
     "CommunityRule",
+    "ReadState",
     "ReportVerifier",
     "VerifiedReport",
     "aggregate_community_reports",

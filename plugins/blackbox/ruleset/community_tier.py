@@ -54,17 +54,35 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
             pass
         # R0c/R0d: only reports whose signature verifies for THIS network and
         # graph are counted; the self-described reporter field never is.
-        reports = community.read_verified_reports(client, cfg)
-        if reports is None:
-            # Read failed, or the network is unknown so nothing can be
-            # verified: keep last-good community rows (fail-open).
+        read = community.read_verified_reports(client, cfg)
+        if not read.available:
+            # Unavailable — a failed or malformed page, an unverifiable
+            # network, or an unproven empty read: keep last-good (fail-open).
+            # Never mistake "could not read" for "no threats" (KI-112).
             _keep_last_good(rs, prior)
             return
-        rules = community.aggregate_community_reports(reports, _first_seen_history(prior))
+        rules = community.aggregate_community_reports(read.reports, _first_seen_history(prior))
         rs.community = {rule.identifier: rule.as_rule() for rule in rules}
         materialize_community_rules(rs)
     except Exception as exc:  # pragma: no cover - fail open at the tier boundary
         logger.debug("blackbox: community tier skipped: %s", exc)
+
+
+def reapply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxConfig) -> None:
+    """Refresh the community tier of a ruleset the refresh cycle is REUSING
+    (the verified tier came back empty or failed, so last-good is kept).
+
+    Without this the community tier would silently stop refreshing on those
+    paths (R0 tri-state: "the community tier refreshes on every verified-tier
+    path"). Community entries materialized last time are removed first —
+    materializing only ever adds — then the tier is applied as usual, with
+    the ruleset itself as the first-seen history and last-good fallback.
+    """
+    for table in (rs.dependency, rs.ioc):
+        for key in [k for k, rule in table.items() if rule.get("source") == "community"]:
+            del table[key]
+    apply_community_tier(rs, client, cfg, rs)
+    rs._graph_entries_cache.clear()
 
 
 def _first_seen_history(prior: Optional[compiler.Ruleset]) -> Dict[str, float]:

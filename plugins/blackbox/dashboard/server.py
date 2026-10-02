@@ -1316,14 +1316,14 @@ def create_app(*, manage_blackbox: bool = False):
         return cur
 
     def _verified_reports(cfg: Any) -> List[Any]:
-        """THE community read behind every dashboard statistic (R0d): reports
-        whose signature verifies, counted by signer — served stale-while-
-        revalidate, so the node read never blocks a request."""
+        """THE community read behind every dashboard statistic (R0d): verified reports,
+        counted by signer; stale-while-revalidate, so the node read never blocks a request."""
         def _load() -> Any:
             if not getattr(cfg, "community_graph_id", "") or not _node_reachable(cfg):
                 return None   # keep the cached value; retry next poll
             try:
-                return community.read_verified_reports(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home), cfg)
+                read = community.read_verified_reports(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home), cfg)
+                return list(read.reports) if read.available else None  # unavailable: keep cached
             except Exception as exc:  # pragma: no cover - fail open
                 logger.debug("blackbox dashboard: community read failed: %s", exc)
                 return None

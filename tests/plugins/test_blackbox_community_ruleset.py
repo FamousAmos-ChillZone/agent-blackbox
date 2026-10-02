@@ -247,9 +247,13 @@ class FakeClient:
         self._fail = fail
         self.subscribed = []
         self.network = NETWORK
+        self.graphs = []          # what context_graphs() reports (membership probe)
 
     def status(self):
         return {"networkId": self.network}
+
+    def context_graphs(self):
+        return self.graphs
 
     def subscribe_context_graph(self, cg_id, include_shared_memory=False):
         self.subscribed.append((cg_id, include_shared_memory))
@@ -292,11 +296,85 @@ def test_fetch_failure_keeps_last_good(monkeypatch):
     assert rs.community == prior.community
 
 
-def test_empty_graph_degrades_to_zero_rules(monkeypatch):
+def _prior_with(identifier="ioc:domain:old.example"):
+    prior = Ruleset()
+    prior.community = {identifier: {"identifier": identifier, "severity": "high",
+                                    "source": "community", "reporterCount": 2, "firstSeen": 5.0}}
+    return prior
+
+
+def test_empty_read_without_membership_proof_keeps_last_good():
+    """R0 tri-state (inverts the old 'empty graph degrades to zero rules'):
+    an empty answer is not proof of an empty graph — keep last-good."""
+    prior = _prior_with()
     rs = Ruleset()
-    _apply_community_tier(rs, FakeClient(report_rows=[]), CFG)
+    _apply_community_tier(rs, FakeClient(report_rows=[]), CFG, prior)
+    assert rs.community == prior.community
+
+
+def test_empty_read_with_a_synced_subscription_is_authorised_empty():
+    client = FakeClient(report_rows=[])
+    client.graphs = [{"id": DEV_GRAPH, "subscribed": True, "synced": True}]
+    rs = Ruleset()
+    _apply_community_tier(rs, client, CFG, _prior_with())
     assert rs.community == {}
     assert rs.community_paused is False
+
+
+def test_subscribed_but_still_syncing_is_not_proof_of_empty():
+    client = FakeClient(report_rows=[])
+    client.graphs = [{"id": DEV_GRAPH, "subscribed": True, "synced": False}]
+    prior = _prior_with()
+    rs = Ruleset()
+    _apply_community_tier(rs, client, CFG, prior)
+    assert rs.community == prior.community
+
+
+class _PagedClient(FakeClient):
+    """Serves the community report pages in order; a page that is an
+    Exception fails (the client then returns the caller's on_error)."""
+
+    def __init__(self, pages):
+        super().__init__()
+        self._pages = list(pages)
+
+    def query(self, sparql, cg_id, view=None, on_error=None, **kw):
+        if "community:pause" in sparql:
+            return []
+        page = self._pages.pop(0) if self._pages else []
+        return on_error if isinstance(page, Exception) else page
+
+
+def test_a_failed_second_page_makes_the_whole_read_unavailable(monkeypatch):
+    monkeypatch.setattr(community_reader, "_COMMUNITY_PAGE_SIZE", 1)
+    page1 = [signed_row("ioc:domain:one.example", Reporter("0xr1"))]
+    prior = _prior_with()
+    rs = Ruleset()
+    _apply_community_tier(rs, _PagedClient([page1, RuntimeError("page 2 down")]), CFG, prior)
+    assert rs.community == prior.community          # never the partial page
+
+
+def test_read_states_are_tagged():
+    from plugins.blackbox.community import ReadState, read_verified_reports
+    rows_client = FakeClient(report_rows=[signed_row("ioc:domain:x.example", Reporter("0xr1"))])
+    assert read_verified_reports(rows_client, CFG).state is ReadState.ROWS
+    unknown_network = FakeClient(report_rows=[signed_row("ioc:domain:x.example", Reporter("0xr1"))])
+    unknown_network.network = ""
+    read = read_verified_reports(unknown_network, CFG)
+    assert read.state is ReadState.UNAVAILABLE and "network id" in read.reason
+    assert read_verified_reports(FakeClient(), BlackboxConfig()).state is ReadState.AUTHORISED_EMPTY
+
+
+def test_reapply_on_a_reused_ruleset_replaces_stale_community_entries():
+    """The community tier refreshes even when the verified tier is reused."""
+    from plugins.blackbox.ruleset.community_tier import reapply_community_tier
+    rs = _prior_with("ioc:domain:stale.example")
+    _materialize_community_rules(rs)
+    assert "ioc:domain:stale.example" in rs.ioc
+    client = FakeClient(report_rows=[signed_row("ioc:domain:fresh.example", Reporter("0xr1"))])
+    reapply_community_tier(rs, client, CFG)
+    assert "ioc:domain:stale.example" not in rs.ioc and "ioc:domain:stale.example" not in rs.community
+    assert "ioc:domain:fresh.example" in rs.ioc
 
 
 # ---------------------------------------------------------------------------

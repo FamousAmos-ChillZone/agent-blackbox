@@ -160,21 +160,13 @@ def _refresh_unlocked(
         ]
         prior = max(candidates, key=lambda item: item.source_count("public"), default=None)
         if prior is not None and prior.source_count("public") > 0:
-            prior.context_graph_id = context_graph_id
-            prior.synced_at = time.time()
-            disk_cache._write_cache(prior)
-            _memory.store(prior)
-            return prior
+            return _reuse_generation(prior, context_graph_id, client, config)
 
     if all(rows is None for rows in fetched.values()):
         # Every tier failed — keep the last-good ruleset instead of emptying.
         existing = _latest_cached_ruleset(context_graph_id)
         if existing is not None:
-            existing.context_graph_id = context_graph_id
-            existing.synced_at = time.time()
-            disk_cache._write_cache(existing)
-            _memory.store(existing)
-            return existing
+            return _reuse_generation(existing, context_graph_id, client, config)
 
     rows: List[Any] = []
     for tier, view_rows in fetched.items():
@@ -203,6 +195,20 @@ def _refresh_unlocked(
         if prior is not None:
             _restore_tiers(rs, prior, errored)
 
+    disk_cache._write_cache(rs)
+    _memory.store(rs)
+    return rs
+
+
+def _reuse_generation(rs: compiler.Ruleset, context_graph_id: str, client: Optional[DkgClient],
+                      config: BlackboxConfig) -> compiler.Ruleset:
+    """Keep *rs* (last-good verified tier) as the new generation: re-stamp it,
+    refresh its community tier (it must refresh on every path — R0 tri-state),
+    write it to disk and memory."""
+    rs.context_graph_id = context_graph_id
+    rs.synced_at = time.time()
+    if client is not None and config.community_graph_id:
+        community_tier.reapply_community_tier(rs, client, config)
     disk_cache._write_cache(rs)
     _memory.store(rs)
     return rs

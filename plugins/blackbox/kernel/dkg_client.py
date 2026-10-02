@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import constants
-from .sparql_text import extract_binding, normalize_bindings  # re-exported: callers import them from here
+from .sparql_text import extract_binding, normalize_bindings, rows_or_fallback  # re-exported: callers import them from here
 
 logger = logging.getLogger(__name__)
 
@@ -584,9 +584,9 @@ class DkgClient:
 
         Each binding is a ``{var: value}`` dict of plain strings (literals and
         IRIs already unwrapped — see :func:`extract_binding`). On transport
-        error it returns *on_error* (default ``[]``) rather than raising, since
-        read paths fail open. A caller that must tell a genuine *empty* result
-        (``[]``) apart from a *failure* passes a unique sentinel.
+        error or an unrecognized reply it returns *on_error* (default ``[]``),
+        since read paths fail open. A caller that must tell a genuine *empty*
+        result (``[]``) apart from a *failure* passes a unique sentinel.
         """
         payload = {"sparql": sparql, "contextGraphId": cg_id}
         if view:
@@ -602,8 +602,8 @@ class DkgClient:
             )
         except DkgError as exc:
             logger.debug("blackbox: query failed: %s", exc)
-            return [] if on_error is None else on_error
-        return normalize_bindings(result)
+            result = None  # a failure, reported like a malformed reply
+        return rows_or_fallback(result, on_error)
 
     def threat_count(self, cg_id: str) -> int:
         """Return the locally verified Blackbox threat count with one query.

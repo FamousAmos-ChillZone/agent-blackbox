@@ -15,7 +15,8 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from enum import Enum
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, extract_binding
@@ -171,8 +172,9 @@ def fetch_community_report_rows(client: DkgClient, cfg: BlackboxConfig) -> Optio
     """Page every ThreatReport from the community graph's shared memory.
 
     Same cursor discipline as the verified pager (monotonic subject cursor,
-    bounded pages, hard row ceiling). Returns None on failure so the caller
-    keeps last-good (fail-open), [] on a genuinely empty graph.
+    bounded pages, hard row ceiling). Returns None when ANY page fails or
+    comes back malformed, so the caller keeps last-good (fail-open); [] when
+    the node answered that the graph holds no reports.
     """
     rows: List[Dict[str, Any]] = []
     after = ""
@@ -185,7 +187,10 @@ def fetch_community_report_rows(client: DkgClient, cfg: BlackboxConfig) -> Optio
             on_error=sentinel,
         )
         if page is sentinel:
-            return None if not rows else rows
+            # A failed or malformed page — even after good ones — makes the
+            # whole read unavailable: a partial list must never pass as the
+            # graph's contents (R0 tri-state, KI-112).
+            return None
         if not page:
             break
         rows.extend(page)
@@ -199,31 +204,80 @@ def fetch_community_report_rows(client: DkgClient, cfg: BlackboxConfig) -> Optio
     return rows
 
 
-def read_verified_reports(client: DkgClient, cfg: BlackboxConfig) -> Optional[List[VerifiedReport]]:
-    """THE community read (R0c/R0d): every report in the community graph whose
-    signature verifies for this node's network and graph.
+class ReadState(Enum):
+    """What a community read found — never confuse "empty" with "unavailable"."""
+
+    ROWS = "rows"                          # verified reports were read
+    AUTHORISED_EMPTY = "authorised-empty"  # the node is subscribed + synced and holds none
+    UNAVAILABLE = "unavailable"            # could not read, verify or confirm — keep last-good
+
+
+@dataclass(frozen=True)
+class CommunityRead:
+    """The result of :func:`read_verified_reports` (a tagged result).
+
+    ``state`` says which case this is; ``reports`` holds the verified reports
+    (empty unless ROWS); ``reason`` explains an UNAVAILABLE read. Callers act
+    on ``state`` — an UNAVAILABLE read must never be treated as "no threats".
+    """
+
+    state: ReadState
+    reports: Tuple[VerifiedReport, ...] = ()
+    reason: str = ""
+
+    @property
+    def available(self) -> bool:
+        return self.state is not ReadState.UNAVAILABLE
+
+
+def _unavailable(reason: str) -> CommunityRead:
+    logger.info("blackbox: community read unavailable: %s", reason)
+    return CommunityRead(ReadState.UNAVAILABLE, reason=reason)
+
+
+def _empty_is_authorised(client: DkgClient, graph: str) -> bool:
+    """Membership probe for an EMPTY read: only a node that says it is
+    subscribed to the graph and synced may report "the graph is empty".
+    Anything else (not subscribed, still syncing, probe failed) is not proof."""
+    try:
+        entries = client.context_graphs()
+    except Exception as exc:  # probe failure is "not proven", never "empty"
+        logger.debug("blackbox: community membership probe failed: %s", exc)
+        return False
+    for entry in entries:
+        if str(entry.get("id") or "") == graph:
+            return bool(entry.get("subscribed")) and bool(entry.get("synced"))
+    return False
+
+
+def read_verified_reports(client: DkgClient, cfg: BlackboxConfig) -> CommunityRead:
+    """THE community read (R0c/R0d, tri-state R0): every report in the
+    community graph whose signature verifies for this node's network and graph.
 
     The one place community reports are fetched and verified — the ruleset,
     the dashboard's community statistics and `blackbox report --status` all
-    start here, so nothing counts an unverified row. Returns None when the
-    graph could not be read or the node's network id is unknown (nothing can
-    be verified; callers keep last-good), [] for an empty graph or when no
-    community graph is configured.
+    start here. UNAVAILABLE when any page failed or came back malformed, when
+    the node's network id is unknown (nothing can be verified), or when the
+    graph reads empty but the node cannot confirm it is subscribed and
+    synced. No community graph configured = AUTHORISED_EMPTY.
     """
     if not cfg.community_graph_id:
-        return []
+        return CommunityRead(ReadState.AUTHORISED_EMPTY)
     rows = fetch_community_report_rows(client, cfg)
     if rows is None:
-        return None
+        return _unavailable("a page of the community graph failed or was malformed")
     try:
         environment = network_environment(client.status())
     except Exception as exc:  # node unreachable: "cannot verify now"
-        logger.debug("blackbox: node status unavailable for community verification: %s", exc)
-        return None
+        return _unavailable(f"node status unavailable ({exc})")
     if not environment:
-        return None
+        return _unavailable("the node reports no network id, so nothing can be verified")
+    if not rows:
+        if _empty_is_authorised(client, cfg.community_graph_id):
+            return CommunityRead(ReadState.AUTHORISED_EMPTY)
+        return _unavailable("empty read without proof of a synced subscription")
     reports, _dropped = verify_report_rows(rows, ReportVerifier(environment, cfg.community_graph_id))
-    return reports
+    return CommunityRead(ReadState.ROWS, reports=tuple(reports))
 
 
 def aggregate_community_reports(
