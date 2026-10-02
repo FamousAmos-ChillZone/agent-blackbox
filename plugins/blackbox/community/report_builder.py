@@ -146,22 +146,9 @@ def build_false_positive_quads(
     *signer*, signed like a report (``blackbox.dispute``).
     """
     identifier, reason = report_schema.validate_dispute(identifier=identifier, reason=reason)
-    subj = threat_ids.report_uri(identifier, reporter_address) + ":fp"
-    day = _day(ts)
-    reporter = reporter_address.strip().lower()   # report_uri above refused a blank one
-    out = [
-        rdf_terms.make_quad(subj, constants.RDF_TYPE, rdf_terms.iri(constants.FALSE_POSITIVE_TYPE_IRI)),
-        rdf_terms.make_quad(subj, constants.IDENTIFIER_PRED, rdf_terms.literal(identifier)),
-        rdf_terms.make_quad(subj, constants.REPORTER_PRED, rdf_terms.literal(reporter)),
-        rdf_terms.make_quad(subj, constants.FRAMEWORK_PRED, rdf_terms.literal(framework)),
-        rdf_terms.make_quad(subj, constants.SCHEMA_DATE_MODIFIED_PRED, rdf_terms.datetime_literal(day)),
-        rdf_terms.make_quad(subj, constants.REPORT_REASON_PRED, rdf_terms.literal(reason)),
-    ]
-    if signer is not None:
-        payload = {"subject": subj, "identifier": identifier, "reporter": reporter,
-                   "framework": framework, "day": day.date().isoformat(), "reason": reason}
-        out.append(_signature_quad(subj, signer, DISPUTE_STATEMENT, payload))
-    return out
+    return _reporter_statement_quads(identifier=identifier, reporter_address=reporter_address, suffix=":fp",
+                                     type_iri=constants.FALSE_POSITIVE_TYPE_IRI, statement_type=DISPUTE_STATEMENT,
+                                     framework=framework, ts=ts, signer=signer, reason=reason)
 
 
 def build_retraction_quads(
@@ -183,18 +170,34 @@ def build_retraction_quads(
     no reader acts on it.
     """
     identifier = report_schema.validate_statement_identifier(identifier)
-    subj = threat_ids.report_uri(identifier, reporter_address) + ":retract"
+    return _reporter_statement_quads(identifier=identifier, reporter_address=reporter_address, suffix=":retract",
+                                     type_iri=constants.RETRACTION_TYPE_IRI, statement_type=RETRACT_STATEMENT,
+                                     framework=framework, ts=ts, signer=signer)
+
+
+def _reporter_statement_quads(*, identifier: str, reporter_address: str, suffix: str, type_iri: str,
+                              statement_type: str, framework: str, ts: Optional[datetime],
+                              signer: Optional[ReportSigner], reason: str = "") -> List[rdf_terms.Quad]:
+    """A reporter's statement ABOUT a threat (dispute, retraction, …): subject
+    ``report_uri(identifier, reporter) + suffix`` — one per (reporter, threat,
+    kind) — carrying type, identifier, reporter, framework, day, an optional
+    closed *reason*, and with a *signer* the signed envelope. The caller has
+    validated *identifier* and *reason*."""
+    subj = threat_ids.report_uri(identifier, reporter_address) + suffix
     day = _day(ts)
     reporter = reporter_address.strip().lower()   # report_uri above refused a blank one
     out = [
-        rdf_terms.make_quad(subj, constants.RDF_TYPE, rdf_terms.iri(constants.RETRACTION_TYPE_IRI)),
+        rdf_terms.make_quad(subj, constants.RDF_TYPE, rdf_terms.iri(type_iri)),
         rdf_terms.make_quad(subj, constants.IDENTIFIER_PRED, rdf_terms.literal(identifier)),
         rdf_terms.make_quad(subj, constants.REPORTER_PRED, rdf_terms.literal(reporter)),
         rdf_terms.make_quad(subj, constants.FRAMEWORK_PRED, rdf_terms.literal(framework)),
         rdf_terms.make_quad(subj, constants.SCHEMA_DATE_MODIFIED_PRED, rdf_terms.datetime_literal(day)),
     ]
+    payload = {"subject": subj, "identifier": identifier, "reporter": reporter,
+               "framework": framework, "day": day.date().isoformat()}
+    if reason:
+        out.append(rdf_terms.make_quad(subj, constants.REPORT_REASON_PRED, rdf_terms.literal(reason)))
+        payload["reason"] = reason
     if signer is not None:
-        payload = {"subject": subj, "identifier": identifier, "reporter": reporter,
-                   "framework": framework, "day": day.date().isoformat()}
-        out.append(_signature_quad(subj, signer, RETRACT_STATEMENT, payload))
+        out.append(_signature_quad(subj, signer, statement_type, payload))
     return out
