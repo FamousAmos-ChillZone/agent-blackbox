@@ -24,7 +24,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections import deque
+from collections import Counter, deque
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
@@ -902,7 +902,7 @@ def create_app(*, manage_blackbox: bool = False):
     from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 
     from .. import attach, audit, community, ruleset
-    from ..kernel import settings
+    from ..kernel import reporter_key, settings
     from ..sync import state as sync_state
     from ..kernel import constants
     from ..kernel.config import load_blackbox_config
@@ -1314,6 +1314,28 @@ def create_app(*, manage_blackbox: bool = False):
                     _swr_busy.discard(key)
             threading.Thread(target=_run, name="blackbox-swr", daemon=True).start()
         return cur
+
+    def _verified_reports(cfg: Any) -> List[Any]:
+        """THE community read behind every dashboard statistic (R0d): reports
+        whose signature verifies, counted by signer — served stale-while-
+        revalidate, so the node read never blocks a request."""
+        def _load() -> Any:
+            if not getattr(cfg, "community_graph_id", "") or not _node_reachable(cfg):
+                return None   # keep the cached value; retry next poll
+            try:
+                return community.read_verified_reports(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home), cfg)
+            except Exception as exc:  # pragma: no cover - fail open
+                logger.debug("blackbox dashboard: community read failed: %s", exc)
+                return None
+        return _swr("community:verified", _load, []) or []
+
+    def _own_reporter_author() -> str:
+        """This node's signer key, or "" before it has ever signed a report."""
+        store = reporter_key.ReporterKeyStore()
+        try:
+            return store.public_key_hex() if store.path.exists() else ""
+        except reporter_key.ReporterKeyError:
+            return ""
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> Any:
@@ -1748,31 +1770,18 @@ def create_app(*, manage_blackbox: bool = False):
                 "is_active": True,
             }
 
-        # Community-graph reporters (KI-006: remote agents are real). They feed
-        # the separate `community_agents` list — a remote reporter is NOT an
-        # agent connected to this Blackbox. Served stale-while-revalidate over
-        # the slow shared-working-memory view; raw rows cached, grouped fresh.
-        def _load_reporters() -> Any:
-            if not _node_reachable(cfg):
-                return None   # keep default cached briefly; retry next poll
-            if not getattr(cfg, "community_graph_id", ""):
-                return []
-            try:
-                client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-                return community.fetch_reporter_rows(client, cfg.community_graph_id)
-            except Exception as exc:  # pragma: no cover - fail open
-                logger.debug("blackbox dashboard: agents query failed: %s", exc)
-                return None  # transient failure — keep the last cached reporters
-
-        reporters = _swr("agents:reporters", _load_reporters, []) or []
-        for rep in reporters:  # local agents' own report counts
-            key = (rep["framework"], rep["address"].lower())
-            if key in found:
-                found[key]["reports"] = max(found[key].get("reports", 0), rep["count"])
+        # Community-graph agents (R0d): verified signers, never the reporter
+        # field. They feed the separate `community_agents` list — a remote
+        # reporter is NOT an agent connected to this Blackbox.
+        reports = _verified_reports(cfg)
+        own_author = _own_reporter_author()
+        own_by_framework = Counter(r.framework.lower() for r in reports if own_author and r.author == own_author)
+        for (fw, _addr), row in found.items():  # local agents' own (verified) report counts
+            row["reports"] = max(row.get("reports", 0), own_by_framework.get(fw, 0))
         community_out = [
             {**agent, "address": _safe_text(agent["address"], 128),
              "frameworks": [_safe_text(fw, 32) for fw in agent["frameworks"]]}
-            for agent in community.group_community_agents(reporters, local_addr)
+            for agent in community.community_agents(reports, own_author)
         ]
 
         # Attached local workspaces — one card per protected workspace, so two
@@ -2111,13 +2120,13 @@ def create_app(*, manage_blackbox: bool = False):
         """The launch instruments: contributing agents, corroboration, health."""
         cfg = load_blackbox_config()
         rs = ruleset.peek(cfg)
-        community = getattr(rs, "community", {}) or {}
+        community_rules = getattr(rs, "community", {}) or {}
         now = time.time()
-        corroborated = sum(1 for r in community.values() if int(r.get("reporterCount") or 0) >= 2)
+        corroborated = sum(1 for r in community_rules.values() if int(r.get("reporterCount") or 0) >= 2)
         # Reports-today from OUR ingest observations (KI-012), not
         # reporter-supplied timestamps.
         fresh_today = sum(
-            1 for r in community.values()
+            1 for r in community_rules.values()
             if float(r.get("lastSeen") or 0) >= now - 86400
             and float(r.get("firstSeen") or 0) >= now - 86400
         )
@@ -2126,25 +2135,16 @@ def create_app(*, manage_blackbox: bool = False):
             "configured": bool(getattr(cfg, "community_graph_id", "")),
             "sharing_enabled": bool(getattr(cfg, "community_enabled", False)),
             "paused": bool(getattr(rs, "community_paused", False)),
-            "community_threats": len(community),
+            "community_threats": len(community_rules),
             "corroborated_2plus": corroborated,
             "new_today": fresh_today,
             "last_refresh": rs.synced_at or None,
             "last_share": ledger[0] if ledger else None,
-            "contributing_agents": None,  # graph-wide COUNT(DISTINCT) below (SWR)
+            "contributing_agents": None,  # distinct verified signers, below
         }
 
-        def _agents_count() -> Any:
-            if not getattr(cfg, "community_graph_id", "") or not _node_reachable(cfg):
-                return None
-            try:
-                client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-                return community.contributing_agent_count(client, cfg.community_graph_id)
-            except Exception as exc:  # pragma: no cover - fail open
-                logger.debug("blackbox dashboard: contributing-agents query failed: %s", exc)
-            return None
-
-        stats["contributing_agents"] = _swr("community:agents", _agents_count, None)
+        if stats["configured"]:  # distinct VERIFIED signers (R0d)
+            stats["contributing_agents"] = community.contributing_agent_count(_verified_reports(cfg))
         return stats
 
     @app.get("/api/reports")
@@ -2160,29 +2160,16 @@ def create_app(*, manage_blackbox: bool = False):
                 "outbound": _sanitized_ledger(limit),
             }
 
-        # Node-backed sightings list, served stale-while-revalidate.
-        def _load() -> Any:
-            if not _node_reachable(cfg):
-                return None   # keep the default (empty) cached briefly; retry next poll
-            out: List[Dict[str, Any]] = []
-            try:
-                client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-                for threat in community.most_reported_threats(client, cfg.community_graph_id, limit):
-                    out.append({
-                        "identifier": _safe_text(threat["identifier"]),
-                        "reporters": threat["reporters"],
-                        "severity": _safe_text(threat["severity"], 16),
-                    })
-            except Exception as exc:  # pragma: no cover - fail open
-                logger.debug("blackbox dashboard: reports query failed: %s", exc)
-            return {"reports": out}
-
-        payload = _swr(f"reports:{limit}", _load, {"reports": []})
-        if isinstance(payload, dict):
-            payload = dict(payload)
-            payload["sharing_enabled"] = bool(getattr(cfg, "community_enabled", False))
-            payload["outbound"] = _sanitized_ledger(limit)
-        return payload
+        # Most-reported threats by distinct VERIFIED signers (R0d).
+        board = [
+            {"identifier": _safe_text(t["identifier"]), "reporters": t["reporters"], "severity": _safe_text(t["severity"], 16)}
+            for t in community.most_reported_threats(_verified_reports(cfg), limit)
+        ]
+        return {
+            "reports": board,
+            "sharing_enabled": bool(getattr(cfg, "community_enabled", False)),
+            "outbound": _sanitized_ledger(limit),
+        }
 
     # Predicate IRI -> friendly detail key, for the single-threat lookup.
     _DETAIL_FIELDS = {

@@ -71,6 +71,7 @@ class VerifiedReport:
     reporter: str
     severity: str
     fields: Tuple[Tuple[str, str], ...] = ()
+    framework: str = ""      # the signed framework label (display only)
 
 
 class ReportVerifier:
@@ -108,7 +109,8 @@ class ReportVerifier:
         if fields is None:
             return None
         return VerifiedReport(subject=payload["subject"], identifier=identifier, author=author,
-                              reporter=reporter, severity=severity, fields=fields)
+                              reporter=reporter, severity=severity, fields=fields,
+                              framework=payload.get("framework", ""))
 
 
 def _agreed_evidence(row: Mapping[str, Any], payload: Mapping[str, str]) -> Optional[Tuple[Tuple[str, str], ...]]:

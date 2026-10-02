@@ -19,9 +19,14 @@ import time
 
 import pytest
 
+from plugins.blackbox import community
 from plugins.blackbox.community import report_builder as report_builder
+from plugins.blackbox.community.report_signer import ReportSigner, network_environment
+from plugins.blackbox.kernel import signing
 from plugins.blackbox.kernel import threat_ids as threat_ids
-from plugins.blackbox.kernel.dkg_client import DkgClient, extract_binding
+from plugins.blackbox.kernel.config import BlackboxConfig
+from plugins.blackbox.kernel.dkg_client import DkgClient
+from plugins.blackbox.kernel.reporter_key import ReporterKeyStore
 
 
 pytestmark = pytest.mark.integration
@@ -37,12 +42,6 @@ needs_nodes = pytest.mark.skipif(
     reason="community e2e endpoints not configured (set BLACKBOX_E2E_NODE_*_URL + BLACKBOX_COMMUNITY_GRAPH_ID)",
 )
 
-_REPORTS_SPARQL = (
-    "PREFIX g: <http://umanitek.ai/ontology/guardian/> "
-    "SELECT ?id ?rep WHERE { ?r a g:ThreatReport ; g:identifier ?id ; g:reporter ?rep }"
-)
-
-
 def _client(url: str, home: str) -> DkgClient:
     return DkgClient(url=url, dkg_home=home)
 
@@ -56,27 +55,34 @@ def _reporter(client: DkgClient) -> str:
     pytest.fail("node has no resolvable 0x identity — KI-003/KI-017 violation")
 
 
+def _signer(client: DkgClient, key_file) -> ReportSigner:
+    """Each node signs with ITS OWN key (Refine R0b) — separate key files,
+    because both nodes' shares are made from this one test process."""
+    return ReportSigner(private_key=ReporterKeyStore(key_file).load_or_create(),
+                        environment=network_environment(client.status()), graph=CG)
+
+
 def _visible_identifiers(client: DkgClient) -> "set[tuple[str, str]]":
-    rows = client.query(
-        _REPORTS_SPARQL, CG, view="shared-working-memory", on_error=[]
-    ) or []
-    return {
-        (extract_binding(r.get("id")), extract_binding(r.get("rep")).lower())
-        for r in rows
-    }
+    """(identifier, signer) for every report that VERIFIES on *client* —
+    the one reader every product surface uses (R0c/R0d), never the
+    self-described reporter field (KI-110)."""
+    reports = community.read_verified_reports(client, BlackboxConfig(community_graph_id=CG)) or []
+    return {(report.identifier, report.author) for report in reports}
 
 
 @needs_nodes
-def test_report_from_a_visible_on_b_with_distinct_identities():
+def test_report_from_a_visible_on_b_with_distinct_identities(tmp_path):
     a = _client(A_URL, A_HOME)
     b = _client(B_URL, B_HOME)
     rep_a, rep_b = _reporter(a), _reporter(b)
     assert rep_a != rep_b, "two nodes must carry DISTINCT identities (KI-017)"
 
     identifier = f"ioc:domain:e2e-{int(time.time())}.example"
+    signer_a = _signer(a, tmp_path / "a_key.pem")
     q = report_builder.build_report_quads(
         identifier=identifier, category="ioc", severity="high",
         reporter_address=rep_a, framework="hermes", ioc_type="domain",
+        signer=signer_a,
     )
     name = f"report-{threat_ids.stable_hash(identifier + rep_a, 16)}"
     shared_at = time.monotonic()
@@ -85,7 +91,7 @@ def test_report_from_a_visible_on_b_with_distinct_identities():
     b.subscribe_context_graph(CG, include_shared_memory=True)
     deadline = time.monotonic() + 600
     while time.monotonic() < deadline:
-        if (identifier, rep_a.lower()) in _visible_identifiers(b):
+        if (identifier, signing.public_key_hex(signer_a.private_key)) in _visible_identifiers(b):
             latency = time.monotonic() - shared_at
             print(f"\nPROPAGATION: A→B visible in {latency:.1f}s (KI-019 measured)")
             break
@@ -97,13 +103,14 @@ def test_report_from_a_visible_on_b_with_distinct_identities():
     q2 = report_builder.build_report_quads(
         identifier=identifier, category="ioc", severity="high",
         reporter_address=rep_b, framework="hermes", ioc_type="domain",
+        signer=_signer(b, tmp_path / "b_key.pem"),
     )
     b.share_knowledge_asset(CG, f"report-{threat_ids.stable_hash(identifier + rep_b, 16)}", q2)
     deadline = time.monotonic() + 600
     while time.monotonic() < deadline:
-        reporters = {rep for (ident, rep) in _visible_identifiers(b) if ident == identifier}
-        if len(reporters) >= 2:
-            print(f"REPORTER COUNT: {len(reporters)} distinct reporters for {identifier}")
+        signers = {author for (ident, author) in _visible_identifiers(b) if ident == identifier}
+        if len(signers) >= 2:
+            print(f"REPORTER COUNT: {len(signers)} distinct verified signers for {identifier}")
             break
         time.sleep(10)
     else:
@@ -111,7 +118,7 @@ def test_report_from_a_visible_on_b_with_distinct_identities():
 
 
 @needs_nodes
-def test_burst_respects_daily_cap_at_the_graph():
+def test_burst_respects_daily_cap_at_the_graph(tmp_path):
     """Rate-brake verification at the graph, not in unit mocks (KI-002).
 
     N distinct identifiers shared back-to-back → each lands exactly once
@@ -120,12 +127,13 @@ def test_burst_respects_daily_cap_at_the_graph():
     """
     a = _client(A_URL, A_HOME)
     rep = _reporter(a)
+    signer = _signer(a, tmp_path / "a_key.pem")
     base = int(time.time())
     idents = [f"ioc:domain:burst-{base}-{i}.example" for i in range(3)]
     for ident in idents:
         q = report_builder.build_report_quads(
             identifier=ident, category="ioc", severity="high",
-            reporter_address=rep, framework="hermes", ioc_type="domain",
+            reporter_address=rep, framework="hermes", ioc_type="domain", signer=signer,
         )
         name = f"report-{threat_ids.stable_hash(ident + rep, 16)}"
         a.share_knowledge_asset(CG, name, q)

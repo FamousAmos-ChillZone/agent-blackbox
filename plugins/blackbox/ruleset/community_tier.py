@@ -52,31 +52,19 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
             client.subscribe_context_graph(cfg.community_graph_id, include_shared_memory=True)
         except Exception:
             pass
-        raw = community.fetch_community_report_rows(client, cfg)
-        environment = _node_environment(client) if raw is not None else ""
-        if raw is None or not environment:
-            # Fetch failed, or the network is unknown so nothing can be
+        # R0c/R0d: only reports whose signature verifies for THIS network and
+        # graph are counted; the self-described reporter field never is.
+        reports = community.read_verified_reports(client, cfg)
+        if reports is None:
+            # Read failed, or the network is unknown so nothing can be
             # verified: keep last-good community rows (fail-open).
             _keep_last_good(rs, prior)
             return
-        # R0c: only reports whose signature verifies for THIS network and
-        # graph are counted; the self-described reporter field never is.
-        verifier = community.ReportVerifier(environment, cfg.community_graph_id)
-        reports, _dropped = community.verify_report_rows(raw, verifier)
         rules = community.aggregate_community_reports(reports, _first_seen_history(prior))
         rs.community = {rule.identifier: rule.as_rule() for rule in rules}
         materialize_community_rules(rs)
     except Exception as exc:  # pragma: no cover - fail open at the tier boundary
         logger.debug("blackbox: community tier skipped: %s", exc)
-
-
-def _node_environment(client: DkgClient) -> str:
-    """This node's network id — what community signatures must be bound to."""
-    try:
-        return community.network_environment(client.status())
-    except Exception as exc:  # node unreachable: treated as "cannot verify now"
-        logger.debug("blackbox: node status unavailable for community verification: %s", exc)
-        return ""
 
 
 def _first_seen_history(prior: Optional[compiler.Ruleset]) -> Dict[str, float]:

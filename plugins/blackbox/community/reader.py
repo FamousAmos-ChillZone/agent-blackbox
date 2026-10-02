@@ -20,7 +20,8 @@ from ..kernel import constants
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, extract_binding
 from ..kernel import sparql_text
-from .verification import VerifiedReport
+from .report_signer import network_environment
+from .verification import ReportVerifier, VerifiedReport, verify_report_rows
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,33 @@ def fetch_community_report_rows(client: DkgClient, cfg: BlackboxConfig) -> Optio
         if len(page) < _COMMUNITY_PAGE_SIZE:
             break
     return rows
+
+
+def read_verified_reports(client: DkgClient, cfg: BlackboxConfig) -> Optional[List[VerifiedReport]]:
+    """THE community read (R0c/R0d): every report in the community graph whose
+    signature verifies for this node's network and graph.
+
+    The one place community reports are fetched and verified — the ruleset,
+    the dashboard's community statistics and `blackbox report --status` all
+    start here, so nothing counts an unverified row. Returns None when the
+    graph could not be read or the node's network id is unknown (nothing can
+    be verified; callers keep last-good), [] for an empty graph or when no
+    community graph is configured.
+    """
+    if not cfg.community_graph_id:
+        return []
+    rows = fetch_community_report_rows(client, cfg)
+    if rows is None:
+        return None
+    try:
+        environment = network_environment(client.status())
+    except Exception as exc:  # node unreachable: "cannot verify now"
+        logger.debug("blackbox: node status unavailable for community verification: %s", exc)
+        return None
+    if not environment:
+        return None
+    reports, _dropped = verify_report_rows(rows, ReportVerifier(environment, cfg.community_graph_id))
+    return reports
 
 
 def aggregate_community_reports(

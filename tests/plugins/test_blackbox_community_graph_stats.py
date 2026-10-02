@@ -1,10 +1,10 @@
-"""Community-graph agents are their own list, never "Connected agents".
+"""Community-graph statistics count verified signers (Refine R0d).
 
-Regression (2026-10-01, testnet-c dashboard): every reporter seen in the
-community graph was merged into ``/api/agents``' ``agents`` list, so remote
-nodes reached only through the DKG sim layer showed up as agents connected to
-this Blackbox. They now arrive as ``community_agents`` and render in a
-separate dashboard section.
+The dashboard's community numbers — contributing agents, the "Community graph
+— connected agents" section, the most-reported board — and
+`blackbox report --status` all read through ONE verified reader and count by
+signer key, never by the self-described reporter field (KI-067/110). History:
+community agents got their own dashboard section on 2026-10-01 (FIX-0018).
 """
 
 from __future__ import annotations
@@ -15,134 +15,122 @@ import pytest
 from fastapi.testclient import TestClient
 
 from plugins.blackbox import attach, audit
+from plugins.blackbox.community import graph_stats
+from plugins.blackbox.community.verification import VerifiedReport
 from plugins.blackbox.dashboard import server
-from plugins.blackbox.community.graph_stats import (
-    group_community_agents,
-    parse_reporter_rows,
-)
-from plugins.blackbox.kernel import dkg_client
+from plugins.blackbox.kernel import dkg_client, reporter_key
 
-LOCAL = "0xAAAA000000000000000000000000000000000001"
-REMOTE = "0xBBBB000000000000000000000000000000000002"
-GRAPH = "did:dkg:context-graph:agent-blackbox-community-test"
+from _community_rows import GRAPH, NETWORK, Reporter, signed_row
+
+LOCAL_ADDRESS = "0xAAAA000000000000000000000000000000000001"
 
 
-def _binding(value: str) -> dict:
-    return {"value": value}
+def _report(identifier, author, reporter="0xr", severity="high", framework="hermes"):
+    return VerifiedReport(subject=f"urn:guardian:report:{reporter}:{author}:{identifier}", identifier=identifier,
+                          author=author, reporter=reporter, severity=severity, framework=framework)
 
 
-def _rows() -> list:
-    return [
-        {"reporter": _binding(LOCAL), "framework": _binding("hermes"), "n": _binding("2")},
-        {"reporter": _binding(REMOTE), "framework": _binding("hermes"), "n": _binding("5")},
-        {"reporter": _binding(REMOTE.lower()), "framework": _binding("openclaw"), "n": _binding("1")},
-    ]
+# ----------------------------------------------------------- pure functions
 
 
-# ------------------------------------------------------------- pure functions
+def test_contributing_agents_are_distinct_signers():
+    reports = [_report("ioc:a", "k1", "0xa"), _report("ioc:b", "k1", "0xb"), _report("ioc:a", "k2", "0xc")]
+    assert graph_stats.contributing_agent_count(reports) == 2
 
 
-def test_parse_skips_rows_without_a_reporter_and_defaults_framework():
-    rows = [{"framework": _binding("hermes"), "n": _binding("3")},
-            {"reporter": _binding(REMOTE), "n": _binding("x")}]
-    assert parse_reporter_rows(rows) == [{"address": REMOTE, "framework": "unknown", "count": 0}]
+def test_community_agents_group_by_signer_and_flag_self():
+    reports = [_report("ioc:a", "k1", "0xme", framework="hermes"), _report("ioc:b", "k1", "0xme", framework="openclaw"),
+               _report("ioc:a", "k2", "0xother")]
+    agents = graph_stats.community_agents(reports, own_author="k1")
+    assert [a["author"] for a in agents] == ["k1", "k2"]          # this node first
+    assert agents[0]["is_self"] and agents[0]["reports"] == 2
+    assert agents[0]["frameworks"] == ["hermes", "openclaw"]
+    assert not agents[1]["is_self"]
 
 
-def test_group_folds_frameworks_per_address_case_insensitively():
-    agents = group_community_agents(parse_reporter_rows(_rows()), LOCAL)
-    remote = next(a for a in agents if not a["is_self"])
-    assert remote["frameworks"] == ["hermes", "openclaw"]
-    assert remote["reports"] == 6
+def test_one_signer_claiming_many_addresses_is_one_agent():
+    reports = [_report(f"ioc:{i}", "k1", f"0xpose{i}") for i in range(5)]
+    agents = graph_stats.community_agents(reports)
+    assert len(agents) == 1 and agents[0]["reports"] == 5
 
 
-def test_group_puts_this_node_first_and_flags_it():
-    agents = group_community_agents(parse_reporter_rows(_rows()), LOCAL.lower())
-    assert [a["is_self"] for a in agents] == [True, False]
+def test_most_reported_ranks_by_distinct_signers_and_keeps_max_severity():
+    reports = [_report("ioc:a", "k1", severity="low"), _report("ioc:a", "k2", severity="critical"),
+               _report("ioc:b", "k1"), _report("ioc:b", "k1")]
+    board = graph_stats.most_reported_threats(reports, limit=5)
+    assert board[0] == {"identifier": "ioc:a", "reporters": 2, "severity": "critical"}
+    assert board[1]["reporters"] == 1
 
 
-def test_group_without_a_local_address_flags_nobody():
-    agents = group_community_agents(parse_reporter_rows(_rows()), "")
-    assert not any(a["is_self"] for a in agents)
-    assert agents[0]["address"] == REMOTE  # most reports first
+def test_reports_signed_by_counts_only_that_signer():
+    reports = [_report("ioc:a", "k1"), _report("ioc:b", "k1"), _report("ioc:a", "k2")]
+    assert graph_stats.reports_signed_by(reports, "k1") == 2
+    assert graph_stats.reports_signed_by(reports, "") == 0
 
 
-# -------------------------------------------------------------------- endpoint
+# -------------------------------------------------------------- endpoints
 
 
 @pytest.fixture
-def client(monkeypatch, tmp_path):
+def wired(monkeypatch, tmp_path):
+    """Dashboard over a fake node serving REAL signed rows: this node (own key)
+    plus one remote node posing as three addresses with one key."""
     monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
     monkeypatch.setenv("BLACKBOX_COMMUNITY_GRAPH_ID", GRAPH)
+    own = Reporter(LOCAL_ADDRESS, reporter_key.ReporterKeyStore().load_or_create())
+    poser = Reporter("0xbbbb").key
+    rows = [signed_row("ioc:domain:evil.example", own), signed_row("ioc:domain:mine.example", own)]
+    rows += [signed_row("ioc:domain:evil.example", Reporter(f"0xpose{i}", poser)) for i in range(3)]
+    unsigned = signed_row("ioc:domain:unsigned.example", Reporter("0xcccc"))
+    del unsigned["signedStatement"]
+    rows.append(unsigned)
+
+    def query(self, sparql, graph, view=None, on_error=None, **kw):
+        if "ThreatReport" in sparql and "FILTER(STR(?r)" not in sparql:
+            return rows
+        return []
+
     monkeypatch.setattr(dkg_client.DkgClient, "reachable", lambda self, timeout=None: True)
-    monkeypatch.setattr(dkg_client.DkgClient, "agent_identity", lambda self: {"agentAddress": LOCAL})
-    monkeypatch.setattr(dkg_client.DkgClient, "query", lambda self, sparql, *a, **k: _rows())
+    monkeypatch.setattr(dkg_client.DkgClient, "status", lambda self, timeout=None: {"networkId": NETWORK})
+    monkeypatch.setattr(dkg_client.DkgClient, "agent_identity", lambda self: {"agentAddress": LOCAL_ADDRESS})
+    monkeypatch.setattr(dkg_client.DkgClient, "query", query)
     monkeypatch.setattr(audit, "local_active_frameworks", lambda: ["hermes"])
     monkeypatch.setattr(attach, "attach_all", lambda **kwargs: {"hermes": [], "openclaw": []})
-    with TestClient(server.create_app(), base_url="http://127.0.0.1") as c:
-        yield c
+    with TestClient(server.create_app(), base_url="http://127.0.0.1") as client:
+        yield client
 
 
-def _agents_once_reporters_land(client) -> dict:
-    """The reporters + identity load off the request path (stale-while-
-    revalidate); poll until the first refresh lands."""
+def _once_loaded(client, path, ready):
+    """Community data loads off the request path (stale-while-revalidate)."""
     deadline = time.monotonic() + 5
     while True:
-        body = client.get("/api/agents").json()
-        if body["community_agents"] and any(a["is_self"] for a in body["community_agents"]):
+        body = client.get(path).json()
+        if ready(body):
             return body
-        assert time.monotonic() < deadline, f"community agents never loaded: {body}"
+        assert time.monotonic() < deadline, f"never loaded: {body}"
         time.sleep(0.05)
 
 
-def test_remote_reporters_are_not_connected_agents(client):
-    body = _agents_once_reporters_land(client)
-    addresses = {row["address"].lower() for row in body["agents"]}
-    assert REMOTE.lower() not in addresses
+def test_community_agents_section_counts_signers(wired):
+    body = _once_loaded(wired, "/api/agents", lambda b: len(b["community_agents"]) >= 2)
+    agents = body["community_agents"]
+    assert len(agents) == 2                                     # own key + ONE poser; unsigned dropped
+    assert agents[0]["is_self"] and agents[0]["reports"] == 2
+    assert agents[1]["reports"] == 3 and not agents[1]["is_self"]
+
+
+def test_remote_reporters_are_not_connected_agents(wired):
+    body = _once_loaded(wired, "/api/agents", lambda b: len(b["community_agents"]) >= 2)
     assert all(row.get("is_local") for row in body["agents"])
 
 
-def test_community_agents_list_every_reporter_with_this_node_flagged(client):
-    body = _agents_once_reporters_land(client)
-    by_address = {a["address"].lower(): a for a in body["community_agents"]}
-    assert set(by_address) == {LOCAL.lower(), REMOTE.lower()}
-    assert by_address[LOCAL.lower()]["is_self"] is True
-    assert by_address[REMOTE.lower()]["reports"] == 6
+def test_contributing_agents_are_verified_signers(wired):
+    stats = _once_loaded(wired, "/api/community-stats", lambda b: b["contributing_agents"])
+    assert stats["contributing_agents"] == 2
 
 
-# ------------------------------------------------- extracted dashboard queries
-
-
-class _FakeClient:
-    """Answers every query with ``rows``; records what was asked."""
-
-    def __init__(self, rows):
-        self.rows = rows
-        self.asked = []
-
-    def query(self, sparql, graph_id, view=None, on_error=None):
-        self.asked.append((sparql, graph_id, view))
-        return self.rows
-
-
-def test_contributing_agent_count_reads_the_count():
-    from plugins.blackbox.community.graph_stats import contributing_agent_count
-    assert contributing_agent_count(_FakeClient([{"n": _binding("3")}]), GRAPH) == 3
-
-
-def test_contributing_agent_count_is_none_when_the_node_does_not_answer():
-    from plugins.blackbox.community.graph_stats import contributing_agent_count
-    assert contributing_agent_count(_FakeClient(None), GRAPH) is None
-
-
-def test_most_reported_threats_types_rows_and_defaults_severity():
-    from plugins.blackbox.community.graph_stats import most_reported_threats
-    client = _FakeClient([{"identifier": _binding("ioc:domain:x.example"), "reporters": _binding("4")}])
-    assert most_reported_threats(client, GRAPH, limit=7) == [
-        {"identifier": "ioc:domain:x.example", "reporters": 4, "severity": "info"}
-    ]
-    assert "LIMIT 7" in client.asked[0][0]
-
-
-def test_fetch_reporter_rows_keeps_none_for_a_silent_node():
-    from plugins.blackbox.community.graph_stats import fetch_reporter_rows
-    assert fetch_reporter_rows(_FakeClient(None), GRAPH) is None
+def test_most_reported_board_counts_the_poser_once(wired):
+    board = _once_loaded(wired, "/api/reports", lambda b: b["reports"])["reports"]
+    evil = next(row for row in board if row["identifier"] == "ioc:domain:evil.example")
+    assert evil["reporters"] == 2                                # own + poser — not 4
+    assert "ioc:domain:unsigned.example" not in {row["identifier"] for row in board}

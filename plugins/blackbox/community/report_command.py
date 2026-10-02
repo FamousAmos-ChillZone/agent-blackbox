@@ -11,12 +11,13 @@ import argparse
 import logging
 from typing import Any, Dict, Optional, Tuple
 from .. import audit
-from . import report_builder, report_signer
+from . import graph_stats, report_builder, report_signer
+from . import reader as graph_reader
 from ..kernel import threat_ids
-from ..kernel import constants, sparql_text
+
 from ..kernel.config import load_blackbox_config
 from ..kernel.dkg_client import DkgClient
-from ..kernel import display_safety, identity
+from ..kernel import display_safety, identity, reporter_key
 
 logger = logging.getLogger(__name__)
 
@@ -268,20 +269,14 @@ def _report_status(cfg) -> int:
     if cfg.community_graph_id:
         try:
             client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-            reporter = identity.reporter_address(client)
-            if reporter and reporter.startswith("0x"):
-                sparql = (
-                    "PREFIX g: <http://umanitek.ai/ontology/guardian/> "
-                    "SELECT (COUNT(?r) AS ?n) WHERE { ?r a g:ThreatReport ; "
-                    f"g:reporter {sparql_text.sparql_string_literal(reporter.lower())} }}"
-                )
-                res = client.query(
-                    sparql, cfg.community_graph_id,
-                    view=constants.VIEW_SHARED_WORKING_MEMORY, on_error=None,
-                )
-                if res:
-                    from ..kernel.dkg_client import extract_binding
-                    print(f"On the community graph: {extract_binding(res[0].get('n')) or 0} report(s) under your address.")
+            store = reporter_key.ReporterKeyStore()
+            own_author = store.public_key_hex() if store.path.exists() else ""
+            reports = graph_reader.read_verified_reports(client, cfg)
+            if reports is not None and own_author:
+                # R0d: count what THIS node's key signed and the graph verified —
+                # never rows that merely claim our address.
+                count = graph_stats.reports_signed_by(reports, own_author)
+                print(f"On the community graph: {count} verified report(s) signed by this node.")
         except Exception as exc:
             logger.debug("blackbox: report --status graph read failed: %s", exc)
     return 0
