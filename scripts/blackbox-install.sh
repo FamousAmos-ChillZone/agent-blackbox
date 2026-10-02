@@ -1603,11 +1603,11 @@ defaults = {
     "context_graph_id": context_graph_id,
     "graph_peer_id": graph_peer_id,
     "sync_interval": 3600,
-    # Community sharing has not shipped.  Keep fresh installs private, and
-    # make the obsolete outbound-report allowance inert for compatibility
-    # with older readers that still expect the key to exist.
+    # Community sharing has not shipped.  Keep fresh installs private.  The
+    # daily cap is the plugin's default bound (20): 0 used to mean NO cap,
+    # and the plugin no longer accepts it (Refine R1).
     "report": False,
-    "daily_report_limit": 0,
+    "daily_report_limit": 20,
     "report_min_severity": "high",
     "block_severity": "critical",
     "dashboard_port": 9700,
@@ -1620,7 +1620,7 @@ for k, v in defaults.items():
         added.append(k)
 # Migrate stale pre-release sharing settings too. The feature is closed at
 # runtime, so leaving an old opt-in in config is misleading even if inert.
-for k, v in {"report": False, "daily_report_limit": 0}.items():
+for k, v in {"report": False, "daily_report_limit": 20}.items():
     if blackbox.get(k) != v:
         blackbox[k] = v
         added.append(k)

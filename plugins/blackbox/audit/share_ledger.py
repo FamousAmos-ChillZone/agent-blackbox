@@ -14,6 +14,7 @@ import logging
 import time
 from pathlib import Path
 from typing import Any, Dict, List
+from ..kernel import constants
 from . import log_store
 from . import redaction
 
@@ -202,7 +203,8 @@ def allow_report(daily_limit: int) -> bool:
             if state.get("date") != today:
                 # New day: reset the counter but preserve the cooldown stamps.
                 state = {"date": today, "count": 0, "reported": state.get("reported", {})}
-            if daily_limit > 0 and int(state.get("count", 0)) >= daily_limit:
+            limit = constants.effective_daily_report_limit(daily_limit)   # never "off" (Refine R1)
+            if int(state.get("count", 0)) >= limit:
                 logger.debug("blackbox: daily report limit %s reached", daily_limit)
                 return False
             state["count"] = int(state.get("count", 0)) + 1

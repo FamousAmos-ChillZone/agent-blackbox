@@ -113,12 +113,29 @@ def test_daily_report_limit_has_real_default(clean_env):
 
 def test_daily_report_limit_configurable_and_never_negative(clean_env):
     assert _load_with_entry(clean_env, {"daily_report_limit": 5}).daily_report_limit == 5
-    assert _load_with_entry(clean_env, {"daily_report_limit": -3}).daily_report_limit == 0
+    # Refine R1 (plan §07): the cap can no longer be switched off — 0 or below means the default.
+    assert _load_with_entry(clean_env, {"daily_report_limit": -3}).daily_report_limit == 20
 
 
 # ---------------------------------------------------------------------------
 # report threshold severity edges
 # ---------------------------------------------------------------------------
+
+
+def test_the_daily_cap_defaults_to_20_and_cannot_be_switched_off(clean_env):
+    """Refine R1: 20/day client hygiene; `0` used to mean NO cap — the very
+    value the installers wrote to make the allowance "inert"."""
+    assert constants.DEFAULT_DAILY_REPORT_LIMIT == 20
+    assert _load_with_entry(clean_env, {"daily_report_limit": 0}).daily_report_limit == 20
+    clean_env.setenv("BLACKBOX_DAILY_REPORT_LIMIT", "0")
+    assert _load_with_entry(clean_env, {}).daily_report_limit == 20
+
+
+def test_allow_report_with_zero_still_caps(clean_env, tmp_path):
+    from plugins.blackbox import audit
+    clean_env.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
+    allowed = [audit.allow_report(0) for _ in range(25)]
+    assert allowed.count(True) == constants.DEFAULT_DAILY_REPORT_LIMIT
 
 
 def test_report_threshold_exactly_at_floor():

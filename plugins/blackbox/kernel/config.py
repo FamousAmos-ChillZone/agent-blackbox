@@ -353,8 +353,7 @@ def load_blackbox_config() -> BlackboxConfig:
         # default-on/off decision; the daily cap defaults to a real bound so
         # the safeguard exists the moment sharing turns on (KI-002).
         report=_as_bool(_env_or(entry, env="BLACKBOX_REPORT", key="report", default=False), False),
-        daily_report_limit=max(
-            0,
+        daily_report_limit=constants.effective_daily_report_limit(
             _as_int(
                 _env_or(
                     entry,

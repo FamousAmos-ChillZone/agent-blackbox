@@ -238,8 +238,17 @@ DEFAULT_COMMUNITY_GRAPH_ID = ""
 
 #: Default daily cap on outbound community reports per node. Bounds a runaway
 #: or compromised agent's graph footprint even before the per-threat 6-hour
-#: cooldown is considered; 50/day is far above honest single-node signal.
-DEFAULT_DAILY_REPORT_LIMIT = 50
+#: cooldown is considered. Refine R1 (plan §07): 20/day, client-side hygiene
+#: only — readers enforce the real per-author budget — and it can no longer be
+#: switched off: a limit of 0 or below means this default, never "no cap".
+DEFAULT_DAILY_REPORT_LIMIT = 20
+
+
+def effective_daily_report_limit(configured: int) -> int:
+    """The daily report cap to enforce: *configured* when positive, else the
+    default — never "no cap" (Refine R1). THE one rule; config and the share
+    ledger both apply it."""
+    return configured if configured > 0 else DEFAULT_DAILY_REPORT_LIMIT
 
 
 def normalize_severity(value: object, fallback: str = "info") -> str:

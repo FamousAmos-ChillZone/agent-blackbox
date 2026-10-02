@@ -105,7 +105,7 @@ to change them is through the dashboard settings page.
 | `protected_paths` | `[]` | Local file globs that always block and are never shared |
 | `context_graph_id` | `0x37b1Fdfd…/agent-blackbox-vm` | Public verified threat graph |
 | `community_graph_id` | *(empty until launch)* | Community graph address; empty keeps sharing dormant |
-| `daily_report_limit` | `50` | Daily cap on outbound community reports |
+| `daily_report_limit` | `20` | Daily cap on outbound community reports (cannot be switched off; 0 means the default) |
 | `graph_peer_id` | bundled publisher peer | Authoritative threat-data sync source |
 
 Categories are `injection`, `escalation`, `dependency`, `fileaccess`, and

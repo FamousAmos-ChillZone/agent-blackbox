@@ -405,14 +405,14 @@ def test_unix_installer_fresh_config_keeps_community_sharing_off(
     blackbox = configured["plugins"]["entries"]["blackbox"]
 
     assert blackbox["report"] is False
-    assert blackbox["daily_report_limit"] == 0
+    assert blackbox["daily_report_limit"] == 20   # the plugin default; 0 meant "no cap" (Refine R1)
 
 
 def test_windows_installer_fresh_config_keeps_community_sharing_off() -> None:
     writer = _extract_powershell_function_body("Enable-AndConfigure")
 
     assert '"report": False' in writer
-    assert '"daily_report_limit": 0' in writer
+    assert '"daily_report_limit": 20' in writer
     assert '"report": True' not in writer
     assert '"daily_report_limit": 9999' not in writer
 
@@ -436,13 +436,13 @@ def test_unix_installer_migrates_stale_community_sharing_opt_in(
     blackbox = configured["plugins"]["entries"]["blackbox"]
 
     assert blackbox["report"] is False
-    assert blackbox["daily_report_limit"] == 0
+    assert blackbox["daily_report_limit"] == 20   # the plugin default; 0 meant "no cap" (Refine R1)
 
 
 def test_windows_installer_migrates_stale_community_sharing_opt_in() -> None:
     writer = INSTALL_PS1.read_text(encoding="utf-8")
 
-    assert 'for k, v in {"report": False, "daily_report_limit": 0}.items()' in writer
+    assert 'for k, v in {"report": False, "daily_report_limit": 20}.items()' in writer
     assert "if blackbox.get(k) != v:" in writer
 
 
