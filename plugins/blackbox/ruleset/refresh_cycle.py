@@ -175,12 +175,7 @@ def _refresh_unlocked(
         rows.extend((row, tier) for row in view_rows)
     rs = compiler.build_from_rows(rows)
     rs.context_graph_id = context_graph_id
-    # Community tier (B5): enrich after the verified build so public rules
-    # already occupy their keys (public-beats-community precedence is then
-    # structural). Entirely fail-open — a community problem never degrades
-    # the verified ruleset.
-    if client is not None and config.community_graph_id:
-        community_tier.apply_community_tier(rs, client, config, _latest_cached_ruleset(config.context_graph_id))
+    _apply_overlays(rs, client, config)
     if empty_success:
         # A fresh node's subscribe/catch-up is async. Do not cache "0 rules" as
         # fresh for the full sync interval; retry soon so the dashboard updates
@@ -207,11 +202,29 @@ def _reuse_generation(rs: compiler.Ruleset, context_graph_id: str, client: Optio
     write it to disk and memory."""
     rs.context_graph_id = context_graph_id
     rs.synced_at = time.time()
-    if client is not None and config.community_graph_id:
-        community_tier.reapply_community_tier(rs, client, config)
+    _apply_overlays(rs, client, config, reused=True)
     disk_cache._write_cache(rs)
     _memory.store(rs)
     return rs
+
+
+def _apply_overlays(rs: compiler.Ruleset, client: Optional[DkgClient], config: BlackboxConfig, *,
+                    reused: bool = False) -> None:
+    """The tiers layered on top of the verified build, on EVERY refresh path.
+
+    The community tier (B5) is applied after the verified build, so public
+    rules already occupy their keys (public-beats-community precedence is
+    then structural). *reused* = *rs* is a last-good generation being kept
+    (its community tier is re-applied in place); otherwise the previous cached
+    generation supplies first-seen history and last-good. Entirely fail-open:
+    a community problem never degrades the verified ruleset.
+    """
+    if client is None or not config.community_graph_id:
+        return
+    if reused:
+        community_tier.reapply_community_tier(rs, client, config)
+    else:
+        community_tier.apply_community_tier(rs, client, config, _latest_cached_ruleset(config.context_graph_id))
 
 
 def _restore_tiers(rs: compiler.Ruleset, prior: compiler.Ruleset, tiers: List[str]) -> None:
