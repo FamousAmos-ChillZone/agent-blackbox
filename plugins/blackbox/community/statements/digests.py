@@ -34,6 +34,8 @@ from ..report_signer import DIGEST_STATEMENT
 from ..verification import SIGNED_STATEMENT_VAR
 from .curator_view import CuratorView
 
+from ..verification import unique_by_subject
+
 logger = logging.getLogger(__name__)
 
 _PAGE_SIZE = 5000
@@ -107,7 +109,8 @@ def verified_digests(rows: Iterable[Mapping[str, Any]], environment: str, graph:
             found.append(digest)
     if dropped:
         logger.info("blackbox: community read ignored %d unsigned or unverifiable digest row(s)", dropped)
-    return found
+    return unique_by_subject(found)
+
 
 
 def one_per_author_week(digests: Iterable[VerifiedDigest], first_seen: Mapping[str, float]) -> List[VerifiedDigest]:

@@ -131,3 +131,20 @@ def test_cli_report_refuses_when_it_cannot_sign(monkeypatch, tmp_path, capsys):
     args = argparse.Namespace(false_positive=None, status=False)
     assert report_command.cmd_report(args) == 1
     assert "Nothing was submitted" in capsys.readouterr().out
+
+
+def test_epoch_copies_of_one_statement_count_once(tmp_path, monkeypatch):
+    """KI-207: a re-share under a new asset name carries the same subject and sits beside the original
+    on peers; every reader folds them to one statement before anything is counted."""
+    from _community_rows import GRAPH, NETWORK, Reporter, signed_dispute_row, signed_retraction_row, signed_row
+    from plugins.blackbox.community.statements import disputes, retractions
+    from plugins.blackbox.community.verification import ReportVerifier, verify_report_rows
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
+    one = Reporter("0xr1")
+    original, epoch_copy = signed_row("dep:npm:x@1", one), signed_row("dep:npm:x@1", one)   # same subject, two assets
+    reports, dropped = verify_report_rows([original, epoch_copy], ReportVerifier(NETWORK, GRAPH))
+    assert [r.subject for r in reports] == [original["r"]] and dropped == 0
+    d1, d2 = signed_dispute_row("dep:npm:x@1", one), signed_dispute_row("dep:npm:x@1", one)
+    assert len(disputes.verified_disputes([d1, d2], NETWORK, GRAPH)) == 1
+    r1, r2 = signed_retraction_row("dep:npm:x@1", one), signed_retraction_row("dep:npm:x@1", one)
+    assert len(retractions.verified_retractions([r1, r2], NETWORK, GRAPH)) == 1

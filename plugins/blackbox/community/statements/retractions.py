@@ -31,6 +31,8 @@ from ...kernel.dkg_client import extract_binding
 from ..report_signer import RETRACT_STATEMENT
 from ..verification import SIGNED_STATEMENT_VAR, VerifiedReport
 
+from ..verification import unique_by_subject
+
 logger = logging.getLogger(__name__)
 
 #: One withdrawn voice: (signer key, threat identifier).
@@ -103,7 +105,8 @@ def verified_retractions(rows: Iterable[Mapping[str, Any]], environment: str, gr
             found.append(retraction)
     if dropped:
         logger.info("blackbox: community read ignored %d unsigned or unverifiable retraction row(s)", dropped)
-    return found
+    return unique_by_subject(found)
+
 
 
 def apply_retractions(reports: Iterable[VerifiedReport], withdrawn: FrozenSet[Withdrawal]) -> List[VerifiedReport]:

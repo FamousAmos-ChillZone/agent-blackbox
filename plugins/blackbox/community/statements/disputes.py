@@ -27,6 +27,8 @@ from ...kernel.dkg_client import extract_binding
 from ..report_signer import DISPUTE_STATEMENT
 from ..verification import SIGNED_STATEMENT_VAR
 
+from ..verification import unique_by_subject
+
 logger = logging.getLogger(__name__)
 
 _PAGE_SIZE = 5000
@@ -97,4 +99,4 @@ def verified_disputes(rows: Iterable[Mapping[str, Any]], environment: str, graph
             found.append(dispute)
     if dropped:
         logger.info("blackbox: community read ignored %d unsigned or unverifiable dispute row(s)", dropped)
-    return found
+    return unique_by_subject(found)

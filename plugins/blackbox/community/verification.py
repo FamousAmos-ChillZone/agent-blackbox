@@ -135,6 +135,28 @@ def _agreed_evidence(row: Mapping[str, Any], payload: Mapping[str, str]) -> Opti
     return tuple(sorted(fields))
 
 
+def unique_by_subject(found: List[Any]) -> List[Any]:
+    """One statement per subject, first seen kept (KI-207).
+
+    An epoch copy — the same statement re-shared under a NEW asset name to
+    outlive expiry (R5) — carries the same subject and sits beside the
+    original on peers until the original expires (bench 2026-10-02). Counting
+    both would double a reporter's statements against the per-author cap and
+    the daily budget; they are one statement, so every reader folds them here
+    before anything is counted.
+    """
+    seen = set()
+    unique = []
+    for item in found:
+        if item.subject in seen:
+            continue
+        seen.add(item.subject)
+        unique.append(item)
+    if len(unique) < len(found):
+        logger.debug("blackbox: %d duplicate statement copy(ies) folded by subject", len(found) - len(unique))
+    return unique
+
+
 def verify_report_rows(rows: Iterable[Mapping[str, Any]], verifier: ReportVerifier) -> Tuple[List[VerifiedReport], int]:
     """(verified reports, number of rows dropped). Logs the drop count —
     a sudden jump is the visible sign of forged or unsigned traffic."""
@@ -148,5 +170,5 @@ def verify_report_rows(rows: Iterable[Mapping[str, Any]], verifier: ReportVerifi
             reports.append(report)
     if dropped:
         logger.info("blackbox: community read dropped %d unsigned or unverifiable report row(s)", dropped)
-    return reports, dropped
+    return unique_by_subject(reports), dropped
 
