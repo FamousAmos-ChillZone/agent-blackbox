@@ -136,7 +136,8 @@ def _community_reports_sparql(after: str) -> str:
 PREFIX g: <http://umanitek.ai/ontology/guardian/>
 SELECT ?r ?identifier ?reporter ?severity ?kind ?iocType ?toolName ?argShape
        ?packageName ?packageVersion ?packageEcosystem ?category ?skillName
-       ?dangerShape ?pattern ?injectionContext ?skillArtifactHash ?signedStatement WHERE {{
+       ?dangerShape ?pattern ?injectionContext ?skillArtifactHash ?skillRegistry ?iocContext ?reportReason
+       ?signedStatement WHERE {{
   ?r a g:ThreatReport ;
      g:identifier ?identifier ;
      g:reporter ?reporter ;
@@ -154,6 +155,9 @@ SELECT ?r ?identifier ?reporter ?severity ?kind ?iocType ?toolName ?argShape
   OPTIONAL {{ ?r g:pattern ?pattern }}
   OPTIONAL {{ ?r g:injectionContext ?injectionContext }}
   OPTIONAL {{ ?r g:skillArtifactHash ?skillArtifactHash }}
+  OPTIONAL {{ ?r g:skillRegistry ?skillRegistry }}
+  OPTIONAL {{ ?r g:iocContext ?iocContext }}
+  OPTIONAL {{ ?r g:reportReason ?reportReason }}
   OPTIONAL {{ ?r g:signedStatement ?signedStatement }}
   {cursor}
 }} ORDER BY STR(?r) LIMIT {_COMMUNITY_PAGE_SIZE}

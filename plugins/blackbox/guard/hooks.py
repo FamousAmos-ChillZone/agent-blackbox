@@ -183,11 +183,6 @@ def on_post_tool_call(
         logger.debug("blackbox: post_tool_call failed: %s", exc)
 
 
-#: Tools whose output is a page fetched from the web (Hermes: web_extract,
-#: web_search, browser_*). Text they return is reported as ``in-fetched-page``.
-_FETCH_TOOL_PREFIXES = ("web_", "browser_")
-
-
 def _untrusted_request_sources(user_message: Any, request_messages: Any) -> List[Tuple[str, str]]:
     """Return the current turn's untrusted text as ``(context, text)`` pairs.
 
@@ -228,7 +223,7 @@ def _untrusted_request_sources(user_message: Any, request_messages: Any) -> List
             add("in-user-prompt", session_context._message_text(msg.get("content")))
         elif role == "tool":
             name = str(msg.get("name") or tool_names.get(str(msg.get("tool_call_id") or ""), "")).lower()
-            context = "in-fetched-page" if name.startswith(_FETCH_TOOL_PREFIXES) else "in-tool-output"
+            context = "in-fetched-page" if name.startswith(detection.FETCH_TOOL_PREFIXES) else "in-tool-output"
             add(context, session_context._message_text(msg.get("content")))
     return sources
 

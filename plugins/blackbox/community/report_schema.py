@@ -16,13 +16,18 @@ keyword names):
 * ``escalation`` — ``tool_name`` (a shell tool) + ``arg_shape`` (a known shape).
 * ``dependency`` — ``ecosystem``, canonical ``package_name``,
   ``package_version``, ``kind`` = ``malware`` (a vulnerability report cannot
-  be built — decision 22), optional ``advisory_id``.
+  be built — decision 22), ``reason`` (``DEPENDENCY_REASONS`` or
+  ``advisory:<id>``; a whole-package ``*`` version only with a
+  ``WHOLE_PACKAGE_REASONS`` reason), optional ``advisory_id``.
 * ``fileaccess`` — ``tool_name`` + ``file_category`` (a known category).
-* ``skill`` — either a known-bad named version (``skill_name`` +
-  ``skill_version``, e.g. a verified-tier match), or a local/unknown skill as
-  ``artifact_hash`` (sha256 of its code) + ``danger_shape`` — never its name
-  or version (KI-159).
-* ``ioc`` — ``ioc_type`` (a known type); the canonical value is the identifier.
+* ``skill`` — either a known-bad named version from a public registry
+  (``registry`` + ``skill_name`` + ``skill_version``), or a local/unknown
+  skill as ``artifact_hash`` (sha256 of its code) + ``danger_shape`` — never
+  its name or version (KI-159).
+* ``ioc`` — ``ioc_type`` (a known type) + ``ioc_context`` (where it was met);
+  the canonical value is the identifier.
+
+The vocabularies are plan §04's, kept in ``kernel.constants``.
 
 Pattern: Factory (:func:`validate_report`) + a Strategy table of per-category
 validators; the record is an immutable Value Object.
@@ -120,16 +125,34 @@ def _dependency(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
     eco = _one_of("ecosystem", ev.get("ecosystem"), detection.DEPENDENCY_ECOSYSTEMS)
     raw_name = _token("package_name", ev.get("package_name"))
     name = threat_ids.canonical_package_name(eco, raw_name)
-    version = str(ev.get("package_version") or "").strip()
-    if version != "*":   # "*" = a whole-package rule (every version is malware)
-        version = _token("package_version", version)
     if str(ev.get("kind") or "").lower() != constants.KIND_MALWARE:
         _fail("a dependency report must be kind=malware (vulnerabilities stay local — decision 22)")
-    out = {"ecosystem": eco, "package_name": name, "package_version": version, "kind": constants.KIND_MALWARE}
-    advisory = _token("advisory_id", ev.get("advisory_id"), required=False)
+    reason, advisory = _dependency_reason(ev)
+    version = str(ev.get("package_version") or "").strip()
+    if version == "*":   # a whole-package report: every version is malware
+        if reason not in constants.WHOLE_PACKAGE_REASONS:
+            _fail(f"a whole-package (*) report needs reason {' or '.join(constants.WHOLE_PACKAGE_REASONS)}")
+    else:
+        version = _token("package_version", version)
+    out = {"ecosystem": eco, "package_name": name, "package_version": version, "kind": constants.KIND_MALWARE,
+           "reason": reason}
     if advisory:
         out["advisory_id"] = advisory
     return threat_ids.dependency_identifier(eco, name, version), out
+
+
+def _dependency_reason(ev: Mapping[str, str]) -> Tuple[str, str]:
+    """(reason, advisory id): the closed reason, or ``advisory:<id>`` — whose id
+    must equal ``advisory_id`` when both are given."""
+    reason = str(ev.get("reason") or "").strip()
+    advisory = _token("advisory_id", ev.get("advisory_id"), required=False)
+    if reason.lower().startswith(constants.ADVISORY_REASON_PREFIX):
+        cited = _token("advisory id in reason", reason[len(constants.ADVISORY_REASON_PREFIX):])
+        if advisory and advisory != cited:
+            _fail("the reason's advisory and advisory_id differ")
+        return constants.ADVISORY_REASON_PREFIX + cited, cited
+    allowed = (*constants.DEPENDENCY_REASONS, constants.ADVISORY_REASON_PREFIX + "<id>")
+    return _one_of("reason", reason, allowed), advisory
 
 
 def _fileaccess(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
@@ -140,20 +163,23 @@ def _fileaccess(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
 
 def _skill(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
     if ev.get("artifact_hash") or ev.get("danger_shape"):
-        if ev.get("skill_name") or ev.get("skill_version"):
+        if ev.get("skill_name") or ev.get("skill_version") or ev.get("registry"):
             _fail("a local skill is reported by artifact hash + danger shape, never by name or version (KI-159)")
         digest = str(ev.get("artifact_hash") or "").strip().lower()
         if not _SHA256_HEX.fullmatch(digest):
             _fail("artifact_hash must be the sha256 hex of the skill's code")
         shape = _one_of("danger_shape", ev.get("danger_shape"), detection.SKILL_DANGER_SHAPES)
         return threat_ids.skill_artifact_identifier(digest, shape), {"artifact_hash": digest, "danger_shape": shape}
+    registry = _one_of("registry", ev.get("registry"), constants.SKILL_REGISTRIES)   # never local (KI-159)
     name = _token("skill_name", ev.get("skill_name"))
     version = _token("skill_version", ev.get("skill_version"))
-    return threat_ids.skill_version_identifier(name, version), {"skill_name": name, "skill_version": version}
+    return (threat_ids.skill_version_identifier(name, version),
+            {"registry": registry, "skill_name": name, "skill_version": version})
 
 
 def _ioc(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
-    return None, {"ioc_type": _one_of("ioc_type", ev.get("ioc_type"), threat_ids.IOC_TYPES)}
+    return None, {"ioc_type": _one_of("ioc_type", ev.get("ioc_type"), threat_ids.IOC_TYPES),
+                  "ioc_context": _one_of("ioc_context", ev.get("ioc_context"), constants.IOC_CONTEXTS)}
 
 
 _VALIDATORS: Dict[str, Callable[[Mapping[str, str]], Tuple[Optional[str], Dict[str, str]]]] = {

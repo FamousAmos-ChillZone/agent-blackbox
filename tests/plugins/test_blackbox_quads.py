@@ -135,13 +135,14 @@ def test_report_literal_fields_respect_graph_limit():
     import pytest
     with pytest.raises(ValueError):                     # R1: an oversized framework is refused outright (ReportValidationError)
         report_builder.build_report_quads(identifier="ioc:domain:x.example", category="ioc", severity="high",
-                                          reporter_address="0xabc", framework=oversized, ioc_type="domain")
+                                          reporter_address="0xabc", framework=oversized, ioc_type="domain", ioc_context="fetched-by-tool")
     rows = report_builder.build_report_quads(
         identifier="ioc:domain:x.example",
         category="ioc",
         severity="high",
         reporter_address=oversized,     # the reporter literal is still capped
         ioc_type="domain",
+        ioc_context="fetched-by-tool",
     )
     literal_objects = [r["object"] for r in rows if r["object"].startswith('"') and "^^" not in r["object"]]
     assert literal_objects

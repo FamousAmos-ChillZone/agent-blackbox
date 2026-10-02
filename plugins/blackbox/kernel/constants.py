@@ -60,6 +60,12 @@ SIGNED_STATEMENT_PRED = f"{BLACKBOX_ONTOLOGY}signedStatement"
 #: artifact hash (sha256 of its code — local skills are never named, KI-159).
 INJECTION_CONTEXT_PRED = f"{BLACKBOX_ONTOLOGY}injectionContext"
 SKILL_ARTIFACT_HASH_PRED = f"{BLACKBOX_ONTOLOGY}skillArtifactHash"
+#: Refine R1 (plan §04): where an indicator was met (IOC_CONTEXTS); why a
+#: dependency is malware (DEPENDENCY_REASONS) or why a dispute says a threat is
+#: wrong (FALSE_POSITIVE_REASONS); which registry a named skill comes from.
+IOC_CONTEXT_PRED = f"{BLACKBOX_ONTOLOGY}iocContext"
+REPORT_REASON_PRED = f"{BLACKBOX_ONTOLOGY}reportReason"
+SKILL_REGISTRY_PRED = f"{BLACKBOX_ONTOLOGY}skillRegistry"
 
 # threat kind: distinguishes active malware from a mere vulnerability. Only
 # ``malware`` blocks (at/above block_severity); ``vulnerability`` always flags
@@ -188,6 +194,23 @@ OWASP_LLM_CATEGORIES = tuple(f"LLM{n:02d}" for n in range(1, 11))
 #: Where a prompt injection was seen (decision 24, KI-161): a closed context,
 #: never the source domain or any text.
 INJECTION_CONTEXTS = ("in-fetched-page", "in-tool-output", "in-user-prompt", "in-skill")
+
+#: Where an indicator of compromise was met (plan §04).
+IOC_CONTEXTS = ("fetched-by-tool", "in-prompt", "in-tool-output", "in-dependency", "in-skill")
+
+#: Why a dependency is reported as malware (plan §04), besides ``advisory:<id>``.
+DEPENDENCY_REASONS = ("typosquat", "install-hook", "exfil", "internal-mirror-collision")
+#: The only reasons a whole-package (``@*``) dependency report may give.
+WHOLE_PACKAGE_REASONS = ("typosquat", "internal-mirror-collision")
+#: The prefix of an advisory-backed reason (``advisory:MAL-2026-1``).
+ADVISORY_REASON_PREFIX = "advisory:"
+
+#: Registries a skill may be NAMED from. A local or unknown skill is never named:
+#: it is reported by artifact hash only (KI-159).
+SKILL_REGISTRIES = ("mcp-registry", "clawhub", "npm", "pypi", "oci", "mcpb")
+
+#: Why a dispute (``g:FalsePositive``) says a threat is wrong (plan §04).
+FALSE_POSITIVE_REASONS = ("internal-mirror", "unreachable", "tolerable", "fixed", "wrong")
 
 #: Frameworks a report may name.
 REPORT_FRAMEWORKS = ("hermes", "openclaw")

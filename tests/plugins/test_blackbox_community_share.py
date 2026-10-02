@@ -75,14 +75,15 @@ class FakeClient:
 
 def _fields_for(identifier):
     """The share fields a real detector attaches to *identifier* (the R1 schema
-    validates them at the gate): package parts for a malware dependency, the
-    type for an IOC."""
+    validates them at the gate): package parts + reason for a malware
+    dependency, type + context for an IOC."""
     if identifier.startswith("dep:"):
         ecosystem, package = identifier[len("dep:"):].split(":", 1)
         name, version = package.rsplit("@", 1)
-        return {"ecosystem": ecosystem, "package_name": name, "package_version": version, "kind": "malware"}
+        return {"ecosystem": ecosystem, "package_name": name, "package_version": version, "kind": "malware",
+                "reason": "install-hook"}
     if identifier.startswith("ioc:"):
-        return {"ioc_type": identifier.split(":")[1]}
+        return {"ioc_type": identifier.split(":")[1], "ioc_context": "fetched-by-tool"}
     return {}
 
 
@@ -284,7 +285,8 @@ def test_no_evidence_text_in_emitted_quads(bb_home):
     finding = _finding(
         matched=secret_text,
         evidence=secret_text,
-        fields={"ecosystem": "npm", "package_name": "evil-pkg", "package_version": "1.0.0", "kind": "malware"},
+        fields={"ecosystem": "npm", "package_name": "evil-pkg", "package_version": "1.0.0", "kind": "malware",
+                "reason": "install-hook"},
     )
     client = FakeClient()
     community_sharing._share_sighting(client, CFG_ON, finding.to_dict(), REPORTER)
@@ -307,6 +309,7 @@ def test_ioc_report_carries_ioc_type():
         severity="high",
         reporter_address=REPORTER,
         ioc_type="domain",
+        ioc_context="fetched-by-tool",
     )
     serialized = ["|".join(str(v) for v in dict(quad).values()) for quad in q]
     assert any(constants.IOC_TYPE_PRED in row and "domain" in row for row in serialized)
@@ -427,7 +430,7 @@ def test_auto_share_of_an_existing_report_is_ledgered_as_already_shared(bb_home)
             return {"networkId": TEST_NETWORK}
 
     finding = {"identifier": "ioc:domain:again.example", "category": "ioc", "severity": "high",
-               "fields": {"ioc_type": "domain"}}
+               "fields": {"ioc_type": "domain", "ioc_context": "fetched-by-tool"}}
     community_sharing._share_sighting(_NodeHoldsIt(raises=DkgError(_SEALED_REPLY)), CFG_ON, finding, REPORTER)
     row = audit.read_share_ledger(limit=1)[0]
     assert row["identifier"] == "ioc:domain:again.example"

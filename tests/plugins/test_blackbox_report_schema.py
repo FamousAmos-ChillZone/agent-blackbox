@@ -36,10 +36,10 @@ def test_each_category_accepts_its_valid_shape():
         ("context", "in-fetched-page"), ("owasp_category", "LLM01"))
     _ok("escalation", "escalation:terminal:rm-rf-system-paths", tool_name="terminal", arg_shape="rm-rf-system-paths")
     _ok("dependency", "dep:pypi:evil-pkg@1.0", ecosystem="pypi", package_name="Evil_Pkg", package_version="1.0",
-        kind="malware", advisory_id="MAL-2026-1")
+        kind="malware", advisory_id="MAL-2026-1", reason="advisory:MAL-2026-1")
     _ok("fileaccess", "fileaccess:read_file:ssh-private-key", tool_name="read_file", file_category="ssh-private-key")
     _ok("skill", f"skill:artifact:{SHA}:credential-exfil", artifact_hash=SHA, danger_shape="credential-exfil")
-    _ok("ioc", threat_ids.ioc_identifier("domain", "evil.example"), ioc_type="domain")
+    _ok("ioc", threat_ids.ioc_identifier("domain", "evil.example"), ioc_type="domain", ioc_context="in-skill")
 
 
 # ------------------------------------------------------------- refused shapes
@@ -82,10 +82,10 @@ def test_the_identifier_must_match_its_fields():
 
 
 def test_ioc_identifiers_must_be_canonical_so_lookalikes_cannot_split():
-    _bad("ioc", "ioc:domain:EVIL.example", ioc_type="domain")                  # not canonical (case)
+    _bad("ioc", "ioc:domain:EVIL.example", ioc_type="domain", ioc_context="fetched-by-tool")                  # not canonical (case)
     canonical = threat_ids.ioc_identifier("domain", "bücher.example")          # IDN -> punycode
-    _ok("ioc", canonical, ioc_type="domain")
-    _bad("ioc", "ioc:domain:bücher.example", ioc_type="domain")
+    _ok("ioc", canonical, ioc_type="domain", ioc_context="fetched-by-tool")
+    _bad("ioc", "ioc:domain:bücher.example", ioc_type="domain", ioc_context="fetched-by-tool")
 
 
 def test_control_characters_and_oversized_values_are_refused():
@@ -97,22 +97,68 @@ def test_control_characters_and_oversized_values_are_refused():
 def test_severity_and_framework_are_closed():
     with pytest.raises(ReportValidationError):
         validate_report(identifier="ioc:domain:x.example", category="ioc", severity="apocalyptic",
-                        framework="hermes", evidence={"ioc_type": "domain"})
+                        framework="hermes", evidence={"ioc_type": "domain", "ioc_context": "in-skill"})
     with pytest.raises(ReportValidationError):
         validate_report(identifier="ioc:domain:x.example", category="ioc", severity="high",
-                        framework="some-bot", evidence={"ioc_type": "domain"})
+                        framework="some-bot", evidence={"ioc_type": "domain", "ioc_context": "in-skill"})
 
 
 def test_a_report_dated_in_the_future_is_refused():
     future = datetime.now(timezone.utc) + timedelta(hours=2)
     with pytest.raises(ReportValidationError):
         report_builder.build_report_quads(identifier="ioc:domain:x.example", category="ioc", severity="high",
-                                          reporter_address="0xabc", ioc_type="domain", ts=future)
+                                          reporter_address="0xabc", ioc_type="domain", ioc_context="in-skill", ts=future)
 
 
 def test_the_builder_emits_only_validated_fields():
     quads = report_builder.build_report_quads(identifier="dep:pypi:evil-pkg@1.0", category="dependency",
                                               severity="critical", reporter_address="0xabc", ecosystem="PyPI",
-                                              package_name="Evil_Pkg", package_version="1.0", kind="malware")
+                                              package_name="Evil_Pkg", package_version="1.0", kind="malware",
+                                              reason="exfil")
     names = {q["object"] for q in quads if q["predicate"] == constants.PACKAGE_NAME_PRED}
     assert names == {'"evil-pkg"'}                                              # canonical, as in the identifier
+
+
+# ------------------------------------------- plan §04 minimums (R1 completion, LES-023)
+
+
+def _dep(version="1.0", **kw):
+    fields = dict(ecosystem="npm", package_name="x", package_version=version, kind="malware")
+    fields.update(kw)
+    return f"dep:npm:x@{version}", fields
+
+
+def test_a_dependency_report_needs_a_closed_reason():
+    _bad("dependency", *_dep()[:1], **_dep()[1])                                  # no reason
+    _bad("dependency", *_dep()[:1], **_dep(reason="looked sketchy")[1])            # free text
+    for reason in ("typosquat", "install-hook", "exfil", "internal-mirror-collision", "advisory:MAL-2026-1"):
+        _ok("dependency", *_dep()[:1], **_dep(reason=reason)[1])
+
+
+def test_an_advisory_reason_must_agree_with_the_advisory_id():
+    _bad("dependency", *_dep()[:1], **_dep(reason="advisory:MAL-1", advisory_id="MAL-2")[1])
+    record = _ok("dependency", *_dep()[:1], **_dep(reason="advisory:MAL-7")[1])
+    assert dict(record.evidence)["advisory_id"] == "MAL-7"
+
+
+def test_a_whole_package_report_only_for_typosquat_or_mirror_collision():
+    _ok("dependency", *_dep("*")[:1], **_dep("*", reason="typosquat")[1])
+    _ok("dependency", *_dep("*")[:1], **_dep("*", reason="internal-mirror-collision")[1])
+    _bad("dependency", *_dep("*")[:1], **_dep("*", reason="install-hook")[1])
+    _bad("dependency", *_dep("*")[:1], **_dep("*", reason="advisory:MAL-1")[1])
+
+
+def test_an_ioc_report_needs_a_closed_context():
+    ident = threat_ids.ioc_identifier("domain", "evil.example")
+    _bad("ioc", ident, ioc_type="domain")
+    _bad("ioc", ident, ioc_type="domain", ioc_context="https://where-i-saw-it.example")
+    for context in constants.IOC_CONTEXTS:
+        _ok("ioc", ident, ioc_type="domain", ioc_context=context)
+
+
+def test_a_named_skill_needs_a_public_registry_and_a_local_one_is_never_named():
+    _ok("skill", "skill:evil@1.0", registry="clawhub", skill_name="evil", skill_version="1.0")
+    _bad("skill", "skill:evil@1.0", skill_name="evil", skill_version="1.0")                       # no registry
+    _bad("skill", "skill:evil@1.0", registry="local", skill_name="evil", skill_version="1.0")     # never local
+    _bad("skill", f"skill:artifact:{SHA}:obfuscation", artifact_hash=SHA, danger_shape="obfuscation",
+         registry="clawhub")

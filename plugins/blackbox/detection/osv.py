@@ -26,6 +26,8 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, Optional
 
+from ..kernel import constants
+
 logger = logging.getLogger(__name__)
 
 _OSV_URL = "https://api.osv.dev/v1/query"
@@ -49,6 +51,11 @@ MALWARE_ADVISORY_PREFIX = "MAL-"
 def advisory_kind(advisory_id: Optional[str]) -> str:
     """``"malware"`` for an OSV malicious-package advisory, else ``"vulnerability"``."""
     return "malware" if str(advisory_id or "").upper().startswith(MALWARE_ADVISORY_PREFIX) else "vulnerability"
+
+
+def advisory_reason(advisory_id: Optional[str]) -> Optional[str]:
+    """``advisory:<id>`` — the report reason an advisory gives (plan §04) — or None."""
+    return f"{constants.ADVISORY_REASON_PREFIX}{advisory_id}" if advisory_id else None
 
 # In-memory result cache. Value is the finding dict or None (clean/skip).
 _cache: Dict[str, Optional[Dict[str, str]]] = {}

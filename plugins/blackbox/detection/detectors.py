@@ -21,10 +21,11 @@ from typing import Any, Iterable, List
 
 from . import action_parsing
 from . import content_scanners
+from . import osv
 from . import shell_shapes
 from .finding import Finding, _rule_source
 from .injection_detection import detect_injection, discover_injection, injection_scan_text
-from .ioc_detection import detect_ioc
+from .ioc_detection import detect_ioc, ioc_context
 from .skill_detection import detect_skill
 from ..kernel import threat_ids
 
@@ -98,10 +99,8 @@ def detect_dependency(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     key on and are skipped here (they surface as advisories elsewhere).
     """
     command = action_parsing.command_text(args)
-    if not command:
-        return []
     dependency_rules = getattr(ruleset, "dependency", {}) or {}
-    if not dependency_rules:
+    if not command or not dependency_rules:
         return []
     out: List[Finding] = []
     seen: set = set()
@@ -140,6 +139,7 @@ def detect_dependency(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
                     "package_version": key.rsplit("@", 1)[1],   # the matched rule's version (or "*")
                     "advisory_id": rule.get("advisoryId"),
                     "kind": rule.get("kind"),
+                    "reason": osv.advisory_reason(rule.get("advisoryId")),
                 },
             )
         )
@@ -198,9 +198,7 @@ def discover_dependency_candidates(tool_name: str, args: Any, ruleset: Any, osv_
     or ``None``, see :func:`.osv.lookup`). Only OSV-flagged installs become
     candidates; clean deps never surface (privacy). Runs OFF the blocking path.
     """
-    command = action_parsing.command_text(args)
-    if not command:
-        return []
+    command = action_parsing.command_text(args)   # "" parses to no installs
     dependency_rules = getattr(ruleset, "dependency", {}) or {}
     out: List[Finding] = []
     seen: set = set()
@@ -239,6 +237,7 @@ def discover_dependency_candidates(tool_name: str, args: Any, ruleset: Any, osv_
                     "package_version": version,
                     "advisory_id": hit.get("advisory_id"),
                     "kind": hit.get("kind"),   # malware shares; a vulnerability stays local (decision 22)
+                    "reason": osv.advisory_reason(hit.get("advisory_id")),
                 },
             )
         )
@@ -365,7 +364,7 @@ def detect_all(tool_name: str, args: Any, ruleset: Any, discover: bool = True) -
         findings.extend(discover_injection(args_text, ruleset, context))
     findings.extend(detect_fileaccess(tool_name, args, ruleset))
     findings.extend(detect_skill(tool_name, args, ruleset))
-    findings.extend(detect_ioc(tool_name, args, ruleset))
+    findings.extend(detect_ioc(tool_name, args, ruleset, ioc_context(tool_name, args)))
     # Secret exposure always runs (not gated by discovery): personal, never a graph candidate.
     findings.extend(detect_secret_exposure(tool_name, args))
     if not discover:

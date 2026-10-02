@@ -43,7 +43,7 @@ def test_signed_report_verifies_and_covers_its_fields():
     quads = report_builder.build_report_quads(
         identifier="dep:npm:evil@1.0.0", category="dependency", severity="Critical",
         reporter_address=REPORTER, signer=signer,
-        ecosystem="npm", package_name="evil", package_version="1.0.0", kind="malware",
+        ecosystem="npm", package_name="evil", package_version="1.0.0", kind="malware", reason="install-hook",
         ts=datetime(2026, 10, 1, 17, 42, tzinfo=timezone.utc),
     )
     envelope = _envelope(quads)
@@ -51,13 +51,13 @@ def test_signed_report_verifies_and_covers_its_fields():
     assert envelope.payload == {
         "subject": quads[0]["subject"], "identifier": "dep:npm:evil@1.0.0", "category": "dependency",
         "severity": "critical", "reporter": REPORTER.lower(), "framework": "hermes", "day": "2026-10-01",
-        "package_name": "evil", "package_version": "1.0.0", "ecosystem": "npm", "kind": "malware",
+        "package_name": "evil", "package_version": "1.0.0", "ecosystem": "npm", "kind": "malware", "reason": "install-hook",
     }
 
 
 def test_report_timestamp_is_rounded_to_the_day():
     quads = report_builder.build_report_quads(
-        identifier="ioc:domain:x.example", category="ioc", severity="high", reporter_address=REPORTER, ioc_type="domain",
+        identifier="ioc:domain:x.example", category="ioc", severity="high", reporter_address=REPORTER, ioc_type="domain", ioc_context="fetched-by-tool",
         ts=datetime(2026, 10, 1, 17, 42, 9, tzinfo=timezone.utc),
     )
     stamp = [q["object"] for q in quads if q["predicate"] == constants.SCHEMA_DATE_MODIFIED_PRED][0]
@@ -66,7 +66,7 @@ def test_report_timestamp_is_rounded_to_the_day():
 
 def test_unsigned_build_has_no_signature_quad():
     quads = report_builder.build_report_quads(identifier="ioc:domain:x.example", category="ioc",
-                                              severity="high", reporter_address=REPORTER, ioc_type="domain")
+                                              severity="high", reporter_address=REPORTER, ioc_type="domain", ioc_context="fetched-by-tool")
     assert not [q for q in quads if q["predicate"] == constants.SIGNED_STATEMENT_PRED]
 
 

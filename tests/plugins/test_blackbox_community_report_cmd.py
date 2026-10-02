@@ -65,7 +65,7 @@ def _args(**kw):
         pattern=None, owasp=None, tool=None, arg_shape=None, ecosystem=None,
         name=None, version=None, advisory_id=None, kind=None, category=None,
         skill_name=None, skill_version=None, danger_shape=None,
-        ioc_type=None, value=None, description="",
+        ioc_type=None, value=None, description="", reason=None, context=None, registry=None,
     )
     base.update(kw)
     return argparse.Namespace(**base)
@@ -120,7 +120,8 @@ def test_skill_requires_version_or_shape(wired, capsys):
 
 def test_manual_report_lands_via_shared_pipeline(wired, capsys):
     rc = report_command.cmd_report(
-        _args(type="dependency", ecosystem="npm", name="Evil-Pkg", version="1.4.2", kind="malware")
+        _args(type="dependency", ecosystem="npm", name="Evil-Pkg", version="1.4.2", kind="malware",
+              reason="install-hook")
     )
     out = capsys.readouterr().out
     assert rc == 0
@@ -142,7 +143,7 @@ def test_share_failure_exits_nonzero_and_ledgers(monkeypatch, bb_home, capsys):
     monkeypatch.setattr(report_command, "load_blackbox_config", lambda: CFG_ON)
     monkeypatch.setattr(report_command, "DkgClient", lambda **kw: client)
     monkeypatch.setattr(kernel_identity, "reporter_address", lambda c: REPORTER)
-    rc = report_command.cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example"))
+    rc = report_command.cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example", context="fetched-by-tool"))
     assert rc == 1
     assert "FAILED" in capsys.readouterr().out
     rows = audit.read_share_ledger()
@@ -150,7 +151,7 @@ def test_share_failure_exits_nonzero_and_ledgers(monkeypatch, bb_home, capsys):
 
 
 def test_cooldown_short_circuits_resubmission(wired, capsys):
-    args = _args(type="ioc", ioc_type="domain", value="evil.example")
+    args = _args(type="ioc", ioc_type="domain", value="evil.example", context="fetched-by-tool")
     assert report_command.cmd_report(args) == 0
     assert report_command.cmd_report(args) == 0
     assert len(wired.shares) == 1
@@ -167,7 +168,7 @@ def test_gate_off_is_loud_not_silent(monkeypatch, bb_home, capsys):
         report_command, "load_blackbox_config",
         lambda: BlackboxConfig(report=False, community_graph_id=DEV_GRAPH),
     )
-    rc = report_command.cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example"))
+    rc = report_command.cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example", context="fetched-by-tool"))
     out = capsys.readouterr().out
     assert rc == 2
     assert "OFF" in out
@@ -179,7 +180,7 @@ def test_ghost_identity_refused(monkeypatch, bb_home, capsys):
     monkeypatch.setattr(report_command, "load_blackbox_config", lambda: CFG_ON)
     monkeypatch.setattr(report_command, "DkgClient", lambda **kw: FakeClient())
     monkeypatch.setattr(kernel_identity, "reporter_address", lambda c: None)
-    rc = report_command.cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example"))
+    rc = report_command.cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example", context="fetched-by-tool"))
     assert rc == 1
     assert "ghost identity" in capsys.readouterr().out
 

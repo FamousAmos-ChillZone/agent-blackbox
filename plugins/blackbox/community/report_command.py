@@ -72,7 +72,8 @@ _ParsedReport = Tuple[str, Dict[str, Any], str]
 
 
 def _injection_args(args: argparse.Namespace) -> _ParsedReport:
-    return threat_ids.injection_identifier(args.pattern), {"pattern": args.pattern, "owasp_category": args.owasp}, ""
+    # Never the pattern text: the identifier is its hash; where it was seen instead (R1).
+    return threat_ids.injection_identifier(args.pattern), {"context": args.context, "owasp_category": args.owasp}, ""
 
 
 def _escalation_args(args: argparse.Namespace) -> _ParsedReport:
@@ -87,6 +88,7 @@ def _dependency_args(args: argparse.Namespace) -> _ParsedReport:
         "package_version": args.version,
         "advisory_id": args.advisory_id,
         "kind": args.kind,
+        "reason": args.reason,
     }
     return threat_ids.dependency_identifier(args.ecosystem, args.name, args.version), fields, ""
 
@@ -103,12 +105,14 @@ def _skill_args(args: argparse.Namespace) -> _ParsedReport:
         identifier = threat_ids.skill_shape_identifier(args.skill_name, args.danger_shape)
     else:
         return "", {}, "--type skill requires --skill-version or --danger-shape"
-    fields = {"skill_name": args.skill_name, "skill_version": args.skill_version, "danger_shape": args.danger_shape}
+    fields = {"registry": args.registry, "skill_name": args.skill_name, "skill_version": args.skill_version,
+              "danger_shape": args.danger_shape}
     return identifier, fields, ""
 
 
 def _ioc_args(args: argparse.Namespace) -> _ParsedReport:
-    return threat_ids.ioc_identifier(args.ioc_type, args.value), {"ioc_type": args.ioc_type}, ""
+    return (threat_ids.ioc_identifier(args.ioc_type, args.value),
+            {"ioc_type": args.ioc_type, "ioc_context": args.context}, "")
 
 
 #: Report type -> how its args become (identifier, fields). Strategy table: one
@@ -182,6 +186,10 @@ def add_report_parser(sub: "argparse._SubParsersAction") -> None:
     report.add_argument("--name", help="dependency: package name (or threat display name)")
     report.add_argument("--package-version", dest="version", help="dependency: package version (KI-066: Hermes owns --version)")
     report.add_argument("--advisory-id", dest="advisory_id", help="dependency: advisory id")
+    report.add_argument("--reason", help="dependency: why it is malware (typosquat, install-hook, exfil, "
+                        "internal-mirror-collision, or advisory:<id>)")
+    report.add_argument("--context", help="injection/ioc: where it was seen (e.g. in-fetched-page, fetched-by-tool)")
+    report.add_argument("--registry", help="skill: the public registry a named skill comes from (e.g. clawhub)")
     report.add_argument(
         "--kind", choices=[constants.KIND_MALWARE, constants.KIND_VULNERABILITY],
         help="dependency: malware (blocks) or vulnerability (flags only)",

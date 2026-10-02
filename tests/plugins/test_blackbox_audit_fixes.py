@@ -650,7 +650,7 @@ def test_malware_severity_floored_to_critical():
 
 def test_report_quads_carry_kind():
     q = report_builder.build_report_quads(identifier="dep:npm:evil@1.0", category="dependency",
-                                 severity="critical", reporter_address="0xabc", kind="malware",
+                                 severity="critical", reporter_address="0xabc", kind="malware", reason="install-hook",
                                  ecosystem="npm", package_name="evil", package_version="1.0")
     assert any(t.get("predicate") == constants.KIND_PRED for t in q)
 

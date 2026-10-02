@@ -36,10 +36,12 @@ _EVIDENCE_FIELDS: Dict[str, Tuple[Tuple[str, str], ...]] = {
         ("advisory_id", constants.SCHEMA_IDENTIFIER_PRED),
         # Keep the dependency kind intact in the community report.
         ("kind", constants.KIND_PRED),
+        ("reason", constants.REPORT_REASON_PRED),   # R1 (§04): why it is malware
     ),
     "fileaccess": (("tool_name", constants.TOOL_NAME_PRED), ("file_category", constants.CATEGORY_PRED)),
     "skill": (
         ("artifact_hash", constants.SKILL_ARTIFACT_HASH_PRED),   # R1: local skills by hash, never name (KI-159)
+        ("registry", constants.SKILL_REGISTRY_PRED),              # R1: a named skill's public registry
         ("skill_name", constants.SKILL_NAME_PRED),
         ("skill_version", constants.SKILL_VERSION_PRED),
         ("danger_shape", constants.DANGER_SHAPE_PRED),
@@ -48,7 +50,7 @@ _EVIDENCE_FIELDS: Dict[str, Tuple[Tuple[str, str], ...]] = {
     # curators' evidence queries bound nothing for it. The value itself already
     # lives IN the identifier (ioc:{type}:{value}); the type travels as its own
     # field so reviewers can filter without parsing.
-    "ioc": (("ioc_type", constants.IOC_TYPE_PRED),),
+    "ioc": (("ioc_type", constants.IOC_TYPE_PRED), ("ioc_context", constants.IOC_CONTEXT_PRED)),
 }
 
 

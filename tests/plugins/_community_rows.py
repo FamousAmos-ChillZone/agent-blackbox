@@ -36,12 +36,13 @@ def signed_row(identifier: str, reporter: Reporter, severity: str = "high", cate
                environment: str = NETWORK, graph: str = GRAPH, **evidence: str) -> Dict[str, str]:
     """One report row as the community reader's query returns it."""
     category = category or {"dep": "dependency"}.get(identifier.split(":", 1)[0], identifier.split(":", 1)[0])
-    if category == "ioc" and "ioc_type" not in evidence:       # a real IOC report always names its type
-        evidence["ioc_type"] = identifier.split(":", 2)[1]
+    if category == "ioc":                                       # a real IOC report names its type and context
+        evidence = {"ioc_type": identifier.split(":", 2)[1], "ioc_context": "fetched-by-tool", **evidence}
     if category == "dependency":                                # a real dependency report carries its package
         eco, rest = identifier.split(":", 2)[1:]
         name, version = rest.rsplit("@", 1)
-        evidence = {"ecosystem": eco, "package_name": name, "package_version": version, "kind": "malware", **evidence}
+        evidence = {"ecosystem": eco, "package_name": name, "package_version": version, "kind": "malware",
+                    "reason": "typosquat", **evidence}
     signer = ReportSigner(private_key=reporter.key, environment=environment, graph=graph)
     quads = report_builder.build_report_quads(identifier=identifier, category=category, severity=severity,
                                               reporter_address=reporter.address, signer=signer, **evidence)

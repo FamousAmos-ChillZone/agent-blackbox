@@ -1,20 +1,40 @@
 """Indicator-of-compromise detection: known-bad domains, URLs, IPs, hashes,
-wallets and contracts named in a tool call's arguments.
+wallets and contracts named in a tool call's arguments, and where each was met.
 
 Split out of :mod:`.detectors` (which runs it inside ``detect_all``).
 """
 
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any, List, Optional
 
+from . import action_parsing
 from . import content_scanners
 from .finding import Finding, _rule_source
 from .injection_detection import injection_scan_text
 
 
-def detect_ioc(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
+def ioc_context(tool_name: str, args: Any) -> Optional[str]:
+    """Where an indicator in this tool call's arguments was met (Refine R1).
+
+    In a skill being installed: ``in-skill``; in a dependency install:
+    ``in-dependency``; handed to a web/browser tool: ``fetched-by-tool``.
+    Anything else has no reportable context (None), so it stays local.
+    """
+    if action_parsing.skill_install_arg(tool_name, args):
+        return "in-skill"
+    if action_parsing.parse_dependency_installs(action_parsing.command_text(args)):
+        return "in-dependency"
+    if (tool_name or "").strip().lower().startswith(action_parsing.FETCH_TOOL_PREFIXES):
+        return "fetched-by-tool"
+    return None
+
+
+def detect_ioc(tool_name: str, args: Any, ruleset: Any, context: Optional[str] = None) -> List[Finding]:
     """Match indicators (domain/url/ip/hash/wallet/contract) in the tool args.
+
+    *context* (``constants.IOC_CONTEXTS``, from :func:`ioc_context`) says where
+    the indicator was met; without one a match stays local (Refine R1).
 
     Extracts candidate indicators from the flattened args and looks each up in
     the synced ``ioc`` rules. Only KNOWN-BAD values match, so extraction can be
@@ -51,7 +71,7 @@ def detect_ioc(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
                 confirmed=src == "public",
                 source=src,
                 kind=rule.get("kind"),
-                fields={"ioc_type": ioc_type},
+                fields={"ioc_type": ioc_type, "ioc_context": context},
             )
         )
     return out
