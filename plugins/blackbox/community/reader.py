@@ -59,12 +59,22 @@ def community_report_count(client: DkgClient, cfg: BlackboxConfig) -> int:
 # ---------------------------------------------------------------------------
 
 #: Bounded ingest (KI-010): a spammer can invent unlimited identifiers; we
-#: keep the corroborated head (reporter count, then recency), never the tail.
+#: keep the corroborated head (reporter count, then oldest observation), never the tail.
 _COMMUNITY_MAX_RULES = 5000
 
 #: Per-page row cap for the community report pager (same discipline as the
 #: verified tiers, smaller pages — reports are tiny).
 _COMMUNITY_PAGE_SIZE = 5000
+
+#: Most report rows read from the community graph in one refresh (KI-100) —
+#: far below the generic paged-read ceiling; reports are tiny and a real
+#: community graph is orders of magnitude smaller.
+_COMMUNITY_MAX_ROWS = 100_000
+
+#: Most threats one verified signer may contribute to a compile (KI-100/111).
+#: Its OLDEST-known threats are kept, so a fresh flood from one key can neither
+#: crowd out other signers nor displace that signer's own earlier reports.
+MAX_REPORTS_PER_AUTHOR = 500
 
 #: Fleet-wide emergency stop (KI-036): curators publish this subject with
 #: g:enabled "true" INTO THE VERIFIED GRAPH to pause community ingest
@@ -179,7 +189,7 @@ def fetch_community_report_rows(client: DkgClient, cfg: BlackboxConfig) -> Optio
     rows: List[Dict[str, Any]] = []
     after = ""
     sentinel = object()
-    while len(rows) < sparql_text.MAX_ROWS:
+    while len(rows) < _COMMUNITY_MAX_ROWS:
         page = client.query(
             _community_reports_sparql(after),
             cfg.community_graph_id,
@@ -280,6 +290,22 @@ def read_verified_reports(client: DkgClient, cfg: BlackboxConfig) -> CommunityRe
     return CommunityRead(ReadState.ROWS, reports=tuple(reports))
 
 
+def _cap_per_author(reports: Iterable[VerifiedReport], prior_first_seen: Dict[str, float]) -> List[VerifiedReport]:
+    """At most MAX_REPORTS_PER_AUTHOR threats per verified signer, keeping
+    each signer's oldest-known threats (this node's first-seen history;
+    threats it has never seen sort last, then by identifier)."""
+    by_author: Dict[str, List[VerifiedReport]] = {}
+    for report in reports:
+        by_author.setdefault(report.author, []).append(report)
+    kept: List[VerifiedReport] = []
+    for author_reports in by_author.values():
+        author_reports.sort(key=lambda r: (prior_first_seen.get(r.identifier, float("inf")), r.identifier))
+        kept.extend(author_reports[:MAX_REPORTS_PER_AUTHOR])
+    if len(kept) < sum(len(v) for v in by_author.values()):
+        logger.warning("blackbox: community reports capped at %d per signer", MAX_REPORTS_PER_AUTHOR)
+    return kept
+
+
 def aggregate_community_reports(
     reports: Iterable[VerifiedReport], prior_first_seen: Dict[str, float]
 ) -> List[CommunityRule]:
@@ -294,7 +320,7 @@ def aggregate_community_reports(
     """
     now = time.time()
     grouped: Dict[str, Dict[str, Any]] = {}
-    for report in reports:
+    for report in _cap_per_author(reports, prior_first_seen):
         slot = grouped.setdefault(
             report.identifier,
             {"authors": set(), "severity": "info", "fields": {}},
@@ -316,8 +342,10 @@ def aggregate_community_reports(
         )
         for identifier, slot in grouped.items()
     ]
-    # Bounded ingest (KI-010): corroboration first, then recency.
-    rules.sort(key=lambda r: (-r.reporter_count, -r.first_seen))
+    # Bounded ingest: corroboration first, then the OLDEST observation (KI-111 —
+    # newest-first let a flood of fresh singletons evict honest older ones),
+    # then the identifier, so the cut is deterministic.
+    rules.sort(key=lambda r: (-r.reporter_count, r.first_seen, r.identifier))
     if len(rules) > _COMMUNITY_MAX_RULES:
         logger.warning(
             "blackbox: community ingest capped at %d rules (%d dropped — corroborated head kept)",

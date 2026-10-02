@@ -490,3 +490,37 @@ def test_graph_entries_carry_reporter_stats_for_materialized_community_iocs():
 
     assert entry["reporterCount"] == 2
     assert entry["lastSeen"] == 200.0
+
+
+# ---------------------------------------------------------------------------
+# Flood resistance (Refine R0, KI-100/111)
+# ---------------------------------------------------------------------------
+
+
+def test_a_flood_of_fresh_singletons_keeps_older_honest_threats(monkeypatch):
+    """The plan's test: 6,000 fresh single-author identifiers must not evict
+    10 older honest ones from the compile cap."""
+    honest = [_report(f"ioc:domain:honest-{i}.example", f"honest-key-{i}") for i in range(10)]
+    flood = [_report(f"ioc:domain:flood-{i}.example", "flood-key") for i in range(6000)]
+    history = {r.identifier: 100.0 for r in honest}          # this node saw them long ago
+    rules = aggregate_community_reports(flood + honest, history)
+    kept = {r.identifier for r in rules}
+    assert all(r.identifier in kept for r in honest)
+    assert len(rules) <= community_reader._COMMUNITY_MAX_RULES
+
+
+def test_one_signer_is_capped_and_keeps_its_oldest_reports(monkeypatch):
+    monkeypatch.setattr(community_reader, "MAX_REPORTS_PER_AUTHOR", 3)
+    reports = [_report(f"ioc:domain:k{i}.example", "one-key") for i in range(6)]
+    history = {"ioc:domain:k5.example": 1.0, "ioc:domain:k4.example": 2.0}   # the oldest-known two
+    kept = {r.identifier for r in aggregate_community_reports(reports, history)}
+    assert len(kept) == 3
+    assert {"ioc:domain:k5.example", "ioc:domain:k4.example"} <= kept
+
+
+def test_ties_go_to_the_oldest_observation(monkeypatch):
+    monkeypatch.setattr(community_reader, "_COMMUNITY_MAX_RULES", 1)
+    old = _report("ioc:domain:old.example", "k1")
+    new = _report("ioc:domain:new.example", "k2")
+    rules = aggregate_community_reports([new, old], {"ioc:domain:old.example": 5.0})
+    assert [r.identifier for r in rules] == ["ioc:domain:old.example"]
