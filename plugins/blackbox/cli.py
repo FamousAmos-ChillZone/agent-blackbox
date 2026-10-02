@@ -19,6 +19,7 @@ from .kernel.dkg_client import DkgClient
 from .attach import cmd_attach, cmd_detach
 from .chat import add_blackbox_chat_args, cmd_chat
 from .community import add_report_parser, print_community_status
+from .curate import add_curate_parser
 from .dashboard import cmd_dashboard
 from .detection import cmd_setup_llm
 from .sync import cmd_sync
@@ -86,7 +87,7 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
     detach_p.set_defaults(func=cmd_detach)
 
     add_report_parser(sub, compiled_community=lambda cfg: ruleset.peek(cfg).community)
-
+    add_curate_parser(sub, compiled_ruleset=lambda cfg: ruleset.peek(cfg))
     dash = sub.add_parser("dashboard", help="Start the local Blackbox dashboard")
     dash.add_argument("--port", type=int, help="Override dashboard port")
     dash.set_defaults(func=cmd_dashboard)

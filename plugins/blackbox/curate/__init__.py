@@ -1,11 +1,20 @@
-"""Curate — the curator node's tooling (Community Graph Refine, build item R6).
+"""``curate`` — the curator node's tooling (Community Graph Refine, R6).
 
-Today this holds only :mod:`.catalog_import`, threat-catalog import helpers
-that nothing in the plugin calls yet (kept for R6 to adopt or delete). The
-``blackbox curate`` commands, delta view, dossier and two-key proposal flow
-are born here when R6 is built. No public surface yet.
+The read side (queue, dossier, saved node-UI views) and the two-key write
+side (propose -> private message -> approve + consent -> publish) of the
+curator role. Public entry: :func:`add_curate_parser` (wired by cli.py).
+
+* :mod:`.queue` — the delta view (NEW vs ALREADY VERIFIED) and lanes.
+* :mod:`.dossier` — evidence dossier (Builder) + the ≤3-item checklist.
+* :mod:`.proposal` — proposals and their lifecycle (State) + store.
+* :mod:`.consent` — content-bound typed consent + the local ledger.
+* :mod:`.promotion` — the verified-rule write for a promoted dependency.
+* :mod:`.transport` — proposals by private point-to-point message.
+* :mod:`.intake` — watch the delta view, notify a webhook.
+* :mod:`.node_ui_views` — saved queries for the DKG node's own UI.
+* :mod:`.catalog_import` — threat-catalog import helpers (unused; kept for adoption or deletion).
 """
 
-from __future__ import annotations
+from .commands import add_curate_parser, cmd_curate
 
-__all__: list[str] = []
+__all__ = ["add_curate_parser", "cmd_curate"]

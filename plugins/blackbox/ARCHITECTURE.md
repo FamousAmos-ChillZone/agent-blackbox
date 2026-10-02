@@ -26,7 +26,7 @@ way, and every package used only through its public entry (`__init__.py`).
 
 | Module | Owns | Entry | May depend on |
 |---|---|---|---|
-| `kernel` | constants + ontology IRIs, config and settings, the DKG HTTP client, threat identifiers, RDF terms, SPARQL escaping, YAML files, terminal-safe display, this node's identity, secret redaction, signed statements (the `kernel/signing/` sub-package) and the reporter key | `kernel/__init__.py` (each kernel module is public; `kernel/signing` through its `__init__`) | — |
+| `kernel` | constants + ontology IRIs, config and settings, the DKG HTTP client, threat identifiers, RDF terms, SPARQL escaping, YAML files, terminal-safe display, this node's identity, secret redaction, signed statements (the `kernel/signing/` sub-package), the reporter key, and the curator-side node routes (`node_routes`) | `kernel/__init__.py` (each kernel module is public; `kernel/signing` through its `__init__`) | — |
 | `attach` | finding Hermes homes and OpenClaw workspaces, copying the plugin in, enabling/disabling it; `blackbox attach` / `detach` | `attach/__init__.py` | `kernel` |
 | `detection` | the pure detectors, action parsing, content scanners, escalation shapes, OSV lookups, the LLM reviewer; `blackbox setup-llm` | `detection/__init__.py` | `kernel`, `attach` |
 | `audit` | local findings / activity logs, redaction, the private audit record, the outbound share ledger + cooldown + daily cap | `audit/__init__.py` | `kernel` |
@@ -36,7 +36,7 @@ way, and every package used only through its public entry (`__init__.py`).
 | `guard` | the five Hermes hooks, filtering + recording + sharing findings, per-session context, background OSV / LLM / auto-attach work | `guard/__init__.py` | `kernel`, `attach`, `audit`, `community`, `detection`, `ruleset` |
 | `chat` | `blackbox chat` — the managed Blackbox assistant profile | `chat/__init__.py` | `kernel`, `attach` |
 | `dashboard` | the local web UI (FastAPI, loopback-only) and its static assets; `blackbox dashboard` | `dashboard/__init__.py` | `kernel`, `attach`, `audit`, `community`, `ruleset`, `sync` |
-| `curate` | the curator node's tooling (Community Graph Refine, item R6); today only unused catalog-import helpers | `curate/__init__.py` | `kernel` |
+| `curate` | the curator node's tooling (Refine R6): the delta-view queue and lanes, the evidence dossier + checklist, two-key proposals by private message, content-bound consent, promotion into the verified tier, intake webhook, saved node-UI views; `blackbox curate` | `curate/__init__.py` | `kernel`, `audit`, `community`, `detection` (OSV for the dossier) |
 
 ## Root (the composition layer — Hermes' plugin layout, kept thin)
 

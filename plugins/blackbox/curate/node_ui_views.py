@@ -1,0 +1,103 @@
+"""Saved queries for the DKG node's own UI — the curator's read side (Refine R6, decision 26).
+
+No bespoke curator panel: the read side ships as saved queries in the node's
+query catalog, shown in the existing node UI under the Umanitek Guardian
+name. Each view is one SPARQL query over a context graph; the catalog is
+written through the node's guarded route in its ``prof:`` vocabulary
+(``http://dkg.io/ontology/profile/``: SavedQuery, displayName, sparqlQuery,
+scopeGraph, inCatalog, rank; read from the node's source on the bench,
+2026-10-02). What the node UI cannot show, ``blackbox curate view <name>``
+prints from the same query (the CLI stands in).
+
+Pattern: a Constant table (:data:`COMMUNITY_VIEWS`, :data:`VERIFIED_VIEWS`).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import List, Tuple
+
+from ..kernel import rdf_terms
+
+PROFILE_NS = "http://dkg.io/ontology/profile/"
+RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+SCHEMA_DESCRIPTION = "http://schema.org/description"
+CATALOG_IRI = "urn:blackbox:query-catalog:umanitek-guardian"
+_G = "PREFIX g: <http://umanitek.ai/ontology/guardian/>\n"
+
+
+@dataclass(frozen=True)
+class SavedView:
+    """One saved query: ``slug`` (stable id), ``name`` (shown), ``description``, ``sparql``."""
+
+    slug: str
+    name: str
+    description: str
+    sparql: str
+
+    @property
+    def iri(self) -> str:
+        return f"urn:blackbox:saved-query:{self.slug}"
+
+
+COMMUNITY_VIEWS: Tuple[SavedView, ...] = (
+    SavedView("reports-by-threat", "Guardian · reports per threat",
+              "Community threat reports grouped by identifier with the number of reporting rows (unverified count; the plugin verifies signatures).",
+              _G + "SELECT ?identifier (COUNT(DISTINCT ?r) AS ?rows) WHERE { ?r a g:ThreatReport ; g:identifier ?identifier } "
+                   "GROUP BY ?identifier ORDER BY DESC(?rows) LIMIT 500"),
+    SavedView("disputes", "Guardian · disputes",
+              "False-positive disputes with their closed reason.",
+              _G + "SELECT ?identifier ?reporter ?reportReason WHERE { ?r a g:FalsePositive ; g:identifier ?identifier ; g:reporter ?reporter . "
+                   "OPTIONAL { ?r g:reportReason ?reportReason } } ORDER BY ?identifier LIMIT 500"),
+    SavedView("retractions", "Guardian · retractions",
+              "Reports their reporter withdrew.",
+              _G + "SELECT ?identifier ?reporter WHERE { ?r a g:Retraction ; g:identifier ?identifier ; g:reporter ?reporter } ORDER BY ?identifier LIMIT 500"),
+    SavedView("sighting-digests", "Guardian · weekly sighting digests",
+              "One digest per reporter per ISO week; the threats each names.",
+              _G + "SELECT ?reporter ?isoWeek ?threat WHERE { ?r a g:SightingDigest ; g:reporter ?reporter ; g:isoWeek ?isoWeek . "
+                   "OPTIONAL { ?r g:reportsThreat ?threat } } ORDER BY DESC(?isoWeek) ?reporter LIMIT 1000"),
+    SavedView("curator-statements", "Guardian · curator statements",
+              "Curator verdicts and notices in the community graph (meaning is in the signed envelope).",
+              _G + "SELECT ?r ?identifier WHERE { ?r a g:CuratorStatement ; g:identifier ?identifier } ORDER BY ?r LIMIT 500"),
+)
+
+VERIFIED_VIEWS: Tuple[SavedView, ...] = (
+    SavedView("verified-by-kind", "Guardian · verified threats by kind",
+              "The verified graph's threats with severity and kind.",
+              _G + "SELECT ?identifier ?severity ?kind WHERE { ?t g:identifier ?identifier ; g:severity ?severity . "
+                   "OPTIONAL { ?t g:kind ?kind } } ORDER BY ?identifier LIMIT 2000"),
+    SavedView("key-manifests", "Guardian · curator key manifests",
+              "Root-signed curator key manifests (meaning is in the signed envelope).",
+              _G + "SELECT ?r WHERE { ?r a g:KeyManifest } ORDER BY ?r"),
+    SavedView("enforcement-statements", "Guardian · enforcement statements",
+              "Curator revocations, pauses and the counted-author list in the verified graph.",
+              _G + "SELECT ?r ?identifier WHERE { ?r a g:CuratorStatement ; g:identifier ?identifier } ORDER BY ?r LIMIT 500"),
+)
+
+
+def catalog_quads(views: Tuple[SavedView, ...], scope_graph: str) -> List[rdf_terms.Quad]:
+    """The catalog entries for *views*, scoped to *scope_graph* (a context graph id)."""
+    scope = f"did:dkg:context-graph:{scope_graph}"
+    quads = [
+        rdf_terms.make_quad(CATALOG_IRI, RDF_TYPE, rdf_terms.iri(f"{PROFILE_NS}QueryCatalog")),
+        rdf_terms.make_quad(CATALOG_IRI, f"{PROFILE_NS}displayName", rdf_terms.literal("Umanitek Guardian")),
+        rdf_terms.make_quad(CATALOG_IRI, f"{PROFILE_NS}scopeGraph", rdf_terms.iri(scope)),
+    ]
+    for rank, view in enumerate(views, start=1):
+        quads += [
+            rdf_terms.make_quad(view.iri, RDF_TYPE, rdf_terms.iri(f"{PROFILE_NS}SavedQuery")),
+            rdf_terms.make_quad(view.iri, f"{PROFILE_NS}inCatalog", rdf_terms.iri(CATALOG_IRI)),
+            rdf_terms.make_quad(view.iri, f"{PROFILE_NS}scopeGraph", rdf_terms.iri(scope)),
+            rdf_terms.make_quad(view.iri, f"{PROFILE_NS}displayName", rdf_terms.literal(view.name)),
+            rdf_terms.make_quad(view.iri, SCHEMA_DESCRIPTION, rdf_terms.literal(view.description)),
+            rdf_terms.make_quad(view.iri, f"{PROFILE_NS}sparqlQuery", rdf_terms.literal(view.sparql)),
+            rdf_terms.make_quad(view.iri, f"{PROFILE_NS}rank", rdf_terms.literal(str(rank))),
+        ]
+    return quads
+
+
+def find_view(slug: str) -> SavedView:
+    for view in (*COMMUNITY_VIEWS, *VERIFIED_VIEWS):
+        if view.slug == slug:
+            return view
+    raise KeyError(slug)

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from typing import Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Hashing / slugs / URIs
@@ -92,6 +93,18 @@ def dependency_key(ecosystem: str, name: str, version: str) -> str:
 def dependency_identifier(ecosystem: str, name: str, version: str) -> str:
     """``dep:{ecosystem}:{canonical-name}@{version}`` (see :func:`dependency_key`)."""
     return f"dep:{dependency_key(ecosystem, name, version)}"
+
+
+def parse_dependency_identifier(identifier: str) -> Optional[Tuple[str, str, str]]:
+    """``(ecosystem, name, version)`` of a ``dep:`` identifier, else None."""
+    if not identifier.startswith("dep:") or "@" not in identifier:
+        return None
+    try:
+        _, ecosystem, rest = identifier.split(":", 2)
+        name, version = rest.rsplit("@", 1)
+    except ValueError:
+        return None
+    return (ecosystem, name, version) if ecosystem and name and version else None
 
 
 def injection_identifier(pattern: str) -> str:

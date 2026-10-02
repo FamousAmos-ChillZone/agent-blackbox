@@ -105,6 +105,8 @@ DANGER_SHAPE_PRED = f"{BLACKBOX_ONTOLOGY}dangerShape"
 # Append-only public corrections. Published threat assets remain immutable;
 # a VM-verified CorrectionSignal can monotonically suppress one exact RDF
 # subject without deleting or rewriting the original knowledge asset.
+#: The verified graph's rdf:type for a dependency threat (the row adapter keys on it).
+DEFENDER_DEPENDENCY_TYPE_IRI = "urn:defender:DependencySignal"
 DEFENDER_CORRECTION_TYPE_IRI = "urn:defender:CorrectionSignal"
 DEFENDER_CORRECTION_TARGET_PRED = "urn:defender:p:targetSubject"
 DEFENDER_CORRECTION_ACTION_PRED = "urn:defender:p:action"

@@ -21,6 +21,9 @@ Public surface:
   :func:`build_retraction_quads` — the
   privacy-safe statements a report or dispute shares (write side).
 * :func:`read_verified_reports` — THE community read: fetch + verify (R0c/R0d).
+* The curator's view and statements (Refine R2/R6): :func:`read_curator_view` ->
+  :class:`CuratorView`; :func:`sign_curator_statement`, :func:`curator_statement_quads`,
+  :func:`key_manifest_quads`, :data:`VERIFIED_GRAPH_KINDS` (which kinds live in the verified graph).
 * :func:`stage_for` (+ :class:`Stage`, :class:`Enforcement`, :class:`StageResult`) —
   a community threat's local stage from the counted-author list (R3).
 * :func:`record_verified_sighting` / :func:`publish_due_digests` — the
@@ -48,7 +51,10 @@ from .report_signer import network_environment
 from .aggregation import CommunityRule, aggregate_community_reports
 from .digest import publish_due_digests, record_verified_sighting
 from .stages import Enforcement, Stage, StageResult, stage_for
-from .statements.curator_view import counted_dispute_weight
+from .statements.curator_view import VERIFIED_GRAPH_KINDS, CuratorView, counted_dispute_weight
+from .statements.curator_statements import manifest_quads as key_manifest_quads
+from .statements.curator_statements import sign_statement as sign_curator_statement
+from .statements.curator_statements import statement_quads as curator_statement_quads
 from .reader import (
     COMMUNITY_PAUSE_SUBJECT,
     community_pause_active,
@@ -84,7 +90,12 @@ __all__ = [
     "network_environment",
     "fetch_community_report_rows",
     "print_community_status",
+    "CuratorView",
     "Enforcement",
+    "VERIFIED_GRAPH_KINDS",
+    "curator_statement_quads",
+    "key_manifest_quads",
+    "sign_curator_statement",
     "Stage",
     "StageResult",
     "counted_dispute_weight",
