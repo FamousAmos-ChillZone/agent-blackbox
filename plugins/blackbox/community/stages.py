@@ -33,10 +33,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Dict, Iterable, Mapping, Optional, Tuple
 
 from ..kernel.signing.statement_order import CuratorStatement
 from .statements.curator_view import CuratorView
+from . import allowlist
 from .statements.lifetimes import lifetime_days
 
 _DAY_SECONDS = 86_400
@@ -140,11 +141,16 @@ class StageResult:
     disputed: bool = False
     source: str = "local"
     counted: int = 0
+    #: R9: the allowlisted name this threat looks like (a homograph supports the report).
+    confusable_of: str = ""
 
     def as_fields(self) -> Dict[str, str]:
         """The rule-dict fields the ruleset stores and the UI shows."""
-        return {"stage": self.stage.value, "enforcement": self.enforcement.value, "stageReason": self.reason,
-                "stageSource": self.source, "disputed": "yes" if self.disputed else "no", "counted": str(self.counted)}
+        fields = {"stage": self.stage.value, "enforcement": self.enforcement.value, "stageReason": self.reason,
+                  "stageSource": self.source, "disputed": "yes" if self.disputed else "no", "counted": str(self.counted)}
+        if self.confusable_of:
+            fields["confusableOf"] = self.confusable_of
+        return fields
 
 
 def is_whole_package(identifier: str) -> bool:
@@ -153,16 +159,18 @@ def is_whole_package(identifier: str) -> bool:
 
 
 def stage_for(identifier: str, authors: Iterable[str], first_seen: float, view: CuratorView,
-              dispute_weight: int, verdict: Optional[CuratorStatement], now: float) -> StageResult:
+              dispute_weight: int, verdict: Optional[CuratorStatement], now: float,
+              fields: Optional[Mapping[str, str]] = None) -> StageResult:
     """The local stage of one community threat.
 
     *authors* — verified signer keys of its reports; *first_seen* — THIS
     node's first observation (epoch); *view* — the verified curator view;
     *dispute_weight* — how many counted authors dispute it; *verdict* — the
-    curator's current verdict for it, if any.
+    curator's current verdict for it, if any; *fields* — the report's closed
+    fields (R9 reads ``kind``).
     """
     clusters = clusters_for(authors, view)
-    result = _stage(identifier, first_seen, clusters, dispute_weight, verdict, now)
+    result = _stage(identifier, first_seen, clusters, dispute_weight, verdict, now, allowlist.check(identifier, fields))
     attested = view.attestation(identifier)
     if attested is not None and result.stage not in _NOT_ATTESTABLE:
         # R3-attest: readers prefer the curator's attested stage. Terminal verdicts
@@ -189,7 +197,7 @@ def _attested(stage_value: str, sequence: int, clusters: Clusters) -> StageResul
 
 
 def _stage(identifier: str, first_seen: float, clusters: "Clusters", dispute_weight: int,
-           verdict: Optional[CuratorStatement], now: float) -> StageResult:
+           verdict: Optional[CuratorStatement], now: float, listed: allowlist.Verdict) -> StageResult:
     terminal = _terminal_stage(verdict)
     if terminal is not None:
         return terminal
@@ -198,7 +206,11 @@ def _stage(identifier: str, first_seen: float, clusters: "Clusters", dispute_wei
         return StageResult(Stage.EXPIRED, Enforcement.MONITOR, f"community lifetime of {lifetime_days(identifier)} days passed")
     if is_whole_package(identifier):
         return StageResult(Stage.HELD, Enforcement.MONITOR, "whole-package report held: weight 0 until a curator checks it")
+    if listed.holds:   # R9: a byte-exact allowlisted name, or name-level / vulnerability noise on a popular package
+        return StageResult(Stage.HELD, Enforcement.MONITOR, f"held for a curator: {listed.reason}")
     result = _by_corroboration(identifier, clusters, threshold_for(identifier), span_days, verdict)
+    if listed.confusable_of:   # R9 inverted look-alike rule: a homograph SUPPORTS the report
+        result = replace(result, reason=f"{result.reason}; {listed.reason}", confusable_of=listed.confusable_of)
     return _apply_disputes(result, clusters, dispute_weight)
 
 

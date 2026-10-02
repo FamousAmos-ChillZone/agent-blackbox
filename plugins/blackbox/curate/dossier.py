@@ -88,6 +88,11 @@ class DossierBuilder:
         self._add("curator statements", f"current verdict: {verdict or 'none'}")
         return self._add("disputes", f"{dispute_weight} counted author(s) dispute it")
 
+    def allowlist(self, verdict: Any) -> "DossierBuilder":
+        """R9: what the allowlist / warninglist says (checklist item 3, now automatic)."""
+        tag = f" (confusable-of:{verdict.confusable_of})" if getattr(verdict, "confusable_of", "") else ""
+        return self._add("allowlist", f"{verdict.verdict.value}{tag}: {verdict.reason}")
+
     def heat(self, estimate: Optional[Any]) -> "DossierBuilder":
         if estimate is None:
             return self._add("sighting digests", "no counted digest names it this week")

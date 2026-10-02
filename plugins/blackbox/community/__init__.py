@@ -28,6 +28,8 @@ Public surface:
   a community threat's local stage from the counted-author list (R3).
 * :func:`record_verified_sighting` / :func:`publish_due_digests` — the
   seen-again counter: tally verified matches, publish one weekly digest (R2b).
+* :mod:`allowlist` — the allowlist / warninglist verdict and canaries (R9): byte-exact
+  names hold, look-alikes support the report.
 * :mod:`reputation` — automated graduation, novelty, partners, collusion and the
   curator-private ledger (R4); readers see its decisions only through the counted-author list.
 * :func:`publish_due_copies` — keep-alive (R5): this node re-publishes an
@@ -56,7 +58,7 @@ from .report_signer import network_environment
 from .aggregation import CommunityRule, aggregate_community_reports
 from .digest import publish_due_digests, record_verified_sighting
 from .keep_alive import publish_due_copies
-from . import reputation
+from . import allowlist, reputation
 from .pulse import PULSE
 from .pulse import fingerprint as community_fingerprint
 from .statements.lifetimes import lifetime_days
@@ -113,6 +115,7 @@ __all__ = [
     "publish_due_digests",
     "publish_due_copies",
     "reputation",
+    "allowlist",
     "lifetime_days",
     "PULSE",
     "community_fingerprint",

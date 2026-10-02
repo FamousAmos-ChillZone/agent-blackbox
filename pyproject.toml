@@ -617,7 +617,9 @@ gateway = ["assets/**/*"]
 # Bundled plugin discovery reads these manifests at runtime. Keep them in
 # sealed wheels with the plugin Python modules; without this declaration the
 # wheel contains adapters but discovery finds zero bundled plugins.
-plugins = ["**/plugin.yaml", "**/plugin.yml"]
+# Blackbox vendors the Public Suffix List (R9 allowlist keys); without this a sealed wheel
+# ships the parser with no data and registrable-domain matching silently widens.
+plugins = ["**/plugin.yaml", "**/plugin.yml", "blackbox/kernel/public_suffix/*.dat"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

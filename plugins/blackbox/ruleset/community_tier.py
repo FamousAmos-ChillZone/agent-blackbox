@@ -118,7 +118,7 @@ def _stage_fields(rule: community.CommunityRule, read: community.CommunityRead) 
     its signers, the curator view, counted disputes and the current verdict."""
     dispute_weight = community.counted_dispute_weight(read.disputes, read.curator).get(rule.identifier, 0)
     result = community.stage_for(rule.identifier, rule.authors, rule.first_seen, read.curator, dispute_weight,
-                                 read.curator.verdict(rule.identifier), time.time())
+                                 read.curator.verdict(rule.identifier), time.time(), dict(rule.fields))
     return result.as_fields()
 
 

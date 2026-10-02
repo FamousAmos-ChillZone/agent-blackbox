@@ -171,6 +171,7 @@ def _show(args: argparse.Namespace) -> int:
     weight = community.counted_dispute_weight(read.disputes, ctx.view).get(args.identifier, 0) if read.available else 0
     verdict = ctx.view.verdict(args.identifier)
     built = (dossier.DossierBuilder(args.identifier).community(rule).advisories(osv.lookup)
+             .allowlist(community.allowlist.check(args.identifier, rule))
              .curator(verdict.value if verdict else None, weight).heat(read.heat.get(args.identifier))
              .history(ProposalStore().for_identifier(args.identifier)).build())
     for line in dossier.render(built):

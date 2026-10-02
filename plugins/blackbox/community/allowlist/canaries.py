@@ -1,0 +1,94 @@
+"""Canaries — planted identifiers that only a scraper or a liar would report (R9).
+
+The curator plants identifiers that exist nowhere in the wild (a domain it
+registered and never used, a package name it reserved). An honest reporter
+can never meet one; a report naming one is bad faith by construction:
+``canary = hold + zero count`` (plan §06). Readers cannot know the planted
+set (it would stop working), so the hold reaches them the ordinary way —
+the curator rejects the report with reason ``bad-faith`` and records a
+STRIKE for the reporter (:mod:`..reputation`), which is what zeroes its
+count everywhere.
+
+Curator-PRIVATE file ``$BLACKBOX_HOME/curate/canaries.json`` (``{"planted":
+[identifier, ...]}``); one lock, atomic writes.
+
+Usage (curator machine)::
+
+    store = CanaryStore()
+    store.plant("ioc:domain:never-used-7f3a.example")
+    hits = store.hits(read.reports)      # {reporter key: [identifier, ...]}
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import secrets
+import threading
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Protocol
+
+from ...kernel import constants
+
+logger = logging.getLogger(__name__)
+_CANARY_FILE = "canaries.json"
+
+
+class _Report(Protocol):
+    identifier: str
+    author: str
+
+
+class CanaryStore:
+    """The planted identifiers, curator-private."""
+
+    def __init__(self, path: Optional[Path] = None) -> None:
+        self._path = path or (constants.blackbox_home() / "curate" / _CANARY_FILE)
+        self._lock = threading.Lock()
+
+    def planted(self) -> List[str]:
+        with self._lock:
+            return self._load()
+
+    def plant(self, identifier: str) -> None:
+        with self._lock:
+            current = self._load()
+            if identifier not in current:
+                self._save(current + [identifier])
+
+    def remove(self, identifier: str) -> bool:
+        with self._lock:
+            current = self._load()
+            if identifier not in current:
+                return False
+            self._save([i for i in current if i != identifier])
+            return True
+
+    def hits(self, reports: Iterable[_Report]) -> Dict[str, List[str]]:
+        """``{reporter key: [canary identifiers it reported]}`` — each one a
+        strike candidate for the curator (never automatic: the curator
+        records the outcome, so a planted-by-mistake real threat can be
+        unplanted first)."""
+        planted = set(self.planted())
+        found: Dict[str, List[str]] = {}
+        for report in reports:
+            if report.identifier in planted:
+                found.setdefault(report.author, []).append(report.identifier)
+        return {author: sorted(set(ids)) for author, ids in found.items()}
+
+    def _load(self) -> List[str]:
+        try:
+            data = json.loads(self._path.read_text(encoding="utf-8"))
+            return [str(i) for i in data.get("planted", []) if str(i).strip()]
+        except (OSError, ValueError, AttributeError):
+            return []
+
+    def _save(self, planted: List[str]) -> None:
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
+            tmp.write_text(json.dumps({"planted": planted}), encoding="utf-8")
+            os.replace(tmp, self._path)
+        except OSError as exc:
+            logger.warning("blackbox: could not save the canary store (%s)", exc)
