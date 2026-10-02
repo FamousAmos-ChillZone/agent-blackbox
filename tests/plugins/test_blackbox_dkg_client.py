@@ -475,11 +475,11 @@ def test_malformed_query_reply_is_a_failure_for_sentinel_callers(monkeypatch):
     """R0 tri-state: an unrecognized reply ({}) must not read as an empty graph
     for a caller that asked to tell failure from empty; default callers still get []."""
     client = dkg_client.DkgClient(url="http://127.0.0.1:1", dkg_home="/nonexistent")
-    monkeypatch.setattr(client, "_request", lambda *a, **k: {})
+    monkeypatch.setattr(client, "request", lambda *a, **k: {})
     sentinel = object()
     assert client.query("SELECT ?x WHERE {}", "g", on_error=sentinel) is sentinel
     assert client.query("SELECT ?x WHERE {}", "g") == []
-    monkeypatch.setattr(client, "_request", lambda *a, **k: {"bindings": []})
+    monkeypatch.setattr(client, "request", lambda *a, **k: {"bindings": []})
     assert client.query("SELECT ?x WHERE {}", "g", on_error=sentinel) == []
 
 

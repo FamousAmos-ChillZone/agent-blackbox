@@ -175,7 +175,7 @@ class DkgClient:
 
     # -- transport ---------------------------------------------------------
 
-    def _request(
+    def request(
         self,
         method: str,
         path: str,
@@ -223,7 +223,7 @@ class DkgClient:
         """
         for route in ("/api/status", "/api/info"):
             try:
-                return self._request("GET", route, timeout=timeout)
+                return self.request("GET", route, timeout=timeout)
             except DkgError:
                 continue
         raise DkgError("node unreachable on /api/status, /api/info")
@@ -234,7 +234,7 @@ class DkgClient:
         ``GET /api/agent/identity`` → ``{agentAddress, agentDid, name, ...}`` —
         the definitive way to learn which agent the node sees us as.
         """
-        return self._request("GET", "/api/agent/identity")
+        return self.request("GET", "/api/agent/identity")
 
     def reachable(self, timeout: Optional[float] = None) -> bool:
         try:
@@ -247,13 +247,13 @@ class DkgClient:
 
     def connect_peer(self, peer_id: str) -> Dict[str, Any]:
         """Ask DKG to resolve and connect to one graph source peer."""
-        return self._request(
+        return self.request(
             "POST", "/api/connect", {"peerId": peer_id}, timeout=15.0
         )
 
     def connect_multiaddr(self, multiaddr: str) -> Dict[str, Any]:
         """Connect through one explicit address when cold DHT lookup is pending."""
-        return self._request(
+        return self.request(
             "POST", "/api/connect", {"multiaddr": multiaddr}, timeout=15.0
         )
 
@@ -265,7 +265,7 @@ class DkgClient:
         Agent Blackbox is VM-only, so SWM catch-up is disabled by default.
         Idempotent — the daemon no-ops when already subscribed.
         """
-        return self._request(
+        return self.request(
             "POST",
             "/api/context-graph/subscribe",
             {"contextGraphId": cg_id, "includeSharedMemory": include_shared_memory},
@@ -274,7 +274,7 @@ class DkgClient:
 
     def unsubscribe_context_graph(self, cg_id: str) -> Dict[str, Any]:
         """Drop live gossip/sync scope without deleting local VM/SWM data."""
-        return self._request(
+        return self.request(
             "POST",
             "/api/context-graph/unsubscribe",
             {"contextGraphId": cg_id},
@@ -312,14 +312,14 @@ class DkgClient:
             query = f"jobId={urllib.parse.quote(job_id, safe='')}"
         else:
             query = f"contextGraphId={urllib.parse.quote(cg_id, safe='')}"
-        return self._request(
+        return self.request(
             "GET",
             f"/api/sync/catchup-status?{query}",
         )
 
     def context_graphs(self) -> List[Dict[str, Any]]:
         """Return the daemon's native context-graph registry projection."""
-        result = self._request(
+        result = self.request(
             "GET",
             "/api/context-graph/list",
             timeout=_STORE_TIMEOUT,
@@ -342,7 +342,7 @@ class DkgClient:
         already-current recovery legitimately inserts zero triples.
         """
         bounded_budget = max(1_000, min(300_000, int(budget_ms)))
-        return self._request(
+        return self.request(
             "POST",
             "/api/shared-memory/catchup",
             {
@@ -365,7 +365,7 @@ class DkgClient:
 
     def context_graph_participants(self, cg_id: str) -> Dict[str, Any]:
         encoded = urllib.parse.quote(cg_id, safe="")
-        return self._request(
+        return self.request(
             "GET",
             f"/api/context-graph/{encoded}/participants",
         )
@@ -382,7 +382,7 @@ class DkgClient:
 
     def publish_agent_profile(self) -> Dict[str, Any]:
         """Publish this node's default agent profile and encryption keys."""
-        return self._request(
+        return self.request(
             "POST",
             "/api/agent/publish-profile",
             {},
@@ -407,11 +407,11 @@ class DkgClient:
         except DkgError as exc:
             logger.warning("Could not publish DKG agent profile before join: %s", exc)
         enc = urllib.parse.quote(cg_id, safe="")
-        signed = self._request("POST", f"/api/context-graph/{enc}/sign-join", {}, timeout=_STORE_TIMEOUT)
+        signed = self.request("POST", f"/api/context-graph/{enc}/sign-join", {}, timeout=_STORE_TIMEOUT)
         delegation = signed.get("delegation") if isinstance(signed, dict) else None
         if not delegation:
             raise DkgError("sign-join returned no delegation")
-        return self._request("POST", f"/api/context-graph/{enc}/request-join",
+        return self.request("POST", f"/api/context-graph/{enc}/request-join",
                              {"delegation": delegation, "curatorPeerId": graph_peer_id,
                               "agentName": agent_name}, timeout=_STORE_TIMEOUT)
 
@@ -434,7 +434,7 @@ class DkgClient:
         """
         _validate_quads_literal_sizes(quads)
         try:
-            self._request(
+            self.request(
                 "POST",
                 "/api/knowledge-assets",
                 {"contextGraphId": cg_id, "name": name, "quads": quads, "alsoShareSwm": False},
@@ -464,7 +464,7 @@ class DkgClient:
         body: Dict[str, Any] = {"contextGraphId": cg_id, "layer": layer}
         if on_conflict:
             body["onConflict"] = on_conflict
-        return self._request(
+        return self.request(
             "POST",
             self._ka_path(name, "/wm/pull-from"),
             body,
@@ -474,7 +474,7 @@ class DkgClient:
     def share_async(self, cg_id: str, name: str) -> Dict[str, Any]:
         """Queue an async SWM share job for an already-finalized WM KA."""
         try:
-            return self._request(
+            return self.request(
                 "POST",
                 self._ka_path(name, "/swm/share-async"),
                 {"contextGraphId": cg_id, "entities": "all"},
@@ -489,7 +489,7 @@ class DkgClient:
     def share_job(self, job_id: str) -> Dict[str, Any]:
         """Fetch one async SWM share job by id."""
         enc = urllib.parse.quote(job_id, safe="")
-        return self._request("GET", f"/api/knowledge-assets/swm/share-jobs/{enc}", timeout=_STORE_TIMEOUT)
+        return self.request("GET", f"/api/knowledge-assets/swm/share-jobs/{enc}", timeout=_STORE_TIMEOUT)
 
     @staticmethod
     def _share_job_id(result: Dict[str, Any]) -> Optional[str]:
@@ -562,7 +562,7 @@ class DkgClient:
     def write_private_knowledge_asset(self, cg_id: str, name: str, quads: List[Quad]) -> Dict[str, Any]:
         """Create+write+seal a KA in WM WITHOUT sharing to SWM (private audit)."""
         _validate_quads_literal_sizes(quads)
-        return self._request(
+        return self.request(
             "POST",
             "/api/knowledge-assets",
             {"contextGraphId": cg_id, "name": name, "quads": quads, "alsoShareSwm": False},
@@ -594,7 +594,7 @@ class DkgClient:
         if agent_address:
             payload["agentAddress"] = agent_address
         try:
-            result = self._request(
+            result = self.request(
                 "POST",
                 "/api/query",
                 payload,
@@ -638,4 +638,4 @@ SELECT (COUNT(DISTINCT ?threat) AS ?n) WHERE {
 
     def register_agent(self, name: str, framework: str = "hermes") -> Dict[str, Any]:
         """Register a new agent on the node → ``{agentAddress, authToken, ...}``."""
-        return self._request("POST", "/api/agent/register", {"name": name, "framework": framework})
+        return self.request("POST", "/api/agent/register", {"name": name, "framework": framework})
