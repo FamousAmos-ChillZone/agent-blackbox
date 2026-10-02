@@ -134,6 +134,7 @@ def _queue(args: argparse.Namespace) -> int:
         return 1
     view = queue.delta_view(ctx.compiled.community, verified_identifiers(ctx.compiled))
     print(f"NEW: {len(view.new)} · ALREADY VERIFIED (closed as duplicates): {len(view.already_verified)}"
+          f" · UNLISTED-ONLY (stored, no lane): {len(view.unlisted_only)}"
           + ("" if ctx.manifest else " · no trusted key manifest: every author is unlisted"))
     for item in view.new:
         print(f"  lane {item.lane.value}  [{item.stage} · {item.enforcement}]  {_term(item.identifier, 80)}  "

@@ -82,6 +82,31 @@ def payload_for(identifier: str, *, severity: str, advisory: str, report_subject
     }
 
 
+def validate_payload(payload: Mapping[str, str]) -> None:
+    """Refuse a promotion payload that is not a well-formed kind=malware
+    dependency rule whose package fields agree with its identifier. Run by
+    the SECOND signer before cosigning and again before the write: the first
+    signer's client may have been modified, and the human approving sees
+    only the summary (KI-195). Raises :class:`PromotionError`."""
+    parts = threat_ids.parse_dependency_identifier(str(payload.get("identifier", "")))
+    if parts is None:
+        raise PromotionError("the payload's identifier is not dep:<ecosystem>:<name>@<version>")
+    ecosystem, package, version = parts
+    expected = {"kind": constants.KIND_MALWARE, "ecosystem": ecosystem, "packageName": package, "packageVersion": version}
+    for field_name, value in expected.items():
+        if payload.get(field_name) != value:
+            raise PromotionError(f"the payload's {field_name} does not match its identifier (or is not malware)")
+    if str(payload.get("severity", "")) not in constants.SEVERITY_ORDER:
+        raise PromotionError(f"severity must be one of {constants.SEVERITY_ORDER}")
+    if not str(payload.get("name", "")).strip():
+        raise PromotionError("the payload has no name")
+
+
+def whole_package(payload: Mapping[str, str]) -> bool:
+    """A name-level promotion (``@*`` — every version): the consent summary says so in words."""
+    return payload.get("packageVersion") == "*"
+
+
 def sign(payload: Mapping[str, str], key: Ed25519PrivateKey, manifest: KeyManifest, *, sequence: int) -> signing.SignedEnvelope:
     """The first curator signature on a promotion (co-sign with signing.cosign)."""
     return signing.sign(key, statement_type=CuratorStatement.PROMOTION.value, environment=manifest.environment,

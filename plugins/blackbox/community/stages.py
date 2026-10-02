@@ -31,7 +31,7 @@ Usage::
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Dict, Iterable, Optional, Tuple
 
@@ -126,19 +126,22 @@ def clusters_for(authors: Iterable[str], view: CuratorView) -> Clusters:
 @dataclass(frozen=True)
 class StageResult:
     """One threat's stage: ``stage``, ``enforcement``, a one-line ``reason``,
-    ``source`` (always ``local`` in Phase 1) and ``disputed`` (any counted
-    dispute — a tag, never enforcement by itself)."""
+    ``source`` (always ``local`` in Phase 1), ``disputed`` (any counted
+    dispute — a tag, never enforcement by itself) and ``counted`` — the
+    counted clusters behind it (plan §05 queue admission: an item reaches a
+    curator lane only with counted weight or a dispute, KI-194)."""
 
     stage: Stage
     enforcement: Enforcement
     reason: str
     disputed: bool = False
     source: str = "local"
+    counted: int = 0
 
     def as_fields(self) -> Dict[str, str]:
         """The rule-dict fields the ruleset stores and the UI shows."""
         return {"stage": self.stage.value, "enforcement": self.enforcement.value, "stageReason": self.reason,
-                "stageSource": self.source, "disputed": "yes" if self.disputed else "no"}
+                "stageSource": self.source, "disputed": "yes" if self.disputed else "no", "counted": str(self.counted)}
 
 
 def is_whole_package(identifier: str) -> bool:
@@ -155,6 +158,13 @@ def stage_for(identifier: str, authors: Iterable[str], first_seen: float, view: 
     *dispute_weight* — how many counted authors dispute it; *verdict* — the
     curator's current verdict for it, if any.
     """
+    clusters = clusters_for(authors, view)
+    result = _stage(identifier, first_seen, clusters, dispute_weight, verdict, now)
+    return replace(result, counted=clusters.total)
+
+
+def _stage(identifier: str, first_seen: float, clusters: "Clusters", dispute_weight: int,
+           verdict: Optional[CuratorStatement], now: float) -> StageResult:
     terminal = _terminal_stage(verdict)
     if terminal is not None:
         return terminal
@@ -163,9 +173,7 @@ def stage_for(identifier: str, authors: Iterable[str], first_seen: float, view: 
         return StageResult(Stage.EXPIRED, Enforcement.MONITOR, f"community lifetime of {lifetime_days(identifier)} days passed")
     if is_whole_package(identifier):
         return StageResult(Stage.HELD, Enforcement.MONITOR, "whole-package report held: weight 0 until a curator checks it")
-    clusters = clusters_for(authors, view)
-    threshold = threshold_for(identifier)
-    result = _by_corroboration(identifier, clusters, threshold, span_days, verdict)
+    result = _by_corroboration(identifier, clusters, threshold_for(identifier), span_days, verdict)
     return _apply_disputes(result, clusters, dispute_weight)
 
 

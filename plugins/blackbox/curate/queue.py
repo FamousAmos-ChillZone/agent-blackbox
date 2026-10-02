@@ -55,10 +55,22 @@ class QueueItem:
 @dataclass(frozen=True)
 class DeltaView:
     """``new`` — items for the lanes, ordered by lane then most reporters;
-    ``already_verified`` — identifiers the verified graph already lists."""
+    ``already_verified`` — identifiers the verified graph already lists;
+    ``unlisted_only`` — new threats reported by unlisted authors alone and
+    undisputed: stored and shown with the "new reporter" label, but ADMITTED
+    to no lane (plan §05 queue admission — counted weight, or a dispute).
+    Without this rule 5,000 fresh single-author reports would fill every
+    lane and fire the intake webhook 5,000 times (KI-194)."""
 
     new: Tuple[QueueItem, ...]
     already_verified: Tuple[str, ...]
+    unlisted_only: Tuple[str, ...] = ()
+
+
+def admitted(rule: Mapping[str, Any]) -> bool:
+    """Plan §05: a threat reaches a curator lane only with counted weight
+    behind it or a dispute against it."""
+    return int(rule.get("counted") or 0) > 0 or rule.get("disputed") == "yes"
 
 
 def has_evidence(rule: Mapping[str, Any]) -> bool:
@@ -78,13 +90,17 @@ def delta_view(community_rules: Mapping[str, Mapping[str, Any]], verified_identi
     """Split the compiled community store against the verified graph."""
     new = []
     already = []
+    unlisted = []
     for identifier, rule in community_rules.items():
         if identifier in verified_identifiers:
             already.append(identifier)
+            continue
+        if not admitted(rule):
+            unlisted.append(identifier)
             continue
         new.append(QueueItem(identifier=identifier, stage=str(rule.get("stage") or "reported"),
                              enforcement=str(rule.get("enforcement") or "monitor"),
                              reason=str(rule.get("stageReason") or ""), reporters=int(rule.get("reporterCount") or 0),
                              disputed=rule.get("disputed") == "yes", lane=lane_for(identifier, rule)))
     new.sort(key=lambda item: (item.lane.value, -item.reporters, item.identifier))
-    return DeltaView(new=tuple(new), already_verified=tuple(sorted(already)))
+    return DeltaView(new=tuple(new), already_verified=tuple(sorted(already)), unlisted_only=tuple(sorted(unlisted)))

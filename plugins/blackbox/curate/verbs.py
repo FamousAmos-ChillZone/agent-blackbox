@@ -114,8 +114,10 @@ def approve(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, evide
         raise VerbError("the proposal's envelope is malformed")
     my_key = keys.curator_key_store().load_or_create()
     _check_first_signer(ctx, envelope, proposal, signing.public_key_hex(my_key))
-    if proposal.kind == CuratorStatement.PROMOTION.value and not evidence:
-        raise VerbError("a promotion needs your own item-1 evidence (--evidence advisory:<id> …); each key checks the truth itself")
+    if proposal.kind == CuratorStatement.PROMOTION.value:
+        if not evidence:
+            raise VerbError("a promotion needs your own item-1 evidence (--evidence advisory:<id> …); each key checks the truth itself")
+        _validated_promotion(envelope)   # KI-195: never cosign a payload you did not check yourself
     cosigned = signing.cosign(envelope, my_key)
     proposal = proposal.with_envelope(cosigned, {signing.public_key_hex(my_key): evidence or "n/a"})
     proposal = proposal.transition(ProposalState.APPROVED)
@@ -176,6 +178,7 @@ def _has_quorum(ctx: CurateContext, proposal: Proposal, envelope: signing.Signed
 def _write(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedEnvelope) -> Tuple[str, str]:
     """Build the quads and write them where the statement lives; (asset name, graph)."""
     if proposal.kind == CuratorStatement.PROMOTION.value:
+        _validated_promotion(envelope)
         quads = promotion.verified_rule_quads(dict(envelope.payload), envelope)
         name = promotion.asset_name(proposal.identifier)
         node_routes.publish_to_verified_memory(ctx.client, ctx.verified_graph, name, quads)
@@ -195,11 +198,21 @@ def _write(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedEnvel
     return name, ctx.community_graph
 
 
+def _validated_promotion(envelope: signing.SignedEnvelope) -> None:
+    try:
+        promotion.validate_payload(envelope.payload)
+    except promotion.PromotionError as exc:
+        raise VerbError(f"the promotion payload is not acceptable: {exc}") from exc
+
+
 def summary(proposal: Proposal) -> str:
-    """What the operator is asked to consent to (graph, kind, subject, signers)."""
+    """What the operator is asked to consent to (graph, kind, subject, signers);
+    a whole-package promotion says so in words, so the second signer cannot
+    miss the scope."""
     envelope = proposal.parsed()
     signers = ", ".join(s[:12] + "…" for s in envelope.signers) if envelope else "?"
-    return f"{proposal.kind} · {proposal.identifier} · graph {proposal.graph} · seq {envelope.sequence if envelope else '?'} · keys {signers}"
+    scope = " · WHOLE PACKAGE (every version)" if envelope and promotion.whole_package(envelope.payload) else ""
+    return f"{proposal.kind} · {proposal.identifier}{scope} · graph {proposal.graph} · seq {envelope.sequence if envelope else '?'} · keys {signers}"
 
 
 # -- manifest (sandbox) --------------------------------------------------------

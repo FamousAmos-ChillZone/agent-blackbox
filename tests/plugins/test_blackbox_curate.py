@@ -242,18 +242,61 @@ def test_no_browser_endpoint_can_publish():
 
 def test_already_verified_threats_never_reach_a_lane_and_lanes_order_the_rest():
     community_rules = {
-        "dep:npm:known@1": {"identifier": "dep:npm:known@1", "stage": "corroborated", "enforcement": "flag", "reporterCount": 9},
+        "dep:npm:known@1": {"identifier": "dep:npm:known@1", "stage": "corroborated", "enforcement": "flag", "reporterCount": 9, "counted": "3"},
         "dep:npm:evidenced@1": {"identifier": "dep:npm:evidenced@1", "stage": "reported", "enforcement": "flag",
-                                "reporterCount": 2, "reason": "advisory:MAL-9"},
-        "dep:npm:bare@1": {"identifier": "dep:npm:bare@1", "stage": "reported", "enforcement": "monitor", "reporterCount": 1},
-        "ioc:domain:x.example": {"identifier": "ioc:domain:x.example", "stage": "corroborated", "enforcement": "flag",
-                                 "reporterCount": 5, "disputed": "yes"},
-        "ioc:ip:1.2.3.4": {"identifier": "ioc:ip:1.2.3.4", "stage": "reported", "enforcement": "flag", "reporterCount": 1},
+                                "reporterCount": 2, "reason": "advisory:MAL-9", "counted": "1"},
+        "dep:npm:bare@1": {"identifier": "dep:npm:bare@1", "stage": "reported", "enforcement": "monitor", "reporterCount": 1, "counted": "0"},
+        "ioc:domain:x.example": {"identifier": "ioc:domain:x.example", "stage": "corroborated", "enforcement": "monitor",
+                                 "reporterCount": 5, "disputed": "yes", "counted": "0"},
+        "ioc:ip:1.2.3.4": {"identifier": "ioc:ip:1.2.3.4", "stage": "reported", "enforcement": "flag", "reporterCount": 1, "counted": "1"},
     }
     view = queue.delta_view(community_rules, {"dep:npm:known@1"})
     assert view.already_verified == ("dep:npm:known@1",)
+    # §05 admission (KI-194): counted weight or a dispute reaches a lane; an unlisted-only, undisputed report does not.
     assert [(i.identifier, i.lane.value) for i in view.new] == [
-        ("ioc:domain:x.example", 1), ("dep:npm:evidenced@1", 2), ("dep:npm:bare@1", 4), ("ioc:ip:1.2.3.4", 5)]
+        ("ioc:domain:x.example", 1), ("dep:npm:evidenced@1", 2), ("ioc:ip:1.2.3.4", 5)]
+    assert view.unlisted_only == ("dep:npm:bare@1",)
+
+
+def test_a_flood_of_unlisted_singletons_reaches_no_lane_and_no_webhook(tmp_path):
+    """KI-194: 5,000 fresh single-author reports are stored and labelled, never queued or announced."""
+    from plugins.blackbox.curate import intake
+    rules = {f"dep:npm:flood-{i}@1": {"identifier": f"dep:npm:flood-{i}@1", "stage": "reported", "enforcement": "monitor",
+                                      "reporterCount": 1, "counted": "0"} for i in range(5000)}
+    rules["dep:npm:real@1"] = {"identifier": "dep:npm:real@1", "stage": "reported", "enforcement": "flag", "reporterCount": 2,
+                               "counted": "1"}
+    view = queue.delta_view(rules, set())
+    assert [i.identifier for i in view.new] == ["dep:npm:real@1"] and len(view.unlisted_only) == 5000
+    announced = []
+    class _Sink:
+        def notify(self, event):
+            announced.append(event)
+    assert intake.IntakeWatcher(tmp_path / "seen.json").poll(view, _Sink()) == ["dep:npm:real@1"] and len(announced) == 1
+
+
+def test_the_second_signer_refuses_a_crafted_promotion_payload(monkeypatch, tmp_path, curators):
+    """KI-195: a modified client on machine A can sign any payload; machine B validates it before cosigning."""
+    from plugins.blackbox.curate import promotion
+    from plugins.blackbox.curate.proposal import Proposal
+    node = FakeNode()
+    _machine(monkeypatch, tmp_path, "A", curators["a"])
+    crafted = {"identifier": THREAT, "severity": "critical", "kind": "vulnerability", "ecosystem": "npm",
+               "packageName": "evil-pkg", "packageVersion": "1.0.0", "advisoryId": "MAL-1", "name": "x", "provenance": ""}
+    mismatched = {**crafted, "kind": "malware", "packageName": "left-pad"}
+    proposals = [Proposal.new(Kind.PROMOTION.value, THREAT, promotion.sign(payload, curators["a"], curators["manifest"], sequence=1),
+                              VM_GRAPH, checks={}).transition(ProposalState.PROPOSED) for payload in (crafted, mismatched)]
+    _machine(monkeypatch, tmp_path, "B", curators["b"])
+    store = ProposalStore()
+    for proposal in proposals:
+        store.save(proposal)
+        with pytest.raises(verbs.VerbError, match="payload is not acceptable"):
+            verbs.approve(_ctx(node, curators["manifest"]), store, proposal.id, evidence="advisory:MAL-1", typed_code=None, yes=True)
+    assert node.vm_published == []
+    whole = promotion.payload_for("dep:npm:evil-pkg@*", severity="high", advisory="MAL-1", report_subjects=[],
+                                  provenance=promotion.ProvenanceMap())
+    envelope = promotion.sign(whole, curators["b"], curators["manifest"], sequence=2)
+    proposal = Proposal.new(Kind.PROMOTION.value, "dep:npm:evil-pkg@*", envelope, VM_GRAPH, checks={})
+    assert "WHOLE PACKAGE" in verbs.summary(proposal)
 
 
 def test_saved_views_are_catalog_entries_in_the_nodes_vocabulary():
