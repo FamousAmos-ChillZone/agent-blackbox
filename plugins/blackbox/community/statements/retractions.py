@@ -24,10 +24,10 @@ from __future__ import annotations
 import logging
 from typing import Any, FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
-from ..kernel import signing, sparql_text, threat_ids
-from ..kernel.dkg_client import extract_binding
-from .report_signer import RETRACT_STATEMENT
-from .verification import SIGNED_STATEMENT_VAR, VerifiedReport
+from ...kernel import signing, sparql_text, threat_ids
+from ...kernel.dkg_client import extract_binding
+from ..report_signer import RETRACT_STATEMENT
+from ..verification import SIGNED_STATEMENT_VAR, VerifiedReport
 
 logger = logging.getLogger(__name__)
 

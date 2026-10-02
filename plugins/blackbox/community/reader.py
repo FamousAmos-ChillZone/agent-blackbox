@@ -20,7 +20,7 @@ from ..kernel import constants
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, extract_binding
 from ..kernel import sparql_text
-from . import retractions
+from .statements import retractions
 from .report_signer import network_environment
 from .verification import ReportVerifier, VerifiedReport, verify_report_rows
 

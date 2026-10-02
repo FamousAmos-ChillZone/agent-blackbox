@@ -15,7 +15,7 @@ from datetime import date
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from plugins.blackbox.community import curator_statements as cs
+from plugins.blackbox.community.statements import curator_statements as cs
 from plugins.blackbox.kernel import signing
 from plugins.blackbox.kernel.signing import key_manifest as km
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind

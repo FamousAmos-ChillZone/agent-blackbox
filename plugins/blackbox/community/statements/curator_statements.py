@@ -42,11 +42,11 @@ from typing import Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Tupl
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from ..kernel import constants, rdf_terms, signing, sparql_text, threat_ids
-from ..kernel.dkg_client import extract_binding
-from ..kernel.signing.key_manifest import KeyManifest
-from ..kernel.signing.statement_order import CuratorStatement
-from . import report_schema
+from ...kernel import constants, rdf_terms, signing, sparql_text, threat_ids
+from ...kernel.dkg_client import extract_binding
+from ...kernel.signing.key_manifest import KeyManifest
+from ...kernel.signing.statement_order import CuratorStatement
+from .. import report_schema
 
 #: The frozen payload schema of reduction-only statements (revocation,
 #: rejection): every reader version must accept it, forever. Never edit.
