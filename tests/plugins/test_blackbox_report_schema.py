@@ -162,3 +162,28 @@ def test_a_named_skill_needs_a_public_registry_and_a_local_one_is_never_named():
     _bad("skill", "skill:evil@1.0", registry="local", skill_name="evil", skill_version="1.0")     # never local
     _bad("skill", f"skill:artifact:{SHA}:obfuscation", artifact_hash=SHA, danger_shape="obfuscation",
          registry="clawhub")
+
+
+# ------------------------------------------------------- R1 done-when: "no path"
+
+
+def test_confusable_package_names_are_refused_not_canonicalised_into_a_real_one():
+    """A Cyrillic 'а' (U+0430) in "reаct" must not pass as the ASCII package."""
+    lookalike = "reаct"
+    _bad("dependency", f"dep:npm:{lookalike}@1.0", **_dep(package_name=lookalike, reason="typosquat")[1])
+
+
+def test_the_openclaw_bridge_share_path_stays_hard_wired_off_until_ki_182():
+    """R1's done-when is "a malformed, unsigned or oversized report cannot be
+    produced by ANY path". The OpenClaw bridge builds reports in TypeScript
+    without the R1 schema or the R0 signature, and it would send them to the
+    VERIFIED graph id (KI-182). Today it is inert because its resolved config
+    hard-codes `report: false` with no override. This guard fails the moment
+    anyone wires a report switch into the bridge before KI-182 ports the
+    schema, the signing and the community graph id."""
+    from pathlib import Path
+    source = (Path(__file__).resolve().parents[2] / "integrations" / "openclaw" / "src" / "config.ts").read_text(
+        encoding="utf-8")
+    assert source.count("report: false,") == 2            # DEFAULTS + the resolved config
+    assert "BLACKBOX_REPORT\n" not in source and "env.BLACKBOX_REPORT)" not in source
+    assert "pluginConfig.report)" not in source and "pluginConfig.report ??" not in source
