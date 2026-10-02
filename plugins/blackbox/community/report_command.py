@@ -87,6 +87,11 @@ _REPORT_REQUIRED_ARGS: Dict[str, "tuple[str, ...]"] = {
 }
 
 
+#: Argument dest -> the flag an operator types (KI-066: the package version is
+#: --package-version; Hermes's own top-level --version swallows `--version`).
+_FLAG_NAMES = {"version": "package-version"}
+
+
 def _report_finding_from_args(args: argparse.Namespace) -> "tuple[Optional[dict], str]":
     """Factory: parsed report args → the finding dict the share path expects.
 
@@ -100,7 +105,7 @@ def _report_finding_from_args(args: argparse.Namespace) -> "tuple[Optional[dict]
     required = _REPORT_REQUIRED_ARGS.get(rtype)
     if required is None:
         return None, "a --type is required (or use --status / --false-positive)"
-    missing = [f"--{name.replace('_', '-')}" for name in required if not getattr(args, name, None)]
+    missing = [f"--{_FLAG_NAMES.get(name, name.replace('_', '-'))}" for name in required if not getattr(args, name, None)]
     if missing:
         return None, f"--type {rtype} requires {', '.join(missing)}"
     fields: Dict[str, Any] = {}
@@ -113,8 +118,8 @@ def _report_finding_from_args(args: argparse.Namespace) -> "tuple[Optional[dict]
     elif rtype == "dependency":
         identifier = threat_ids.dependency_identifier(args.ecosystem, args.name, args.version)
         fields = {
-            "ecosystem": args.ecosystem,
-            "package_name": args.name,
+            "ecosystem": args.ecosystem.strip().lower(),
+            "package_name": threat_ids.canonical_package_name(args.ecosystem, args.name),
             "package_version": args.version,
             "advisory_id": args.advisory_id,
             "kind": args.kind,

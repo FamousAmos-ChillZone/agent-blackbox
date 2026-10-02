@@ -90,7 +90,7 @@ def wired(monkeypatch, bb_home):
     ("kwargs", "missing"),
     [
         (dict(type="dependency", name="pkg"), "--ecosystem"),
-        (dict(type="dependency", ecosystem="npm", name="pkg"), "--version"),
+        (dict(type="dependency", ecosystem="npm", name="pkg"), "--package-version"),  # KI-066
         (dict(type="injection"), "--pattern"),
         (dict(type="escalation", tool="shell"), "--arg-shape"),
         (dict(type="fileaccess", tool="read"), "--category"),
@@ -230,3 +230,39 @@ def test_no_coming_soon_left_in_cli_source():
 
     source = inspect.getsource(cli)
     assert "coming soon" not in source.lower()
+
+
+# ---------------------------------------------------------------------------
+# Through the REAL parser (KI-114: report tests used to build Namespaces by
+# hand, which is how KI-066 — the swallowed --version — went unnoticed)
+# ---------------------------------------------------------------------------
+
+
+def _parse(argv):
+    parser = argparse.ArgumentParser()
+    cli.setup_cli(parser)
+    return parser.parse_args(argv)
+
+
+def test_dependency_report_parses_with_package_version():
+    args = _parse(["report", "--type", "dependency", "--ecosystem", "PyPI", "--name", "Evil_Pkg.Name",
+                   "--package-version", "1.0.3", "--kind", "malware"])
+    finding, err = report_command._report_finding_from_args(args)
+    assert err == ""
+    assert finding["identifier"] == "dep:pypi:evil-pkg-name@1.0.3"
+    # The report fields carry the SAME canonical spelling as the identifier.
+    assert finding["fields"]["package_name"] == "evil-pkg-name"
+    assert finding["fields"]["ecosystem"] == "pypi"
+
+
+def test_missing_package_version_names_the_real_flag():
+    args = _parse(["report", "--type", "dependency", "--ecosystem", "npm", "--name", "evil"])
+    finding, err = report_command._report_finding_from_args(args)
+    assert finding is None and "--package-version" in err
+
+
+def test_report_has_no_version_flag_of_its_own():
+    """KI-066: Hermes's top-level --version wins over a subcommand's --version
+    (prints the banner and exits), so the report command must not rely on it."""
+    with pytest.raises(SystemExit):
+        _parse(["report", "--type", "dependency", "--ecosystem", "npm", "--name", "evil", "--version", "1.0.0"])

@@ -7,7 +7,6 @@
 * HEURISTIC — built-in discovery candidates, gated by ``report_min_severity``.
 """
 
-import argparse
 
 from _blackbox_loader import load_blackbox
 
@@ -566,56 +565,3 @@ def test_allow_report_daily_counter_independent_of_cooldown():
     assert audit.recently_reported("id-never-reported") is False
 
 
-# --- catalog_import._build_candidate for the new report types -----------------------------
-
-
-def _ns(**kw):
-    base = dict(
-        type=None, pattern=None, owasp=None, tool=None, arg_shape=None,
-        ecosystem=None, name=None, version=None, advisory_id=None,
-        category=None, skill_name=None, skill_version=None, danger_shape=None,
-    )
-    base.update(kw)
-    return argparse.Namespace(**base)
-
-
-def test_build_candidate_fileaccess():
-    ident, kwargs = catalog_import._build_candidate(
-        _ns(type="fileaccess", tool="read_file", category="ssh-private-key")
-    )
-    assert ident == "fileaccess:read_file:ssh-private-key"
-    assert kwargs == {"tool_name": "read_file", "file_category": "ssh-private-key"}
-
-
-def test_build_candidate_fileaccess_missing_flags_raises():
-    import pytest
-
-    with pytest.raises(ValueError):
-        catalog_import._build_candidate(_ns(type="fileaccess", tool="read_file"))
-    with pytest.raises(ValueError):
-        catalog_import._build_candidate(_ns(type="fileaccess", category="ssh-private-key"))
-
-
-def test_build_candidate_skill_version():
-    ident, kwargs = catalog_import._build_candidate(_ns(type="skill", skill_name="X", skill_version="1.0.0"))
-    assert ident == "skill:x@1.0.0"
-    assert kwargs["skill_name"] == "x"
-    assert kwargs["skill_version"] == "1.0.0"
-    assert kwargs["danger_shape"] is None
-
-
-def test_build_candidate_skill_danger_shape():
-    ident, kwargs = catalog_import._build_candidate(_ns(type="skill", skill_name="X", danger_shape="shell-exec"))
-    assert ident == "skill:x:shell-exec"
-    assert kwargs["skill_name"] == "x"
-    assert kwargs["danger_shape"] == "shell-exec"
-    assert kwargs["skill_version"] is None
-
-
-def test_build_candidate_skill_missing_flags_raises():
-    import pytest
-
-    with pytest.raises(ValueError):
-        catalog_import._build_candidate(_ns(type="skill", skill_name="x"))  # no version, no shape
-    with pytest.raises(ValueError):
-        catalog_import._build_candidate(_ns(type="skill", skill_version="1.0.0"))  # no name

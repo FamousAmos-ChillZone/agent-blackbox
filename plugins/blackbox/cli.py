@@ -109,7 +109,7 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
     report.add_argument("--arg-shape", dest="arg_shape", help="escalation: arg shape slug")
     report.add_argument("--ecosystem", help="dependency: ecosystem (npm/pypi/...)")
     report.add_argument("--name", help="dependency: package name (or threat display name)")
-    report.add_argument("--version", help="dependency: package version")
+    report.add_argument("--package-version", dest="version", help="dependency: package version (KI-066: Hermes owns --version)")
     report.add_argument("--advisory-id", dest="advisory_id", help="dependency: advisory id")
     report.add_argument(
         "--kind", choices=[constants.KIND_MALWARE, constants.KIND_VULNERABILITY],

@@ -7,7 +7,6 @@ for the curator tooling (build item R6) to adopt — or delete.
 
 from __future__ import annotations
 
-import argparse
 from typing import Any, Dict, List, Optional
 from ..kernel import threat_ids
 from ..kernel import constants
@@ -294,51 +293,3 @@ def _entry_to_threat(entry: Dict[str, Any]) -> tuple:
             "danger_shape": danger_shape or None,
         }
     raise ValueError(f"unknown entry type: {category!r}")
-
-
-def _build_candidate(args: argparse.Namespace) -> tuple:
-    """Return ``(identifier, quad_kwargs)`` for ``report``; raise ValueError on bad input."""
-    if args.type == "injection":
-        if not args.pattern:
-            raise ValueError("injection report requires --pattern")
-        ident = threat_ids.injection_identifier(args.pattern)
-        return ident, {"pattern": args.pattern, "owasp_category": args.owasp}
-    if args.type == "escalation":
-        if not args.tool or not args.arg_shape:
-            raise ValueError("escalation report requires --tool and --arg-shape")
-        ident = threat_ids.escalation_identifier(args.tool, args.arg_shape)
-        return ident, {"tool_name": args.tool, "arg_shape": args.arg_shape}
-    if args.type == "dependency":
-        if not (args.ecosystem and args.name and args.version):
-            raise ValueError("dependency report requires --ecosystem, --name, --version")
-        ident = threat_ids.dependency_identifier(args.ecosystem, args.name, args.version)
-        return ident, {
-            "ecosystem": args.ecosystem.lower(),
-            "package_name": threat_ids.canonical_package_name(args.ecosystem, args.name),
-            "package_version": args.version,
-            "advisory_id": args.advisory_id,
-            "kind": getattr(args, "kind", None),
-        }
-    if args.type == "fileaccess":
-        if not (args.tool and args.category):
-            raise ValueError("fileaccess report requires --tool and --category")
-        ident = threat_ids.fileaccess_identifier(args.tool, args.category)
-        return ident, {
-            "tool_name": args.tool.strip().lower(),
-            "file_category": args.category.strip().lower(),
-        }
-    if args.type == "skill":
-        if not args.skill_name or not (args.skill_version or args.danger_shape):
-            raise ValueError(
-                "skill report requires --skill-name and one of --skill-version / --danger-shape"
-            )
-        if args.skill_version:
-            ident = threat_ids.skill_version_identifier(args.skill_name, args.skill_version)
-        else:
-            ident = threat_ids.skill_shape_identifier(args.skill_name, args.danger_shape)
-        return ident, {
-            "skill_name": args.skill_name.strip().lower(),
-            "skill_version": (args.skill_version or "").strip() or None,
-            "danger_shape": (args.danger_shape or "").strip() or None,
-        }
-    raise ValueError(f"unknown type: {args.type}")
