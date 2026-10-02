@@ -1,8 +1,8 @@
 """``blackbox report`` — file, dispute and review this node's community reports.
 
 Manual reports go through the same share path as automatic ones; also
-``--false-positive`` disputes and ``--status`` (this node's contributions,
-from the share ledger plus the graph).
+``--status`` (this node's contributions, from the share ledger plus the
+graph). Disputes are in :mod:`.statement_verbs`.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 from .. import audit
 from .. import detection
-from . import graph_stats, report_builder, report_schema, report_signer, sharing
+from . import graph_stats, report_builder, report_schema, report_signer, sharing, statement_verbs
 from . import reader as graph_reader
 from ..kernel import constants, threat_ids
 
@@ -245,7 +245,7 @@ def cmd_report(args: argparse.Namespace) -> int:
         return 1
     reporter, signer = resolved
     if args.false_positive:
-        return _submit_false_positive(client, cfg, args.false_positive, args.reason, reporter, signer)
+        return statement_verbs.submit_false_positive(client, cfg, args.false_positive, args.reason, reporter, signer)
     finding, err = _report_finding_from_args(args)
     if finding is None:
         print(f"Invalid report: {err}")
@@ -269,7 +269,7 @@ def cmd_report(args: argparse.Namespace) -> int:
         signer=signer,
         **finding["fields"],
     )
-    outcome, detail = _send_and_record(client, cfg, identifier=identifier, category=finding["category"],
+    outcome, detail = statement_verbs.send_and_record(client, cfg, identifier=identifier, category=finding["category"],
                                        severity=finding["severity"], subject=subject, name=name, quads=q)
     if outcome is sharing.ShareOutcome.FAILED:
         print(f"Share FAILED: {display_safety.term_safe(detail, 160)}")
@@ -283,20 +283,6 @@ def cmd_report(args: argparse.Namespace) -> int:
     print(f"  identifier: {display_safety.term_safe(identifier)}")
     print(f"  subject:    {display_safety.term_safe(subject)}")
     return 0
-
-
-def _send_and_record(client: DkgClient, cfg, *, identifier: str, category: str, severity: str,
-                     subject: str, name: str, quads: List[Dict[str, str]]) -> Tuple["sharing.ShareOutcome", str]:
-    """Send one built statement to the community graph and record the attempt
-    in the local share ledger, success or failure (KI-015). Returns
-    (outcome, detail) for the caller to report."""
-    outcome, detail = sharing.send_report(client, cfg.community_graph_id, name, quads)
-    audit.record_share_outcome(
-        identifier=identifier, category=category, severity=severity,
-        subject=subject, asset_name=name, ok=outcome is sharing.ShareOutcome.ACCEPTED,
-        error=detail, outcome=outcome.value,
-    )
-    return outcome, detail
 
 
 def _reporting_identity(client: DkgClient, graph: str) -> Optional[Tuple[str, report_signer.ReportSigner]]:
@@ -313,33 +299,6 @@ def _reporting_identity(client: DkgClient, graph: str) -> Optional[Tuple[str, re
         print("Nothing was submitted — an unsigned report would not be counted by anyone.")
         return None
     return reporter, signer
-
-
-def _submit_false_positive(client: DkgClient, cfg, identifier: str, reason: Optional[str], reporter: str,
-                           signer: report_signer.ReportSigner) -> int:
-    """Dispute a community threat (lifecycle: DISPUTE — the Q8 veto writer).
-    A closed --reason is required (Refine R1); nothing is sent without one."""
-    try:
-        identifier, reason = report_schema.validate_dispute(identifier=identifier, reason=reason or "")
-    except report_schema.ReportValidationError as exc:
-        print(f"Invalid dispute: {exc}")
-        print("Nothing was submitted.")
-        return 2
-    q = report_builder.build_false_positive_quads(identifier=identifier, reporter_address=reporter,
-                                                  reason=reason, signer=signer)
-    name = f"fp-{threat_ids.stable_hash(identifier + reporter, 16)}"
-    subject = threat_ids.report_uri(identifier, reporter) + ":fp"
-    outcome, detail = _send_and_record(client, cfg, identifier=identifier, category="false-positive",
-                                       severity="info", subject=subject, name=name, quads=q)
-    if outcome is sharing.ShareOutcome.FAILED:
-        print(f"Dispute FAILED: {display_safety.term_safe(detail, 160)}")
-        print("The attempt is recorded in your local reports ledger.")
-        return 1
-    if outcome is sharing.ShareOutcome.REJECTED_SAME_VERSION:
-        print(f"Dispute already on the community graph for: {display_safety.term_safe(identifier)} (not re-sent)")
-        return 0
-    print(f"False-positive signal shared for: {display_safety.term_safe(identifier)}")
-    return 0
 
 
 #: How a ledger outcome is shown (community.ShareOutcome values).
