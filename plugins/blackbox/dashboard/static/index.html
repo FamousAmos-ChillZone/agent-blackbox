@@ -3771,6 +3771,9 @@
     (data.disputes || []).forEach(function (d) {
       rows.push(["dispute", d.identifier, d.who, d.when, d.why]);
     });
+    (data.retractions || []).forEach(function (r) {
+      rows.push(["retraction", r.identifier, r.who, r.when, "withdrawn by its reporter"]);
+    });
     (curator.verdicts || []).forEach(function (v) {
       rows.push(["curator: " + v.verdict, v.identifier, v.keys + " curator key" + (v.keys === 1 ? "" : "s"), v.when, v.why || ""]);
     });

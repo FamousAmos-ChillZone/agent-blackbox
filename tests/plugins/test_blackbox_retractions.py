@@ -86,6 +86,7 @@ def test_a_signers_own_retraction_withdraws_its_report():
     read = read_verified_reports(client, CFG)
     assert read.state is ReadState.ROWS
     assert _authors(read) == [(two.author, THREAT)]
+    assert [(r.author, r.identifier, r.reporter) for r in read.retractions] == [(one.author, THREAT, "0xr1")]
 
 
 def test_a_retraction_cannot_withdraw_someone_elses_report():

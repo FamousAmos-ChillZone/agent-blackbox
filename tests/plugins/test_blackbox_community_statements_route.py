@@ -14,6 +14,7 @@ from plugins.blackbox.community import CommunityRead, ReadState
 from plugins.blackbox.community.statements import curator_view as cv
 from plugins.blackbox.community.statements.curator_statements import CuratorRecord
 from plugins.blackbox.community.statements.disputes import VerifiedDispute
+from plugins.blackbox.community.statements.retractions import VerifiedRetraction
 from plugins.blackbox.dashboard import community_routes
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.kernel.signing import key_manifest as km
@@ -41,7 +42,10 @@ def _view():
 def _read():
     dispute = VerifiedDispute(subject="s", identifier=HOSTILE, author="e" * 64, reporter="0xreporter",
                               reason="wrong", day="2026-10-01")
-    return CommunityRead(ReadState.ROWS, disputes=(dispute,), held_back=7, pending_tombstones=2, curator=_view())
+    retraction = VerifiedRetraction(author="f" * 64, identifier="ioc:domain:mine.example", subject="t",
+                                    reporter="0xretractor", day="2026-10-02")
+    return CommunityRead(ReadState.ROWS, disputes=(dispute,), retractions=(retraction,), held_back=7,
+                         pending_tombstones=2, curator=_view())
 
 
 @pytest.fixture
@@ -61,6 +65,9 @@ def test_statements_carry_who_when_why(configured):
     assert payload["curator"]["counted_authors"][0]["org"] == "acme"
     assert payload["curator"]["away"][0]["until"] == "2026-10-05"
     assert (payload["held_back"], payload["pending_tombstones"]) == (7, 2)
+    retraction = payload["retractions"][0]
+    assert (retraction["identifier"], retraction["who"], retraction["when"]) == ("ioc:domain:mine.example",
+                                                                                 "0xretractor", "2026-10-02")
 
 
 def test_community_strings_are_sanitized(configured):

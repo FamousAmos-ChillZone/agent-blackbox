@@ -192,7 +192,8 @@ class CommunityRead:
     that count (empty unless ROWS); ``reason`` explains an UNAVAILABLE read.
     Callers act on ``state`` — an UNAVAILABLE read must never be treated as
     "no threats". Refine R2: ``disputes`` — verified disputes (display and,
-    later, decay; never enforcement); ``held_back`` — statements over an
+    later, decay; never enforcement); ``retractions`` — verified retractions
+    (display; withdrawn reports are already left out); ``held_back`` — statements over an
     author's daily budget; ``pending_tombstones`` — retractions waiting for a
     report this node has not seen; ``curator`` — what the curator has said,
     verified (reports of a rejected or revoked threat no longer count).
@@ -202,6 +203,7 @@ class CommunityRead:
     reports: Tuple[VerifiedReport, ...] = ()
     reason: str = ""
     disputes: Tuple[disputes.VerifiedDispute, ...] = ()
+    retractions: Tuple[retractions.VerifiedRetraction, ...] = ()
     held_back: int = 0
     pending_tombstones: int = 0
     curator: curator_view.CuratorView = field(default_factory=curator_view.CuratorView)
@@ -287,10 +289,12 @@ def _honour_statements(client: DkgClient, cfg: BlackboxConfig, environment: str,
     # A threat the curator rejected or revoked stops counting here (terminal verdicts, R2).
     reports = [r for r in reports if r.subject in budget.admitted
                and not (curator.rejected(r.identifier) or r.identifier in curator.revoked)]
-    withdrawn, pending = tombstones.applicable_withdrawals(
-        [r for r in found_retractions if r.subject in budget.admitted], reports, budget.first_seen, time.time())
+    admitted_retractions = [r for r in found_retractions if r.subject in budget.admitted]
+    withdrawn, pending = tombstones.applicable_withdrawals(admitted_retractions, reports, budget.first_seen,
+                                                           time.time())
     return CommunityRead(ReadState.ROWS, reports=tuple(retractions.apply_retractions(reports, withdrawn)),
                          disputes=tuple(d for d in found_disputes if d.subject in budget.admitted),
+                         retractions=tuple(admitted_retractions),
                          held_back=budget.held_back, pending_tombstones=pending, curator=curator)
 
 

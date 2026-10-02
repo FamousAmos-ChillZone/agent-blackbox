@@ -40,11 +40,14 @@ Withdrawal = Tuple[str, str]
 @dataclass(frozen=True)
 class VerifiedRetraction:
     """One verified retraction: its ``author`` (signer key), the
-    ``identifier`` it withdraws, and its own ``subject``."""
+    ``identifier`` it withdraws, its own ``subject``, and for display the
+    claimed ``reporter`` address and signed ``day``."""
 
     author: str
     identifier: str
     subject: str
+    reporter: str = ""
+    day: str = ""
 
 #: Rows per page (retractions are rare; the pager's row ceiling still applies).
 _PAGE_SIZE = 5000
@@ -84,7 +87,8 @@ def _verified_withdrawal(row: Mapping[str, Any], environment: str, graph: str) -
     )
     if envelope.payload.get("subject") != subject or shown != (subject, identifier, reporter):
         return None
-    return VerifiedRetraction(author=author, identifier=identifier, subject=subject)
+    return VerifiedRetraction(author=author, identifier=identifier, subject=subject, reporter=reporter,
+                              day=envelope.payload.get("day", ""))
 
 
 def verified_retractions(rows: Iterable[Mapping[str, Any]], environment: str, graph: str) -> List[VerifiedRetraction]:

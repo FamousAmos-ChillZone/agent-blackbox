@@ -133,6 +133,9 @@ def community_statements_payload(community_read: CommunityReadSource) -> Dict[st
         "disputes": [{"identifier": safe_text(d.identifier), "who": safe_text(d.reporter, 64),
                       "signer": safe_text(d.author[:16], 16), "when": safe_text(d.day, 16),
                       "why": safe_text(d.reason, 32)} for d in read.disputes[:_MAX_ROWS]],
+        "retractions": [{"identifier": safe_text(r.identifier), "who": safe_text(r.reporter, 64),
+                         "signer": safe_text(r.author[:16], 16), "when": safe_text(r.day, 16)}
+                        for r in read.retractions[:_MAX_ROWS]],
         "held_back": int(read.held_back),
         "pending_tombstones": int(read.pending_tombstones),
         "curator": _curator_payload(read.curator),
