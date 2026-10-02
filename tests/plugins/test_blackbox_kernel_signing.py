@@ -70,13 +70,20 @@ def test_schema_version_is_signed(key):
 def test_a_signer_swap_fails(key):
     envelope = _sign(key)
     impostor = signing.public_key_hex(Ed25519PrivateKey.generate())
-    assert _verify(signing.SignedEnvelope(**{**envelope.__dict__, "signer": impostor})) is None
+    swapped = (signing.Signature(signer=impostor, value=envelope.signatures[0].value),)
+    assert _verify(signing.SignedEnvelope(**{**envelope.__dict__, "signatures": swapped})) is None
 
 
 @pytest.mark.parametrize("text", [
     "", "not json", "[]", '{"v": 99}',
-    '{"v":1,"type":"t","env":"e","graph":"g","schema":"1","payload":{},"signer":"a","sig":"b"}',
-    '{"v":1,"type":"t","env":"e","graph":"g","schema":1,"payload":{"k":1},"signer":"a","sig":"b"}',
+    '{"v":1,"type":"t","env":"e","graph":"g","schema":1,"payload":{},"signer":"a","sig":"b"}',   # the R0 v1 shape
+    '{"v":2,"type":"t","env":"e","graph":"g","chain":"","epoch":0,"seq":0,"schema":"1","payload":{},'
+    '"sigs":[{"signer":"a","sig":"b"}]}',
+    '{"v":2,"type":"t","env":"e","graph":"g","chain":"","epoch":0,"seq":0,"schema":1,"payload":{"k":1},'
+    '"sigs":[{"signer":"a","sig":"b"}]}',
+    '{"v":2,"type":"t","env":"e","graph":"g","chain":"","epoch":0,"seq":0,"schema":1,"payload":{},"sigs":[]}',
+    '{"v":2,"type":"t","env":"e","graph":"g","chain":"","epoch":true,"seq":0,"schema":1,"payload":{},'
+    '"sigs":[{"signer":"a","sig":"b"}]}',
     "x" * (signing.MAX_ENVELOPE_CHARS + 1),
 ])
 def test_malformed_envelopes_parse_to_none(text):
@@ -85,7 +92,8 @@ def test_malformed_envelopes_parse_to_none(text):
 
 def test_verify_never_raises_on_garbage_hex(key):
     envelope = _sign(key)
-    garbage = signing.SignedEnvelope(**{**envelope.__dict__, "signature": "zz" * 64})
+    garbage = signing.SignedEnvelope(**{**envelope.__dict__, "signatures": (
+        signing.Signature(signer=envelope.signatures[0].signer, value="zz" * 64),)})
     assert _verify(garbage) is None
     assert _verify(None) is None
 
