@@ -41,10 +41,9 @@ from .sharing import NEVER_SHARED_SOURCES, CommunitySharePolicy, spawn_community
 from .graph_stats import community_agents, contributing_agent_count, most_reported_threats, reports_signed_by
 from .verification import ReportVerifier, VerifiedReport, verify_report_rows
 from .report_signer import network_environment
+from .aggregation import CommunityRule, aggregate_community_reports
 from .reader import (
     COMMUNITY_PAUSE_SUBJECT,
-    CommunityRule,
-    aggregate_community_reports,
     community_pause_active,
     community_report_count,
     fetch_community_report_rows,

@@ -17,6 +17,7 @@ from __future__ import annotations
 import pytest
 
 from plugins.blackbox import detection, ruleset as rs_mod
+from plugins.blackbox.community import aggregation as community_aggregation
 from plugins.blackbox.community import reader as community_reader
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.community import CommunityRule, VerifiedReport, aggregate_community_reports
@@ -100,7 +101,7 @@ def test_first_seen_carries_over_from_prior_cache():
 
 
 def test_bounded_ingest_keeps_corroborated_head(monkeypatch):
-    monkeypatch.setattr(community_reader, "_COMMUNITY_MAX_RULES", 3)
+    monkeypatch.setattr(community_aggregation, "_COMMUNITY_MAX_RULES", 3)
     rows = []
     for i in range(6):
         for r in range(i + 1):  # identifier i has i+1 reporters
@@ -506,11 +507,11 @@ def test_a_flood_of_fresh_singletons_keeps_older_honest_threats(monkeypatch):
     rules = aggregate_community_reports(flood + honest, history)
     kept = {r.identifier for r in rules}
     assert all(r.identifier in kept for r in honest)
-    assert len(rules) <= community_reader._COMMUNITY_MAX_RULES
+    assert len(rules) <= community_aggregation._COMMUNITY_MAX_RULES
 
 
 def test_one_signer_is_capped_and_keeps_its_oldest_reports(monkeypatch):
-    monkeypatch.setattr(community_reader, "MAX_REPORTS_PER_AUTHOR", 3)
+    monkeypatch.setattr(community_aggregation, "MAX_REPORTS_PER_AUTHOR", 3)
     reports = [_report(f"ioc:domain:k{i}.example", "one-key") for i in range(6)]
     history = {"ioc:domain:k5.example": 1.0, "ioc:domain:k4.example": 2.0}   # the oldest-known two
     kept = {r.identifier for r in aggregate_community_reports(reports, history)}
@@ -519,7 +520,7 @@ def test_one_signer_is_capped_and_keeps_its_oldest_reports(monkeypatch):
 
 
 def test_ties_go_to_the_oldest_observation(monkeypatch):
-    monkeypatch.setattr(community_reader, "_COMMUNITY_MAX_RULES", 1)
+    monkeypatch.setattr(community_aggregation, "_COMMUNITY_MAX_RULES", 1)
     old = _report("ioc:domain:old.example", "k1")
     new = _report("ioc:domain:new.example", "k2")
     rules = aggregate_community_reports([new, old], {"ioc:domain:old.example": 5.0})
