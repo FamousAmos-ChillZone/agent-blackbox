@@ -87,6 +87,10 @@ _SHELL_SHAPE_RULES = (
 # `curl|bash` into the graph and Blackbox will match it.
 NO_AUTO_NOMINATE_SHAPES = frozenset({"remote-script-pipe"})
 
+#: Every escalation arg shape detection can name — the closed vocabulary a
+#: community escalation report is validated against (Refine R1).
+ESCALATION_SHAPES = frozenset(shape for shape, _rule in _SHELL_SHAPE_RULES)
+
 # Tool names whose payload is treated as a shell command string.
 SHELL_TOOLS = {"terminal", "shell", "bash", "run_command", "exec", "command"}
 _COMMAND_KEYS = ("command", "cmd", "shell", "script", "input")

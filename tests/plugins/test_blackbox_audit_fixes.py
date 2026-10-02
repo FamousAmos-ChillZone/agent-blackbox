@@ -650,7 +650,8 @@ def test_malware_severity_floored_to_critical():
 
 def test_report_quads_carry_kind():
     q = report_builder.build_report_quads(identifier="dep:npm:evil@1.0", category="dependency",
-                                 severity="critical", reporter_address="0xabc", kind="malware")
+                                 severity="critical", reporter_address="0xabc", kind="malware",
+                                 ecosystem="npm", package_name="evil", package_version="1.0")
     assert any(t.get("predicate") == constants.KIND_PRED for t in q)
 
 
@@ -680,7 +681,7 @@ def test_injection_sighting_carries_no_raw_prompt():
         category=finding_a.category,
         severity=finding_a.severity,
         reporter_address="0xprivacytest",
-        **finding_a.fields,
+        **{"context": "in-user-prompt", **finding_a.fields},   # R1: the closed context (detection supplies it in R1b)
     ))
     assert canary_a not in shared
     assert canary_b not in shared

@@ -159,6 +159,11 @@ _SKILL_PERMISSION_RULES = (
 )
 
 
+#: Every skill danger shape detection can name (code + permission rules) — the
+#: closed vocabulary a community skill report is validated against (Refine R1).
+SKILL_DANGER_SHAPES = frozenset(shape for shape, _sev, _rule in _SKILL_CODE_RULES + _SKILL_PERMISSION_RULES)
+
+
 def scan_skill_dangers(code: str, permissions: str) -> List[Dict[str, str]]:
     """Return built-in skill danger matches as ``[{dangerShape, severity}]``.
 

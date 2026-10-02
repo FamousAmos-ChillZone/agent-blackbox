@@ -56,6 +56,10 @@ FRAMEWORK_PRED = f"{BLACKBOX_ONTOLOGY}framework"
 #: The signed envelope (kernel.signing) a community report or dispute carries;
 #: readers believe its author only after verifying it (Refine R0b, 2026-10).
 SIGNED_STATEMENT_PRED = f"{BLACKBOX_ONTOLOGY}signedStatement"
+#: Refine R1: where an injection was seen (INJECTION_CONTEXTS) and a skill's
+#: artifact hash (sha256 of its code — local skills are never named, KI-159).
+INJECTION_CONTEXT_PRED = f"{BLACKBOX_ONTOLOGY}injectionContext"
+SKILL_ARTIFACT_HASH_PRED = f"{BLACKBOX_ONTOLOGY}skillArtifactHash"
 
 # threat kind: distinguishes active malware from a mere vulnerability. Only
 # ``malware`` blocks (at/above block_severity); ``vulnerability`` always flags
@@ -176,6 +180,17 @@ LEGACY_GRAPH_PEER_IDS = frozenset({
 #: Severity ladder, lowest → highest. ``info`` < ... < ``critical``.
 SEVERITY_ORDER = ("info", "low", "medium", "high", "critical")
 SEVERITY_RANK = {name: idx for idx, name in enumerate(SEVERITY_ORDER)}
+
+#: OWASP Top 10 for LLM applications — the closed set an injection report's
+#: class is validated against (Refine R1).
+OWASP_LLM_CATEGORIES = tuple(f"LLM{n:02d}" for n in range(1, 11))
+
+#: Where a prompt injection was seen (decision 24, KI-161): a closed context,
+#: never the source domain or any text.
+INJECTION_CONTEXTS = ("in-fetched-page", "in-tool-output", "in-user-prompt", "in-skill")
+
+#: Frameworks a report may name.
+REPORT_FRAMEWORKS = ("hermes", "openclaw")
 
 #: SPARQL views exposed by the DKG node ``/api/query`` route.
 VIEW_WORKING_MEMORY = "working-memory"

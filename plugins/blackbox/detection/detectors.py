@@ -267,8 +267,8 @@ def discover_injection(text: str, ruleset: Any) -> List[Finding]:
 
     Runs the built-in OWASP LLM01/LLM06 heuristics over *text* and nominates a
     candidate for each match whose identifier is not already a graph rule. The
-    identifier and the shared ``pattern`` are the heuristic's own regex source
-    (a fixed signature), so identical attacks across users dedupe to one
+    identifier is the hash of the heuristic's own regex source (a fixed
+    signature; R1 never shares the text), so identical attacks dedupe to one
     candidate. PRIVACY: the matched user substring is kept ONLY as local
     ``evidence``/``matched`` and is NEVER placed in ``fields`` (the sole part of
     a finding forwarded to the community graph).
@@ -297,7 +297,7 @@ def discover_injection(text: str, ruleset: Any) -> List[Finding]:
                 evidence=phrase,
                 confirmed=False,
                 source="heuristic",
-                fields={"pattern": signature, "owasp_category": hit.get("owasp")},
+                fields={"owasp_category": hit.get("owasp")},   # R1: the identifier is the hash; no pattern text
             )
         )
     return out

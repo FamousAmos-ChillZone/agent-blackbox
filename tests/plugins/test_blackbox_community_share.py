@@ -81,6 +81,8 @@ def _finding(identifier="dep:npm:evil-pkg@1.0.0", source="public", **kw):
         title="test threat",
         source=source,
         confirmed=source == "public",
+        # A real malware dependency finding carries its package fields (Refine R1 validates them).
+        fields={"ecosystem": "npm", "package_name": "evil-pkg", "package_version": "1.0.0", "kind": "malware"},
     )
     base.update(kw)
     return detection.Finding(**base)
@@ -261,7 +263,7 @@ def test_no_evidence_text_in_emitted_quads(bb_home):
     finding = _finding(
         matched=secret_text,
         evidence=secret_text,
-        fields={"ecosystem": "npm", "package_name": "evil-pkg", "package_version": "1.0.0"},
+        fields={"ecosystem": "npm", "package_name": "evil-pkg", "package_version": "1.0.0", "kind": "malware"},
     )
     client = FakeClient()
     community_sharing._share_sighting(client, CFG_ON, finding.to_dict(), REPORTER)

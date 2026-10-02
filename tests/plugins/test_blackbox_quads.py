@@ -114,30 +114,34 @@ def test_parse_dependency_installs_ignores_non_install():
 
 
 def test_build_report_quads_no_command_text_and_links_threat():
+    ident = threat_ids.injection_identifier("ignore previous instructions")
     q = report_builder.build_report_quads(
-        identifier="injection:abc",
+        identifier=ident,
         category="injection",
         severity="high",
         reporter_address="0xABC",
-        pattern="ignore previous instructions",
+        context="in-fetched-page",
     )
-    subj = threat_ids.report_uri("injection:abc", "0xABC")
-    threat = threat_ids.threat_uri("injection:abc")
+    subj = threat_ids.report_uri(ident, "0xABC")
+    threat = threat_ids.threat_uri(ident)
     assert all(t["subject"] == subj for t in q)
+    assert not any("ignore previous instructions" in t["object"] for t in q)   # R1: never the pattern text
     assert any(t["predicate"] == constants.REPORTS_THREAT_PRED and t["object"] == threat for t in q)
     assert any(t["predicate"] == constants.REPORTER_PRED and t["object"] == '"0xabc"' for t in q)
 
 
 def test_report_literal_fields_respect_graph_limit():
     oversized = "x" * (rdf_terms._MAX_LITERAL_BYTES + 1234)
+    import pytest
+    with pytest.raises(ValueError):                     # R1: an oversized framework is refused outright (ReportValidationError)
+        report_builder.build_report_quads(identifier="ioc:domain:x.example", category="ioc", severity="high",
+                                          reporter_address="0xabc", framework=oversized, ioc_type="domain")
     rows = report_builder.build_report_quads(
-        identifier="injection:large",
-        category="injection",
+        identifier="ioc:domain:x.example",
+        category="ioc",
         severity="high",
-        reporter_address=oversized,
-        framework=oversized,
-        pattern=oversized,
-        owasp_category=oversized,
+        reporter_address=oversized,     # the reporter literal is still capped
+        ioc_type="domain",
     )
     literal_objects = [r["object"] for r in rows if r["object"].startswith('"') and "^^" not in r["object"]]
     assert literal_objects

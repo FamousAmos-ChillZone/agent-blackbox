@@ -57,7 +57,7 @@ def test_signed_report_verifies_and_covers_its_fields():
 
 def test_report_timestamp_is_rounded_to_the_day():
     quads = report_builder.build_report_quads(
-        identifier="ioc:domain:x.example", category="ioc", severity="high", reporter_address=REPORTER,
+        identifier="ioc:domain:x.example", category="ioc", severity="high", reporter_address=REPORTER, ioc_type="domain",
         ts=datetime(2026, 10, 1, 17, 42, 9, tzinfo=timezone.utc),
     )
     stamp = [q["object"] for q in quads if q["predicate"] == constants.SCHEMA_DATE_MODIFIED_PRED][0]
@@ -66,7 +66,7 @@ def test_report_timestamp_is_rounded_to_the_day():
 
 def test_unsigned_build_has_no_signature_quad():
     quads = report_builder.build_report_quads(identifier="ioc:domain:x.example", category="ioc",
-                                              severity="high", reporter_address=REPORTER)
+                                              severity="high", reporter_address=REPORTER, ioc_type="domain")
     assert not [q for q in quads if q["predicate"] == constants.SIGNED_STATEMENT_PRED]
 
 

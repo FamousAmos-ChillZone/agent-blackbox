@@ -39,6 +39,8 @@ _ECOSYSTEM_MAP = {
     "cargo": "crates.io",
     "rubygems": "RubyGems",
 }
+#: The package ecosystems Blackbox names dependencies in (Refine R1 vocabulary).
+DEPENDENCY_ECOSYSTEMS = frozenset(_ECOSYSTEM_MAP)
 
 # In-memory result cache. Value is the finding dict or None (clean/skip).
 _cache: Dict[str, Optional[Dict[str, str]]] = {}

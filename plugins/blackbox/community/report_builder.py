@@ -11,10 +11,11 @@ Usage: ``community.build_report_quads(identifier, severity=..., reporter_address
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict, List, Mapping, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from ..kernel import constants
 from ..kernel import rdf_terms
 from ..kernel import threat_ids
+from . import report_schema
 from .report_signer import DISPUTE_STATEMENT, REPORT_STATEMENT, ReportSigner
 
 # ---------------------------------------------------------------------------
@@ -25,7 +26,8 @@ from .report_signer import DISPUTE_STATEMENT, REPORT_STATEMENT, ReportSigner
 #: in emission order. ONE table, so the builder and anything that reads or signs
 #: a report's fields agree on what a report holds.
 _EVIDENCE_FIELDS: Dict[str, Tuple[Tuple[str, str], ...]] = {
-    "injection": (("pattern", constants.PATTERN_PRED), ("owasp_category", constants.OWASP_CATEGORY_PRED)),
+    # R1: never the pattern text — the identifier is its hash; the closed context instead.
+    "injection": (("context", constants.INJECTION_CONTEXT_PRED), ("owasp_category", constants.OWASP_CATEGORY_PRED)),
     "escalation": (("tool_name", constants.TOOL_NAME_PRED), ("arg_shape", constants.ARG_SHAPE_PRED)),
     "dependency": (
         ("package_name", constants.PACKAGE_NAME_PRED),
@@ -37,6 +39,7 @@ _EVIDENCE_FIELDS: Dict[str, Tuple[Tuple[str, str], ...]] = {
     ),
     "fileaccess": (("tool_name", constants.TOOL_NAME_PRED), ("file_category", constants.CATEGORY_PRED)),
     "skill": (
+        ("artifact_hash", constants.SKILL_ARTIFACT_HASH_PRED),   # R1: local skills by hash, never name (KI-159)
         ("skill_name", constants.SKILL_NAME_PRED),
         ("skill_version", constants.SKILL_VERSION_PRED),
         ("danger_shape", constants.DANGER_SHAPE_PRED),
@@ -58,19 +61,11 @@ def _day(ts: Optional[datetime]) -> datetime:
     return when.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-def _evidence(category: str, values: Mapping[str, Optional[str]]) -> List[Tuple[str, str, str]]:
-    """(name, predicate, value) for each evidence field of *category* that is set.
-
-    An injection report without a pattern carries no evidence at all (the
-    OWASP category only means something next to the pattern it classifies).
-    Raises ``TypeError`` for a name that is no evidence field at all.
-    """
-    unknown = set(values) - _EVIDENCE_NAMES
-    if unknown:
-        raise TypeError(f"build_report_quads() got unexpected keyword argument(s): {sorted(unknown)}")
-    if category == "injection" and not values.get("pattern"):
-        return []
-    return [(name, predicate, str(values[name])) for name, predicate in _EVIDENCE_FIELDS.get(category, ()) if values.get(name)]
+def _evidence(record: report_schema.ReportRecord) -> List[Tuple[str, str, str]]:
+    """(name, predicate, value) for each field of a VALIDATED record, in the
+    table's emission order."""
+    values = dict(record.evidence)
+    return [(name, predicate, values[name]) for name, predicate in _EVIDENCE_FIELDS.get(record.category, ()) if name in values]
 
 
 def _signature_quad(subject: str, signer: ReportSigner, statement_type: str, payload: Dict[str, str]) -> rdf_terms.Quad:
@@ -90,29 +85,23 @@ def build_report_quads(
     signer: Optional[ReportSigner] = None,
     **evidence: Optional[str],
 ) -> List[rdf_terms.Quad]:
-    """Build a sighting/report for SWM.
+    """Build a sighting/report for SWM — only from a VALIDATED record.
 
-    The subject is per-submitter namespaced (:func:`report_uri`). A report
-    NEVER carries observed prompt/command text (privacy split — that stays in
-    the private WM audit). For a NEW candidate threat, the caller may pass the
-    threat fields needed for independent review — the keyword arguments named
-    in ``_EVIDENCE_FIELDS`` (``pattern``, ``owasp_category``, ``tool_name``,
-    ``arg_shape``, ``ecosystem``, ``package_name``, ``package_version``,
-    ``advisory_id``, ``file_category``, ``skill_name``, ``skill_version``,
-    ``danger_shape``, ``kind``, ``ioc_type``); fields that do not belong to
-    *category* are ignored. Any other keyword is a ``TypeError``.
-
-    The timestamp is rounded to the day (decision 25). With a *signer*, the
-    report also carries a signed envelope (``SIGNED_STATEMENT_PRED``) over its
-    subject, identifier, category, severity, reporter, framework, day and
-    evidence — the statement a reader verifies before counting it (R0b).
+    The subject is per-submitter namespaced (:func:`report_uri`). Evidence is
+    passed as keyword arguments; what each category may carry, and every
+    rule it must meet, is :mod:`.report_schema` (Refine R1) — a bad report
+    raises :class:`.report_schema.ReportValidationError` and is never built.
+    Timestamps are rounded to the day (decision 25). With a *signer* the
+    report carries a signed envelope over its fields (R0b).
     """
+    record = report_schema.validate_report(identifier=identifier, category=category, severity=severity,
+                                           framework=framework, evidence=evidence, ts=ts)
+    identifier, severity = record.identifier, record.severity
     subj = threat_ids.report_uri(identifier, reporter_address)
     threat = threat_ids.threat_uri(identifier)
     day = _day(ts)
     reporter = reporter_address.strip().lower()   # report_uri above refused a blank one
-    severity = constants.normalize_severity(severity)
-    fields = _evidence(category, evidence)
+    fields = _evidence(record)
     out: List[rdf_terms.Quad] = [
         rdf_terms.make_quad(subj, constants.RDF_TYPE, rdf_terms.iri(constants.REPORT_TYPE_IRI)),
         rdf_terms.make_quad(subj, constants.REPORTS_THREAT_PRED, rdf_terms.iri(threat)),
@@ -131,7 +120,6 @@ def build_report_quads(
     return out
 
 
-_EVIDENCE_NAMES = frozenset(name for fields in _EVIDENCE_FIELDS.values() for name, _ in fields)
 
 
 def build_false_positive_quads(

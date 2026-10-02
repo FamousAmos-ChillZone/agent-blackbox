@@ -93,8 +93,18 @@ def test_report_quads_parity():
     report_builder = load_blackbox("community.report_builder")
     shell_shapes = load_blackbox("detection.shell_shapes")
     threat_ids = load_blackbox("kernel.threat_ids")
+    report_schema = load_blackbox("community.report_schema")
+    compared, refused = 0, set()
     for case in _fixture()["reportQuads"]:
-        quads = report_builder.build_report_quads(**case["in"])
+        try:
+            quads = report_builder.build_report_quads(**case["in"])
+        except report_schema.ReportValidationError:
+            # Refine R1: Python now refuses a dependency report without kind=malware
+            # and a skill report that names a local skill; the OpenClaw bridge still
+            # builds them until it is ported (KI-182).
+            refused.add(case["in"]["category"])
+            continue
+        compared += 1
         rows = sorted(
             (
                 {"subject": x["subject"], "predicate": x["predicate"], "object": x["object"]}
@@ -104,3 +114,5 @@ def test_report_quads_parity():
             key=lambda r: (r["predicate"], r["object"]),
         )
         assert rows == case["quadsNoDate"], case["in"]
+    assert compared >= 1
+    assert refused <= {"dependency", "skill"}

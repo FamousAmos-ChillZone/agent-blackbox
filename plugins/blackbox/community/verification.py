@@ -50,6 +50,8 @@ EVIDENCE_PAYLOAD_KEYS: Mapping[str, str] = {
     "skillName": "skill_name",
     "dangerShape": "danger_shape",
     "pattern": "pattern",
+    "injectionContext": "context",          # Refine R1
+    "skillArtifactHash": "artifact_hash",   # Refine R1 (KI-159)
 }
 
 #: The reader query variable that carries the envelope.

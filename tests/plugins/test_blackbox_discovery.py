@@ -119,13 +119,13 @@ def test_injection_candidate_shares_signature_not_raw_prompt():
     findings = detection.discover_injection(prompt, rs)
     assert findings
     f = findings[0]
-    # The SHARED field is the heuristic's own regex signature — never any part
-    # of the user's prompt. The matched substring stays local in evidence only.
-    assert "SECRET_CONTEXT_DO_NOT_LEAK" not in f.fields["pattern"]
-    assert "private text here" not in f.fields["pattern"]
-    assert "SECRET_CONTEXT_DO_NOT_LEAK" not in f.identifier
-    # It is a regex source (contains regex metacharacters), not plain prompt text.
-    assert any(c in f.fields["pattern"] for c in "\\|(?[")
+    # Refine R1: nothing textual is shared at all — no pattern field; the
+    # identifier is the hash of the heuristic's own signature. The matched
+    # substring stays local in evidence only.
+    assert "pattern" not in f.fields
+    shared = " ".join(str(v) for v in f.fields.values()) + f.identifier
+    assert "SECRET_CONTEXT_DO_NOT_LEAK" not in shared and "private text here" not in shared
+    assert f.identifier.startswith("injection:")
     # The matched phrase is retained locally for the operator's evidence.
     assert "ignore all previous instructions" in f.evidence.lower()
     assert len(f.evidence) <= 120

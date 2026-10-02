@@ -124,6 +124,12 @@ def skill_version_identifier(name: str, version: str) -> str:
     return f"skill:{name.strip().lower()}@{version.strip()}"
 
 
+def skill_artifact_identifier(artifact_hash: str, danger_shape: str) -> str:
+    """``skill:artifact:{sha256}:{shape}`` — a local/unknown skill named by its
+    code hash, never its name (Refine R1, KI-159)."""
+    return f"skill:artifact:{artifact_hash.strip().lower()}:{danger_shape.strip().lower()}"
+
+
 def skill_shape_identifier(name: str, danger_shape: str) -> str:
     """``skill:{name}:{dangerShape}`` — a heuristic dangerous-code/permission id."""
     return f"skill:{name.strip().lower()}:{danger_shape.strip()}"

@@ -41,6 +41,10 @@ _SENSITIVE_PATH_RULES = (
     ("system-shadow", "critical", re.compile(r"^/etc/(?:shadow|passwd|sudoers)$", re.IGNORECASE)),
 )
 
+#: Every sensitive-path category detection can name — the closed vocabulary a
+#: community file-access report is validated against (Refine R1).
+SENSITIVE_PATH_CATEGORIES = frozenset(category for category, _sev, _rule in _SENSITIVE_PATH_RULES)
+
 # Tools whose args reference a file/path. Value = tuple of candidate arg keys.
 _FILE_ACCESS_TOOLS = {
     "read": "read",
