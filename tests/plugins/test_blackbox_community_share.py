@@ -95,7 +95,7 @@ def _finding(identifier="dep:npm:evil-pkg@1.0.0", source="public", **kw):
     ("cfg", "source", "identifier", "reporter", "expected"),
     [
         (CFG_ON, "public", "dep:npm:x@1", REPORTER, True),
-        (CFG_ON, "community", "dep:npm:x@1", REPORTER, True),
+        (CFG_ON, "community", "dep:npm:x@1", REPORTER, False),  # decision 22 / KI-158: never auto-shared
         (CFG_ON, "heuristic", "dep:npm:x@1", REPORTER, True),
         (CFG_ON, "custom", "dep:npm:x@1", REPORTER, False),
         (CFG_ON, "llm", "dep:npm:x@1", REPORTER, False),
@@ -111,6 +111,43 @@ def test_policy_truth_table(cfg, source, identifier, reporter, expected):
     finding = {"identifier": identifier, "source": source}
     allowed, _why = policy.decide(finding, reporter)
     assert allowed is expected
+
+
+# ---------------------------------------------------------------------------
+# Decision 22 (Refine R0): what leaves automatically is narrowed (KI-157/158)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("finding, shares", [
+    ({"source": "public", "kind": "vulnerability"}, False),                         # verified-tier vulnerability
+    ({"source": "heuristic", "fields": {"advisory_id": "GHSA-xxxx-yyyy"}}, False),   # OSV-vulnerable candidate
+    ({"source": "heuristic", "fields": {"advisory_id": "MAL-2026-1234"}}, True),     # OSV malicious package
+    ({"source": "public", "kind": "malware"}, True),                                # verified malware match
+    ({"source": "heuristic", "kind": "malware"}, True),                             # self-discovered malware
+    ({"source": "community"}, False),                                               # community-only match
+    ({"source": "heuristic"}, True),                                                # self-discovered, no advisory
+])
+def test_decision_22_share_gate(finding, shares):
+    finding = {"identifier": "dep:npm:x@1", "category": "dependency", **finding}
+    ok, why = community_sharing.CommunitySharePolicy(CFG_ON).decide(finding, REPORTER)
+    assert ok is shares, why
+
+
+def test_community_only_ioc_match_flags_but_never_auto_shares(monkeypatch, bb_home):
+    """KI-158 end to end through the real reporting pipeline: the finding is
+    audited (it flags here) but nothing is spawned for the community graph."""
+    recorded = []
+    monkeypatch.setattr(audit, "record", lambda **kw: recorded.append(kw))
+    spawned, _ = _run_pipeline(monkeypatch, CFG_ON, [_finding(source="community", identifier="ioc:domain:listed.example",
+                                                              category="ioc")])
+    assert spawned == []
+    assert recorded and recorded[0]["findings"][0]["identifier"] == "ioc:domain:listed.example"
+
+
+def test_verified_match_still_auto_shares(monkeypatch, bb_home):
+    spawned, _ = _run_pipeline(monkeypatch, CFG_ON, [_finding(source="public", identifier="ioc:domain:verified.example",
+                                                              category="ioc")])
+    assert [ident for ident, _ in spawned] == ["ioc:domain:verified.example"]
 
 
 # ---------------------------------------------------------------------------

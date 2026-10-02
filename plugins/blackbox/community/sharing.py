@@ -31,6 +31,26 @@ _FRAMEWORK = "hermes"
 NEVER_SHARED_SOURCES = ("custom", "llm", "secret")
 
 
+#: OSV's malicious-package database uses MAL- advisory ids; every other OSV
+#: advisory describes a vulnerability.
+_MALWARE_ADVISORY_PREFIX = "MAL-"
+
+
+def is_vulnerability_finding(finding: Dict[str, Any]) -> bool:
+    """True for a finding that describes a VULNERABILITY (vs. malware).
+
+    Either it says so (``kind == "vulnerability"``, any tier), or it is an OSV
+    discovery candidate (an ``advisory_id`` in its fields, no kind) whose
+    advisory is not a malicious-package (``MAL-``) advisory.
+    """
+    kind = str(finding.get("kind") or "").lower()
+    if kind:
+        return kind == "vulnerability"
+    fields = finding.get("fields") if isinstance(finding.get("fields"), dict) else {}
+    advisory = str(fields.get("advisory_id") or "")
+    return bool(advisory) and not advisory.upper().startswith(_MALWARE_ADVISORY_PREFIX)
+
+
 class CommunitySharePolicy:
     """Decides whether ONE finding may be shared to the community graph.
 
@@ -48,9 +68,22 @@ class CommunitySharePolicy:
             spawn_community_share(client, cfg, finding_dict, reporter_address)
 
     Gate order (first refusal wins, ``why`` names it for the debug log):
-    ``community off`` → ``excluded source`` → ``no identifier`` →
-    ``no identity`` (KI-003: a fallback identity would merge distinct nodes
-    into one ghost reporter — refuse instead).
+    ``community off`` → ``excluded source`` → ``vulnerability`` →
+    ``community-only match`` → ``no identifier`` → ``no identity`` (KI-003:
+    a fallback identity would merge distinct nodes into one ghost reporter —
+    refuse instead).
+
+    Decision 22 (Refine R0, LES-018) — what leaves AUTOMATICALLY is narrowed:
+
+    * vulnerability findings never leave (KI-157): they reveal the reporter's
+      unpatched software and add nothing OSV lacks. That covers a
+      ``kind=vulnerability`` finding from any tier and an OSV candidate whose
+      advisory is not a malicious-package advisory (``MAL-``);
+    * a match against a COMMUNITY-only rule never auto-shares (KI-158):
+      whoever listed the value would learn who met it. It still flags here and
+      can leave only by an explicit operator ``blackbox report``.
+
+    Self-discovered threats and VERIFIED-tier matches still share.
     """
 
     def __init__(self, cfg: BlackboxConfig) -> None:
@@ -61,6 +94,10 @@ class CommunitySharePolicy:
             return False, "community sharing disabled"
         if finding.get("source") in NEVER_SHARED_SOURCES:
             return False, f"source {finding.get('source')} never leaves the machine"
+        if is_vulnerability_finding(finding):
+            return False, "vulnerability findings stay in the local audit (decision 22)"
+        if finding.get("source") == "community":
+            return False, "community-only match: flagged here, shared only by an explicit `blackbox report`"
         if not str(finding.get("identifier") or "").strip():
             return False, "no identifier"
         if not reporter:
