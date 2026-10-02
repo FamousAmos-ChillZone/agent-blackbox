@@ -78,6 +78,9 @@ class CuratorView:
     counts). ``verdicts`` — the current verdict record per threat.
     ``counted`` — the counted authors, by reporter key (listed, unexpired).
     ``backlog`` / ``away`` — the latest backlog notice and the away notices.
+    ``attestations`` — the current (highest-sequence) stage attestation per
+    threat (R3-attest); readers prefer it over their local stage unless a
+    terminal verdict dominates.
     """
 
     manifest: Optional[key_manifest.KeyManifest] = None
@@ -85,6 +88,7 @@ class CuratorView:
     counted: Mapping[str, CountedAuthor] = field(default_factory=dict)
     backlog: Optional[CuratorRecord] = None
     away: Tuple[CuratorRecord, ...] = ()
+    attestations: Mapping[str, CuratorRecord] = field(default_factory=dict)
 
     def is_counted(self, author_key: str) -> bool:
         return author_key in self.counted
@@ -92,6 +96,10 @@ class CuratorView:
     def verdict(self, identifier: str) -> Optional[CuratorStatement]:
         record = self.verdicts.get(identifier)
         return record.kind if record else None
+
+    def attestation(self, identifier: str) -> Optional[CuratorRecord]:
+        """The curator's current stage attestation for *identifier*, if any."""
+        return self.attestations.get(identifier)
 
     def rejected(self, identifier: str) -> bool:
         return self.verdict(identifier) is CuratorStatement.REJECTION
@@ -162,7 +170,8 @@ def build_view(manifest: Optional[key_manifest.KeyManifest], verified_rows: Iter
     return CuratorView(manifest=manifest, verdicts=_current_verdicts(records),
                        counted=_counted_authors(records, today or _today()),
                        backlog=_latest(r for r in records if r.kind is CuratorStatement.BACKLOG),
-                       away=tuple(r for r in records if r.kind is CuratorStatement.AWAY))
+                       away=tuple(r for r in records if r.kind is CuratorStatement.AWAY),
+                       attestations=_current_attestations(records))
 
 
 def _current_verdicts(records: Iterable[CuratorRecord]) -> Dict[str, CuratorRecord]:
@@ -172,6 +181,17 @@ def _current_verdicts(records: Iterable[CuratorRecord]) -> Dict[str, CuratorReco
             by_order[statement_order.OrderedStatement(record.identifier, record.kind, record.sequence)] = record
     current = statement_order.current_by_threat(by_order)
     return {threat: by_order[ordered] for threat, ordered in current.items()}
+
+
+def _current_attestations(records: Iterable[CuratorRecord]) -> Dict[str, CuratorRecord]:
+    """The highest-sequence attestation per threat: a replayed older one loses."""
+    current: Dict[str, CuratorRecord] = {}
+    for record in records:
+        if record.kind is CuratorStatement.ATTESTATION:
+            held = current.get(record.identifier)
+            if held is None or record.sequence > held.sequence:
+                current[record.identifier] = record
+    return current
 
 
 def _counted_authors(records: Iterable[CuratorRecord], today: str) -> Dict[str, CountedAuthor]:

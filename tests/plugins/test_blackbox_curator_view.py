@@ -223,3 +223,27 @@ def test_an_unlisted_authors_dispute_weighs_nothing():
                 VerifiedDispute("s2", THREAT, unlisted, "0x6b865327cda5d374298777f79af02ba0b90512d5", "wrong", "2026-10-02"),
                 VerifiedDispute("s3", "ioc:domain:b.example", unlisted, "0x6b865327cda5d374298777f79af02ba0b90512d5", "wrong", "2026-10-02")]
     assert cv.counted_dispute_weight(disputes, view) == {THREAT: 1}
+
+
+# ------------------------------------------------------------------ R3-attest
+
+
+def test_the_newest_attestation_wins_and_a_replayed_older_one_loses(trust, keys, manifest):
+    two = keys["curators"][:2]
+    node = _Node([_manifest_row(manifest, keys["root"])],
+                 community_statements=[_curator_row(Kind.ATTESTATION, THREAT, {"stage": "corroborated"}, two, manifest, graph=GRAPH, sequence=4),
+                                       _curator_row(Kind.ATTESTATION, THREAT, {"stage": "held"}, two, manifest, graph=GRAPH, sequence=2)])
+    view = read_curator_view(node, CFG)
+    assert view.attestation(THREAT).field("stage") == "corroborated" and view.attestation(THREAT).sequence == 4
+    assert view.verdict(THREAT) is None                                           # an attestation is not a verdict
+
+
+def test_one_curator_key_cannot_attest_and_the_payload_is_closed(trust, keys, manifest):
+    one = keys["curators"][:1]
+    node = _Node([_manifest_row(manifest, keys["root"])],
+                 community_statements=[_curator_row(Kind.ATTESTATION, THREAT, {"stage": "corroborated"}, one, manifest, graph=GRAPH)])
+    assert read_curator_view(node, CFG).attestation(THREAT) is None
+    with pytest.raises(ValueError):
+        cs.sign_statement(Kind.ATTESTATION, THREAT, sequence=1, fields={"stage": "rejected"}, key=one[0], manifest=manifest, graph=GRAPH)
+    with pytest.raises(ValueError):
+        cs.sign_statement(Kind.ATTESTATION, THREAT, sequence=1, fields={"stage": "held", "note": "x"}, key=one[0], manifest=manifest, graph=GRAPH)

@@ -73,6 +73,8 @@ def _add_propose(verbs_: Any) -> None:
     what.add_argument("--verdict", nargs=2, metavar=("KIND", "IDENTIFIER"),
                       help="confirmation | rejection | revocation | deferral | in-review | deferral-lapsed")
     what.add_argument("--nominate", metavar="KEY_HEX", help="counted-author entry for a reporter key")
+    what.add_argument("--attest", nargs=2, metavar=("STAGE", "IDENTIFIER"),
+                      help="stage attestation (R3-attest): reported | held | corroborated | deferred")
     what.add_argument("--pause", action="store_true", help="pause community ingest (needs --until)")
     p.add_argument("--severity", default="critical")
     p.add_argument("--evidence", default="", help="item 1: advisory:<id> | registry-action:<url> | reproduced:<sha256>")
@@ -205,6 +207,9 @@ def _propose(args: argparse.Namespace) -> int:
         kind = CuratorStatement(f"blackbox.{args.verdict[0]}")
         fields = {"reason": args.reason} if args.reason else {}
         proposal = verbs.propose_statement(ctx, store, kind=kind, identifier=args.verdict[1], fields=fields, evidence=args.evidence)
+    elif args.attest:
+        proposal = verbs.propose_statement(ctx, store, kind=CuratorStatement.ATTESTATION, identifier=args.attest[1],
+                                           fields={"stage": args.attest[0]}, evidence=args.evidence)
     elif args.nominate:
         fields = {"listed": "no" if args.delist else "yes", "class": args.author_class, "org": args.org,
                   "expires": args.expires, "address": args.address.lower()}

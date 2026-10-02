@@ -66,6 +66,7 @@ def graph_tier_item(item: Mapping[str, Any], *, community: bool) -> Dict[str, An
             "lastSeen": item.get("lastSeen"),
             "stage": safe_text(item.get("stage"), 16),
             "stageReason": safe_text(item.get("stageReason"), 200),
+            "stageSource": safe_text(item.get("stageSource") or "local", 16),   # R3-attest: local | curator
             "enforcement": safe_text(item.get("enforcement"), 16),
             "disputed": safe_text(item.get("disputed"), 4),
             # R5: "no" = the network copies expired and this node keeps the threat locally for a while.

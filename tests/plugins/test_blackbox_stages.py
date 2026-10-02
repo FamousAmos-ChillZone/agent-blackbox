@@ -195,3 +195,37 @@ def test_aggregation_carries_the_signers_a_stage_needs():
                                     ReportVerifier(NETWORK, GRAPH))
     rule = aggregate_community_reports(reports, {})[0]
     assert rule.authors == tuple(sorted((one.author, two.author)))
+
+
+# ------------------------------------------------------------------ R3-attest: readers prefer the curator's stage
+
+
+def _attested(stage, sequence=1, identifier="dep:npm:x@1", **view_kw):
+    from plugins.blackbox.community.statements.curator_statements import CuratorRecord
+    record = CuratorRecord(kind=Kind.ATTESTATION, identifier=identifier, sequence=sequence, day="2026-10-02",
+                          fields=(("stage", stage),), signers=frozenset())
+    base = _view(**view_kw)
+    return cv.CuratorView(counted=base.counted, attestations={identifier: record})
+
+
+def test_an_attested_stage_beats_the_local_one_and_says_so():
+    """Every node shows the curator's stage: unlisted authors locally say REPORTED/monitor,
+    the attestation says CORROBORATED — the reader prefers it, at flag level, source 'curator'."""
+    result = _stage("dep:npm:x@1", _keys("u", 1), _attested("corroborated"))
+    assert (result.stage, result.enforcement, result.source) == (Stage.CORROBORATED, Enforcement.FLAG, "curator")
+    assert "statement #1" in result.reason and result.counted == 0
+    held = _stage("dep:npm:x@1", _keys("p", 3), _attested("held", partners=[(k, f"org{i}") for i, k in enumerate(_keys("p", 3))]))
+    assert (held.stage, held.enforcement) == (Stage.HELD, Enforcement.MONITOR)      # an attestation can also lower
+    reported = _stage("dep:npm:x@1", _keys("u", 1), _attested("reported"))
+    assert reported.enforcement is Enforcement.MONITOR                               # reported with no counted weight monitors
+
+
+def test_terminal_verdicts_expiry_and_disputes_still_dominate_an_attestation():
+    keys = _keys("p", 3)
+    partners = [(k, f"org{i}") for i, k in enumerate(keys)]
+    assert _stage("dep:npm:x@1", keys, _attested("corroborated", partners=partners), verdict=Kind.REJECTION).stage is Stage.REJECTED
+    assert _stage("dep:npm:x@1", keys, _attested("corroborated", partners=partners), verdict=Kind.REVOCATION).stage is Stage.REVOKED
+    assert _stage("ioc:ip:203.0.113.7", keys, _attested("corroborated", identifier="ioc:ip:203.0.113.7", partners=partners),
+                  days=48).stage is Stage.EXPIRED                                    # the reader's own clock still expires
+    decayed = _stage("dep:npm:x@1", keys, _attested("corroborated", partners=partners), dispute_weight=3)
+    assert (decayed.stage, decayed.enforcement, decayed.disputed) == (Stage.CORROBORATED, Enforcement.MONITOR, True)

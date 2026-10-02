@@ -46,7 +46,8 @@ class CuratorStatement(Enum):
 
     PROMOTION = "blackbox.promotion"             # a threat enters the verified tier (raises)
     PAUSE = "blackbox.pause"                     # community ingest paused — the two-key pause flag (raises; KI-118)
-    CONFIRMATION = "blackbox.confirmation"       # curator confirms a community threat (stage attestation; raises)
+    CONFIRMATION = "blackbox.confirmation"       # curator confirms a community threat (raises)
+    ATTESTATION = "blackbox.stage-attestation"   # the curator's stage for a threat; readers prefer it (R3-attest; raises)
     COUNTED_AUTHORS = "blackbox.counted-authors"  # the Phase 1 counted-author list (raises; removal = denylist)
     BACKLOG = "blackbox.backlog"                 # SLA suspended for some lanes (suppresses an alarm; raises)
     REVOCATION = "blackbox.revocation"           # a verified threat is withdrawn (reduces; terminal)
@@ -80,6 +81,7 @@ class CuratorStatement(Enum):
 _TERMINAL = frozenset({CuratorStatement.REVOCATION, CuratorStatement.REJECTION})
 #: Statements that raise enforcement or suppress an alarm (KI-134).
 _RAISING = frozenset({CuratorStatement.PROMOTION, CuratorStatement.PAUSE, CuratorStatement.CONFIRMATION,
+                      CuratorStatement.ATTESTATION,
                       CuratorStatement.COUNTED_AUTHORS, CuratorStatement.BACKLOG})
 #: The only statements one curator key may make alone.
 _SINGLE_KEY = frozenset({CuratorStatement.IN_REVIEW, CuratorStatement.DEFERRAL, CuratorStatement.DEFERRAL_LAPSED,

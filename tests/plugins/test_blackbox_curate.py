@@ -321,3 +321,22 @@ def test_publish_to_verified_memory_seals_then_publishes():
     quads = [{"subject": "urn:x", "predicate": constants.IDENTIFIER_PRED, "object": '"dep:npm:x@1"'}]
     node_routes.publish_to_verified_memory(node, VM_GRAPH, "threat-x", quads)
     assert node.sealed[0][1] == "threat-x" and node.vm_published[0][1] == "/api/knowledge-assets/threat-x/vm/publish"
+
+
+def test_a_stage_attestation_needs_two_keys_and_lands_in_the_community_graph(monkeypatch, tmp_path, curators):
+    """R3-attest: `curate propose --attest corroborated <id>` → second key approves → shared to the community graph."""
+    node = FakeNode()
+    _machine(monkeypatch, tmp_path, "A", curators["a"])
+    proposal = verbs.propose_statement(_ctx(node, curators["manifest"]), ProposalStore(), kind=Kind.ATTESTATION,
+                                       identifier=THREAT, fields={"stage": "corroborated"})
+    assert proposal.kind == Kind.ATTESTATION.value and node.shared == []           # one key: nothing published
+    _machine(monkeypatch, tmp_path, "B", curators["b"])
+    store_b = ProposalStore()
+    store_b.save(proposal)
+    _published, outcome = verbs.approve(_ctx(node, curators["manifest"]), store_b, proposal.id, evidence="", typed_code=None, yes=True)
+    assert outcome.startswith("published to " + COMMUNITY)
+    (graph, name, quads), = node.shared
+    assert graph == COMMUNITY and name.startswith("curator-stage-attestation-")
+    envelope = signing.from_text(json.loads(next(q["object"] for q in quads if q["predicate"] == constants.SIGNED_STATEMENT_PRED)))
+    assert envelope.payload["stage"] == "corroborated"
+    assert len(curators["manifest"].curator_signers(envelope, statement_type=Kind.ATTESTATION.value, graph=COMMUNITY)) == 2

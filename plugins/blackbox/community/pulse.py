@@ -32,11 +32,12 @@ from ..kernel.dkg_client import DkgClient, extract_binding
 logger = logging.getLogger(__name__)
 
 #: One grouped aggregate over the community graph's shared memory: per statement
-#: kind (reports, retractions, disputes, digests) how many there are and the
+#: kind (reports, retractions, disputes, digests, curator statements such as
+#: stage attestations — R3-attest) how many there are and the
 #: newest subject — so a retraction or a dispute changes the fingerprint too,
 #: not only a new report (bench finding 2026-10-02). Kinds absent from the
 #: graph simply return no row.
-_STATEMENT_KINDS = ("ThreatReport", "Retraction", "FalsePositive", "SightingDigest")
+_STATEMENT_KINDS = ("ThreatReport", "Retraction", "FalsePositive", "SightingDigest", "CuratorStatement")
 _FINGERPRINT_SPARQL = (
     "PREFIX g: <http://umanitek.ai/ontology/guardian/> "
     "SELECT ?t (COUNT(DISTINCT ?r) AS ?n) (MAX(STR(?r)) AS ?last) WHERE { "

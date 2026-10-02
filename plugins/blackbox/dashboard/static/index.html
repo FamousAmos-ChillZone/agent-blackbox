@@ -4237,7 +4237,7 @@
             color: CATS[ck].color, ring: SEV_COLOR[sev] || SEV_COLOR.info,
             severity: sev, identifier: t.identifier || "", name: t.name || "", val: 5,
             tier: tier, stage: t.stage || "", stageReason: t.stageReason || "", enforcement: t.enforcement || "",
-            networkLive: t.networkLive || ""
+            networkLive: t.networkLive || "", stageSource: t.stageSource || "local"
           });
           links.push({ source: nodes[nodes.length - 1].id, target: parentId, kind: "leaf" });
         });
@@ -4838,7 +4838,7 @@
         '<span class="t-cat">' + esc(meta.name) + '</span>' +
       '</div>' +
       (tmeta.length ? '<div class="t-cat">' + esc(tmeta.join(" · ")) + '</div>' : '') +
-      (node.stage ? '<div class="t-cat">stage: ' + esc(node.stage) + ' (local) · ' + esc(node.enforcement || "") +
+      (node.stage ? '<div class="t-cat">stage: ' + esc(node.stage) + ' (' + esc(node.stageSource || "local") + ') · ' + esc(node.enforcement || "") +
         (node.stageReason ? ' — ' + esc(node.stageReason) : '') + '</div>' : '') +
       (node.networkLive === "no" ? '<div class="t-cat">kept locally — its network copies expired; this node keeps a counted threat up to 90 days</div>' : '') +
       (heatByIdentifier[node.identifier] ? '<div class="t-cat">seen by ~' + num(heatByIdentifier[node.identifier].agents) +

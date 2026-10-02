@@ -49,9 +49,10 @@ class _Graph:
     def context_graphs(self):
         return [{"id": GRAPH, "subscribed": True, "synced": True}]
 
-    def __init__(self, reports=(), disputes=()):
+    def __init__(self, reports=(), disputes=(), statements=()):
         self.reports = list(reports)
         self.disputes = list(disputes)
+        self.statements = list(statements)                         # curator statements in shared memory (R3-attest)
         self.probes = 0
         self.reads = 0                                             # report-page reads (the costly part)
 
@@ -59,7 +60,8 @@ class _Graph:
         if "GROUP BY ?t" in sparql:                                 # the grouped fingerprint
             self.probes += 1
             rows = []
-            for kind, items in (("ThreatReport", self.reports), ("FalsePositive", self.disputes)):
+            for kind, items in (("ThreatReport", self.reports), ("FalsePositive", self.disputes),
+                                ("CuratorStatement", self.statements)):
                 if items:
                     rows.append({"t": f"http://umanitek.ai/ontology/guardian/{kind}", "n": str(len(items)),
                                  "last": max(r["r"] for r in items)})
@@ -244,3 +246,14 @@ def test_get_runs_the_pulse_instead_of_a_refresh_when_the_cache_is_fresh(monkeyp
     monkeypatch.setattr(pulse_beat, "pulse", lambda config=None: pulses.append(config) or False)
     assert ruleset.get(cfg) is rs
     assert pulses == [cfg]
+
+
+def test_a_curator_statement_in_shared_memory_changes_the_fingerprint_too():
+    """R3-attest: an attestation must reach readers on the pulse, not an hour later."""
+    pulse = pulse_module.CommunityPulse(clock=_Clock())
+    cfg = BlackboxConfig(community_graph_id=GRAPH)
+    graph = _Graph([signed_row(THREAT, Reporter("0xa"))])
+    assert pulse.changed(graph, cfg) is False
+    graph.statements.append({"r": "urn:guardian:curator:stage-attestation:abc:1"})
+    assert pulse.changed(graph, cfg) is True and pulse.report_count == 1
+    assert "CuratorStatement=1:" in pulse_module.fingerprint(graph, cfg)

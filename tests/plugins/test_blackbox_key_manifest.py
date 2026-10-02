@@ -154,7 +154,8 @@ def test_replayed_lower_sequence_statements_lose_to_terminal_ones():
 def test_statement_types_know_whether_they_raise_or_end_enforcement():
     kinds = order.CuratorStatement
     assert {k for k in kinds if k.raises_enforcement} == {kinds.PROMOTION, kinds.PAUSE, kinds.CONFIRMATION,
-                                                         kinds.COUNTED_AUTHORS, kinds.BACKLOG}
+                                                         kinds.COUNTED_AUTHORS, kinds.BACKLOG,
+                                                         kinds.ATTESTATION}   # R3-attest: an attested stage can raise to flag
     assert {k for k in kinds if k.terminal} == {kinds.REVOCATION, kinds.REJECTION}
     assert {k for k in kinds if not k.needs_quorum} == {kinds.IN_REVIEW, kinds.DEFERRAL, kinds.DEFERRAL_LAPSED, kinds.AWAY}
 

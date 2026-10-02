@@ -160,7 +160,29 @@ def stage_for(identifier: str, authors: Iterable[str], first_seen: float, view: 
     """
     clusters = clusters_for(authors, view)
     result = _stage(identifier, first_seen, clusters, dispute_weight, verdict, now)
+    attested = view.attestation(identifier)
+    if attested is not None and result.stage not in _NOT_ATTESTABLE:
+        # R3-attest: readers prefer the curator's attested stage. Terminal verdicts
+        # (rejected / revoked) and this reader's own lifetime expiry still dominate,
+        # and counted disputes still reduce — reductions always apply (LES-016).
+        result = _apply_disputes(_attested(attested.field("stage"), attested.sequence, clusters), clusters, dispute_weight)
     return replace(result, counted=clusters.total)
+
+
+#: Stages no attestation overrides: terminal verdicts and the reader's own expiry.
+_NOT_ATTESTABLE = frozenset({Stage.REVOKED, Stage.REJECTED, Stage.EXPIRED})
+
+
+def _attested(stage_value: str, sequence: int, clusters: Clusters) -> StageResult:
+    """The curator's attested stage with the enforcement that stage carries
+    locally: CORROBORATED flags, REPORTED flags only with counted weight,
+    everything else monitors — a stage below VERIFIED never blocks."""
+    stage = Stage(stage_value)
+    if stage is Stage.CORROBORATED or (stage is Stage.REPORTED and clusters.total > 0):
+        enforcement = Enforcement.FLAG
+    else:
+        enforcement = Enforcement.MONITOR
+    return StageResult(stage, enforcement, f"attested by the curator (statement #{sequence})", source="curator")
 
 
 def _stage(identifier: str, first_seen: float, clusters: "Clusters", dispute_weight: int,

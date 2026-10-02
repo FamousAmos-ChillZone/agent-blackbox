@@ -1,8 +1,8 @@
 """Curator statements on the wire — build, sign, and parse (Refine R2).
 
 The curator's verdicts and notices — confirmation, rejection, revocation,
-in-review, deferral-lapsed, backlog, away, and the Phase 1 counted-author
-list — travel as ONE kind of graph asset: a ``g:CuratorStatement`` subject
+in-review, deferral-lapsed, backlog, away, the Phase 1 counted-author
+list and the Phase 2 stage attestation (R3-attest: ``{stage}``) — travel as ONE kind of graph asset: a ``g:CuratorStatement`` subject
 carrying the threat identifier and a signed envelope (:mod:`..kernel.signing`).
 Everything a reader acts on is inside the SIGNED payload; the one shown field
 (the identifier) must agree with it.
@@ -106,6 +106,17 @@ def _days(*names: str) -> Callable[[Mapping[str, str]], Optional[Dict[str, str]]
     return check
 
 
+#: Stages a curator may attest (R3-attest). Terminal ones travel as verdicts
+#: (rejection / revocation) and dominate any attestation; EXPIRED is the
+#: reader's own clock. Mirrors community.stages.Stage without importing it
+#: (statements must not depend on the stage machine).
+ATTESTABLE_STAGES = frozenset({"reported", "held", "corroborated", "deferred"})
+
+
+def _attested_stage(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
+    return dict(extras) if set(extras) == {"stage"} and extras["stage"] in ATTESTABLE_STAGES else None
+
+
 def _backlog(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
     lanes = extras.get("lanes", "").split(",")
     ok = set(extras) == {"lanes", "until"} and bool(lanes) and set(lanes) <= _LANES and _DAY.fullmatch(extras["until"])
@@ -138,6 +149,7 @@ _VALIDATORS: Dict[CuratorStatement, Callable[[Mapping[str, str]], Optional[Dict[
     CuratorStatement.REVOCATION: _reason_from(constants.REVOCATION_REASONS),
     CuratorStatement.REJECTION: _reason_from(constants.REJECTION_REASONS),
     CuratorStatement.CONFIRMATION: _no_extras,
+    CuratorStatement.ATTESTATION: _attested_stage,
     CuratorStatement.IN_REVIEW: _no_extras,
     CuratorStatement.DEFERRAL: _no_extras,
     CuratorStatement.DEFERRAL_LAPSED: _no_extras,
