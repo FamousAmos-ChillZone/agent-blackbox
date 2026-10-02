@@ -30,6 +30,8 @@ from typing import Any, Dict, List, Set, Tuple
 
 from ..sync import state as sync_state
 from ..sync import read_durable_progress
+from . import community_routes
+from .safe_payloads import safe_text
 
 logger = logging.getLogger(__name__)
 
@@ -148,43 +150,6 @@ def _graph_source_count(rs: Any, source: str) -> int:
     if callable(counter):
         return int(counter(source) or 0)
     return int(rs.source_count(source) or 0)
-
-
-def _safe_text(value: Any, limit: int = 256) -> str:
-    """Sanitize a community/graph-derived string for any client payload.
-
-    THE one sanitization implementation for the dashboard (the escaping twin
-    of audit's redaction discipline, per LES-001/002): HTML-escaped so a
-    hostile report can never smuggle markup to a renderer, control
-    characters stripped so it can't drive a terminal, length clamped so it
-    can't blow up a layout or a log. Every community-authored value served
-    by any endpoint passes through here.
-    """
-    import html as _html
-
-    text = str(value or "")
-    cleaned = "".join(ch for ch in text if ch.isprintable())
-    return _html.escape(cleaned[:limit], quote=True)
-
-
-def _sanitized_ledger(limit: int = 50) -> List[Dict[str, Any]]:
-    """This node's outbound reports ledger, sanitized for serving."""
-    from .. import audit as _audit
-
-    rows = []
-    try:
-        for row in _audit.read_share_ledger(limit=limit):
-            rows.append({
-                "ts": _safe_text(row.get("ts"), 32),
-                "identifier": _safe_text(row.get("identifier")),
-                "category": _safe_text(row.get("category"), 32),
-                "severity": _safe_text(row.get("severity"), 16),
-                "ok": bool(row.get("ok")),
-                "outcome": _safe_text(row.get("outcome") or ("accepted" if row.get("ok") else "failed"), 32),
-            })
-    except Exception:  # pragma: no cover - fail open
-        return []
-    return rows
 
 
 def _graph_entries(rs: Any, source: str) -> List[Dict[str, Any]]:
@@ -1780,8 +1745,8 @@ def create_app(*, manage_blackbox: bool = False):
         for (fw, _addr), row in found.items():  # local agents' own (verified) report counts
             row["reports"] = max(row.get("reports", 0), own_by_framework.get(fw, 0))
         community_out = [
-            {**agent, "address": _safe_text(agent["address"], 128),
-             "frameworks": [_safe_text(fw, 32) for fw in agent["frameworks"]]}
+            {**agent, "address": safe_text(agent["address"], 128),
+             "frameworks": [safe_text(fw, 32) for fw in agent["frameworks"]]}
             for agent in community.community_agents(reports, own_author)
         ]
 
@@ -2018,10 +1983,10 @@ def create_app(*, manage_blackbox: bool = False):
                 # serving boundary, reporterCount + recency carried for the UI.
                 all_threats = [
                     {
-                        "identifier": _safe_text(item.get("identifier")),
+                        "identifier": safe_text(item.get("identifier")),
                         "category": item.get("category") or "other",
                         "severity": str(item.get("severity") or "info").lower(),
-                        "name": _safe_text(item.get("name") or ""),
+                        "name": safe_text(item.get("name") or ""),
                         "reporterCount": int(item.get("reporterCount") or 0),
                         "lastSeen": item.get("lastSeen"),
                     }
@@ -2116,60 +2081,7 @@ def create_app(*, manage_blackbox: bool = False):
 
         return _swr("graph:" + tier, _load, {"tier": tier, "threats": []})
 
-    @app.get("/api/community-stats")
-    def community_stats() -> Any:
-        """The launch instruments: contributing agents, corroboration, health."""
-        cfg = load_blackbox_config()
-        rs = ruleset.peek(cfg)
-        community_rules = getattr(rs, "community", {}) or {}
-        now = time.time()
-        corroborated = sum(1 for r in community_rules.values() if int(r.get("reporterCount") or 0) >= 2)
-        # Reports-today from OUR ingest observations (KI-012), not
-        # reporter-supplied timestamps.
-        fresh_today = sum(
-            1 for r in community_rules.values()
-            if float(r.get("lastSeen") or 0) >= now - 86400
-            and float(r.get("firstSeen") or 0) >= now - 86400
-        )
-        ledger = _sanitized_ledger(1)
-        stats = {
-            "configured": bool(getattr(cfg, "community_graph_id", "")),
-            "sharing_enabled": bool(getattr(cfg, "community_enabled", False)),
-            "paused": bool(getattr(rs, "community_paused", False)),
-            "community_threats": len(community_rules),
-            "corroborated_2plus": corroborated,
-            "new_today": fresh_today,
-            "last_refresh": rs.synced_at or None,
-            "last_share": ledger[0] if ledger else None,
-            # distinct VERIFIED signers (R0d); None when no community graph is configured
-            "contributing_agents": community.contributing_agent_count(_verified_reports(cfg)) if cfg.community_graph_id else None,
-        }
-
-        return stats
-
-    @app.get("/api/reports")
-    def reports(limit: int = Query(50, ge=1, le=200)) -> Any:
-        # B7 (KI-006): the dead code lives — community corroboration board,
-        # served from the COMMUNITY graph, plus this node's own outbound
-        # ledger so 'what did I contribute' is one call.
-        cfg = load_blackbox_config()
-        if not getattr(cfg, "community_graph_id", ""):
-            return {
-                "reports": [],
-                "sharing_enabled": bool(getattr(cfg, "community_enabled", False)),
-                "outbound": _sanitized_ledger(limit),
-            }
-
-        # Most-reported threats by distinct VERIFIED signers (R0d).
-        board = [
-            {"identifier": _safe_text(t["identifier"]), "reporters": t["reporters"], "severity": _safe_text(t["severity"], 16)}
-            for t in community.most_reported_threats(_verified_reports(cfg), limit)
-        ]
-        return {
-            "reports": board,
-            "sharing_enabled": bool(getattr(cfg, "community_enabled", False)),
-            "outbound": _sanitized_ledger(limit),
-        }
+    community_endpoints = community_routes.register_community_routes(app, verified_reports=_verified_reports)
 
     # Predicate IRI -> friendly detail key, for the single-threat lookup.
     _DETAIL_FIELDS = {
@@ -2215,13 +2127,13 @@ def create_app(*, manage_blackbox: bool = False):
             rs = ruleset.peek(cfg)
             rule = (getattr(rs, "community", {}) or {}).get(identifier)
             if not rule:
-                return {"identifier": _safe_text(identifier), "tier": "community", "found": False}
+                return {"identifier": safe_text(identifier), "tier": "community", "found": False}
             detail = {
-                _safe_text(k, 64): (_safe_text(v) if isinstance(v, str) else v)
+                safe_text(k, 64): (safe_text(v) if isinstance(v, str) else v)
                 for k, v in rule.items()
             }
             detail.update({
-                "identifier": _safe_text(identifier),
+                "identifier": safe_text(identifier),
                 "tier": "community",
                 "found": True,
                 "reporters": int(rule.get("reporterCount") or 0),
@@ -2347,7 +2259,7 @@ def create_app(*, manage_blackbox: bool = False):
                 for _ in range(2):
                     graph_status()
                     graph("public")
-                    reports(50)
+                    community_endpoints.reports(50)
                     agents()
                     time.sleep(2.5)
             except Exception as exc:  # pragma: no cover - best effort
