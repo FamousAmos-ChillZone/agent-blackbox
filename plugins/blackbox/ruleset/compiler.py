@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterable, List
 from ..kernel import constants
 from . import anchors
 from ..kernel.dkg_client import DkgClient, extract_binding
@@ -128,6 +128,21 @@ class Ruleset:
             yield "skill", r
         for r in self.ioc.values():
             yield "ioc", r
+
+    def drop_identifiers(self, identifiers: "Iterable[str]") -> int:
+        """Remove every rule whose identifier is in *identifiers* (Refine R2:
+        a curator revocation withdraws a verified rule). Returns how many
+        rules were removed."""
+        gone = set(identifiers)
+        if not gone:
+            return 0
+        before = sum(1 for _ in self.iter_rules())
+        for name in ("injection", "escalation", "fileaccess", "skill", "graph_threats"):
+            setattr(self, name, [r for r in getattr(self, name) if r.get("identifier") not in gone])
+        self.dependency = {k: r for k, r in self.dependency.items() if r.get("identifier") not in gone}
+        self.ioc = {k: r for k, r in self.ioc.items() if r.get("identifier", k) not in gone}
+        self._graph_entries_cache.clear()
+        return before - sum(1 for _ in self.iter_rules())
 
     def source_count(self, source: str) -> int:
         """How many rules are tagged with *source* (``public`` | ``community``)."""

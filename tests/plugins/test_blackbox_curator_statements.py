@@ -68,11 +68,17 @@ def test_a_two_key_revocation_round_trips(keys, manifest):
     assert record.field("reason") == "false-positive" and len(record.signers) == 2
 
 
-def test_raising_statements_need_the_threshold_advisory_ones_one_key(keys, manifest):
+def test_quorum_statements_need_the_threshold_single_key_notices_one_key(keys, manifest):
+    """Plan §09: promotion, rejection, revocation, the counted-author list and
+    anything raising enforcement need 2-of-3; only in-review, deferral-lapsed
+    and away notices are single-key (one key can never reject or revoke alone)."""
     one = keys[:1]
     raising = [(Kind.CONFIRMATION, THREAT, {}),
-               (Kind.COUNTED_AUTHORS, "author:0x" + "a" * 40,
-                {"listed": "yes", "class": "established", "org": "", "expires": "2027-01-01"}),
+               (Kind.REJECTION, THREAT, {"reason": "duplicate"}),
+               (Kind.REVOCATION, THREAT, {"reason": "false-positive"}),
+               (Kind.COUNTED_AUTHORS, "author:" + "a" * 64,
+                {"listed": "yes", "class": "established", "org": "", "expires": "2027-01-01",
+                 "address": "0x" + "a" * 40}),
                (Kind.BACKLOG, "curator", {"lanes": "3,4,5", "until": "2026-10-09"})]
     for kind, identifier, fields in raising:
         assert cs.parse_statement(_row(_statement(kind, identifier, fields, one, manifest)), manifest,
@@ -80,7 +86,6 @@ def test_raising_statements_need_the_threshold_advisory_ones_one_key(keys, manif
         assert cs.parse_statement(_row(_statement(kind, identifier, fields, keys[:2], manifest)), manifest,
                                   graph=VM_GRAPH) is not None, kind
     advisory = [(Kind.IN_REVIEW, THREAT, {}), (Kind.DEFERRAL_LAPSED, THREAT, {}),
-                (Kind.REJECTION, THREAT, {"reason": "duplicate"}),
                 (Kind.AWAY, "curator", {"key": signing.public_key_hex(keys[0]), "from": "2026-10-02",
                                         "until": "2026-10-05"})]
     for kind, identifier, fields in advisory:
@@ -99,7 +104,7 @@ def test_statements_without_a_trusted_manifest_or_from_outside_keys_are_ignored(
 
 
 def test_a_statement_signed_for_one_graph_does_not_count_in_another(keys, manifest):
-    community = _statement(Kind.REJECTION, THREAT, {"reason": "benign"}, keys[:1], manifest, graph=COMMUNITY)
+    community = _statement(Kind.REJECTION, THREAT, {"reason": "benign"}, keys[:2], manifest, graph=COMMUNITY)
     assert cs.parse_statement(_row(community), manifest, graph=COMMUNITY) is not None
     assert cs.parse_statement(_row(community), manifest, graph=VM_GRAPH) is None
 
@@ -114,10 +119,10 @@ def test_a_shown_identifier_or_subject_that_disagrees_is_ignored(keys, manifest)
     (Kind.REVOCATION, THREAT, {"reason": "i changed my mind"}),             # not a closed reason
     (Kind.REJECTION, THREAT, {"reason": "benign", "note": "free text"}),    # an extra field
     (Kind.CONFIRMATION, "not an identifier", {}),
-    (Kind.COUNTED_AUTHORS, "author:0xNOTANADDRESS",
-     {"listed": "yes", "class": "established", "org": "", "expires": "2027-01-01"}),
-    (Kind.COUNTED_AUTHORS, "author:0x" + "b" * 40,                       # a partner must name its org
-     {"listed": "yes", "class": "partner", "org": "", "expires": "2027-01-01"}),
+    (Kind.COUNTED_AUTHORS, "author:0x" + "a" * 40,                       # an ADDRESS is not an identity (LES-014)
+     {"listed": "yes", "class": "established", "org": "", "expires": "2027-01-01", "address": "0x" + "a" * 40}),
+    (Kind.COUNTED_AUTHORS, "author:" + "b" * 64,                         # a partner must name its org
+     {"listed": "yes", "class": "partner", "org": "", "expires": "2027-01-01", "address": "0x" + "b" * 40}),
     (Kind.BACKLOG, "curator", {"lanes": "9", "until": "2026-10-09"}),
     (Kind.AWAY, "curator", {"key": "short", "from": "2026-10-02", "until": "2026-10-05"}),
     (Kind.PROMOTION, THREAT, {}),                                            # promotions are R6's vocabulary

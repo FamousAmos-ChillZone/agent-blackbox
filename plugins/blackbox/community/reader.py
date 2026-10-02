@@ -14,14 +14,14 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, extract_binding
 from ..kernel import sparql_text
-from .statements import author_budget, disputes, retractions, tombstones
+from .statements import author_budget, curator_statements, curator_view, disputes, retractions, tombstones
 from .report_signer import network_environment
 from .verification import ReportVerifier, VerifiedReport, verify_report_rows
 
@@ -139,7 +139,13 @@ def fetch_community_report_rows(client: DkgClient, cfg: BlackboxConfig) -> Optio
 
 def page_community_rows(client: DkgClient, cfg: BlackboxConfig,
                         sparql_after: Callable[[str], str]) -> Optional[List[Dict[str, Any]]]:
-    """Page every row a community query returns; ``sparql_after(cursor)``
+    """Page a community-graph query (shared memory); see :func:`page_rows`."""
+    return page_rows(client, cfg.community_graph_id, constants.VIEW_SHARED_WORKING_MEMORY, sparql_after)
+
+
+def page_rows(client: DkgClient, graph: str, view: str,
+              sparql_after: Callable[[str], str]) -> Optional[List[Dict[str, Any]]]:
+    """Page every row a query returns from *graph* / *view*; ``sparql_after(cursor)``
     builds one page's query (subjects after *cursor*, ordered, LIMITed).
 
     Same cursor discipline as the verified pager (monotonic subject cursor,
@@ -151,12 +157,7 @@ def page_community_rows(client: DkgClient, cfg: BlackboxConfig,
     after = ""
     sentinel = object()
     while len(rows) < _COMMUNITY_MAX_ROWS:
-        page = client.query(
-            sparql_after(after),
-            cfg.community_graph_id,
-            view=constants.VIEW_SHARED_WORKING_MEMORY,
-            on_error=sentinel,
-        )
+        page = client.query(sparql_after(after), graph, view=view, on_error=sentinel)
         if page is sentinel:
             # A failed or malformed page — even after good ones — makes the
             # whole read unavailable: a partial list must never pass as the
@@ -193,7 +194,8 @@ class CommunityRead:
     "no threats". Refine R2: ``disputes`` — verified disputes (display and,
     later, decay; never enforcement); ``held_back`` — statements over an
     author's daily budget; ``pending_tombstones`` — retractions waiting for a
-    report this node has not seen.
+    report this node has not seen; ``curator`` — what the curator has said,
+    verified (reports of a rejected or revoked threat no longer count).
     """
 
     state: ReadState
@@ -202,6 +204,7 @@ class CommunityRead:
     disputes: Tuple[disputes.VerifiedDispute, ...] = ()
     held_back: int = 0
     pending_tombstones: int = 0
+    curator: curator_view.CuratorView = field(default_factory=curator_view.CuratorView)
 
     @property
     def available(self) -> bool:
@@ -280,9 +283,37 @@ def _honour_statements(client: DkgClient, cfg: BlackboxConfig, environment: str,
     statements = [author_budget.Statement(item.author, item.subject)
                   for item in (*reports, *found_retractions, *found_disputes)]
     budget = author_budget.AuthorBudget(author_budget.FirstSeenStore()).admit(statements)
-    reports = [r for r in reports if r.subject in budget.admitted]
+    curator = read_curator_view(client, cfg, environment)
+    # A threat the curator rejected or revoked stops counting here (terminal verdicts, R2).
+    reports = [r for r in reports if r.subject in budget.admitted
+               and not (curator.rejected(r.identifier) or r.identifier in curator.revoked)]
     withdrawn, pending = tombstones.applicable_withdrawals(
         [r for r in found_retractions if r.subject in budget.admitted], reports, budget.first_seen, time.time())
     return CommunityRead(ReadState.ROWS, reports=tuple(retractions.apply_retractions(reports, withdrawn)),
                          disputes=tuple(d for d in found_disputes if d.subject in budget.admitted),
-                         held_back=budget.held_back, pending_tombstones=pending)
+                         held_back=budget.held_back, pending_tombstones=pending, curator=curator)
+
+
+def read_curator_view(client: DkgClient, cfg: BlackboxConfig, environment: str = "") -> curator_view.CuratorView:
+    """What the curator has said, verified (Refine R2): an empty view unless
+    this network trusts a curator root and a root-signed key manifest is in
+    the verified graph. Fail-open: an unreadable page contributes nothing
+    (no curator statement can then raise enforcement)."""
+    try:
+        environment = environment or network_environment(client.status())
+    except Exception as exc:  # node unreachable: no curator view this time
+        logger.debug("blackbox: curator view skipped (%s)", exc)
+        return curator_view.CuratorView()
+    roots = curator_view.trusted_roots(environment)
+    if not environment or not roots:
+        return curator_view.CuratorView()
+    verified, memory = cfg.context_graph_id, constants.VIEW_VERIFIABLE_MEMORY
+    manifest = curator_view.newest_trusted_manifest(
+        page_rows(client, verified, memory, curator_view.key_manifests_sparql) or [], environment, verified, roots)
+    if manifest is None:
+        return curator_view.CuratorView()
+    community_rows = (page_community_rows(client, cfg, curator_statements.curator_statements_sparql) or []
+                      if cfg.community_graph_id else [])
+    return curator_view.build_view(manifest, page_rows(client, verified, memory,
+                                                       curator_statements.curator_statements_sparql) or [],
+                                   community_rows, verified_graph=verified, community_graph=cfg.community_graph_id)

@@ -49,6 +49,7 @@ from .reader import (
     fetch_community_report_rows,
     CommunityRead,
     ReadState,
+    read_curator_view,
     read_verified_reports,
 )
 
@@ -76,6 +77,7 @@ __all__ = [
     "network_environment",
     "fetch_community_report_rows",
     "print_community_status",
+    "read_curator_view",
     "read_verified_reports",
     "reports_signed_by",
     "spawn_community_share",

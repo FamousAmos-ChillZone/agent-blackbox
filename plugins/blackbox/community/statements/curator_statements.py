@@ -12,7 +12,9 @@ values). The reduction-only ones — revocation and rejection — use
 :data:`REDUCTION_SCHEMA`, frozen forever, so every reader version accepts them
 (asymmetric safety, LES-016). A statement counts only when the trusted key
 manifest's curator keys signed it: the full threshold for statements that
-raise enforcement (2-of-3, KI-134), one curator key for the others.
+need it (2-of-3 — promotion, rejection, revocation, the counted-author list,
+anything raising enforcement; KI-134), one curator key for in-review,
+deferral-lapsed and away notices.
 
 Every statement is a NEW asset: its subject includes the per-identifier
 sequence number, so nothing is ever re-shared at the same version (KI-103);
@@ -66,8 +68,8 @@ class CuratorRecord:
     """One VERIFIED curator statement.
 
     ``kind`` — its :class:`CuratorStatement`; ``identifier`` — the threat
-    (or ``author:0x…`` for a counted-author entry, ``curator`` for backlog /
-    away); ``sequence`` — the signed per-identifier sequence; ``day`` — the
+    (or ``author:<reporter key hex>`` for a counted-author entry, ``curator``
+    for backlog / away); ``sequence`` — the signed per-identifier sequence; ``day`` — the
     signed UTC day; ``fields`` — the validated payload extras, sorted;
     ``signers`` — the manifest curator keys that signed it.
     """
@@ -117,9 +119,13 @@ def _away(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
 
 
 def _counted_author(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
-    """One counted-author entry: listed yes/no, class, org (partners), expiry."""
-    keys = {"listed", "class", "org", "expires"}
+    """One counted-author entry: listed yes/no, class, org (partners), expiry,
+    and the agent address the key belongs to (display only — the identity is
+    the reporter KEY in the identifier, LES-014)."""
+    keys = {"listed", "class", "org", "expires", "address"}
     if set(extras) != keys or extras["listed"] not in ("yes", "no") or not _DAY.fullmatch(extras["expires"]):
+        return None
+    if not _ADDRESS.fullmatch(extras["address"]):
         return None
     if extras["class"] not in constants.COUNTED_AUTHOR_CLASSES:
         return None
@@ -142,8 +148,8 @@ _VALIDATORS: Dict[CuratorStatement, Callable[[Mapping[str, str]], Optional[Dict[
 
 
 def _identifier_ok(kind: CuratorStatement, identifier: str) -> bool:
-    if kind is CuratorStatement.COUNTED_AUTHORS:
-        return identifier.startswith("author:") and bool(_ADDRESS.fullmatch(identifier[len("author:"):]))
+    if kind is CuratorStatement.COUNTED_AUTHORS:   # "author:<reporter key>" — the signer, never a claimed address
+        return identifier.startswith("author:") and bool(_KEY_HEX.fullmatch(identifier[len("author:"):]))
     if kind in (CuratorStatement.BACKLOG, CuratorStatement.AWAY, CuratorStatement.PAUSE):
         return identifier == "curator"
     try:
@@ -198,6 +204,17 @@ def statement_quads(envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
     ]
 
 
+def manifest_quads(envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
+    """The graph quads for a root-signed key manifest (published in the
+    verified graph): subject ``urn:guardian:key-manifest:<root epoch>:<version>``,
+    a new asset per manifest."""
+    subject = f"urn:guardian:key-manifest:{envelope.root_epoch}:{envelope.sequence}"
+    return [
+        rdf_terms.make_quad(subject, constants.RDF_TYPE, rdf_terms.iri(constants.KEY_MANIFEST_TYPE_IRI)),
+        rdf_terms.make_quad(subject, constants.SIGNED_STATEMENT_PRED, rdf_terms.literal(envelope.to_text())),
+    ]
+
+
 # -- parse (reader side) -----------------------------------------------------
 
 
@@ -226,7 +243,7 @@ def parse_statement(row: Mapping[str, Any], manifest: Optional[KeyManifest], *, 
     if shown != (statement_subject(kind, identifier, envelope.sequence), identifier):
         return None
     signers = manifest.curator_signers(envelope, statement_type=kind.value, graph=graph)
-    needed = manifest.threshold if kind.raises_enforcement else 1
+    needed = manifest.threshold if kind.needs_quorum else 1
     if len(signers) < needed:
         return None
     return CuratorRecord(kind=kind, identifier=identifier, sequence=envelope.sequence, day=day,

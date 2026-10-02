@@ -65,12 +65,22 @@ class CuratorStatement(Enum):
         """True when the statement can make Blackbox block or flag MORE."""
         return self in _RAISING
 
+    @property
+    def needs_quorum(self) -> bool:
+        """True when the statement needs the manifest's full threshold of
+        curator keys (2-of-3). Plan §09: promotion, rejection, revocation, the
+        denylist (counted-author list) and anything raising enforcement or
+        suppressing an alarm. Only in-review, deferral-lapsed and away notices
+        are single-key: they never change enforcement."""
+        return self not in _SINGLE_KEY
+
 
 _TERMINAL = frozenset({CuratorStatement.REVOCATION, CuratorStatement.REJECTION})
-#: Statements that raise enforcement or suppress an alarm need the manifest's
-#: full threshold (2-of-3, KI-134); the others need one curator key.
+#: Statements that raise enforcement or suppress an alarm (KI-134).
 _RAISING = frozenset({CuratorStatement.PROMOTION, CuratorStatement.PAUSE, CuratorStatement.CONFIRMATION,
                       CuratorStatement.COUNTED_AUTHORS, CuratorStatement.BACKLOG})
+#: The only statements one curator key may make alone.
+_SINGLE_KEY = frozenset({CuratorStatement.IN_REVIEW, CuratorStatement.DEFERRAL_LAPSED, CuratorStatement.AWAY})
 
 
 @dataclass(frozen=True)

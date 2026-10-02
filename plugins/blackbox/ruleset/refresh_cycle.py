@@ -24,6 +24,7 @@ from . import disk_cache
 from . import errors
 from . import fetching
 from . import community_tier
+from . import curator_tier
 from . import locks
 from .memory_cache import RulesetCache
 
@@ -212,14 +213,20 @@ def _apply_overlays(rs: compiler.Ruleset, client: Optional[DkgClient], config: B
                     reused: bool = False) -> None:
     """The tiers layered on top of the verified build, on EVERY refresh path.
 
-    The community tier (B5) is applied after the verified build, so public
+    First the curator tier (Refine R2): verified rules the curator revoked are
+    withdrawn — always, with or without a community graph, because a
+    revocation reduces enforcement. Then the community tier (B5), applied
+    after the verified build so public
     rules already occupy their keys (public-beats-community precedence is
     then structural). *reused* = *rs* is a last-good generation being kept
     (its community tier is re-applied in place); otherwise the previous cached
     generation supplies first-seen history and last-good. Entirely fail-open:
     a community problem never degrades the verified ruleset.
     """
-    if client is None or not config.community_graph_id:
+    if client is None:
+        return
+    curator_tier.apply_curator_tier(rs, client, config)
+    if not config.community_graph_id:
         return
     if reused:
         community_tier.reapply_community_tier(rs, client, config)

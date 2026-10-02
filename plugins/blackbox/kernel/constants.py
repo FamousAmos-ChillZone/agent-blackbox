@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Mapping, Tuple
 
 __version__ = "1.1.0"
 
@@ -36,6 +37,16 @@ FALSE_POSITIVE_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}FalsePositive"
 #: A signed curator statement (Refine R2): verdicts, the counted-author list,
 #: backlog and away notices. Its meaning lives in the signed envelope.
 CURATOR_STATEMENT_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}CuratorStatement"
+#: A root-signed curator key manifest (Refine R7a/R2), in the verified graph.
+KEY_MANIFEST_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}KeyManifest"
+
+#: The curator ROOT keys each DKG network trusts (network id -> Ed25519 public
+#: keys, hex). Readers trust only key manifests signed by these. Empty until
+#: the pilot gate names the root custodians (Refine R7b/R13): with no root,
+#: no curator statement counts anywhere. A network listed here can NOT be
+#: overridden at runtime; only unlisted (sandbox) networks accept roots from
+#: the BLACKBOX_CURATOR_ROOT_KEYS environment variable.
+CURATOR_ROOT_KEYS: Mapping[str, Tuple[str, ...]] = {}
 #: A reporter withdrawing its own report (Refine R1, lifecycle RETRACT).
 RETRACTION_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}Retraction"
 
