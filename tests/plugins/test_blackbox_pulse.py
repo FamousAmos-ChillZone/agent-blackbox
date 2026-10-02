@@ -53,6 +53,7 @@ class _Graph:
         self.reports = list(reports)
         self.disputes = list(disputes)
         self.probes = 0
+        self.reads = 0                                             # report-page reads (the costly part)
 
     def query(self, sparql, cg_id, view=None, on_error=None, **kw):
         if "GROUP BY ?t" in sparql:                                 # the grouped fingerprint
@@ -67,6 +68,7 @@ class _Graph:
             served, self.disputes = list(self.disputes), self.disputes
             return served if not kw.get("_served") else []
         if "g:ThreatReport" in sparql and "?identifier" in sparql:
+            self.reads += 1
             served, self.reports = list(self.reports), self.reports    # the pager stops on a short page
             return served if not kw.get("_served") else []
         return []
@@ -166,14 +168,39 @@ def test_a_process_that_starts_with_an_empty_tier_applies_the_reports_already_th
             break
         time.sleep(0.05)
     assert THREAT in refresh_cycle.peek(cfg).community
-    # and a tier that already holds something is NOT re-applied on a mere baseline
+    assert refresh_cycle.peek(cfg).community_fingerprint == pulse_module.fingerprint(graph, cfg)   # KI-208: travels with the tier
+    # KI-208: a NEW process (no probe yet) whose cached tier was applied at a different
+    # fingerprint applies the change on its first beat instead of baselining blind …
     community.PULSE.reset()
-    graph2 = _Graph([signed_row("ioc:domain:other.example", Reporter("0xb"))])
-    monkeypatch.setattr(pulse_beat, "DkgClient", lambda *a, **k: graph2)
+    graph.reports.append(signed_row("ioc:domain:other.example", Reporter("0xb")))
+    community.PULSE._last_probe = 0.0
+    assert pulse_beat.pulse(cfg) is True
+    for _ in range(100):
+        if "ioc:domain:other.example" in refresh_cycle.peek(cfg).community:
+            break
+        time.sleep(0.05)
+    assert "ioc:domain:other.example" in refresh_cycle.peek(cfg).community
+    # … and a new process whose cached tier matches the graph does not re-read it
+    reads_before, probes_before = graph.reads, graph.probes
+    community.PULSE.reset()
     community.PULSE._last_probe = 0.0
     assert pulse_beat.pulse(cfg) is True
     time.sleep(0.5)
-    assert "ioc:domain:other.example" not in refresh_cycle.peek(cfg).community   # waits for a change or the refresh
+    assert graph.probes == probes_before + 1 and graph.reads == reads_before   # the probe only, no report read
+
+
+def test_a_new_process_compares_its_first_probe_against_the_applied_fingerprint():
+    """KI-208 (pure): the cached tier's fingerprint is the baseline for a process with no probe yet."""
+    cfg = BlackboxConfig(community_graph_id=GRAPH)
+    graph = _Graph([signed_row(THREAT, Reporter("0xa"))])
+    current = pulse_module.fingerprint(graph, cfg)
+    stale = pulse_module.CommunityPulse(clock=_Clock())
+    assert stale.changed(graph, cfg, applied="ThreatReport=0:") is True and stale.baselined_now is False
+    fresh = pulse_module.CommunityPulse(clock=_Clock())
+    assert fresh.changed(graph, cfg, applied=current) is False and fresh.baselined_now is False
+    assert fresh.last_fingerprint == current
+    blind = pulse_module.CommunityPulse(clock=_Clock())
+    assert blind.changed(graph, cfg, applied="") is False and blind.baselined_now is True   # no cache: baseline as before
 
 
 def test_a_wedged_beat_does_not_stall_the_pulse_forever(monkeypatch):

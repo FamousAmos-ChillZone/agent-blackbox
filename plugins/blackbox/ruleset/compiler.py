@@ -105,6 +105,11 @@ class Ruleset:
     #: True when the curator fleet-wide pause flag suppressed community
     #: ingest this refresh (KI-036) — surfaced in status/dashboard.
     community_paused: bool = False
+    #: The community pulse fingerprint the graph had when this community tier
+    #: was applied (KI-208): a process that starts later compares its first
+    #: probe against it instead of baselining blind, so reports that arrived
+    #: while no process was beating are applied on the first beat.
+    community_fingerprint: str = ""
     synced_at: float = 0.0
     context_graph_id: str = ""
     _graph_entries_cache: Dict[str, List[Dict[str, Any]]] = field(

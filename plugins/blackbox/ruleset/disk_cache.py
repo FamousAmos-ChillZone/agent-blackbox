@@ -46,6 +46,7 @@ def _serialize(rs: compiler.Ruleset) -> Dict[str, Any]:
         "graph_threats": rs.graph_threats,
         "community": rs.community,
         "community_paused": rs.community_paused,
+        "community_fingerprint": rs.community_fingerprint,
     }
 
 
@@ -90,6 +91,7 @@ def _deserialize(data: Dict[str, Any]) -> compiler.Ruleset:
         if isinstance(v, dict)
     } if isinstance(community, dict) else {}
     rs.community_paused = bool(data.get("community_paused", False))
+    rs.community_fingerprint = str(data.get("community_fingerprint") or "")
     return rs
 
 

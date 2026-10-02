@@ -82,14 +82,21 @@ class CommunityPulse:
             self._last_probe = now
             return True
 
-    def changed(self, client: DkgClient, cfg: Any) -> bool:
+    def changed(self, client: DkgClient, cfg: Any, applied: Optional[str] = None) -> bool:
         """Probe the graph; True when its fingerprint differs from the last
-        successful probe. The first successful probe only sets the baseline."""
+        successful probe. With no probe yet in this process, *applied* — the
+        fingerprint the cached community tier was applied against (KI-208) —
+        is the baseline instead, so a process that starts after reports arrived
+        sees them as a change; only without either does the first probe merely
+        set the baseline."""
         current = fingerprint(client, cfg)
         if current is None:
             return False
         with self._lock:
-            previous, self._fingerprint = self._fingerprint, current
+            previous = self._fingerprint
+            if previous is None and applied:
+                previous = applied          # the cached tier's baseline stands in for this process's first probe
+            self._fingerprint = current
             self._baselined_now = previous is None
         if previous is None:
             return False
@@ -105,6 +112,13 @@ class CommunityPulse:
         the reports that already exist when the cached tier has none yet."""
         with self._lock:
             return self._baselined_now
+
+    @property
+    def last_fingerprint(self) -> str:
+        """What the last successful probe saw (``""`` before any) — the value a
+        tier applied right after that probe records as its baseline (KI-208)."""
+        with self._lock:
+            return self._fingerprint or ""
 
     @property
     def report_count(self) -> int:

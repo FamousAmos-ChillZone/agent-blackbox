@@ -230,6 +230,9 @@ def _apply_overlays(rs: compiler.Ruleset, client: Optional[DkgClient], config: B
     curator_tier.apply_curator_tier(rs, client, config)
     if not config.community_graph_id:
         return
+    # KI-208: record what the graph looks like BEFORE this read, so anything that
+    # lands during or after it shows up as a change to the next pulse of any process.
+    rs.community_fingerprint = community.community_fingerprint(client, config) or ""
     if reused:
         community_tier.reapply_community_tier(rs, client, config)
     else:

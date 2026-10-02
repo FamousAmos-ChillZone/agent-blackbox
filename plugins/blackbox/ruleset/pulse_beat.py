@@ -63,12 +63,15 @@ def _background_pulse(config: BlackboxConfig) -> None:
 
         client = DkgClient(url=config.dkg_url, dkg_home=config.dkg_home)
         refresh_cycle._retry_shares(client, config)
-        changed = community.PULSE.changed(client, config)
+        cached = refresh_cycle.peek(config)
+        # KI-208: a process with no probe yet compares against the fingerprint the
+        # cached tier was applied at, so what arrived while nothing was beating is a change.
+        changed = community.PULSE.changed(client, config, cached.community_fingerprint)
         # A process that just started (or a node whose first full refresh is an hour
         # away) baselines on reports that are ALREADY there: apply them once now
         # when the cached generation holds no community tier yet (bench finding
         # 2026-10-02: A's report never became matchable on B until a full refresh).
-        empty_tier = not refresh_cycle.peek(config).community
+        empty_tier = not cached.community
         if changed or (community.PULSE.baselined_now and empty_tier and community.PULSE.report_count > 0):
             _reapply_community(config, client)
     except Exception as exc:  # pragma: no cover - fail open
@@ -89,6 +92,7 @@ def _reapply_community(config: BlackboxConfig, client: DkgClient) -> None:
             return
         rs = refresh_cycle.peek(config)
         community_tier.reapply_community_tier(rs, client, config)
+        rs.community_fingerprint = community.PULSE.last_fingerprint   # KI-208: the baseline travels with the tier
         disk_cache._write_cache(rs)
         refresh_cycle._memory.store(rs)
         logger.info("blackbox: community tier re-applied on pulse (%d community rule(s))", len(rs.community))

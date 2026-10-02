@@ -55,6 +55,7 @@ from .aggregation import CommunityRule, aggregate_community_reports
 from .digest import publish_due_digests, record_verified_sighting
 from .keep_alive import publish_due_copies
 from .pulse import PULSE
+from .pulse import fingerprint as community_fingerprint
 from .statements.lifetimes import lifetime_days
 from .share_retry import retry_due_shares, share_retry_stats
 from .stages import Enforcement, Stage, StageResult, stage_for
@@ -110,6 +111,7 @@ __all__ = [
     "publish_due_copies",
     "lifetime_days",
     "PULSE",
+    "community_fingerprint",
     "retry_due_shares",
     "share_retry_stats",
     "stage_for",
