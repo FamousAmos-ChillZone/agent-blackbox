@@ -13,13 +13,15 @@ string is served through :func:`.safe_payloads.safe_text`.
   authors, backlog and away notices, held-back and pending counts, and R2b's
   weekly sighting digests with the per-threat heat estimate ("seen by ~N
   agents this week").
+* ``GET /api/health`` — Refine R10: the operator's health items (the SAME
+  ``kernel.health`` items `blackbox status` prints; INFO never red).
 """
 
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from .safe_payloads import safe_text, sanitized_ledger
 
@@ -93,7 +95,7 @@ def community_stats_payload(verified_reports: VerifiedReportsRead) -> Any:
 
 def reports_payload(verified_reports: VerifiedReportsRead, limit: int) -> Any:
     """The community corroboration board + this node's outbound ledger."""
-    from .. import community
+    from .. import community, ruleset
     from ..kernel.config import load_blackbox_config
 
     # B7 (KI-006): the dead code lives — community corroboration board,
@@ -107,6 +109,12 @@ def reports_payload(verified_reports: VerifiedReportsRead, limit: int) -> Any:
             "outbound": sanitized_ledger(limit),
         }
 
+    # R10: each outbound row carries the threat's current local stage + reason (what happened to my report).
+    compiled = ruleset.peek(cfg).community
+    outbound = []
+    for row in sanitized_ledger(limit):
+        rule = compiled.get(row["identifier"]) or {}
+        outbound.append({**row, "stage": safe_text(rule.get("stage"), 16), "stage_reason": safe_text(rule.get("stageReason"), 200)})
     # Most-reported threats by distinct VERIFIED signers (R0d).
     board = [
         {"identifier": safe_text(t["identifier"]), "reporters": t["reporters"], "severity": safe_text(t["severity"], 16)}
@@ -115,7 +123,7 @@ def reports_payload(verified_reports: VerifiedReportsRead, limit: int) -> Any:
     return {
         "reports": board,
         "sharing_enabled": bool(getattr(cfg, "community_enabled", False)),
-        "outbound": sanitized_ledger(limit),
+        "outbound": outbound,
     }
 
 
@@ -169,11 +177,32 @@ def _curator_payload(view: Any) -> Dict[str, Any]:
     }
 
 
-def register_community_routes(app: Any, *, community_read: CommunityReadSource) -> CommunityEndpoints:
+def health_payload(community_read: CommunityReadSource, node_reachable: Callable[[Any], bool]) -> Dict[str, Any]:
+    """R10: the operator's health items from the same inputs `blackbox status` uses."""
+    from .. import audit, ruleset
+    from ..kernel import health
+    from ..kernel.config import load_blackbox_config
+
+    cfg = load_blackbox_config()
+    rs = ruleset.peek(cfg)
+    read = community_read(cfg) if getattr(cfg, "community_graph_id", "") else None
+    inputs = health.gather(cfg, rs, node_reachable(cfg), read, audit.finding_counts_by_identifier(), time.time())
+    items = health.operator_health(inputs)
+    return {"items": [{**item.as_dict(), "red": health.red(item)} for item in items],
+            "ruleset_age": health.ruleset_age_text(inputs.ruleset_age_s), "community_paused": inputs.community_paused}
+
+
+def register_community_routes(app: Any, *, community_read: CommunityReadSource,
+                              node_reachable: Optional[Callable[[Any], bool]] = None) -> CommunityEndpoints:
     """Add the community endpoints to *app* (a FastAPI app); returns their handlers."""
     from fastapi import Query
 
     verified_reports = _reports_of(community_read)
+    reachable = node_reachable or (lambda cfg: True)
+
+    @app.get("/api/health")
+    def health_items() -> Any:
+        return health_payload(community_read, reachable)
 
     @app.get("/api/community-stats")
     def community_stats() -> Any:

@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from ... import audit
 from ... import detection
 from .. import graph_stats, report_builder, report_schema, report_signer, sharing
-from . import report_rights, statement_verbs
+from . import report_rights, report_tracking, statement_verbs
 from .. import reader as graph_reader
 from ...kernel import constants, threat_ids
 
@@ -179,7 +179,8 @@ def _choices(values) -> List[str]:
 #: leaves the machine; each choice list is the one the schema checks against).
 _REPORT_FLAGS: Tuple[Tuple[Tuple[str, ...], Dict[str, Any]], ...] = (
     (("--type",), dict(choices=list(_REPORT_REQUIRED_ARGS))),
-    (("--status",), dict(action="store_true", help="Show what this node has contributed (ledger + graph)")),
+    (("--status",), dict(action="store_true", help="Show what this node has contributed, and what happened to each report")),
+    (("--standing",), dict(action="store_true", help="Your standing as a reporter: counted or on probation, and co-sightings")),
     (("--false-positive",), dict(dest="false_positive", metavar="IDENTIFIER",
                                  help="Dispute a community threat (needs --reason)")),
     (("--retract",), dict(metavar="IDENTIFIER", help="Withdraw this node's own report of IDENTIFIER (final)")),
@@ -245,7 +246,7 @@ def cmd_report(args: argparse.Namespace) -> int:
     outcome + report subject (lifecycle: ACKNOWLEDGE).
     """
     cfg = load_blackbox_config()
-    if args.status or report_rights.wants_local_verb(args):   # local verbs: no node, nothing sent
+    if args.status or getattr(args, "standing", False) or report_rights.wants_local_verb(args):   # local: nothing sent
         return _local_verb(cfg, args)
     if not cfg.community_enabled:
         if not cfg.community_graph_id:
@@ -337,14 +338,12 @@ def _print_stages(community_rules: Dict[str, Dict[str, Any]]) -> None:
         print(f"  … and {len(staged) - _STATUS_STAGE_ROWS} more (the dashboard lists them all).")
 
 
-#: How a ledger outcome is shown (community.ShareOutcome values).
-_OUTCOME_LABELS = {"accepted": "ok", "already-shared": "already shared", "failed": "FAILED"}
-
-
 def _local_verb(cfg, args: argparse.Namespace) -> int:
     """``--status``, or one of the identity-rights verbs: no node, nothing sent."""
     if args.status:
         return _report_status(cfg, getattr(args, "compiled_community", None))
+    if getattr(args, "standing", False):
+        return report_tracking.report_standing(cfg)
     return report_rights.run_local_verb(args)
 
 
@@ -352,14 +351,13 @@ def _report_status(cfg, compiled_community: Optional[CompiledCommunity] = None) 
     """Lifecycle TRACK: the ledger first (offline-safe), Q9 when reachable,
     then every community threat's local stage (R3) from the compiled store."""
     rows = audit.read_share_ledger(limit=50)
+    compiled = compiled_community(cfg) if compiled_community is not None else {}
     if not rows:
         print("No community reports from this node yet.")
     else:
         print(f"Community contributions from this node (newest first, {len(rows)} shown):")
         for row in rows:
-            outcome = _OUTCOME_LABELS.get(str(row.get("outcome") or ("accepted" if row.get("ok") else "failed")), "FAILED")
-            print(f"  {display_safety.term_safe(row.get('ts'), 24)}  [{outcome}]  "
-                  f"{display_safety.term_safe(row.get('category'), 16)}  {display_safety.term_safe(row.get('identifier'), 96)}")
+            print("  " + report_tracking.outcome_line(row, compiled))
     if cfg.community_graph_id:
         try:
             client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)

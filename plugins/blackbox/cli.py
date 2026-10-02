@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import argparse
 import logging
-from . import attach, audit, ruleset
+from typing import Any
+import time
+from . import attach, audit, community, ruleset
+from .kernel import health
 from .kernel import yaml_files
 from .kernel.config import load_blackbox_config
 from .kernel.dkg_client import DkgClient
@@ -130,6 +133,11 @@ def _cmd_status(args: argparse.Namespace) -> int:
     print(f"  DKG CLI:           {cfg.dkg_bin}")
     print_community_status(cfg)
     print(f"  sync interval:     {cfg.sync_interval}s")
+    synced_at = getattr(rs, "synced_at", 0)
+    print(f"  ruleset age:       {health.ruleset_age_text((time.time() - synced_at) if synced_at else None)}")
+    if getattr(rs, "community_paused", False):
+        print("  community ingest:  PAUSED by the curator")
+    _print_health(cfg, rs, client, reachable)
     print(f"  ruleset:           {counts['injection']} injection, "
           f"{counts['escalation']} escalation, {counts['dependency']} dependency, "
           f"{counts['fileaccess']} fileaccess, {counts['skill']} skill")
@@ -141,6 +149,19 @@ def _cmd_status(args: argparse.Namespace) -> int:
     print(f"  dashboard:         http://127.0.0.1:{cfg.dashboard_port}")
     _print_attached_targets()
     return 0
+
+
+def _print_health(cfg: Any, rs: Any, client: DkgClient, reachable: bool) -> None:
+    """R10: the shared operator health items (the dashboard banner shows the same)."""
+    read = None
+    if reachable and cfg.community_graph_id:
+        try:
+            read = community.read_verified_reports(client, cfg)
+        except Exception as exc:  # pragma: no cover - status must never crash on the node
+            logger.debug("blackbox status: community read skipped: %s", exc)
+    items = health.operator_health(health.gather(cfg, rs, reachable, read, audit.finding_counts_by_identifier(), time.time()))
+    for line in health.render_lines(items):
+        print(line)
 
 
 def _print_attached_targets() -> None:

@@ -2078,7 +2078,7 @@ def create_app(*, manage_blackbox: bool = False):
 
         return _swr("graph:" + tier, _load, {"tier": tier, "threats": []})
 
-    community_endpoints = community_routes.register_community_routes(app, community_read=_community_read)
+    community_endpoints = community_routes.register_community_routes(app, community_read=_community_read, node_reachable=_node_reachable)
 
     # Predicate IRI -> friendly detail key, for the single-threat lookup.
     _DETAIL_FIELDS = {

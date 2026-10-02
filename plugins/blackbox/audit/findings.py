@@ -142,6 +142,22 @@ def read_findings(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
     return rows[offset : offset + limit]
 
 
+#: Rows scanned when counting how often each threat fired here (bounded).
+_FIRED_SCAN_LIMIT = 5_000
+
+
+def finding_counts_by_identifier(limit: int = _FIRED_SCAN_LIMIT) -> Dict[str, int]:
+    """How many times each threat identifier fired on this machine (newest
+    *limit* findings). R10 uses it for "a revoked threat fired N times here";
+    the audit does not yet record whether a firing BLOCKED (KI-189)."""
+    counts: Dict[str, int] = {}
+    for row in read_findings(limit=limit):
+        identifier = str(row.get("identifier") or "")
+        if identifier:
+            counts[identifier] = counts.get(identifier, 0) + 1
+    return counts
+
+
 def count_findings() -> int:
     return len(read_findings(limit=1_000_000))
 

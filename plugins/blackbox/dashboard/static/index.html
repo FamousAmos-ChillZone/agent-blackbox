@@ -593,6 +593,12 @@
     font-size: 13px;
   }
   .banner-inner.show { display: flex; }
+  .health-strip { display: flex; flex-direction: column; gap: 6px; padding: 0 20px; }
+  .health-item { font-family: var(--mono-font); font-size: 12px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); }
+  .health-item.red { border-color: var(--signal); }
+  .health-item .h-class { font-size: 9px; text-transform: uppercase; letter-spacing: .14em; margin-right: 8px; color: var(--muted); }
+  .health-item.red .h-class { color: var(--signal); }
+  .health-item .h-todo { color: var(--muted); }
   .banner-inner .b-icon {
     flex-shrink: 0; width: 16px; height: 16px;
   }
@@ -2735,6 +2741,8 @@
       <span><strong>Cannot reach Blackbox.</strong> The dashboard server is not responding. Retrying every few seconds.</span>
     </div>
   </div>
+  <!-- Refine R10: operator health — the SAME items `blackbox status` prints. INFO is never red. -->
+  <div class="health-strip" id="health-strip" aria-live="polite"></div>
 
   <div class="threat-toast-region" id="threat-toast-region" aria-live="assertive" aria-atomic="true"></div>
 
@@ -2797,6 +2805,28 @@
             </thead>
             <tbody id="community-statements-body">
               <tr><td colspan="5"><div class="empty">Loading community statements&hellip;</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Refine R10: my reports — what happened to each report this node shared -->
+    <section class="section" aria-label="My reports">
+      <div class="section-head">
+        <div class="section-htext">
+          <h2>My reports</h2>
+          <div class="section-note">What this node shared with the community graph and what happened to each: the share outcome, then the threat's current stage and reason (the same stage every node computes). <span id="my-reports-note"></span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="table-scroll">
+          <table aria-label="My reports">
+            <thead>
+              <tr><th>When</th><th>Kind</th><th>Threat</th><th>Share</th><th>Stage</th></tr>
+            </thead>
+            <tbody id="my-reports-body">
+              <tr><td colspan="5"><div class="empty">Loading your reports&hellip;</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -3807,8 +3837,48 @@
     }).join("");
   }
 
+  var heatByIdentifier = {};   // R10: "seen by ~N agents this week" joined onto verified leaves
+
   function loadCommunityStatements() {
-    return getJSON("/api/community-statements").then(renderCommunityStatements, function () {});
+    return getJSON("/api/community-statements").then(function (data) {
+      heatByIdentifier = {};
+      ((data && data.heat) || []).forEach(function (h) { heatByIdentifier[h.identifier] = h; });
+      renderCommunityStatements(data);
+    }, function () {});
+  }
+
+  // Refine R10: the shared health items (kernel.health) — the same lines `blackbox status` prints.
+  function renderHealth(data) {
+    var strip = $("health-strip");
+    if (!strip) return;
+    var items = (data && Array.isArray(data.items)) ? data.items : [];
+    strip.innerHTML = items.map(function (it) {
+      return '<div class="health-item' + (it.red ? ' red' : '') + '">' +
+        '<span class="h-class">' + esc(it["class"]) + '</span>' + esc(it.message) +
+        ' <span class="h-todo">\u2014 ' + esc(it.what_to_do) + '</span></div>';
+    }).join("");
+  }
+
+  function loadHealth() {
+    return getJSON("/api/health").then(renderHealth, function () {});
+  }
+
+  function renderMyReports(data) {
+    var body = $("my-reports-body");
+    var note = $("my-reports-note");
+    if (!body) return;
+    var rows = (data && Array.isArray(data.outbound)) ? data.outbound : [];
+    note.textContent = data && data.sharing_enabled === false ? "\u00b7 Sharing is off; nothing new leaves this node." : "";
+    if (!rows.length) { body.innerHTML = '<tr><td colspan="5"><div class="empty">No reports shared from this node yet.</div></td></tr>'; return; }
+    body.innerHTML = rows.map(function (r) {
+      var stage = r.stage ? r.stage + (r.stage_reason ? " \u2014 " + r.stage_reason : "") : "not in the compiled community tier";
+      return "<tr><td>" + esc(r.ts) + "</td><td>" + esc(r.category) + "</td><td>" + esc(r.identifier) + "</td><td>" +
+        esc(r.outcome) + "</td><td>" + esc(stage) + "</td></tr>";
+    }).join("");
+  }
+
+  function loadMyReports() {
+    return getJSON("/api/reports?limit=50").then(renderMyReports, function () {});
   }
 
   function renderAttachTargets(targets, note) {
@@ -4761,6 +4831,8 @@
       (tmeta.length ? '<div class="t-cat">' + esc(tmeta.join(" · ")) + '</div>' : '') +
       (node.stage ? '<div class="t-cat">stage: ' + esc(node.stage) + ' (local) · ' + esc(node.enforcement || "") +
         (node.stageReason ? ' — ' + esc(node.stageReason) : '') + '</div>' : '') +
+      (heatByIdentifier[node.identifier] ? '<div class="t-cat">seen by ~' + num(heatByIdentifier[node.identifier].agents) +
+        ' agents this week (' + esc(heatByIdentifier[node.identifier].week) + ')</div>' : '') +
     '</div>';
   }
 
@@ -5732,7 +5804,7 @@
   // local-only sources, which never fold into public/candidate).
   var SRC_META = {
     public:    { label: "confirmed", tip: "Verifiable graph match, verified by Umanitek. Blockable in block mode." },
-    community: { label: "candidate", tip: "A candidate awaiting community graph review." },
+    community: { label: "flagged here", tip: "Matched a community-only report: flagged here, not shared (KI-158). To share it deliberately: blackbox report --type <type> \u2026" },
     heuristic: { label: "candidate", tip: "Built-in heuristic discovery awaiting graph verification." },
     custom:    { label: "your rule", tip: "Matched one of your own protected paths." },
     llm:       { label: "AI review", tip: "Flagged by the optional LLM injection reviewer. Informational and never blocks." },
@@ -6555,6 +6627,8 @@
   function poll() {
     loadAudit();   // full history refresh (independent of the fixed-index batch below)
     loadCommunityStatements();   // Refine R2 (independent too)
+    loadHealth();                // Refine R10
+    loadMyReports();             // Refine R10
     return Promise.allSettled([
       loadFindings(),
       getJSON("/api/graph-status"),
