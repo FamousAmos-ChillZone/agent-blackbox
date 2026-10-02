@@ -15,7 +15,6 @@ are caught per rule and oversized inputs are capped.
 from __future__ import annotations
 
 import fnmatch
-import json
 import logging
 import os
 from typing import Any, Iterable, List
@@ -63,7 +62,7 @@ def detect_escalation(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
                     evidence=arg_shape,
                     confirmed=src == "public",
                     source=src,
-                    fields={"tool_name": tool_lower, "arg_shape": arg_shape} if src == "community" else {},
+                    fields={"tool_name": tool_lower, "arg_shape": arg_shape},
                 )
             )
     # Discovery layer: a dangerous shape that no graph rule covers is still a
@@ -149,10 +148,10 @@ def detect_dependency(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
                 fields={
                     "ecosystem": eco,
                     "package_name": name,
-                    "package_version": version or "*",
+                    "package_version": key.rsplit("@", 1)[1],   # the matched rule's version (or "*")
                     "advisory_id": rule.get("advisoryId"),
                     "kind": rule.get("kind"),
-                } if src == "community" else {},
+                },
             )
         )
     return out
@@ -206,8 +205,8 @@ def detect_skill(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     """Detect a suspicious skill install/modify (graph known-bad or built-in).
 
     Three signals: known-bad ``skill:{name}@{version}`` from the graph;
-    dangerous-code shapes; and over-broad permission grants. PRIVACY: a finding
-    carries the skill name + matched danger shape — never the full skill source.
+    dangerous-code shapes; and over-broad permission grants. PRIVACY: heuristic
+    fields carry the code's sha256 + danger shape, never source or name (KI-159).
     """
     skill = action_parsing.skill_install_arg(tool_name, args)
     if not skill:
@@ -252,7 +251,7 @@ def detect_skill(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     # (b)+(c) built-in dangerous-code / over-broad-permission discovery.
     for danger in content_scanners.scan_skill_dangers(skill["code"], skill["permissions"]):
         shape = danger["dangerShape"]
-        ident = threat_ids.skill_shape_identifier(name, shape)
+        ident = threat_ids.skill_artifact_identifier(skill["artifact_hash"], shape)   # never the name (KI-159)
         if ident in seen:
             continue
         seen.add(ident)
@@ -267,7 +266,7 @@ def detect_skill(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
                 evidence=f"skill {name}: {shape}",
                 confirmed=False,
                 source="heuristic",
-                fields={"skill_name": name, "skill_version": version, "danger_shape": shape},
+                fields={"artifact_hash": skill["artifact_hash"], "danger_shape": shape},
             )
         )
     return out
@@ -311,21 +310,19 @@ def detect_ioc(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
                 confirmed=src == "public",
                 source=src,
                 kind=rule.get("kind"),
-                fields={"ioc_type": ioc_type} if src == "community" else {},
+                fields={"ioc_type": ioc_type},
             )
         )
     return out
 
 
 def discover_dependency_candidates(tool_name: str, args: Any, ruleset: Any, osv_lookup: Any) -> List[Finding]:
-    """Best-effort OSV auto-discovery of vulnerable installs not in the graph.
+    """Best-effort OSV auto-discovery of bad installs not in the graph.
 
-    Parses install commands, skips any pinned dep already covered by a graph
-    rule, and calls *osv_lookup(ecosystem, name, version)* — which returns
-    ``{advisory_id, severity}`` when OSV knows it vulnerable, else ``None``.
-    Only OSV-VULNERABLE installs become candidates; clean deps are never
-    surfaced (privacy). Runs OFF the blocking path — callers invoke this
-    best-effort so it never delays or breaks the tool call.
+    Parses install commands, skips pinned deps a graph rule covers, and calls
+    *osv_lookup(ecosystem, name, version)* (``{advisory_id, severity, kind}``
+    or ``None``, see :func:`.osv.lookup`). Only OSV-flagged installs become
+    candidates; clean deps never surface (privacy). Runs OFF the blocking path.
     """
     command = _command_text(args)
     if not command:
@@ -361,11 +358,13 @@ def discover_dependency_candidates(tool_name: str, args: Any, ruleset: Any, osv_
                 evidence=f"{eco}:{name}@{version} ({hit.get('advisory_id')})",
                 confirmed=False,
                 source="heuristic",
+                kind=hit.get("kind"),
                 fields={
                     "ecosystem": eco,
                     "package_name": name,
                     "package_version": version,
                     "advisory_id": hit.get("advisory_id"),
+                    "kind": hit.get("kind"),   # malware shares; a vulnerability stays local (decision 22)
                 },
             )
         )
@@ -485,14 +484,15 @@ def detect_all(tool_name: str, args: Any, ruleset: Any, discover: bool = True) -
     findings.extend(detect_escalation(tool_name, args, ruleset))
     findings.extend(detect_dependency(tool_name, args, ruleset))
     args_text = injection_scan_text(args)
-    findings.extend(detect_injection(args_text, ruleset))
+    # Text in a skill being installed is "in-skill"; other arguments have no context (stays local).
+    context = "in-skill" if action_parsing.skill_install_arg(tool_name, args) else None
+    findings.extend(detect_injection(args_text, ruleset, context))
     if discover:
-        findings.extend(discover_injection(args_text, ruleset))
+        findings.extend(discover_injection(args_text, ruleset, context))
     findings.extend(detect_fileaccess(tool_name, args, ruleset))
     findings.extend(detect_skill(tool_name, args, ruleset))
     findings.extend(detect_ioc(tool_name, args, ruleset))
-    # Secret-value exposure always runs (not gated by discovery) — a real secret
-    # in the tool args is a personal, always-on signal, never a graph candidate.
+    # Secret exposure always runs (not gated by discovery): personal, never a graph candidate.
     findings.extend(detect_secret_exposure(tool_name, args))
     if not discover:
         findings = [f for f in findings if f.source != "heuristic"]

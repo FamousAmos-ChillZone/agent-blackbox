@@ -8,6 +8,7 @@ by the hook's local activity log.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Any, Dict, List, Optional
 from . import shell_shapes
@@ -140,9 +141,12 @@ def _stringify(value: Any) -> str:
 def skill_install_arg(tool_name: str, args: Any) -> Optional[Dict[str, str]]:
     """Extract a skill install/modify descriptor, or ``None``.
 
-    Returns ``{name, version, code, permissions}`` (missing fields empty).
-    ``code``/``permissions`` are the concatenated content to scan; they are
-    NEVER carried off-box — only matched danger-shape names are submitted.
+    Returns ``{name, version, code, permissions, artifact_hash}`` (missing
+    fields empty). ``code``/``permissions`` are the concatenated content to
+    scan; they are NEVER carried off-box. ``artifact_hash`` is the sha256 of
+    the FULL code + permissions (before the scan cap): a heuristic report
+    names the skill by this hash, never by its name (Refine R1, KI-159), so
+    the same skill code converges on one identifier on every node.
     """
     tool = (tool_name or "").strip().lower()
     if tool not in _SKILL_TOOLS or not isinstance(args, dict):
@@ -163,7 +167,10 @@ def skill_install_arg(tool_name: str, args: Any) -> Optional[Dict[str, str]]:
             break
     code = " ".join(_stringify(args.get(k)) for k in _SKILL_CODE_KEYS if args.get(k))
     perms = " ".join(_stringify(args.get(k)) for k in _SKILL_PERM_KEYS if args.get(k))
-    return {"name": name, "version": version, "code": code[:_MAX_SKILL_SCAN], "permissions": perms[:_MAX_SKILL_SCAN]}
+    # NUL separates the parts so moving text between code and permissions changes the hash.
+    artifact_hash = hashlib.sha256(f"{code}\0{perms}".encode("utf-8", "surrogatepass")).hexdigest()
+    return {"name": name, "version": version, "code": code[:_MAX_SKILL_SCAN],
+            "permissions": perms[:_MAX_SKILL_SCAN], "artifact_hash": artifact_hash}
 
 
 # ---------------------------------------------------------------------------

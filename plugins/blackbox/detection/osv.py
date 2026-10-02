@@ -41,6 +41,14 @@ _ECOSYSTEM_MAP = {
 }
 #: The package ecosystems Blackbox names dependencies in (Refine R1 vocabulary).
 DEPENDENCY_ECOSYSTEMS = frozenset(_ECOSYSTEM_MAP)
+#: OSV's malicious-package database uses MAL- advisory ids; every other OSV
+#: advisory describes a vulnerability.
+MALWARE_ADVISORY_PREFIX = "MAL-"
+
+
+def advisory_kind(advisory_id: Optional[str]) -> str:
+    """``"malware"`` for an OSV malicious-package advisory, else ``"vulnerability"``."""
+    return "malware" if str(advisory_id or "").upper().startswith(MALWARE_ADVISORY_PREFIX) else "vulnerability"
 
 # In-memory result cache. Value is the finding dict or None (clean/skip).
 _cache: Dict[str, Optional[Dict[str, str]]] = {}
@@ -89,8 +97,10 @@ def _query(osv_eco: str, name: str, version: str) -> Optional[Dict[str, Any]]:
 
 
 def lookup(ecosystem: str, name: str, version: str) -> Optional[Dict[str, str]]:
-    """Return ``{advisory_id, severity}`` if OSV knows *name@version* vulnerable.
+    """Return ``{advisory_id, severity, kind}`` if OSV knows *name@version* bad.
 
+    ``kind`` is ``malware`` when any advisory is a malicious-package (MAL-)
+    one — that advisory is the one returned — else ``vulnerability``.
     Returns ``None`` when the package is clean, the ecosystem is unsupported,
     the version is missing, or anything fails (fail-open). Cached per process.
     """
@@ -111,9 +121,11 @@ def lookup(ecosystem: str, name: str, version: str) -> Optional[Dict[str, str]]:
     if isinstance(data, dict):
         vulns = data.get("vulns")
         if isinstance(vulns, list) and vulns:
-            first = vulns[0] if isinstance(vulns[0], dict) else {}
+            records = [v for v in vulns if isinstance(v, dict)] or [{}]
+            # A malicious-package advisory outranks any vulnerability advisory.
+            first = next((v for v in records if advisory_kind(v.get("id")) == "malware"), records[0])
             advisory_id = str(first.get("id") or "OSV")
-            result = {"advisory_id": advisory_id, "severity": _severity_of(first)}
+            result = {"advisory_id": advisory_id, "severity": _severity_of(first), "kind": advisory_kind(advisory_id)}
     with _cache_lock:
         _cache[key] = result
     return result

@@ -51,7 +51,9 @@ MAX_CLOCK_SKEW = timedelta(minutes=10)
 
 _SAFE_TOKEN = re.compile(r"[A-Za-z0-9._@:/+~-]+")       # package names/versions, tool names, advisory ids
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
-_INJECTION_ID = re.compile(r"injection:[0-9a-f]{24}")
+#: A heuristic's id is its pattern hash; a verified-corpus id is the threat's
+#: slug (``injection:seed-000``) — either way a lowercase slug, never free text.
+_INJECTION_ID = re.compile(r"injection:[a-z0-9][a-z0-9._-]{0,63}")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
@@ -118,7 +120,9 @@ def _dependency(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
     eco = _one_of("ecosystem", ev.get("ecosystem"), detection.DEPENDENCY_ECOSYSTEMS)
     raw_name = _token("package_name", ev.get("package_name"))
     name = threat_ids.canonical_package_name(eco, raw_name)
-    version = _token("package_version", ev.get("package_version"))
+    version = str(ev.get("package_version") or "").strip()
+    if version != "*":   # "*" = a whole-package rule (every version is malware)
+        version = _token("package_version", version)
     if str(ev.get("kind") or "").lower() != constants.KIND_MALWARE:
         _fail("a dependency report must be kind=malware (vulnerabilities stay local — decision 22)")
     out = {"ecosystem": eco, "package_name": name, "package_version": version, "kind": constants.KIND_MALWARE}
@@ -168,7 +172,7 @@ def _check_identifier(category: str, identifier: str, derived: Optional[str], ev
     if derived is not None and identifier != derived:
         _fail(f"identifier does not match its fields (expected {derived})")
     if category == "injection" and not _INJECTION_ID.fullmatch(identifier):
-        _fail("an injection identifier is the pattern's hash (injection:<24 hex>)")
+        _fail("an injection identifier is a slug (injection:<pattern hash or corpus id>), never free text")
     if category == "ioc":
         prefix = f"ioc:{evidence['ioc_type']}:"
         value = identifier[len(prefix):] if identifier.startswith(prefix) else ""

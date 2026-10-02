@@ -73,6 +73,19 @@ class FakeClient:
         return {"state": "succeeded"}
 
 
+def _fields_for(identifier):
+    """The share fields a real detector attaches to *identifier* (the R1 schema
+    validates them at the gate): package parts for a malware dependency, the
+    type for an IOC."""
+    if identifier.startswith("dep:"):
+        ecosystem, package = identifier[len("dep:"):].split(":", 1)
+        name, version = package.rsplit("@", 1)
+        return {"ecosystem": ecosystem, "package_name": name, "package_version": version, "kind": "malware"}
+    if identifier.startswith("ioc:"):
+        return {"ioc_type": identifier.split(":")[1]}
+    return {}
+
+
 def _finding(identifier="dep:npm:evil-pkg@1.0.0", source="public", **kw):
     base = dict(
         identifier=identifier,
@@ -81,11 +94,19 @@ def _finding(identifier="dep:npm:evil-pkg@1.0.0", source="public", **kw):
         title="test threat",
         source=source,
         confirmed=source == "public",
-        # A real malware dependency finding carries its package fields (Refine R1 validates them).
-        fields={"ecosystem": "npm", "package_name": "evil-pkg", "package_version": "1.0.0", "kind": "malware"},
+        fields=_fields_for(identifier),
     )
     base.update(kw)
     return detection.Finding(**base)
+
+
+def _shareable(identifier, **kw):
+    """A gate-input dict for *identifier* with its real fields; *kw* overrides."""
+    finding = {"identifier": identifier, "category": identifier.split(":")[0], "severity": "high",
+               "fields": _fields_for(identifier)}
+    finding["category"] = "dependency" if identifier.startswith("dep:") else finding["category"]
+    finding.update(kw)
+    return finding
 
 
 # ---------------------------------------------------------------------------
@@ -110,8 +131,7 @@ def _finding(identifier="dep:npm:evil-pkg@1.0.0", source="public", **kw):
 )
 def test_policy_truth_table(cfg, source, identifier, reporter, expected):
     policy = community_sharing.CommunitySharePolicy(cfg)
-    finding = {"identifier": identifier, "source": source}
-    allowed, _why = policy.decide(finding, reporter)
+    allowed, _why = policy.decide(_shareable(identifier, source=source), reporter)
     assert allowed is expected
 
 
@@ -122,15 +142,16 @@ def test_policy_truth_table(cfg, source, identifier, reporter, expected):
 
 @pytest.mark.parametrize("finding, shares", [
     ({"source": "public", "kind": "vulnerability"}, False),                         # verified-tier vulnerability
-    ({"source": "heuristic", "fields": {"advisory_id": "GHSA-xxxx-yyyy"}}, False),   # OSV-vulnerable candidate
-    ({"source": "heuristic", "fields": {"advisory_id": "MAL-2026-1234"}}, True),     # OSV malicious package
+    ({"source": "heuristic", "fields": {**_fields_for("dep:npm:x@1"), "kind": None,
+                                        "advisory_id": "GHSA-xxxx-yyyy"}}, False),  # OSV-vulnerable candidate
+    ({"source": "heuristic", "fields": {**_fields_for("dep:npm:x@1"), "advisory_id": "MAL-2026-1234"}}, True),  # OSV malicious
     ({"source": "public", "kind": "malware"}, True),                                # verified malware match
     ({"source": "heuristic", "kind": "malware"}, True),                             # self-discovered malware
     ({"source": "community"}, False),                                               # community-only match
     ({"source": "heuristic"}, True),                                                # self-discovered, no advisory
 ])
 def test_decision_22_share_gate(finding, shares):
-    finding = {"identifier": "dep:npm:x@1", "category": "dependency", **finding}
+    finding = _shareable("dep:npm:x@1", **finding)
     ok, why = community_sharing.CommunitySharePolicy(CFG_ON).decide(finding, REPORTER)
     assert ok is shares, why
 

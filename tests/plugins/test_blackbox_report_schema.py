@@ -78,7 +78,7 @@ def test_values_outside_the_closed_vocabularies_are_refused():
 def test_the_identifier_must_match_its_fields():
     _bad("escalation", "escalation:terminal:chmod-world-writable", tool_name="terminal", arg_shape="rm-rf-system-paths")
     _bad("dependency", "dep:npm:other@1", ecosystem="npm", package_name="x", package_version="1", kind="malware")
-    _bad("injection", "injection:not-a-hash", context="in-user-prompt")
+    _bad("injection", "injection:Ignore all previous instructions", context="in-user-prompt")
 
 
 def test_ioc_identifiers_must_be_canonical_so_lookalikes_cannot_split():

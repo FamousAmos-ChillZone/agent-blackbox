@@ -13,10 +13,10 @@ import logging
 import threading
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
-from .. import audit
+from .. import audit, detection
 from .. import community
 from ..kernel import threat_ids
-from . import report_signer
+from . import report_schema, report_signer
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, DkgError
 
@@ -32,11 +32,6 @@ _FRAMEWORK = "hermes"
 NEVER_SHARED_SOURCES = ("custom", "llm", "secret")
 
 
-#: OSV's malicious-package database uses MAL- advisory ids; every other OSV
-#: advisory describes a vulnerability.
-_MALWARE_ADVISORY_PREFIX = "MAL-"
-
-
 def is_vulnerability_finding(finding: Dict[str, Any]) -> bool:
     """True for a finding that describes a VULNERABILITY (vs. malware).
 
@@ -49,7 +44,7 @@ def is_vulnerability_finding(finding: Dict[str, Any]) -> bool:
         return kind == "vulnerability"
     fields = finding.get("fields") if isinstance(finding.get("fields"), dict) else {}
     advisory = str(fields.get("advisory_id") or "")
-    return bool(advisory) and not advisory.upper().startswith(_MALWARE_ADVISORY_PREFIX)
+    return bool(advisory) and detection.advisory_kind(advisory) == "vulnerability"
 
 
 class CommunitySharePolicy:
@@ -72,7 +67,9 @@ class CommunitySharePolicy:
     ``community off`` → ``excluded source`` → ``vulnerability`` →
     ``community-only match`` → ``no identifier`` → ``no identity`` (KI-003:
     a fallback identity would merge distinct nodes into one ghost reporter —
-    refuse instead).
+    refuse instead) → ``not a valid report`` (Refine R1: a finding the report
+    schema refuses — e.g. an injection seen in tool-call arguments, which has
+    no reportable context — stays local instead of failing at send time).
 
     Decision 22 (Refine R0, LES-018) — what leaves AUTOMATICALLY is narrowed:
 
@@ -103,7 +100,23 @@ class CommunitySharePolicy:
             return False, "no identifier"
         if not reporter:
             return False, "no resolved reporter identity"
-        return True, "ok"
+        return _schema_decision(finding)
+
+
+def _schema_decision(finding: Dict[str, Any]) -> "tuple[bool, str]":
+    """Whether *finding* builds a valid report (the R1 schema), and why not."""
+    fields = finding.get("fields") if isinstance(finding.get("fields"), dict) else {}
+    try:
+        report_schema.validate_report(
+            identifier=str(finding.get("identifier") or ""),
+            category=str(finding.get("category") or ""),
+            severity=str(finding.get("severity") or "info"),
+            framework=_FRAMEWORK,
+            evidence={k: v for k, v in fields.items() if v is not None},
+        )
+    except report_schema.ReportValidationError as exc:
+        return False, f"not a valid report, stays local: {exc}"
+    return True, "ok"
 
 
 class ShareOutcome(Enum):

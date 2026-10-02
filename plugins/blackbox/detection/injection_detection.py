@@ -14,7 +14,7 @@ Split out of :mod:`.detectors` (which runs them inside ``detect_all``).
 from __future__ import annotations
 
 import logging
-from typing import Any, List
+from typing import Any, List, Optional
 
 from . import content_scanners
 from .finding import Finding, _rule_source
@@ -25,11 +25,14 @@ logger = logging.getLogger(__name__)
 _MAX_INJECTION_TEXT = 50_000
 
 
-def detect_injection(text: str, ruleset: Any) -> List[Finding]:
+def detect_injection(text: str, ruleset: Any, context: Optional[str] = None) -> List[Finding]:
     """Match each cached injection regex against *text*.
 
     Patterns are peer-supplied and therefore untrusted: each is wrapped so a
     bad regex is skipped rather than raising. Text is capped for performance.
+    *context* (one of ``constants.INJECTION_CONTEXTS``) says where *text* was
+    seen and is the only field a match carries (Refine R1, decision 24): never
+    the pattern or the matched text. Without a context a match stays local.
     """
     if not text:
         return []
@@ -59,23 +62,23 @@ def detect_injection(text: str, ruleset: Any) -> List[Finding]:
                     evidence=str(match.group(0))[:200],
                     confirmed=src == "public",
                     source=src,
-                    # Community matches carry the fields needed for review.
-                    fields={"pattern": rule.get("pattern_src")} if src == "community" else {},
+                    fields={"context": context},
                 )
             )
     return out
 
 
-def discover_injection(text: str, ruleset: Any) -> List[Finding]:
+def discover_injection(text: str, ruleset: Any, context: Optional[str] = None) -> List[Finding]:
     """Built-in injection discovery: heuristic matches not already in the graph.
 
     Runs the built-in OWASP LLM01/LLM06 heuristics over *text* and nominates a
     candidate for each match whose identifier is not already a graph rule. The
     identifier is the hash of the heuristic's own regex source (a fixed
     signature; R1 never shares the text), so identical attacks dedupe to one
-    candidate. PRIVACY: the matched user substring is kept ONLY as local
-    ``evidence``/``matched`` and is NEVER placed in ``fields`` (the sole part of
-    a finding forwarded to the community graph).
+    candidate. *context* says where the text was seen, as for
+    :func:`detect_injection`. PRIVACY: the matched substring is kept ONLY as
+    local ``evidence``/``matched`` and is NEVER placed in ``fields`` (the only
+    part a share forwards).
     """
     known: set = set()
     for rule in getattr(ruleset, "injection", []) or []:
@@ -101,7 +104,7 @@ def discover_injection(text: str, ruleset: Any) -> List[Finding]:
                 evidence=phrase,
                 confirmed=False,
                 source="heuristic",
-                fields={"owasp_category": hit.get("owasp")},   # R1: the identifier is the hash; no pattern text
+                fields={"owasp_category": hit.get("owasp"), "context": context},
             )
         )
     return out

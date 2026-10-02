@@ -8,6 +8,8 @@ leak raw content — candidates carry signatures only (matched phrase / category
 
 import re
 
+import pytest
+
 from _blackbox_loader import load_blackbox
 
 
@@ -230,8 +232,29 @@ def test_skill_candidate_carries_shape_not_source():
     for f in findings:
         assert "TOP_SECRET_SOURCE" not in f.evidence
         assert "TOP_SECRET_SOURCE" not in str(f.fields)
-        assert f.fields["skill_name"] == "sneaky"
         assert "danger_shape" in f.fields
+
+
+def test_local_skill_candidate_is_named_by_code_hash_never_by_name():
+    """Refine R1b (KI-159): a heuristic skill report carries the sha256 of the
+    code and the danger shape — not the skill's name or version — so the same
+    code converges on one identifier whatever a node calls it."""
+    rs = _ruleset()
+    code = "import subprocess; subprocess.run(x)"
+    first = detection.detect_skill("skill_manage", {"name": "acme-internal-tool", "version": "2.1", "code": code}, rs)
+    second = detection.detect_skill("skill_manage", {"name": "renamed", "code": code}, rs)
+    assert first and [f.identifier for f in first] == [f.identifier for f in second]
+    for f in first:
+        assert "acme-internal-tool" not in f.identifier and "acme-internal-tool" not in str(f.fields)
+        assert set(f.fields) == {"artifact_hash", "danger_shape"}
+        assert f.identifier.startswith(f"skill:artifact:{f.fields['artifact_hash']}:")
+
+
+def test_skill_code_change_changes_the_artifact_identifier():
+    rs = _ruleset()
+    a = detection.detect_skill("skill_manage", {"name": "s", "code": "import subprocess; subprocess.run(x)"}, rs)
+    b = detection.detect_skill("skill_manage", {"name": "s", "code": "import subprocess; subprocess.run(y)"}, rs)
+    assert a and b and a[0].identifier != b[0].identifier
 
 
 def test_skill_over_broad_permissions():
@@ -331,7 +354,36 @@ def test_osv_lookup_parses_vulnerable_response(monkeypatch):
 
     monkeypatch.setattr(osv.urllib.request, "urlopen", lambda *a, **k: FakeResp())
     hit = osv.lookup("npm", "unique-vuln-pkg-1234", "1.0.0")
-    assert hit == {"advisory_id": "GHSA-abcd", "severity": "high"}
+    assert hit == {"advisory_id": "GHSA-abcd", "severity": "high", "kind": "vulnerability"}
+
+
+def _osv_hit(monkeypatch, vulns, package):
+    import json as _json
+
+    payload = _json.dumps({"vulns": vulns}).encode()
+
+    class FakeResp:
+        def read(self):
+            return payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(osv.urllib.request, "urlopen", lambda *a, **k: FakeResp())
+    return osv.lookup("npm", package, "1.0.0")
+
+
+def test_osv_malicious_package_advisory_outranks_a_vulnerability(monkeypatch):
+    """Refine R1b: a package with both kinds of advisory is malware, and the
+    candidate carries kind=malware — the schema needs it to share (decision 22)."""
+    hit = _osv_hit(monkeypatch, [{"id": "GHSA-zzzz"}, {"id": "MAL-2026-77"}], "unique-mal-pkg-5678")
+    assert hit["kind"] == "malware" and hit["advisory_id"] == "MAL-2026-77"
+    findings = detection.discover_dependency_candidates(
+        "terminal", {"command": "npm install unique-mal-pkg-5678@1.0.0"}, _ruleset(), lambda *a: hit)
+    assert findings[0].kind == "malware" and findings[0].fields["kind"] == "malware"
 
 
 # --- detect_all runs every detector -----------------------------------------
@@ -356,3 +408,25 @@ def test_detect_all_discover_off_suppresses_candidates():
     findings = detection.detect_all("read_file", {"path": "/home/u/.ssh/id_rsa"}, rs, discover=False)
     # No graph rules and discovery off → nothing.
     assert findings == []
+
+
+# --- Refine R1b: verified matches build valid reports -----------------------
+
+
+@pytest.mark.parametrize("rule_key, command", [
+    ("npm:evil-pkg@1.0.0", "npm install evil-pkg@1.0.0"),   # pinned rule
+    ("npm:evil-pkg@*", "npm install evil-pkg@2.3.4"),        # whole-package rule, pinned install
+    ("npm:evil-pkg@*", "npm install evil-pkg"),              # whole-package rule, unpinned install
+])
+def test_verified_dependency_match_passes_the_share_gate(rule_key, command):
+    """Before R1b a verified match carried EMPTY fields (only community matches
+    — which never auto-share — had them), so under the R1 schema the very
+    findings that should share could not be built."""
+    sharing = load_blackbox("community.sharing")
+    config_mod = load_blackbox("kernel.config")
+    rule = {"identifier": f"dep:{rule_key}", "source": "public", "kind": "malware", "severity": "critical"}
+    findings = detection.detect_dependency("terminal", {"command": command}, _ruleset(dependency={rule_key: rule}))
+    assert [f.source for f in findings] == ["public"]
+    cfg = config_mod.BlackboxConfig(report=True, community_graph_id="did:dkg:context-graph:test")
+    allowed, why = sharing.CommunitySharePolicy(cfg).decide(findings[0].to_dict(), "0x" + "1" * 40)
+    assert allowed, why

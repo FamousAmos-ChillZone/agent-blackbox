@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from .. import audit, detection, ruleset
 from ..kernel import config as config_mod, constants
 from ..kernel.config import BlackboxConfig
@@ -183,19 +183,23 @@ def on_post_tool_call(
         logger.debug("blackbox: post_tool_call failed: %s", exc)
 
 
-def _untrusted_request_text(user_message: Any, request_messages: Any) -> str:
-    """Return only the current turn's untrusted text for injection scanning.
+#: Tools whose output is a page fetched from the web (Hermes: web_extract,
+#: web_search, browser_*). Text they return is reported as ``in-fetched-page``.
+_FETCH_TOOL_PREFIXES = ("web_", "browser_")
+
+
+def _untrusted_request_sources(user_message: Any, request_messages: Any) -> List[Tuple[str, str]]:
+    """Return the current turn's untrusted text as ``(context, text)`` pairs.
 
     The API request also contains Hermes' system/developer instructions and
     earlier assistant turns. Those are trusted runtime context, not attacker
     input; scanning them caused harmless prompts to inherit matches from the
-    system prompt. Scan the current user turn plus tool results produced during
-    that turn, while keeping the full conversation separately for local audit
-    context.
+    system prompt. Only the current user turn and the tool results produced
+    during that turn are scanned. Each part is tagged with where it came from
+    (``constants.INJECTION_CONTEXTS``) — the closed context an injection report
+    carries (Refine R1, decision 24); never the source's address.
     """
-    current = str(user_message or "").strip()
     messages = request_messages if isinstance(request_messages, list) else []
-
     # Limit the scan to the most recent user turn and anything returned by tools
     # after it. This also prevents an old injection from firing again on every
     # later request in the same conversation.
@@ -205,27 +209,54 @@ def _untrusted_request_text(user_message: Any, request_messages: Any) -> str:
         if isinstance(msg, dict) and str(msg.get("role") or "").lower() == "user":
             start = idx
             break
-
-    parts: List[str] = []
+    tool_names = _tool_names_by_call_id(messages)
+    sources: List[Tuple[str, str]] = []
     seen: set[str] = set()
 
-    def add(text: str) -> None:
+    def add(context: str, text: str) -> None:
         value = text.strip()
         if value and value not in seen:
             seen.add(value)
-            parts.append(value)
+            sources.append((context, value))
 
-    add(current)
+    add("in-user-prompt", str(user_message or ""))
     for msg in messages[start:]:
-        if not isinstance(msg, dict):
-            continue
-        role = str(msg.get("role") or "").lower()
+        role = str(msg.get("role") or "").lower() if isinstance(msg, dict) else ""
         # User content and tool output are the untrusted boundaries. System,
         # developer, and assistant content must never create a user finding.
-        if role not in ("user", "tool"):
-            continue
-        add(session_context._message_text(msg.get("content")))
-    return "\n".join(parts)
+        if role == "user":
+            add("in-user-prompt", session_context._message_text(msg.get("content")))
+        elif role == "tool":
+            name = str(msg.get("name") or tool_names.get(str(msg.get("tool_call_id") or ""), "")).lower()
+            context = "in-fetched-page" if name.startswith(_FETCH_TOOL_PREFIXES) else "in-tool-output"
+            add(context, session_context._message_text(msg.get("content")))
+    return sources
+
+
+def _tool_names_by_call_id(messages: List[Any]) -> Dict[str, str]:
+    """``tool_call_id`` -> tool name, from the assistant turns' ``tool_calls``."""
+    names: Dict[str, str] = {}
+    for msg in messages:
+        calls = msg.get("tool_calls") if isinstance(msg, dict) else None
+        for call in calls if isinstance(calls, list) else []:
+            function = call.get("function") if isinstance(call, dict) else None
+            if isinstance(function, dict) and call.get("id"):
+                names[str(call["id"])] = str(function.get("name") or "")
+    return names
+
+
+def _injection_by_source(sources: List[Tuple[str, str]], rs: Any, discover: bool) -> List[Any]:
+    """Injection findings (graph matches, plus heuristic candidates when
+    *discover*) scanned per source so each carries its context; a pattern seen
+    in several sources is reported once, with the first source's context."""
+    found: Dict[str, Any] = {}
+    for context, text in sources:
+        findings = detection.detect_injection(text, rs, context)
+        if discover:
+            findings += detection.discover_injection(text, rs, context)
+        for finding in findings:
+            found.setdefault(finding.identifier, finding)
+    return list(found.values())
 
 
 def on_pre_api_request(**kwargs: Any) -> None:
@@ -236,12 +267,9 @@ def on_pre_api_request(**kwargs: Any) -> None:
     try:
         cfg = _config()
         rs = ruleset.get(cfg)
-        text = _untrusted_request_text(
-            kwargs.get("user_message"), kwargs.get("request_messages")
-        )
-        findings = detection.detect_injection(text, rs)
-        if cfg.discover:
-            findings = findings + detection.discover_injection(text, rs)
+        sources = _untrusted_request_sources(kwargs.get("user_message"), kwargs.get("request_messages"))
+        text = "\n".join(part for _, part in sources)   # the LLM reviewer's input
+        findings = _injection_by_source(sources, rs, cfg.discover)
         findings = reporting._flag_worthy(cfg, findings)
         detail = {
             "session_id": kwargs.get("session_id"),

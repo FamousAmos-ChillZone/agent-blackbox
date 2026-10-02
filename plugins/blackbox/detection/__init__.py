@@ -23,7 +23,7 @@ from __future__ import annotations
 from . import osv, reviewer
 from .action_parsing import SENSITIVE_PATH_CATEGORIES, file_access_arg, parse_dependency_installs, parse_downloads, parse_shell_reads
 from .content_scanners import SKILL_DANGER_SHAPES
-from .osv import DEPENDENCY_ECOSYSTEMS
+from .osv import DEPENDENCY_ECOSYSTEMS, advisory_kind
 from .reviewer_setup import cmd_setup_llm
 from .detectors import (
     Finding,
@@ -44,6 +44,7 @@ from .shell_shapes import ESCALATION_SHAPES, SHELL_TOOLS, command_from_args
 
 __all__ = [
     "DEPENDENCY_ECOSYSTEMS",
+    "advisory_kind",
     "ESCALATION_SHAPES",
     "SENSITIVE_PATH_CATEGORIES",
     "SHELL_TOOLS",
