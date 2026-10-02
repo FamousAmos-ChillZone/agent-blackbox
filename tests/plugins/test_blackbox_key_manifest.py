@@ -153,7 +153,8 @@ def test_replayed_lower_sequence_statements_lose_to_terminal_ones():
 
 def test_statement_types_know_whether_they_raise_or_end_enforcement():
     kinds = order.CuratorStatement
-    assert {k for k in kinds if k.raises_enforcement} == {kinds.PROMOTION, kinds.PAUSE}
+    assert {k for k in kinds if k.raises_enforcement} == {kinds.PROMOTION, kinds.PAUSE, kinds.CONFIRMATION,
+                                                         kinds.COUNTED_AUTHORS, kinds.BACKLOG}
     assert {k for k in kinds if k.terminal} == {kinds.REVOCATION, kinds.REJECTION}
 
 

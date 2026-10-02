@@ -35,12 +35,25 @@ from typing import Dict, Iterable, Tuple
 
 
 class CuratorStatement(Enum):
-    """The curator statement types (the envelope's ``statement_type``)."""
+    """The curator statement types (the envelope's ``statement_type``).
 
-    PROMOTION = "blackbox.promotion"     # a threat enters the verified tier (raises)
-    PAUSE = "blackbox.pause"             # community ingest paused — the two-key pause flag (raises; KI-118)
-    REVOCATION = "blackbox.revocation"   # a verified threat is withdrawn (reduces; terminal)
-    REJECTION = "blackbox.rejection"     # a reported threat is refused (reduces; terminal)
+    Where each lives (plan §06): enforcement-affecting ones (promotion,
+    revocation, pause, counted-author list) in the verified graph under the
+    pinned author; advisory ones (confirmation, in-review, deferral-lapsed,
+    rejection of a community report, backlog, away) in community shared
+    memory. Every one is signer-verified against the key manifest.
+    """
+
+    PROMOTION = "blackbox.promotion"             # a threat enters the verified tier (raises)
+    PAUSE = "blackbox.pause"                     # community ingest paused — the two-key pause flag (raises; KI-118)
+    CONFIRMATION = "blackbox.confirmation"       # curator confirms a community threat (stage attestation; raises)
+    COUNTED_AUTHORS = "blackbox.counted-authors"  # the Phase 1 counted-author list (raises; removal = denylist)
+    BACKLOG = "blackbox.backlog"                 # SLA suspended for some lanes (suppresses an alarm; raises)
+    REVOCATION = "blackbox.revocation"           # a verified threat is withdrawn (reduces; terminal)
+    REJECTION = "blackbox.rejection"             # a reported threat is refused (reduces; terminal)
+    IN_REVIEW = "blackbox.in-review"             # the curator acknowledged a report (advisory)
+    DEFERRAL_LAPSED = "blackbox.deferral-lapsed"  # a DEFERRED threat lapsed after 30 d (advisory)
+    AWAY = "blackbox.away"                       # one curator key is away {key, from, until} (advisory)
 
     @property
     def terminal(self) -> bool:
@@ -54,7 +67,10 @@ class CuratorStatement(Enum):
 
 
 _TERMINAL = frozenset({CuratorStatement.REVOCATION, CuratorStatement.REJECTION})
-_RAISING = frozenset({CuratorStatement.PROMOTION, CuratorStatement.PAUSE})
+#: Statements that raise enforcement or suppress an alarm need the manifest's
+#: full threshold (2-of-3, KI-134); the others need one curator key.
+_RAISING = frozenset({CuratorStatement.PROMOTION, CuratorStatement.PAUSE, CuratorStatement.CONFIRMATION,
+                      CuratorStatement.COUNTED_AUTHORS, CuratorStatement.BACKLOG})
 
 
 @dataclass(frozen=True)

@@ -39,7 +39,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from typing import AbstractSet, Dict, Iterable, Mapping, Optional, Tuple
+from typing import AbstractSet, Dict, FrozenSet, Iterable, Mapping, Optional, Tuple
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -113,13 +113,20 @@ class KeyManifest:
         grandfathered — an asset added later is not legacy and must be signed."""
         return legacy_assets_hash(legacy_uals) == self.legacy_assets_hash
 
-    def has_quorum(self, statement: Optional[signing.SignedEnvelope], *, statement_type: str) -> bool:
-        """True when at least ``threshold`` of this manifest's curator keys
-        validly signed *statement* for this manifest's environment, graph,
-        chain and root epoch."""
+    def curator_signers(self, statement: Optional[signing.SignedEnvelope], *, statement_type: str,
+                        graph: Optional[str] = None) -> FrozenSet[str]:
+        """This manifest's curator keys that validly signed *statement* for its
+        environment, chain and root epoch, in *graph* (default: the manifest's
+        verified graph — advisory statements live in the community graph)."""
         signers = signing.verified_signers(statement, statement_type=statement_type, environment=self.environment,
-                                           graph=self.graph, chain=self.chain, root_epoch=self.root_epoch)
-        return len(signers & frozenset(self.curator_keys)) >= self.threshold
+                                           graph=graph or self.graph, chain=self.chain, root_epoch=self.root_epoch)
+        return signers & frozenset(self.curator_keys)
+
+    def has_quorum(self, statement: Optional[signing.SignedEnvelope], *, statement_type: str,
+                   graph: Optional[str] = None) -> bool:
+        """True when at least ``threshold`` curator keys signed *statement*
+        (see :meth:`curator_signers`)."""
+        return len(self.curator_signers(statement, statement_type=statement_type, graph=graph)) >= self.threshold
 
 
 def _validate(manifest: KeyManifest) -> None:

@@ -33,6 +33,9 @@ XSD_DATETIME = "http://www.w3.org/2001/XMLSchema#dateTime"
 
 REPORT_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}ThreatReport"
 FALSE_POSITIVE_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}FalsePositive"
+#: A signed curator statement (Refine R2): verdicts, the counted-author list,
+#: backlog and away notices. Its meaning lives in the signed envelope.
+CURATOR_STATEMENT_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}CuratorStatement"
 #: A reporter withdrawing its own report (Refine R1, lifecycle RETRACT).
 RETRACTION_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}Retraction"
 
@@ -213,6 +216,21 @@ SKILL_REGISTRIES = ("mcp-registry", "clawhub", "npm", "pypi", "oci", "mcpb")
 
 #: Why a dispute (``g:FalsePositive``) says a threat is wrong (plan §04).
 FALSE_POSITIVE_REASONS = ("internal-mirror", "unreachable", "tolerable", "fixed", "wrong")
+
+#: Why a curator REJECTS a community report (Refine R2). The plan requires a
+#: closed reason but never listed one; these are drawn from its own concepts:
+#: benign (checked, not malicious), duplicate (already verified), allowlisted
+#: (a byte-exact allowlisted name), scope-exceeds-evidence (rule scope must not
+#: exceed evidence scope), unverifiable (no independent evidence could exist),
+#: bad-faith (a strike). Missing-but-obtainable evidence is DEFERRED, not rejected.
+REJECTION_REASONS = ("benign", "duplicate", "allowlisted", "scope-exceeds-evidence", "unverifiable", "bad-faith")
+#: Why a curator REVOKES a verified rule (Refine R2), from the plan's revocation
+#: paths: a false positive, upstream evidence withdrawn, fixed upstream, a rule
+#: broader than its evidence, superseded by another rule, a dispute upheld.
+REVOCATION_REASONS = ("false-positive", "evidence-withdrawn", "fixed-upstream", "scope-too-broad",
+                      "superseded", "dispute-upheld")
+#: Counted-author classes in the Phase 1 list (plan §05).
+COUNTED_AUTHOR_CLASSES = ("partner", "established")
 
 #: Frameworks a report may name.
 REPORT_FRAMEWORKS = ("hermes", "openclaw")
