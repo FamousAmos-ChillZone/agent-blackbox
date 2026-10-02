@@ -329,3 +329,14 @@ def test_a_dispute_carries_its_closed_reason(wired):
     reasons = [q["object"] for q in quads if q["predicate"] == constants.REPORT_REASON_PRED]
     assert reasons == ['"internal-mirror"']
     assert report_command.cmd_report(_args(false_positive="dep:npm:other@1", reason="I just don't like it")) == 2
+
+
+def test_a_failed_dispute_is_recorded_in_the_ledger(monkeypatch, bb_home, capsys):
+    """KI-015: every share attempt, success or failure, lands in the local
+    ledger — a failed dispute used to leave no trace (found building R1c)."""
+    monkeypatch.setattr(report_command, "load_blackbox_config", lambda: CFG_ON)
+    monkeypatch.setattr(report_command, "DkgClient", lambda **kw: FakeClient(fail=True))
+    monkeypatch.setattr(kernel_identity, "reporter_address", lambda c: REPORTER)
+    assert report_command.cmd_report(_args(false_positive="dep:npm:innocent@2.0.0", reason="wrong")) == 1
+    rows = audit.read_share_ledger()
+    assert rows and rows[0]["category"] == "false-positive" and rows[0]["ok"] is False

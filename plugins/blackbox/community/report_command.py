@@ -320,14 +320,15 @@ def _submit_false_positive(client: DkgClient, cfg, identifier: str, reason: Opti
     name = f"fp-{threat_ids.stable_hash(identifier + reporter, 16)}"
     subject = threat_ids.report_uri(identifier, reporter) + ":fp"
     outcome, detail = sharing.send_report(client, cfg.community_graph_id, name, q)
-    if outcome is sharing.ShareOutcome.FAILED:
-        print(f"Dispute FAILED: {display_safety.term_safe(detail, 160)}")
-        return 1
     audit.record_share_outcome(
         identifier=identifier, category="false-positive", severity="info",
         subject=subject, asset_name=name, ok=outcome is sharing.ShareOutcome.ACCEPTED,
         error=detail, outcome=outcome.value,
     )
+    if outcome is sharing.ShareOutcome.FAILED:
+        print(f"Dispute FAILED: {display_safety.term_safe(detail, 160)}")
+        print("The attempt is recorded in your local reports ledger.")
+        return 1
     if outcome is sharing.ShareOutcome.REJECTED_SAME_VERSION:
         print(f"Dispute already on the community graph for: {display_safety.term_safe(identifier)} (not re-sent)")
         return 0
