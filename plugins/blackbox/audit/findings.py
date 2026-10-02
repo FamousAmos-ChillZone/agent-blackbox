@@ -84,6 +84,8 @@ def _flatten_finding_row(rec: Dict[str, Any], default_fw: str) -> Dict[str, Any]
         "evidence": finding.get("evidence") or finding.get("title"),
         "confirmed": bool(finding.get("confirmed", True)),
         "source": finding.get("source") or ("public" if finding.get("confirmed", True) else "heuristic"),
+        # What the hook did with it: "block" | "flag" ("" for rows older than KI-189).
+        "decision": str(detail.get("decision") or ""),
         # Local-only conversation snapshot (redacted upstream).
         "context": _bounded_context(detail.get("context") or finding.get("context")),
     }
@@ -146,14 +148,15 @@ def read_findings(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
 _FIRED_SCAN_LIMIT = 5_000
 
 
-def finding_counts_by_identifier(limit: int = _FIRED_SCAN_LIMIT) -> Dict[str, int]:
-    """How many times each threat identifier fired on this machine (newest
-    *limit* findings). R10 uses it for "a revoked threat fired N times here";
-    the audit does not yet record whether a firing BLOCKED (KI-189)."""
+def blocked_counts_by_identifier(limit: int = _FIRED_SCAN_LIMIT) -> Dict[str, int]:
+    """How many actions each threat identifier BLOCKED on this machine (newest
+    *limit* findings whose hook decision was ``block``, KI-189). R10 uses it
+    for "a revoked threat blocked N actions here"; a flag-only firing is not
+    an action the operator lost."""
     counts: Dict[str, int] = {}
     for row in read_findings(limit=limit):
         identifier = str(row.get("identifier") or "")
-        if identifier:
+        if identifier and row.get("decision") == "block":
             counts[identifier] = counts.get(identifier, 0) + 1
     return counts
 

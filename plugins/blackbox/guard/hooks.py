@@ -69,6 +69,27 @@ def _dedupe_api_findings(findings: List[detection.Finding], detail: Dict[str, An
 # ---------------------------------------------------------------------------
 
 
+def _blocking(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List[detection.Finding]:
+    """The findings that block this call (empty unless block mode is on).
+
+    Confirmed findings and custom rules block; community/heuristic ones only
+    alert. ``vulnerability`` kind never blocks (a legit-but-vulnerable package
+    must keep working) — only ``malware`` is stopped. IOC findings alert but
+    never auto-block in this rollout: network and crypto-address blocklists
+    are higher-churn / higher-FP than pinned package versions, so they are
+    validated in audit mode first.
+    """
+    if not cfg.block_enabled:
+        return []
+    return [
+        f for f in findings
+        if (f.confirmed or f.source in ("custom", "secret"))
+        and getattr(f, "kind", None) not in (constants.KIND_VULNERABILITY, "historical")
+        and f.category != "ioc"
+        and cfg.meets_block_threshold(f.severity)
+    ]
+
+
 def on_pre_tool_call(
     tool_name: str = "",
     args: Any = None,
@@ -102,27 +123,18 @@ def on_pre_tool_call(
             ctx = session_context._tool_context(session_id, args)
             if ctx:
                 detail["context"] = ctx
+        blocking = _blocking(cfg, findings)
+        if findings:
+            # KI-189: the audit row says what the hook DID, not only what it saw —
+            # R10's "a revoked threat blocked N actions here" counts these.
+            detail["decision"] = "block" if blocking else "flag"
         reporting._report_and_audit(cfg, "pre_tool_call", findings, detail)
         # OSV auto-discovery runs off the blocking path so a network lookup
         # never delays or breaks the tool call.
         if cfg.discover and cfg.osv_lookup:
             background._spawn_osv_discovery(cfg, rs, tool_name, args)
-        if cfg.block_enabled:
-            # Confirmed findings and custom rules block; community/heuristic ones
-            # only alert. ``vulnerability`` kind never blocks (a legit-but-
-            # vulnerable package must keep working) — only ``malware`` is stopped.
-            blocking = [
-                f for f in findings
-                if (f.confirmed or f.source in ("custom", "secret"))
-                and getattr(f, "kind", None) not in (constants.KIND_VULNERABILITY, "historical")
-                # IOC findings alert but never auto-block in this rollout: network
-                # and crypto-address blocklists are higher-churn/higher-FP than
-                # pinned package versions, so validate them in audit mode first.
-                and f.category != "ioc"
-                and cfg.meets_block_threshold(f.severity)
-            ]
-            if blocking:
-                return {"action": "block", "message": blackbox_block_message(blocking)}
+        if blocking:
+            return {"action": "block", "message": blackbox_block_message(blocking)}
         return None
     except Exception as exc:  # pragma: no cover - fail open
         logger.debug("blackbox: pre_tool_call failed: %s", exc)

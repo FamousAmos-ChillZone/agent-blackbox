@@ -24,7 +24,7 @@ from __future__ import annotations
 from .activity import count_audit, read_audit, read_local_activity
 from .findings import (
     count_findings,
-    finding_counts_by_identifier,
+    blocked_counts_by_identifier,
     local_active_frameworks,
     local_frameworks,
     read_file_access,
@@ -49,7 +49,7 @@ __all__ = [
     "allow_report",
     "count_audit",
     "count_findings",
-    "finding_counts_by_identifier",
+    "blocked_counts_by_identifier",
     "local_active_frameworks",
     "local_frameworks",
     "mark_reported",

@@ -159,7 +159,7 @@ def _print_health(cfg: Any, rs: Any, client: DkgClient, reachable: bool) -> None
             read = community.read_verified_reports(client, cfg)
         except Exception as exc:  # pragma: no cover - status must never crash on the node
             logger.debug("blackbox status: community read skipped: %s", exc)
-    items = health.operator_health(health.gather(cfg, rs, reachable, read, audit.finding_counts_by_identifier(), time.time()))
+    items = health.operator_health(health.gather(cfg, rs, reachable, read, audit.blocked_counts_by_identifier(), time.time()))
     for line in health.render_lines(items):
         print(line)
 

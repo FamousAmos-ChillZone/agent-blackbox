@@ -55,7 +55,7 @@ def test_a_healthy_node_has_nothing_to_do():
     ({"backlog": "3,4,5"}, health.HealthClass.INFO, "BACKLOG"),
     ({"away_keys": 1}, health.HealthClass.INFO, "away"),
     ({"revoked": {THREAT: 0}}, health.HealthClass.INFO, "REVOKED"),
-    ({"revoked": {THREAT: 3}}, health.HealthClass.ACTION, "fired 3"),
+    ({"revoked": {THREAT: 3}}, health.HealthClass.ACTION, "blocked 3"),
     ({"held_back": 7}, health.HealthClass.INFO, "held"),
 ])
 def test_every_operator_state_has_a_class_and_a_what_to_do(over, klass, needle):
@@ -139,3 +139,15 @@ def test_api_health_and_my_reports_serve_the_same_facts(monkeypatch, tmp_path):
     row = client.get("/api/reports").json()["outbound"][0]
     assert (row["identifier"], row["outcome"], row["stage"]) == (THREAT, "accepted", "reported")
     assert "unlisted" in row["stage_reason"]
+
+
+def test_the_audit_counts_only_the_firings_that_blocked(monkeypatch, tmp_path):
+    """KI-189: the hook's decision travels with the finding; a flag-only firing is not a lost action."""
+    from plugins.blackbox import audit
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
+    finding = {"identifier": THREAT, "category": "dependency", "severity": "critical", "title": "t"}
+    audit.record(event="pre_tool_call", findings=[finding], detail={"tool_name": "terminal", "decision": "block"})
+    audit.record(event="pre_tool_call", findings=[finding], detail={"tool_name": "terminal", "decision": "flag"})
+    audit.record(event="pre_tool_call", findings=[finding], detail={"tool_name": "terminal"})      # a pre-KI-189 row
+    assert audit.blocked_counts_by_identifier() == {THREAT: 1}
+    assert [row["decision"] for row in audit.read_findings(limit=10)].count("block") == 1

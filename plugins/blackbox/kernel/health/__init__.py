@@ -57,7 +57,7 @@ class HealthInputs:
     ``community_configured``; ``community_paused``; ``read_unavailable_reason``
     ("" when the last community read was fine); ``curator_trusted`` (a key
     manifest this network trusts); ``backlog`` (lanes text, "" when none);
-    ``away_keys``; ``revoked`` ({identifier: times it fired here});
+    ``away_keys``; ``revoked`` ({identifier: actions it BLOCKED here});
     ``held_back`` (statements over the per-author budget).
     """
 
@@ -120,10 +120,10 @@ def _community(inputs: HealthInputs) -> List[HealthItem]:
     if inputs.away_keys:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"{inputs.away_keys} curator key(s) away",
                                 "nothing to do — new promotions may wait; flags and blocks unaffected"))
-    for identifier, fired in sorted((inputs.revoked or {}).items()):
-        klass = HealthClass.ACTION if fired else HealthClass.INFO
-        todo = (f"it fired {fired} time(s) on this machine — review those findings; the rule is now withdrawn"
-                if fired else "nothing to do — the rule is withdrawn everywhere")
+    for identifier, blocked in sorted((inputs.revoked or {}).items()):
+        klass = HealthClass.ACTION if blocked else HealthClass.INFO
+        todo = (f"it blocked {blocked} action(s) on this machine — review those findings; the rule is now withdrawn"
+                if blocked else "nothing to do — the rule is withdrawn everywhere")
         items.append(HealthItem(_OPERATOR, klass, f"threat REVOKED by the curator: {identifier}", todo))
     if inputs.held_back:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"{inputs.held_back} community statement(s) held by the per-author daily budget",
@@ -143,13 +143,13 @@ def red(item: HealthItem) -> bool:
     return item.klass is not HealthClass.INFO
 
 
-def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], fired_by_identifier: Mapping[str, int],
+def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked_by_identifier: Mapping[str, int],
            now: float) -> HealthInputs:
     """Build :class:`HealthInputs` from a config, a compiled ruleset, node
-    reachability, the last community read (or None) and how often each threat
-    fired here (``audit.finding_counts_by_identifier()``)."""
+    reachability, the last community read (or None) and how many actions each
+    threat blocked here (``audit.blocked_counts_by_identifier()``)."""
     view = getattr(read, "curator", None)
-    revoked = {ident: int(fired_by_identifier.get(ident, 0)) for ident in (view.revoked if view is not None else ())}
+    revoked = {ident: int(blocked_by_identifier.get(ident, 0)) for ident in (view.revoked if view is not None else ())}
     return HealthInputs(
         node_reachable=node_reachable,
         ruleset_age_s=(now - getattr(rs, "synced_at", 0)) if getattr(rs, "synced_at", 0) else None,
