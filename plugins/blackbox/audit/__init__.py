@@ -10,7 +10,7 @@ private working-memory record in the local node. Callers use this surface:
   :func:`count_audit`, :func:`read_local_activity`, :func:`read_file_access`,
   :func:`local_frameworks`, :func:`local_active_frameworks`.
 * Outbound-report bookkeeping: :func:`record_share_outcome`,
-  :func:`read_share_ledger`, :func:`recently_reported`, :func:`mark_reported`,
+  :func:`read_share_ledger`, :func:`erase_share_records`, :func:`recently_reported`, :func:`mark_reported`,
   :func:`allow_report`.
 
 Usage::
@@ -37,6 +37,7 @@ from .redaction import redact, sanitize_text
 from .share_ledger import (
     allow_report,
     mark_reported,
+    erase_share_records,
     read_share_ledger,
     recently_reported,
     previously_accepted,
@@ -54,6 +55,7 @@ __all__ = [
     "read_file_access",
     "read_findings",
     "read_local_activity",
+    "erase_share_records",
     "read_share_ledger",
     "recently_reported",
     "record",

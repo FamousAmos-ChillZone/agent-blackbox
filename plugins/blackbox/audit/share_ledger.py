@@ -211,3 +211,16 @@ def allow_report(daily_limit: int) -> bool:
     except Exception as exc:  # pragma: no cover - fail open
         logger.debug("blackbox: rate-limit state failed (%s); allowing", exc)
         return True
+
+
+def erase_share_records() -> int:
+    """Delete this node's share ledger and cooldown/cap state (Refine R1,
+    ``blackbox report --erase-identity``). Returns how many files were removed."""
+    removed = 0
+    for path in (log_store._home() / _REPORTS_LOG, _rate_state_path()):
+        try:
+            path.unlink()
+            removed += 1
+        except FileNotFoundError:
+            continue
+    return removed

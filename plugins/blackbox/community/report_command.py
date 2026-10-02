@@ -2,7 +2,8 @@
 
 Manual reports go through the same share path as automatic ones; also
 ``--status`` (this node's contributions, from the share ledger plus the
-graph). Disputes and retractions are in :mod:`.statement_verbs`.
+graph). Disputes and retractions are in :mod:`.statement_verbs`; export,
+key restore and identity erasure in :mod:`.report_rights`.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 from .. import audit
 from .. import detection
-from . import graph_stats, report_builder, report_schema, report_signer, sharing, statement_verbs
+from . import graph_stats, report_builder, report_rights, report_schema, report_signer, sharing, statement_verbs
 from . import reader as graph_reader
 from ..kernel import constants, threat_ids
 
@@ -181,6 +182,11 @@ _REPORT_FLAGS: Tuple[Tuple[Tuple[str, ...], Dict[str, Any]], ...] = (
     (("--false-positive",), dict(dest="false_positive", metavar="IDENTIFIER",
                                  help="Dispute a community threat (needs --reason)")),
     (("--retract",), dict(metavar="IDENTIFIER", help="Withdraw this node's own report of IDENTIFIER (final)")),
+    (("--export",), dict(metavar="FILE", help="Write your statements + a reporter KEY BACKUP to FILE (JSON, 0600)")),
+    (("--restore-key",), dict(dest="restore_key", metavar="FILE", help="Restore the reporter key from an export")),
+    (("--erase-identity",), dict(dest="erase_identity", action="store_true",
+                                 help="Destroy the reporter key and local share records (needs --confirm)")),
+    (("--confirm",), dict(action="store_true", help="Confirm --erase-identity")),
     (("--ioc-type",), dict(dest="ioc_type", choices=list(threat_ids.IOC_TYPES), help="ioc: indicator type")),
     (("--value",), dict(help="ioc: the indicator value (domain/url/ip/hash/...)")),
     (("--pattern",), dict(help="injection: the pattern — hashed here, never sent")),
@@ -231,8 +237,8 @@ def cmd_report(args: argparse.Namespace) -> int:
     outcome + report subject (lifecycle: ACKNOWLEDGE).
     """
     cfg = load_blackbox_config()
-    if args.status:
-        return _report_status(cfg)
+    if args.status or report_rights.wants_local_verb(args):   # local verbs: no node, nothing sent
+        return _report_status(cfg) if args.status else report_rights.run_local_verb(args)
     if not cfg.community_enabled:
         if not cfg.community_graph_id:
             print("Community sharing is dormant: no community graph is configured.")

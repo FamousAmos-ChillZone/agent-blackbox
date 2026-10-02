@@ -18,6 +18,13 @@ Usage::
     store = reporter_key.ReporterKeyStore()        # default path
     key = store.load_or_create()                   # Ed25519PrivateKey
     print(store.public_key_hex())                  # the signer name
+    backup = store.export_pem()                    # operator rights (Refine R1):
+    store.install_pem(backup)                      # restore after a reinstall
+    store.erase()                                  # destroy this identity
+
+The export/install/erase methods exist for the operator's own rights
+(``blackbox report --export / --restore-key / --erase-identity``); nothing
+else reads the key bytes out.
 """
 
 from __future__ import annotations
@@ -74,6 +81,51 @@ class ReporterKeyStore:
     def public_key_hex(self) -> str:
         """The signer name of this node's key (creates the key if needed)."""
         return signing.public_key_hex(self.load_or_create())
+
+    # -- operator rights (Refine R1: export with key backup, restore, erase) --
+
+    def export_pem(self) -> bytes:
+        """The key file's PEM, for a backup the OPERATOR keeps. Raises
+        :class:`ReporterKeyError` when there is no usable key."""
+        with self._lock:
+            if not self._path.exists():
+                raise ReporterKeyError("this node has no reporter key yet")
+            self._read()   # refuse to back up an unusable file
+            return self._path.read_bytes()
+
+    def install_pem(self, pem: bytes) -> str:
+        """Restore a backed-up key; returns its signer name.
+
+        Idempotent for the same key. Refuses (:class:`ReporterKeyError`) to
+        replace a DIFFERENT existing key — that would silently change this
+        node's identity; erase first. The file is created like a new key
+        (atomic, 0600).
+        """
+        try:
+            key = load_pem_private_key(pem, password=None)
+        except (ValueError, TypeError) as exc:
+            raise ReporterKeyError(f"not a reporter key backup: {exc}") from exc
+        if not isinstance(key, Ed25519PrivateKey):
+            raise ReporterKeyError("not an Ed25519 reporter key")
+        restored = signing.public_key_hex(key)
+        with self._lock:
+            if not self._link_new(pem):
+                current = signing.public_key_hex(self._read())
+                if current != restored:
+                    raise ReporterKeyError("a different reporter key already exists; erase it first")
+            self._key = key
+        return restored
+
+    def erase(self) -> bool:
+        """Destroy the key file (a new identity is created on next use).
+        True when a key was removed."""
+        with self._lock:
+            self._key = None
+            try:
+                self._path.unlink()
+            except FileNotFoundError:
+                return False
+            return True
 
     def _read(self) -> Ed25519PrivateKey:
         try:
