@@ -63,14 +63,14 @@ class _Node:
 # ------------------------------------------------------------------ the schedule (pure)
 
 
-def test_backoff_doubles_from_twenty_seconds_and_caps_at_ten_minutes():
-    assert [share_retry.backoff_seconds(n) for n in (1, 2, 3, 4, 5, 6, 7)] == [20, 40, 80, 160, 320, 600, 600]
+def test_backoff_doubles_from_twenty_seconds_and_caps_at_two_minutes():
+    assert [share_retry.backoff_seconds(n) for n in (1, 2, 3, 4, 5, 6, 7)] == [20, 40, 80, 120, 120, 120, 120]
 
 
-def test_give_up_after_twelve_attempts_or_a_day():
+def test_give_up_after_the_attempt_cap_or_a_day():
     now = 1_000_000.0
-    assert not share_retry.should_give_up(_pending(attempts=11, first_failed=now - 60), now)
-    assert share_retry.should_give_up(_pending(attempts=12, first_failed=now - 60), now)
+    assert not share_retry.should_give_up(_pending(attempts=share_retry.MAX_ATTEMPTS - 1, first_failed=now - 60), now)
+    assert share_retry.should_give_up(_pending(attempts=share_retry.MAX_ATTEMPTS, first_failed=now - 60), now)
     assert share_retry.should_give_up(_pending(attempts=2, first_failed=now - 25 * 3600), now)
 
 

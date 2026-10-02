@@ -55,7 +55,13 @@ def _background_pulse(config: BlackboxConfig) -> None:
 
         client = DkgClient(url=config.dkg_url, dkg_home=config.dkg_home)
         refresh_cycle._retry_shares(client, config)
-        if community.PULSE.changed(client, config):
+        changed = community.PULSE.changed(client, config)
+        # A process that just started (or a node whose first full refresh is an hour
+        # away) baselines on reports that are ALREADY there: apply them once now
+        # when the cached generation holds no community tier yet (bench finding
+        # 2026-10-02: A's report never became matchable on B until a full refresh).
+        empty_tier = not refresh_cycle.peek(config).community
+        if changed or (community.PULSE.baselined_now and empty_tier and community.PULSE.report_count > 0):
             _reapply_community(config, client)
     except Exception as exc:  # pragma: no cover - fail open
         logger.debug("blackbox: community pulse failed: %s", exc)

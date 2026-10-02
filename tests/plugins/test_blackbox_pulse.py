@@ -127,6 +127,31 @@ def test_a_changed_graph_re_applies_the_community_tier_and_writes_it_through(mon
     assert pulse_beat.pulse(cfg) is False                  # the interval has not passed
 
 
+def test_a_process_that_starts_with_an_empty_tier_applies_the_reports_already_there(monkeypatch):
+    """Bench finding 2026-10-02: B's dashboard baselined on A's report and never applied it — the
+    first full refresh was an hour away. The first probe now applies when the cached tier is empty."""
+    cfg = BlackboxConfig(report=True, community_graph_id=GRAPH, context_graph_id=VM_GRAPH, community_poll_interval=20)
+    graph = _Graph([signed_row(THREAT, Reporter("0xa"))])          # the report is ALREADY there
+    monkeypatch.setattr(pulse_beat, "DkgClient", lambda *a, **k: graph)
+    rs = compiler.Ruleset(context_graph_id=VM_GRAPH)
+    rs.synced_at = time.time()
+    refresh_cycle._memory.store(rs)                                   # no community tier yet
+    assert pulse_beat.pulse(cfg) is True                              # first beat = baseline probe
+    for _ in range(100):
+        if THREAT in refresh_cycle.peek(cfg).community:
+            break
+        time.sleep(0.05)
+    assert THREAT in refresh_cycle.peek(cfg).community
+    # and a tier that already holds something is NOT re-applied on a mere baseline
+    community.PULSE.reset()
+    graph2 = _Graph([signed_row("ioc:domain:other.example", Reporter("0xb"))])
+    monkeypatch.setattr(pulse_beat, "DkgClient", lambda *a, **k: graph2)
+    community.PULSE._last_probe = 0.0
+    assert pulse_beat.pulse(cfg) is True
+    time.sleep(0.5)
+    assert "ioc:domain:other.example" not in refresh_cycle.peek(cfg).community   # waits for a change or the refresh
+
+
 def test_the_pulse_is_off_without_a_graph_or_with_interval_zero(monkeypatch):
     called = []
     monkeypatch.setattr(pulse_beat, "DkgClient", lambda *a, **k: called.append(1))

@@ -60,6 +60,7 @@ class CommunityPulse:
         self._lock = threading.Lock()
         self._last_probe = 0.0
         self._fingerprint: Optional[str] = None
+        self._baselined_now = False
 
     def due(self, interval_s: float) -> bool:
         """Claim the next probe slot when *interval_s* has passed (atomic)."""
@@ -80,6 +81,7 @@ class CommunityPulse:
             return False
         with self._lock:
             previous, self._fingerprint = self._fingerprint, current
+            self._baselined_now = previous is None
         if previous is None:
             return False
         if previous != current:
@@ -87,11 +89,30 @@ class CommunityPulse:
             return True
         return False
 
+    @property
+    def baselined_now(self) -> bool:
+        """True right after the probe that SET the baseline (a process that just
+        started, or the first probe after a reset) — the beat uses it to apply
+        the reports that already exist when the cached tier has none yet."""
+        with self._lock:
+            return self._baselined_now
+
+    @property
+    def report_count(self) -> int:
+        """How many reports the last successful probe counted (0 before any)."""
+        with self._lock:
+            head = (self._fingerprint or "0:").split(":", 1)[0]
+        try:
+            return int(head)
+        except ValueError:
+            return 0
+
     def reset(self) -> None:
         """Forget the baseline (tests, and after a full refresh re-read everything)."""
         with self._lock:
             self._last_probe = 0.0
             self._fingerprint = None
+            self._baselined_now = False
 
 
 #: The per-process pulse.

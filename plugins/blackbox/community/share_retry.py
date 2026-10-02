@@ -7,7 +7,7 @@ once and forgotten, so a node's first catches never reached the network.
 
 Now every FAILED share (never an "already shared" one, never a "cannot sign"
 one) is queued here with its already-built, already-signed quads and retried
-with exponential backoff — 20 s, 40 s, 80 s … capped at 10 minutes, at most
+with exponential backoff — 20 s, 40 s, 80 s, then every 2 minutes, at most
 :data:`MAX_ATTEMPTS` attempts within :data:`GIVE_UP_AFTER_SECONDS` — by the
 community pulse (:mod:`.pulse`, every ~20 s while the agent is active) and by
 every full ruleset refresh. The queue is persisted, so a share refused in a
@@ -44,11 +44,15 @@ from ..kernel.dkg_client import DkgClient
 
 logger = logging.getLogger(__name__)
 
-#: Backoff: the n-th retry waits RETRY_BASE_SECONDS * 2**(n-1), capped.
+#: Backoff: the n-th retry waits RETRY_BASE_SECONDS * 2**(n-1), capped. The cap
+#: is two minutes: mainnet accepted a fresh node's writes 30 s, ~10 min and
+#: ~11 min after subscribing in three measured runs, and a coarser cap turned
+#: the ~5-min window into an 11-min landing (bench 2026-10-02).
 RETRY_BASE_SECONDS = 20.0
-RETRY_MAX_SECONDS = 600.0
-#: A share that failed this many times, or that has been failing this long, is given up.
-MAX_ATTEMPTS = 12
+RETRY_MAX_SECONDS = 120.0
+#: A share that failed this many times (≈ 75 min at the cap), or that has
+#: been failing this long, is given up.
+MAX_ATTEMPTS = 40
 GIVE_UP_AFTER_SECONDS = 24 * 3600.0
 #: Most shares waiting at once (a flood of refusals never grows the file without bound).
 MAX_PENDING = 200
