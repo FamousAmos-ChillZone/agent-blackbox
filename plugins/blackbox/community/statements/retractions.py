@@ -15,13 +15,15 @@ name is fixed, so the same report cannot be re-sent afterwards.
 Usage (from the reader)::
 
     rows = page_community_rows(client, cfg, retractions.retractions_sparql)
-    withdrawn = retractions.verified_retractions(rows, environment, graph)
+    found = retractions.verified_retractions(rows, environment, graph)       # List[VerifiedRetraction]
+    withdrawn, _ = tombstones.applicable_withdrawals(found, reports, first_seen, now)
     reports = retractions.apply_retractions(reports, withdrawn)
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any, FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
 from ...kernel import signing, sparql_text, threat_ids
@@ -33,6 +35,16 @@ logger = logging.getLogger(__name__)
 
 #: One withdrawn voice: (signer key, threat identifier).
 Withdrawal = Tuple[str, str]
+
+
+@dataclass(frozen=True)
+class VerifiedRetraction:
+    """One verified retraction: its ``author`` (signer key), the
+    ``identifier`` it withdraws, and its own ``subject``."""
+
+    author: str
+    identifier: str
+    subject: str
 
 #: Rows per page (retractions are rare; the pager's row ceiling still applies).
 _PAGE_SIZE = 5000
@@ -53,9 +65,9 @@ SELECT ?r ?identifier ?reporter ?signedStatement WHERE {{
 """
 
 
-def _verified_withdrawal(row: Mapping[str, Any], environment: str, graph: str) -> Optional[Withdrawal]:
-    """(signer, identifier) when *row* is a retraction signed for this network
-    and graph whose shown fields match what was signed; else None."""
+def _verified_withdrawal(row: Mapping[str, Any], environment: str, graph: str) -> Optional[VerifiedRetraction]:
+    """The retraction in *row* when it is signed for this network and graph
+    and its shown fields match what was signed; else None."""
     envelope = signing.from_text(extract_binding(row.get(SIGNED_STATEMENT_VAR)))
     author = signing.verify(envelope, statement_type=RETRACT_STATEMENT, environment=environment, graph=graph)
     if author is None or envelope is None:
@@ -72,22 +84,22 @@ def _verified_withdrawal(row: Mapping[str, Any], environment: str, graph: str) -
     )
     if envelope.payload.get("subject") != subject or shown != (subject, identifier, reporter):
         return None
-    return author, identifier
+    return VerifiedRetraction(author=author, identifier=identifier, subject=subject)
 
 
-def verified_retractions(rows: Iterable[Mapping[str, Any]], environment: str, graph: str) -> FrozenSet[Withdrawal]:
-    """Every (signer, identifier) a verified retraction withdraws."""
-    withdrawn = set()
+def verified_retractions(rows: Iterable[Mapping[str, Any]], environment: str, graph: str) -> List[VerifiedRetraction]:
+    """Every retraction row that verifies; the rest are dropped and counted in the log."""
+    found: List[VerifiedRetraction] = []
     dropped = 0
     for row in rows:
-        withdrawal = _verified_withdrawal(row, environment, graph)
-        if withdrawal is None:
+        retraction = _verified_withdrawal(row, environment, graph)
+        if retraction is None:
             dropped += 1
         else:
-            withdrawn.add(withdrawal)
+            found.append(retraction)
     if dropped:
         logger.info("blackbox: community read ignored %d unsigned or unverifiable retraction row(s)", dropped)
-    return frozenset(withdrawn)
+    return found
 
 
 def apply_retractions(reports: Iterable[VerifiedReport], withdrawn: FrozenSet[Withdrawal]) -> List[VerifiedReport]:

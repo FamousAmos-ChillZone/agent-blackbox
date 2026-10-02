@@ -66,3 +66,17 @@ def signed_retraction_row(identifier: str, reporter: Reporter, environment: str 
         if obj.startswith('"') and obj.endswith('"'):
             row[quad["predicate"].rsplit("/", 1)[-1]] = json.loads(obj)
     return row
+
+
+def signed_dispute_row(identifier: str, reporter: Reporter, reason: str = "wrong", environment: str = NETWORK,
+                       graph: str = GRAPH) -> Dict[str, str]:
+    """One dispute (g:FalsePositive) row as the reader's dispute query returns it (Refine R2)."""
+    signer = ReportSigner(private_key=reporter.key, environment=environment, graph=graph)
+    quads = report_builder.build_false_positive_quads(identifier=identifier, reporter_address=reporter.address,
+                                                      reason=reason, signer=signer)
+    row = {"r": quads[0]["subject"]}
+    for quad in quads:
+        obj = quad["object"]
+        if obj.startswith('"') and obj.endswith('"'):
+            row[quad["predicate"].rsplit("/", 1)[-1]] = json.loads(obj)
+    return row

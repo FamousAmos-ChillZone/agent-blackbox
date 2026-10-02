@@ -13,6 +13,7 @@ Usage (through the package): ``read = community.read_verified_reports(client, cf
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -20,7 +21,7 @@ from ..kernel import constants
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, extract_binding
 from ..kernel import sparql_text
-from .statements import retractions
+from .statements import author_budget, disputes, retractions, tombstones
 from .report_signer import network_environment
 from .verification import ReportVerifier, VerifiedReport, verify_report_rows
 
@@ -187,13 +188,20 @@ class CommunityRead:
     """The result of :func:`read_verified_reports` (a tagged result).
 
     ``state`` says which case this is; ``reports`` holds the verified reports
-    (empty unless ROWS); ``reason`` explains an UNAVAILABLE read. Callers act
-    on ``state`` — an UNAVAILABLE read must never be treated as "no threats".
+    that count (empty unless ROWS); ``reason`` explains an UNAVAILABLE read.
+    Callers act on ``state`` — an UNAVAILABLE read must never be treated as
+    "no threats". Refine R2: ``disputes`` — verified disputes (display and,
+    later, decay; never enforcement); ``held_back`` — statements over an
+    author's daily budget; ``pending_tombstones`` — retractions waiting for a
+    report this node has not seen.
     """
 
     state: ReadState
     reports: Tuple[VerifiedReport, ...] = ()
     reason: str = ""
+    disputes: Tuple[disputes.VerifiedDispute, ...] = ()
+    held_back: int = 0
+    pending_tombstones: int = 0
 
     @property
     def available(self) -> bool:
@@ -248,10 +256,33 @@ def read_verified_reports(client: DkgClient, cfg: BlackboxConfig) -> CommunityRe
             return CommunityRead(ReadState.AUTHORISED_EMPTY)
         return _unavailable("empty read without proof of a synced subscription")
     reports, _dropped = verify_report_rows(rows, ReportVerifier(environment, cfg.community_graph_id))
-    # Refine R1: honour retractions. A failed retraction read makes the whole
-    # read unavailable (keep last-good) rather than count withdrawn reports.
+    return _honour_statements(client, cfg, environment, reports)
+
+
+def _honour_statements(client: DkgClient, cfg: BlackboxConfig, environment: str,
+                       reports: List[VerifiedReport]) -> CommunityRead:
+    """Honour every reporter statement BEFORE anything is counted (Refine R2).
+
+    Reads and verifies retractions and disputes, applies ONE per-author
+    budget over reports, retractions and disputes (reader-observed days),
+    then removes withdrawn reports. A failed or malformed page of either
+    statement type makes the whole read unavailable (keep last-good), so a
+    withdrawn report is never counted again because its retraction could not
+    be read.
+    """
+    graph = cfg.community_graph_id
     retraction_rows = page_community_rows(client, cfg, retractions.retractions_sparql)
-    if retraction_rows is None:
-        return _unavailable("a page of retractions failed or was malformed")
-    withdrawn = retractions.verified_retractions(retraction_rows, environment, cfg.community_graph_id)
-    return CommunityRead(ReadState.ROWS, reports=tuple(retractions.apply_retractions(reports, withdrawn)))
+    dispute_rows = page_community_rows(client, cfg, disputes.disputes_sparql)
+    if retraction_rows is None or dispute_rows is None:
+        return _unavailable("a page of retractions or disputes failed or was malformed")
+    found_retractions = retractions.verified_retractions(retraction_rows, environment, graph)
+    found_disputes = disputes.verified_disputes(dispute_rows, environment, graph)
+    statements = [author_budget.Statement(item.author, item.subject)
+                  for item in (*reports, *found_retractions, *found_disputes)]
+    budget = author_budget.AuthorBudget(author_budget.FirstSeenStore()).admit(statements)
+    reports = [r for r in reports if r.subject in budget.admitted]
+    withdrawn, pending = tombstones.applicable_withdrawals(
+        [r for r in found_retractions if r.subject in budget.admitted], reports, budget.first_seen, time.time())
+    return CommunityRead(ReadState.ROWS, reports=tuple(retractions.apply_retractions(reports, withdrawn)),
+                         disputes=tuple(d for d in found_disputes if d.subject in budget.admitted),
+                         held_back=budget.held_back, pending_tombstones=pending)
