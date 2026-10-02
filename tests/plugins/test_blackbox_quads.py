@@ -40,10 +40,13 @@ def test_threat_uri_is_deterministic():
 
 def test_report_uri_namespaced_per_submitter():
     ident = "dep:npm:event-stream@3.3.6"
-    a = threat_ids.report_uri(ident, "0xABC")
-    b = threat_ids.report_uri(ident, "0xDEF")
+    a = threat_ids.report_uri(ident, "0x66BC7CD539D3BB0BE39158DD14F27B38342C7E6A")
+    b = threat_ids.report_uri(ident, "0x4dbba4831717ed0539dc575ffe1623238638ea1b")
     assert a != b  # first-writer-wins requires distinct subjects per submitter
-    assert a.startswith("urn:guardian:report:0xabc:")  # address lowercased
+    assert a.startswith("urn:guardian:report:0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a:")  # address lowercased
+    import pytest
+    with pytest.raises(ValueError, match="agent address"):          # KI-196: free text is not a reporter
+        threat_ids.report_uri(ident, "0xabc")
     # hash is sha256(identifier)[:16] and independent of submitter
     h = hashlib.sha256(ident.encode()).hexdigest()[:16]
     assert a.endswith(h) and b.endswith(h)
@@ -119,15 +122,15 @@ def test_build_report_quads_no_command_text_and_links_threat():
         identifier=ident,
         category="injection",
         severity="high",
-        reporter_address="0xABC",
+        reporter_address="0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a",
         context="in-fetched-page",
     )
-    subj = threat_ids.report_uri(ident, "0xABC")
+    subj = threat_ids.report_uri(ident, "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a")
     threat = threat_ids.threat_uri(ident)
     assert all(t["subject"] == subj for t in q)
     assert not any("ignore previous instructions" in t["object"] for t in q)   # R1: never the pattern text
     assert any(t["predicate"] == constants.REPORTS_THREAT_PRED and t["object"] == threat for t in q)
-    assert any(t["predicate"] == constants.REPORTER_PRED and t["object"] == '"0xabc"' for t in q)
+    assert any(t["predicate"] == constants.REPORTER_PRED and t["object"] == '"0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"' for t in q)
 
 
 def test_report_literal_fields_respect_graph_limit():
@@ -135,12 +138,15 @@ def test_report_literal_fields_respect_graph_limit():
     import pytest
     with pytest.raises(ValueError):                     # R1: an oversized framework is refused outright (ReportValidationError)
         report_builder.build_report_quads(identifier="ioc:domain:x.example", category="ioc", severity="high",
-                                          reporter_address="0xabc", framework=oversized, ioc_type="domain", ioc_context="fetched-by-tool")
+                                          reporter_address="0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a", framework=oversized, ioc_type="domain", ioc_context="fetched-by-tool")
+    with pytest.raises(ValueError, match="agent address"):   # KI-196: an oversized reporter is refused, not capped
+        report_builder.build_report_quads(identifier="ioc:domain:x.example", category="ioc", severity="high",
+                                          reporter_address=oversized, ioc_type="domain", ioc_context="fetched-by-tool")
     rows = report_builder.build_report_quads(
         identifier="ioc:domain:x.example",
         category="ioc",
         severity="high",
-        reporter_address=oversized,     # the reporter literal is still capped
+        reporter_address="0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a",
         ioc_type="domain",
         ioc_context="fetched-by-tool",
     )

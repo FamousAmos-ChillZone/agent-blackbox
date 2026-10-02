@@ -117,7 +117,7 @@ def _signer(reporter):
 
 
 def test_the_digest_carries_no_time_finer_than_the_week():
-    reporter = Reporter("0xr1")
+    reporter = Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a")
     entries = digest.build_digest({THREAT: 12, "ioc:domain:a.example": 1})
     quads = digest.build_digest_quads(reporter_address=reporter.address, week="2026-W40", entries=entries,
                                       signer=_signer(reporter))
@@ -220,7 +220,7 @@ def _counted(*reporters):
 
 
 def test_heat_is_the_sum_of_bucket_midpoints_over_counted_authors_only():
-    alice, bob, newcomer = Reporter("0xa"), Reporter("0xb"), Reporter("0xn")
+    alice, bob, newcomer = Reporter("0xf79e09c14d5c229b89c4ac719117cf2bd56fe5f1"), Reporter("0x680964861de62daa6c399f0d8887109f83e17cff"), Reporter("0xff95c511e7c83f83bfefc70b7bba74f0ad0cbe50")
     rows = [_digest_row(alice, "2026-W40", {THREAT: 12}), _digest_row(bob, "2026-W40", {THREAT: 1}),
             _digest_row(newcomer, "2026-W40", {THREAT: 500})]
     found = digest_reader.verified_digests(rows, NETWORK, GRAPH)
@@ -230,7 +230,7 @@ def test_heat_is_the_sum_of_bucket_midpoints_over_counted_authors_only():
 
 
 def test_a_second_digest_for_the_same_week_is_ignored_first_observed_wins():
-    alice = Reporter("0xa")
+    alice = Reporter("0xf79e09c14d5c229b89c4ac719117cf2bd56fe5f1")
     first = digest_reader.verified_digests([_digest_row(alice, "2026-W40", {THREAT: 1})], NETWORK, GRAPH)[0]
     # The same (author, week) under another subject spelling cannot exist (the subject IS reporter+week),
     # so a duplicate can only be the same statement seen twice or a forged copy: either way one counts.
@@ -242,7 +242,7 @@ def test_a_second_digest_for_the_same_week_is_ignored_first_observed_wins():
 
 @pytest.mark.parametrize("tamper", ["unsigned", "other-network", "shown-week"])
 def test_an_unverifiable_digest_is_ignored(tamper):
-    alice = Reporter("0xa")
+    alice = Reporter("0xf79e09c14d5c229b89c4ac719117cf2bd56fe5f1")
     row = _digest_row(alice, "2026-W40", {THREAT: 3}, environment="other" if tamper == "other-network" else NETWORK)
     if tamper == "unsigned":
         row.pop("signedStatement")
@@ -252,7 +252,7 @@ def test_an_unverifiable_digest_is_ignored(tamper):
 
 
 def test_the_community_read_carries_digests_and_heat_from_the_latest_week(monkeypatch):
-    alice = Reporter("0xa")
+    alice = Reporter("0xf79e09c14d5c229b89c4ac719117cf2bd56fe5f1")
     monkeypatch.setattr("plugins.blackbox.community.reader.read_curator_view", lambda *a, **k: _counted(alice))
     read = read_verified_reports(_Graph([signed_row(THREAT, alice)],
                                         [_digest_row(alice, "2026-W39", {THREAT: 1}),

@@ -215,8 +215,8 @@ def build_digest_quads(*, reporter_address: str, week: str, entries: Tuple[Diges
     ``g:reportsThreat`` per entry, and the envelope. The week is the only
     time it carries."""
     reporter = reporter_address.strip().lower()
-    if not reporter:
-        raise ValueError("a digest needs its reporter address")
+    if not threat_ids.is_agent_address(reporter):
+        raise ValueError("a digest needs its reporter's agent address (0x + 40 hex characters)")
     subject = digest_subject(reporter, week)
     out = [
         rdf_terms.make_quad(subject, constants.RDF_TYPE, rdf_terms.iri(constants.SIGHTING_DIGEST_TYPE_IRI)),

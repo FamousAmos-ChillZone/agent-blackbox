@@ -231,7 +231,7 @@ def test_request_join_publishes_encryption_profile_before_signing(monkeypatch):
         monkeypatch,
         [
             '{"ok":true}',
-            '{"delegation":{"agentAddress":"0xabc","signature":"sig"}}',
+            '{"delegation":{"agentAddress":"0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a","signature":"sig"}}',
             '{"delivered":1}',
         ],
     )
@@ -247,7 +247,7 @@ def test_request_join_publishes_encryption_profile_before_signing(monkeypatch):
     ]
     assert json.loads(cap["calls"][0]["body"]) == {}
     assert json.loads(cap["calls"][2]["body"]) == {
-        "delegation": {"agentAddress": "0xabc", "signature": "sig"},
+        "delegation": {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a", "signature": "sig"},
         "curatorPeerId": "curator-peer",
         "agentName": "agent-blackbox",
     }
@@ -267,7 +267,7 @@ def test_request_join_tolerates_older_daemon_without_profile_endpoint(monkeypatc
                 io.BytesIO(b'{"error":"not found"}'),
             )
         if req.full_url.endswith("/sign-join"):
-            return _FakeResponse('{"delegation":{"agentAddress":"0xabc"}}')
+            return _FakeResponse('{"delegation":{"agentAddress":"0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}}')
         return _FakeResponse('{"delivered":1}')
 
     monkeypatch.setattr(dkg_client.urllib.request, "urlopen", fake_urlopen)
@@ -359,14 +359,14 @@ def test_working_memory_query_sends_agent_address(monkeypatch):
         "SELECT * WHERE {?s ?p ?o}",
         "cg",
         view="working-memory",
-        agent_address="0xabc",
+        agent_address="0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a",
     )
 
     assert json.loads(cap["body"]) == {
         "sparql": "SELECT * WHERE {?s ?p ?o}",
         "contextGraphId": "cg",
         "view": "working-memory",
-        "agentAddress": "0xabc",
+        "agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a",
     }
 
 

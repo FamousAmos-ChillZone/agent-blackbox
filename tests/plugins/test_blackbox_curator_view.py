@@ -218,8 +218,8 @@ def test_counted_authors_are_keyed_by_reporter_key_and_can_be_delisted(trust, ke
 
 def test_an_unlisted_authors_dispute_weighs_nothing():
     counted, unlisted = "c" * 64, "u" * 64
-    view = cv.CuratorView(counted={counted: cv.CountedAuthor(counted, "0x1", "established", "", "2027-01-01")})
-    disputes = [VerifiedDispute("s1", THREAT, counted, "0x1", "wrong", "2026-10-02"),
-                VerifiedDispute("s2", THREAT, unlisted, "0x2", "wrong", "2026-10-02"),
-                VerifiedDispute("s3", "ioc:domain:b.example", unlisted, "0x2", "wrong", "2026-10-02")]
+    view = cv.CuratorView(counted={counted: cv.CountedAuthor(counted, "0x1cb7a2e9afbed1e81860f3dd4e4e3b795be5b95a", "established", "", "2027-01-01")})
+    disputes = [VerifiedDispute("s1", THREAT, counted, "0x1cb7a2e9afbed1e81860f3dd4e4e3b795be5b95a", "wrong", "2026-10-02"),
+                VerifiedDispute("s2", THREAT, unlisted, "0x6b865327cda5d374298777f79af02ba0b90512d5", "wrong", "2026-10-02"),
+                VerifiedDispute("s3", "ioc:domain:b.example", unlisted, "0x6b865327cda5d374298777f79af02ba0b90512d5", "wrong", "2026-10-02")]
     assert cv.counted_dispute_weight(disputes, view) == {THREAT: 1}

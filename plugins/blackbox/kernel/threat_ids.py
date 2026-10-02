@@ -58,7 +58,17 @@ def report_uri(identifier: str, agent_address: str) -> str:
         # LES-003 / KI-003: a shared placeholder ("anonymous") would merge every
         # identity-less node onto one subject — refuse, never substitute.
         raise ValueError("a report subject needs a resolved reporter address")
+    if not is_agent_address(addr):
+        # KI-196: the address was the one free-text field a report carried.
+        raise ValueError("a reporter address is an agent address (0x + 40 hex characters)")
     return f"urn:guardian:report:{addr}:{stable_hash(identifier, 16)}"
+
+
+def is_agent_address(value: object) -> bool:
+    """Whether *value* has the shape of a DKG agent address (an EVM address:
+    ``0x`` + 40 hex characters). The reporter field of every statement that
+    leaves a node, and of every row a reader counts, must have it (KI-196)."""
+    return EVM_ADDRESS_RE.fullmatch(str(value or "").strip()) is not None
 
 
 # ---------------------------------------------------------------------------

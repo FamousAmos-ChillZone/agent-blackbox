@@ -420,7 +420,7 @@ def test_a_homograph_cannot_split_or_hide():
     assert punycode_form.replace(".", "[.]") in shown and unicode_form.replace(".", "[.]") in shown
     with pytest.raises(report_schema.ReportValidationError):               # the raw Unicode spelling is not canonical
         report_builder.build_report_quads(identifier=f"ioc:domain:{unicode_form}", category="ioc", severity="high",
-                                          reporter_address="0xa", ioc_type="domain", ioc_context="fetched-by-tool")
+                                          reporter_address="0xf79e09c14d5c229b89c4ac719117cf2bd56fe5f1", ioc_type="domain", ioc_context="fetched-by-tool")
 
 
 def test_hostile_payloads_are_refused_at_ingest_and_stripped_at_display():
@@ -429,31 +429,35 @@ def test_hostile_payloads_are_refused_at_ingest_and_stripped_at_display():
     for payload in payloads:
         with pytest.raises(report_schema.ReportValidationError):
             report_builder.build_report_quads(identifier=f"ioc:domain:{payload}", category="ioc", severity="high",
-                                              reporter_address="0xa", ioc_type="domain", ioc_context="fetched-by-tool")
-    # A consistently signed row can still carry a hostile reporter ADDRESS: every display seam strips it.
-    hostile = Reporter("0xevil\x1b[2J\x1b]8;;http://evil.example\x07")
-    row = _row_with_escaped_literals(hostile)
-    read = read_verified_reports(_Node(reports=[row]), CFG)
-    assert read.reports, "a consistently signed row verifies even with a hostile address"
-    reporter = read.reports[0].reporter
-    for rendered in (safe_payloads.safe_text(reporter), display_safety.term_safe(reporter), display_safety.log_safe(reporter)):
+                                              reporter_address="0xf79e09c14d5c229b89c4ac719117cf2bd56fe5f1", ioc_type="domain", ioc_context="fetched-by-tool")
+    # The reporter ADDRESS was the one free-text field on the wire (KI-196): the builder refuses anything
+    # that is not an agent address, and a row whose SIGNED reporter is free text (a modified client) is
+    # dropped by every reader — it never reaches a display seam.
+    hostile_address = "0xevil\x1b[2J\x1b]8;;http://evil.example\x07"
+    with pytest.raises(ValueError, match="agent address"):
+        report_builder.build_report_quads(identifier=MALWARE, category="dependency", severity="high",
+                                          reporter_address=hostile_address, ecosystem="npm", package_name="evil-pkg",
+                                          package_version="1.0.0", kind="malware", reason="install-hook")
+    read = read_verified_reports(_Node(reports=[_row_signed_outside_the_builder(hostile_address)]), CFG)
+    assert read.state is ReadState.ROWS and read.reports == ()
+    # Defence in depth: should such text ever reach a display seam, every seam still strips it.
+    for rendered in (safe_payloads.safe_text(hostile_address), display_safety.term_safe(hostile_address),
+                     display_safety.log_safe(hostile_address)):
         assert "\x1b" not in rendered and "\x07" not in rendered
-    assert "hxxp://" in safe_payloads.safe_text(reporter)                  # and the link inside is defanged
+    assert "hxxp://" in safe_payloads.safe_text(hostile_address)
 
 
-def _row_with_escaped_literals(reporter: Reporter):
-    """A report row whose literals carry control characters (the writer escapes them; the node returns them decoded)."""
-    from plugins.blackbox.community.report_signer import ReportSigner
-    quads = report_builder.build_report_quads(identifier=MALWARE, category="dependency", severity="high",
-                                              reporter_address=reporter.address, ecosystem="npm", package_name="evil-pkg",
-                                              package_version="1.0.0", kind="malware", reason="install-hook",
-                                              signer=ReportSigner(private_key=reporter.key, environment=NETWORK, graph=GRAPH))
-    row = {"r": quads[0]["subject"]}
-    for quad in quads:
-        obj = quad["object"]
-        if obj.startswith('"') and obj.endswith('"'):
-            row[quad["predicate"].rsplit("/", 1)[-1]] = json.loads(obj, strict=False)
-    return row
+def _row_signed_outside_the_builder(reporter_address: str):
+    """What a modified client can post: a consistently SIGNED report whose reporter is free text
+    (the real builder refuses it, so the envelope is made by hand)."""
+    from plugins.blackbox.community.report_signer import REPORT_STATEMENT, ReportSigner
+    subject = f"urn:guardian:report:{reporter_address.lower()}:{threat_ids.stable_hash(MALWARE, 16)}"
+    payload = {"subject": subject, "identifier": MALWARE, "category": "dependency", "severity": "high",
+               "reporter": reporter_address.lower(), "framework": "hermes", "day": "2026-10-02",
+               "ecosystem": "npm", "package_name": "evil-pkg", "package_version": "1.0.0", "kind": "malware", "reason": "install-hook"}
+    signer = ReportSigner(private_key=Ed25519PrivateKey.generate(), environment=NETWORK, graph=GRAPH)
+    return {"r": subject, "identifier": MALWARE, "reporter": reporter_address.lower(), "severity": "high",
+            "signedStatement": signer.sign(REPORT_STATEMENT, payload)}
 
 
 def test_a_queue_flood_reaches_no_lane_and_no_webhook(trust, keys, manifest, tmp_path, caplog):

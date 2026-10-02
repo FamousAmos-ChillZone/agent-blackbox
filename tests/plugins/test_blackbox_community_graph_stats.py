@@ -25,7 +25,7 @@ from _community_rows import GRAPH, NETWORK, Reporter, signed_row
 LOCAL_ADDRESS = "0xAAAA000000000000000000000000000000000001"
 
 
-def _report(identifier, author, reporter="0xr", severity="high", framework="hermes"):
+def _report(identifier, author, reporter="0x3280c57e351eed219fa17963036daa3653eea6c6", severity="high", framework="hermes"):
     return VerifiedReport(subject=f"urn:guardian:report:{reporter}:{author}:{identifier}", identifier=identifier,
                           author=author, reporter=reporter, severity=severity, framework=framework)
 
@@ -34,13 +34,13 @@ def _report(identifier, author, reporter="0xr", severity="high", framework="herm
 
 
 def test_contributing_agents_are_distinct_signers():
-    reports = [_report("ioc:a", "k1", "0xa"), _report("ioc:b", "k1", "0xb"), _report("ioc:a", "k2", "0xc")]
+    reports = [_report("ioc:a", "k1", "0xf79e09c14d5c229b89c4ac719117cf2bd56fe5f1"), _report("ioc:b", "k1", "0x680964861de62daa6c399f0d8887109f83e17cff"), _report("ioc:a", "k2", "0x9be41e857974f2c946bef18de599f34e5ac1d5fe")]
     assert graph_stats.contributing_agent_count(reports) == 2
 
 
 def test_community_agents_group_by_signer_and_flag_self():
-    reports = [_report("ioc:a", "k1", "0xme", framework="hermes"), _report("ioc:b", "k1", "0xme", framework="openclaw"),
-               _report("ioc:a", "k2", "0xother")]
+    reports = [_report("ioc:a", "k1", "0x476fe637b32b228e4d914d84df1ead392b85b91f", framework="hermes"), _report("ioc:b", "k1", "0x476fe637b32b228e4d914d84df1ead392b85b91f", framework="openclaw"),
+               _report("ioc:a", "k2", "0xc8751cdc536e5bfd83df653251b571c3e61f6096")]
     agents = graph_stats.community_agents(reports, own_author="k1")
     assert [a["author"] for a in agents] == ["k1", "k2"]          # this node first
     assert agents[0]["is_self"] and agents[0]["reports"] == 2
@@ -78,10 +78,10 @@ def wired(monkeypatch, tmp_path):
     monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
     monkeypatch.setenv("BLACKBOX_COMMUNITY_GRAPH_ID", GRAPH)
     own = Reporter(LOCAL_ADDRESS, reporter_key.ReporterKeyStore().load_or_create())
-    poser = Reporter("0xbbbb").key
+    poser = Reporter("0x2bf0e3c192ac5aa603813050094d4e394a7ae78d").key
     rows = [signed_row("ioc:domain:evil.example", own), signed_row("ioc:domain:mine.example", own)]
     rows += [signed_row("ioc:domain:evil.example", Reporter(f"0xpose{i}", poser)) for i in range(3)]
-    unsigned = signed_row("ioc:domain:unsigned.example", Reporter("0xcccc"))
+    unsigned = signed_row("ioc:domain:unsigned.example", Reporter("0xd6270b3dd99e247cdd76538296c0a24a6ba98248"))
     del unsigned["signedStatement"]
     rows.append(unsigned)
 

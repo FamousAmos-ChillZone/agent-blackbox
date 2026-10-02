@@ -2747,7 +2747,7 @@ def test_blackbox_sync_private_waits_for_approval_then_subscribes(monkeypatch):
             self.url = url
 
         def agent_identity(self):
-            return {"agentAddress": "0xabc"}
+            return {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}
 
         def context_graph_has_agent(self, cg_id, agent_address):
             raise AssertionError("local participant state must not authorize private catch-up")
@@ -2816,7 +2816,7 @@ def test_blackbox_sync_restarts_stale_empty_catchup_after_approval(monkeypatch, 
             self.url = url
 
         def agent_identity(self):
-            return {"agentAddress": "0xabc"}
+            return {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}
 
         def request_join(self, cg_id, graph_peer_id):
             events.append(("join", cg_id, graph_peer_id))
@@ -2944,7 +2944,7 @@ def test_blackbox_sync_reports_pending_approval_when_catchup_is_denied(monkeypat
             self.url = url
 
         def agent_identity(self):
-            return {"agentAddress": "0xfresh"}
+            return {"agentAddress": "0xd739878fe0f7f68aac6ab53e173622347a3234a8"}
 
         def subscribe_context_graph(self, cg_id):
             return {"catchup": {"status": "running"}}
@@ -3259,7 +3259,7 @@ def test_share_sighting_forwards_candidate_fields(monkeypatch, tmp_path):
         "category": "fileaccess", "severity": "critical", "confirmed": False,
         "fields": {"tool_name": "read_file", "file_category": "ssh-private-key"},
     }
-    community_sharing._share_sighting(FakeClient(), cfg, finding, "0xabc")
+    community_sharing._share_sighting(FakeClient(), cfg, finding, "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a")
     objs = " ".join(x["object"] for x in shared["quads"])
     assert "ssh-private-key" in objs  # the category signature travels
     assert "read_file" in objs

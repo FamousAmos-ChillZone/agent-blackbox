@@ -540,7 +540,7 @@ def test_ruleset_sync_once_uses_official_join_then_subscribe():
             events.append(("client", url, dkg_home))
 
         def agent_identity(self):
-            return {"agentAddress": "0xabc"}
+            return {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}
 
         def context_graph_has_agent(self, cg_id, agent_address):
             nonlocal membership_checks
@@ -580,10 +580,10 @@ def test_ruleset_sync_once_uses_official_join_then_subscribe():
     assert second == {"total": 5, "public": 0, "community": 0}
     assert events == [
         ("client", "http://127.0.0.1:9320", "/tmp/blackbox-dkg"),
-        ("membership", "umanitek/guardian-threats-staging", "0xabc"),
+        ("membership", "umanitek/guardian-threats-staging", "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"),
         ("join", "umanitek/guardian-threats-staging", "graph-peer"),
         ("client", "http://127.0.0.1:9320", "/tmp/blackbox-dkg"),
-        ("membership", "umanitek/guardian-threats-staging", "0xabc"),
+        ("membership", "umanitek/guardian-threats-staging", "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"),
         ("subscribe", "umanitek/guardian-threats-staging"),
         ("refresh", "umanitek/guardian-threats-staging", "http://127.0.0.1:9320", "/tmp/blackbox-dkg"),
     ]
@@ -635,7 +635,7 @@ def test_dashboard_marks_subscribed_only_after_public_graph_arrives():
             pass
 
         def agent_identity(self):
-            return {"agentAddress": "0xabc"}
+            return {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}
 
         def context_graph_has_agent(self, cg_id, agent_address):
             return True
@@ -680,7 +680,7 @@ def test_dashboard_restarts_stale_empty_completed_catchup():
             pass
 
         def agent_identity(self):
-            return {"agentAddress": "0xabc"}
+            return {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}
 
         def context_graph_has_agent(self, cg_id, agent_address):
             return True
@@ -730,7 +730,7 @@ def test_dashboard_restarts_completed_catchup_when_only_community_synced():
             pass
 
         def agent_identity(self):
-            return {"agentAddress": "0xabc"}
+            return {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}
 
         def context_graph_has_agent(self, cg_id, agent_address):
             return True
@@ -782,7 +782,7 @@ def test_dashboard_clears_stale_pending_approval_once_catchup_is_running():
             pass
 
         def agent_identity(self):
-            return {"agentAddress": "0xabc"}
+            return {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}
 
         def context_graph_has_agent(self, cg_id, agent_address):
             return True
@@ -832,7 +832,7 @@ def test_dashboard_failed_catchup_with_stale_public_rows_refreshes_join_before_r
             pass
 
         def agent_identity(self):
-            return {"agentAddress": "0xabc"}
+            return {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}
 
         def context_graph_has_agent(self, cg_id, agent_address):
             return True  # stale allowlist entry; the new peer binding is missing

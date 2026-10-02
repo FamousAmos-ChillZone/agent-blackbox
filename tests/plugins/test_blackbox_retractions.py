@@ -67,7 +67,7 @@ def _authors(read):
 
 
 def test_a_retraction_is_signed_as_a_retraction_and_nothing_else():
-    reporter = Reporter("0xr1")
+    reporter = Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a")
     signer = ReportSigner(private_key=reporter.key, environment=NETWORK, graph=GRAPH)
     quads = report_builder.build_retraction_quads(identifier=THREAT, reporter_address=reporter.address, signer=signer)
     assert quads[0]["object"] == constants.RETRACTION_TYPE_IRI
@@ -82,17 +82,17 @@ def test_a_retraction_is_signed_as_a_retraction_and_nothing_else():
 
 
 def test_a_signers_own_retraction_withdraws_its_report():
-    one, two = Reporter("0xr1"), Reporter("0xr2")
+    one, two = Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"), Reporter("0xfe26576731c057e0ef78f7a21e8b8b9cceed6bdb")
     client = _GraphClient([signed_row(THREAT, one), signed_row(THREAT, two)], [signed_retraction_row(THREAT, one)])
     read = read_verified_reports(client, CFG)
     assert read.state is ReadState.ROWS
     assert _authors(read) == [(two.author, THREAT)]
-    assert [(r.author, r.identifier, r.reporter) for r in read.retractions] == [(one.author, THREAT, "0xr1")]
+    assert [(r.author, r.identifier, r.reporter) for r in read.retractions] == [(one.author, THREAT, "0x54fd580f81be3e09ae45a05c507295d1c3635f0a")]
 
 
 def test_a_retraction_cannot_withdraw_someone_elses_report():
     """The retraction names the victim's ADDRESS, but is signed by another key."""
-    victim, attacker = Reporter("0xvictim"), Reporter("0xvictim")   # same claimed address, different key
+    victim, attacker = Reporter("0xf8b016a8471b936ced2d84cb66aeb4a6bc30bf96"), Reporter("0xf8b016a8471b936ced2d84cb66aeb4a6bc30bf96")   # same claimed address, different key
     client = _GraphClient([signed_row(THREAT, victim)], [signed_retraction_row(THREAT, attacker)])
     assert _authors(read_verified_reports(client, CFG)) == [(victim.author, THREAT)]
 
@@ -103,13 +103,13 @@ def test_a_retraction_cannot_withdraw_someone_elses_report():
     {"graph": "0xother/agent-blackbox-community-dev"},   # signed for another graph
 ])
 def test_an_unverifiable_retraction_is_ignored(row_kwargs):
-    one = Reporter("0xr1")
+    one = Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a")
     client = _GraphClient([signed_row(THREAT, one)], [signed_retraction_row(THREAT, one, **row_kwargs)])
     assert _authors(read_verified_reports(client, CFG)) == [(one.author, THREAT)]
 
 
 def test_a_tampered_retraction_row_is_ignored():
-    one = Reporter("0xr1")
+    one = Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a")
     row = signed_retraction_row(THREAT, one)
     row["identifier"] = "ioc:domain:something-else.example"
     client = _GraphClient([signed_row(THREAT, one)], [row])
@@ -118,14 +118,14 @@ def test_a_tampered_retraction_row_is_ignored():
 
 def test_a_failed_retraction_read_makes_the_whole_read_unavailable():
     """Never count a withdrawn report because the retractions could not be read."""
-    one = Reporter("0xr1")
+    one = Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a")
     client = _GraphClient([signed_row(THREAT, one)], retractions_fail=True)
     read = read_verified_reports(client, CFG)
     assert read.state is ReadState.UNAVAILABLE and "retraction" in read.reason
 
 
 def test_a_retraction_withdraws_only_the_named_threat():
-    one = Reporter("0xr1")
+    one = Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a")
     other = "ioc:domain:other.example"
     client = _GraphClient([signed_row(THREAT, one), signed_row(other, one)], [signed_retraction_row(THREAT, one)])
     assert _authors(read_verified_reports(client, CFG)) == [(one.author, other)]

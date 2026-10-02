@@ -56,7 +56,7 @@ def home(monkeypatch, tmp_path):
 
 
 def test_a_verified_dispute_is_read_with_its_reason():
-    reporter, disputer = Reporter("0xr1"), Reporter("0xd1")
+    reporter, disputer = Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"), Reporter("0xe74717e44e0a3c5af04e9e62c04a7b444a448f62")
     read = read_verified_reports(_Graph([signed_row(THREAT, reporter)],
                                         disputes=[signed_dispute_row(THREAT, disputer, reason="fixed")]), CFG)
     assert [(d.identifier, d.author, d.reason) for d in read.disputes] == [(THREAT, disputer.author, "fixed")]
@@ -64,13 +64,13 @@ def test_a_verified_dispute_is_read_with_its_reason():
 
 @pytest.mark.parametrize("tamper", ["unsigned", "other-network", "shown-reason"])
 def test_an_unverifiable_dispute_is_ignored(tamper):
-    disputer = Reporter("0xd1")
+    disputer = Reporter("0xe74717e44e0a3c5af04e9e62c04a7b444a448f62")
     row = signed_dispute_row(THREAT, disputer, environment="other" if tamper == "other-network" else NETWORK)
     if tamper == "unsigned":
         row.pop("signedStatement")
     if tamper == "shown-reason":
         row["reportReason"] = "tolerable"   # the signed reason was "wrong"
-    read = read_verified_reports(_Graph([signed_row(THREAT, Reporter("0xr1"))], disputes=[row]), CFG)
+    read = read_verified_reports(_Graph([signed_row(THREAT, Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"))], disputes=[row]), CFG)
     assert read.disputes == ()
 
 
@@ -87,7 +87,7 @@ def test_a_dispute_never_changes_enforcement():
 
 
 def test_a_failed_dispute_page_makes_the_read_unavailable():
-    read = read_verified_reports(_Graph([signed_row(THREAT, Reporter("0xr1"))], fail_disputes=True), CFG)
+    read = read_verified_reports(_Graph([signed_row(THREAT, Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"))], fail_disputes=True), CFG)
     assert read.state is ReadState.UNAVAILABLE
 
 
@@ -138,7 +138,7 @@ def test_the_store_keeps_only_the_latest_read_and_survives_garbage(tmp_path):
 
 
 def test_the_reader_holds_back_a_flood_after_the_baseline():
-    flooder = Reporter("0xflood")
+    flooder = Reporter("0x9489f322ab5d949bca01102253e8597795d2be9e")
     base = signed_row("ioc:domain:base.example", flooder)
     read_verified_reports(_Graph([base]), CFG)                        # baseline read
     flood = [signed_row(f"ioc:domain:f{i}.example", flooder) for i in range(60)]
@@ -150,7 +150,7 @@ def test_the_reader_holds_back_a_flood_after_the_baseline():
 
 
 def _report(identifier, author="a"):
-    return VerifiedReport(subject=f"r:{identifier}", identifier=identifier, author=author, reporter="0x1", severity="high")
+    return VerifiedReport(subject=f"r:{identifier}", identifier=identifier, author=author, reporter="0x1cb7a2e9afbed1e81860f3dd4e4e3b795be5b95a", severity="high")
 
 
 def _retraction(identifier, author="a"):

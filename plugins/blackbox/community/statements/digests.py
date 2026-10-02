@@ -28,6 +28,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from ...kernel import signing, sparql_text
 from ...kernel.dkg_client import extract_binding
+from ...kernel import threat_ids
 from ..digest import DigestEntry, digest_subject, parse_entries
 from ..report_signer import DIGEST_STATEMENT
 from ..verification import SIGNED_STATEMENT_VAR
@@ -84,7 +85,7 @@ def _verified(row: Mapping[str, Any], environment: str, graph: str) -> Optional[
     payload = envelope.payload
     reporter, week = payload.get("reporter", ""), payload.get("week", "")
     entries = parse_entries(payload.get("entries", ""))
-    if not reporter or not week or entries is None:
+    if not threat_ids.is_agent_address(reporter) or not week or entries is None:
         return None
     subject = digest_subject(reporter, week)
     shown = (extract_binding(row.get("r")), extract_binding(row.get("reporter")).strip().lower(),

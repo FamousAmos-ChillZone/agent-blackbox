@@ -123,7 +123,7 @@ def test_a_malware_dependency_is_promoted_by_two_keys_on_two_machines_with_one_h
     envelope = signing.from_text(json.loads(next(q["object"] for q in quads if q["predicate"] == constants.SIGNED_STATEMENT_PRED)))
     assert curators["manifest"].has_quorum(envelope, statement_type=Kind.PROMOTION.value)
     provenance = json.loads(json.loads(next(q["object"] for q in quads if q["predicate"] == constants.SOURCE_OBSERVATION_PROVENANCE_JSON_PRED)))
-    assert len(provenance) == 2 and all(len(p) == 16 for p in provenance) and "0xr1" not in json.dumps(quads)
+    assert len(provenance) == 2 and all(len(p) == 16 for p in provenance) and "0x54fd580f81be3e09ae45a05c507295d1c3635f0a" not in json.dumps(quads)
     # The verified reader compiles it into a BLOCKING rule (kind malware, source public).
     row = {"threat": quads[0]["subject"], "rdfType": constants.DEFENDER_DEPENDENCY_TYPE_IRI}
     var_for = {constants.IDENTIFIER_PRED: "identifier", constants.SEVERITY_PRED: "severity", constants.KIND_PRED: "kind",

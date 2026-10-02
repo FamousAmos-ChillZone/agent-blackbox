@@ -8,7 +8,9 @@ produce. ``Reporter`` is one node: an agent address + its own reporter key.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Dict
 
@@ -26,6 +28,12 @@ GRAPH = "0x51E5dE758A45c8b64048E29918421F0bdD6D5d5C/agent-blackbox-community-dev
 class Reporter:
     address: str
     key: Ed25519PrivateKey = field(default_factory=Ed25519PrivateKey.generate)  # gitleaks:allow — annotation; keys are generated per test
+
+    def __post_init__(self) -> None:
+        # A nickname ("0x54fd580f81be3e09ae45a05c507295d1c3635f0a") becomes a well-formed agent address derived from it,
+        # so two Reporter("0xf8b016a8471b936ced2d84cb66aeb4a6bc30bf96") still share one address (KI-196).
+        if not re.fullmatch(r"0x[0-9a-fA-F]{40}", self.address):
+            object.__setattr__(self, "address", "0x" + hashlib.sha1(self.address.lower().encode()).hexdigest()[:40])
 
     @property
     def author(self) -> str:

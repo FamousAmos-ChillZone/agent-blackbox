@@ -43,13 +43,13 @@ def _view():
 
 
 def _read():
-    dispute = VerifiedDispute(subject="s", identifier=HOSTILE, author="e" * 64, reporter="0xreporter",
+    dispute = VerifiedDispute(subject="s", identifier=HOSTILE, author="e" * 64, reporter="0x1c33d3d8dde953f1ea56bba2a3e4ee69d9752ba9",
                               reason="wrong", day="2026-10-01")
     retraction = VerifiedRetraction(author="f" * 64, identifier="ioc:domain:mine.example", subject="t",
-                                    reporter="0xretractor", day="2026-10-02")
+                                    reporter="0xab5fbccb6a3e3ac52336e0656f6f012d0d5e5e9b", day="2026-10-02")
     counted_digest = VerifiedDigest(subject="g1", author="d" * 64, reporter="0x" + "d" * 40, week="2026-W40",
                                     entries=digest.build_digest({"dep:npm:x@1": 12}))
-    newcomer_digest = VerifiedDigest(subject="g2", author="n" * 64, reporter="0xnew", week="2026-W40",
+    newcomer_digest = VerifiedDigest(subject="g2", author="n" * 64, reporter="0xc0de4426a60039e7d7b9dc4e5c75d3379ae2754a", week="2026-W40",
                                      entries=digest.build_digest({"dep:npm:x@1": 400}))
     heat = {"dep:npm:x@1": HeatEstimate(identifier="dep:npm:x@1", week="2026-W40", agents=55, digests=1)}
     return CommunityRead(ReadState.ROWS, disputes=(dispute,), retractions=(retraction,),
@@ -66,7 +66,7 @@ def configured(monkeypatch):
 def test_statements_carry_who_when_why(configured):
     payload = community_routes.community_statements_payload(lambda cfg: _read())
     dispute = payload["disputes"][0]
-    assert (dispute["who"], dispute["when"], dispute["why"]) == ("0xreporter", "2026-10-01", "wrong")
+    assert (dispute["who"], dispute["when"], dispute["why"]) == ("0x1c33d3d8dde953f1ea56bba2a3e4ee69d9752ba9", "2026-10-01", "wrong")
     verdict = payload["curator"]["verdicts"][0]
     assert (verdict["verdict"], verdict["when"], verdict["why"], verdict["keys"]) == ("revocation", "2026-10-02",
                                                                                        "false-positive", 2)
@@ -76,10 +76,10 @@ def test_statements_carry_who_when_why(configured):
     assert (payload["held_back"], payload["pending_tombstones"]) == (7, 2)
     assert payload["heat"] == [{"identifier": "dep:npm:x@1", "week": "2026-W40", "agents": 55, "digests": 1}]
     assert [(d["who"], d["counted"], d["threats"]) for d in payload["digests"]] == [("0x" + "d" * 40, True, 1),
-                                                                                    ("0xnew", False, 1)]
+                                                                                    ("0xc0de4426a60039e7d7b9dc4e5c75d3379ae2754a", False, 1)]
     retraction = payload["retractions"][0]
     assert (retraction["identifier"], retraction["who"], retraction["when"]) == ("ioc:domain:mine.example",
-                                                                                 "0xretractor", "2026-10-02")
+                                                                                 "0xab5fbccb6a3e3ac52336e0656f6f012d0d5e5e9b", "2026-10-02")
 
 
 def test_community_strings_are_sanitized(configured):

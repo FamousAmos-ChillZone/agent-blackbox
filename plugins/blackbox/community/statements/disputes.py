@@ -70,7 +70,7 @@ def _verified(row: Mapping[str, Any], environment: str, graph: str) -> Optional[
         return None
     payload = envelope.payload
     identifier, reporter, reason = payload.get("identifier", ""), payload.get("reporter", ""), payload.get("reason", "")
-    if not identifier or not reporter or reason not in constants.FALSE_POSITIVE_REASONS:
+    if not identifier or not threat_ids.is_agent_address(reporter) or reason not in constants.FALSE_POSITIVE_REASONS:
         return None
     subject = threat_ids.report_uri(identifier, reporter) + ":fp"
     shown = (

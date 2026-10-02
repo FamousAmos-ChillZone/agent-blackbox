@@ -465,7 +465,7 @@ def test_report_and_audit_shares_non_custom_finding(monkeypatch):
     monkeypatch.setattr(hooks.audit, "write_private_audit_ka", lambda *a, **k: None)
     monkeypatch.setattr(hooks.audit, "recently_reported", lambda ident: False)
     monkeypatch.setattr(hooks.audit, "allow_report", lambda *a, **k: True)
-    monkeypatch.setattr(kernel_identity, "reporter_address", lambda client: "0xabc")
+    monkeypatch.setattr(kernel_identity, "reporter_address", lambda client: "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a")
 
     cfg = config_mod.BlackboxConfig(report=True)
     community = detection.Finding(

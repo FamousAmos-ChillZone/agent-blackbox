@@ -75,9 +75,9 @@ def test_two_signers_count_two():
 
 def test_severity_is_max_across_reporters():
     rows = [
-        _report("dep:npm:evil@1", "0xr1", severity="medium"),
-        _report("dep:npm:evil@1", "0xr2", severity="critical"),
-        _report("dep:npm:evil@1", "0xr3", severity="low"),
+        _report("dep:npm:evil@1", "0x54fd580f81be3e09ae45a05c507295d1c3635f0a", severity="medium"),
+        _report("dep:npm:evil@1", "0xfe26576731c057e0ef78f7a21e8b8b9cceed6bdb", severity="critical"),
+        _report("dep:npm:evil@1", "0x7299e99649371fb11035cac1d7574b29487a151e", severity="low"),
     ]
     assert aggregate_community_reports(rows, {})[0].severity == "critical"
 
@@ -87,7 +87,7 @@ def test_identifier_literals_stay_distinct_even_when_slugs_collide():
     a = "ioc:url:https://evil.example/x?a=1"
     b = "ioc:url:https://evil.example/x/a/1"
     rules = aggregate_community_reports(
-        [_report(a, "0xr1"), _report(b, "0xr2")], {}
+        [_report(a, "0x54fd580f81be3e09ae45a05c507295d1c3635f0a"), _report(b, "0xfe26576731c057e0ef78f7a21e8b8b9cceed6bdb")], {}
     )
     assert len(rules) == 2
 
@@ -95,7 +95,7 @@ def test_identifier_literals_stay_distinct_even_when_slugs_collide():
 def test_first_seen_carries_over_from_prior_cache():
     """KI-012: first_seen is OUR observation history, not reporter-supplied."""
     rules = aggregate_community_reports(
-        [_report("dep:npm:evil@1", "0xr1")], {"dep:npm:evil@1": 1000.0}
+        [_report("dep:npm:evil@1", "0x54fd580f81be3e09ae45a05c507295d1c3635f0a")], {"dep:npm:evil@1": 1000.0}
     )
     assert rules[0].first_seen == 1000.0
 
@@ -271,7 +271,7 @@ class FakeClient:
 
 def test_apply_community_tier_populates_store_and_subscribes(monkeypatch):
     rs = Ruleset()
-    client = FakeClient(report_rows=[signed_row("ioc:domain:evil.example", Reporter("0xr1"), ioc_type="domain")])
+    client = FakeClient(report_rows=[signed_row("ioc:domain:evil.example", Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"), ioc_type="domain")])
     _apply_community_tier(rs, client, CFG)
     assert "ioc:domain:evil.example" in rs.community
     assert rs.community["ioc:domain:evil.example"]["reporterCount"] == 1
@@ -280,7 +280,7 @@ def test_apply_community_tier_populates_store_and_subscribes(monkeypatch):
 
 def test_pause_flag_suppresses_ingest(monkeypatch):
     rs = Ruleset()
-    client = FakeClient(report_rows=[signed_row("dep:npm:evil@1", Reporter("0xr1"))], paused=True)
+    client = FakeClient(report_rows=[signed_row("dep:npm:evil@1", Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"))], paused=True)
     _apply_community_tier(rs, client, CFG)
     assert rs.community == {}
     assert rs.community_paused is True
@@ -348,7 +348,7 @@ class _PagedClient(FakeClient):
 
 def test_a_failed_second_page_makes_the_whole_read_unavailable(monkeypatch):
     monkeypatch.setattr(community_reader, "_COMMUNITY_PAGE_SIZE", 1)
-    page1 = [signed_row("ioc:domain:one.example", Reporter("0xr1"))]
+    page1 = [signed_row("ioc:domain:one.example", Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"))]
     prior = _prior_with()
     rs = Ruleset()
     _apply_community_tier(rs, _PagedClient([page1, RuntimeError("page 2 down")]), CFG, prior)
@@ -357,9 +357,9 @@ def test_a_failed_second_page_makes_the_whole_read_unavailable(monkeypatch):
 
 def test_read_states_are_tagged():
     from plugins.blackbox.community import ReadState, read_verified_reports
-    rows_client = FakeClient(report_rows=[signed_row("ioc:domain:x.example", Reporter("0xr1"))])
+    rows_client = FakeClient(report_rows=[signed_row("ioc:domain:x.example", Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"))])
     assert read_verified_reports(rows_client, CFG).state is ReadState.ROWS
-    unknown_network = FakeClient(report_rows=[signed_row("ioc:domain:x.example", Reporter("0xr1"))])
+    unknown_network = FakeClient(report_rows=[signed_row("ioc:domain:x.example", Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"))])
     unknown_network.network = ""
     read = read_verified_reports(unknown_network, CFG)
     assert read.state is ReadState.UNAVAILABLE and "network id" in read.reason
@@ -372,7 +372,7 @@ def test_reapply_on_a_reused_ruleset_replaces_stale_community_entries():
     rs = _prior_with("ioc:domain:stale.example")
     _materialize_community_rules(rs)
     assert "ioc:domain:stale.example" in rs.ioc
-    client = FakeClient(report_rows=[signed_row("ioc:domain:fresh.example", Reporter("0xr1"))])
+    client = FakeClient(report_rows=[signed_row("ioc:domain:fresh.example", Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"))])
     reapply_community_tier(rs, client, CFG)
     assert "ioc:domain:stale.example" not in rs.ioc and "ioc:domain:stale.example" not in rs.community
     # Refine R3 / decision 15: ONE report from an UNLISTED author is MONITOR-only — it lives in the
@@ -396,42 +396,42 @@ def _tier(rows, network=NETWORK, prior=None):
 
 
 def test_unsigned_row_is_not_counted():
-    row = signed_row("ioc:domain:evil.example", Reporter("0xr1"))
+    row = signed_row("ioc:domain:evil.example", Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"))
     del row["signedStatement"]
     assert _tier([row]) == {}
 
 
 def test_forged_reporter_field_is_dropped():
-    row = signed_row("ioc:domain:evil.example", Reporter("0xr1"))
-    row["reporter"] = "0xsomeoneelse"
+    row = signed_row("ioc:domain:evil.example", Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"))
+    row["reporter"] = "0x772e97e2f594637e81f9316c5d3abbdf3ea487e7"
     assert _tier([row]) == {}
 
 
 def test_tampered_evidence_is_dropped():
-    row = signed_row("dep:npm:evil@1.0.0", Reporter("0xr1"), package_name="evil", package_version="1.0.0", ecosystem="npm")
+    row = signed_row("dep:npm:evil@1.0.0", Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"), package_name="evil", package_version="1.0.0", ecosystem="npm")
     row["packageVersion"] = "2.0.0"
     assert _tier([row]) == {}
 
 
 def test_signature_from_another_network_is_dropped():
-    row = signed_row("ioc:domain:evil.example", Reporter("0xr1"), environment="some-test-network")
+    row = signed_row("ioc:domain:evil.example", Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"), environment="some-test-network")
     assert _tier([row]) == {}
 
 
 def test_signature_for_another_graph_is_dropped():
-    row = signed_row("ioc:domain:evil.example", Reporter("0xr1"), graph="0xabc/other-graph")
+    row = signed_row("ioc:domain:evil.example", Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"), graph="0xabc/other-graph")
     assert _tier([row]) == {}
 
 
 def test_one_key_posing_as_ten_addresses_counts_once():
     """THE KI-067 attack: one node, ten reporter identities, one key."""
-    key = Reporter("0x0").key
+    key = Reporter("0xfc617e77d2fed5b59012c371e63c37a5f48c2363").key
     rows = [signed_row("ioc:domain:evil.example", Reporter(f"0xpose{i}", key)) for i in range(10)]
     assert _tier(rows)["ioc:domain:evil.example"]["reporterCount"] == 1
 
 
 def test_two_real_reporters_count_two():
-    rows = [signed_row("ioc:domain:evil.example", Reporter("0xr1")), signed_row("ioc:domain:evil.example", Reporter("0xr2"))]
+    rows = [signed_row("ioc:domain:evil.example", Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a")), signed_row("ioc:domain:evil.example", Reporter("0xfe26576731c057e0ef78f7a21e8b8b9cceed6bdb"))]
     assert _tier(rows)["ioc:domain:evil.example"]["reporterCount"] == 2
 
 
@@ -439,7 +439,7 @@ def test_unknown_network_keeps_last_good():
     prior = Ruleset()
     prior.community = {"ioc:domain:old.example": {"identifier": "ioc:domain:old.example", "severity": "high",
                                                   "source": "community", "reporterCount": 2, "firstSeen": 5.0}}
-    assert _tier([signed_row("ioc:domain:evil.example", Reporter("0xr1"))], network="", prior=prior) == prior.community
+    assert _tier([signed_row("ioc:domain:evil.example", Reporter("0x54fd580f81be3e09ae45a05c507295d1c3635f0a"))], network="", prior=prior) == prior.community
 
 
 def test_no_community_graph_configured_is_a_noop():
@@ -535,6 +535,6 @@ def test_aggregated_rules_carry_the_canonical_category_name():
     """KI-197: the community store names categories as the schema and the UI do (`dependency`, never `dep`)."""
     from _community_rows import GRAPH, NETWORK, Reporter, signed_row
     from plugins.blackbox.community.verification import ReportVerifier, verify_report_rows
-    reports, _ = verify_report_rows([signed_row("dep:npm:x@1", Reporter("0xa")), signed_row("ioc:ip:203.0.113.7", Reporter("0xb"))],
+    reports, _ = verify_report_rows([signed_row("dep:npm:x@1", Reporter("0xf79e09c14d5c229b89c4ac719117cf2bd56fe5f1")), signed_row("ioc:ip:203.0.113.7", Reporter("0x680964861de62daa6c399f0d8887109f83e17cff"))],
                                     ReportVerifier(NETWORK, GRAPH))
     assert sorted(r.category for r in aggregate_community_reports(reports, {})) == ["dependency", "ioc"]

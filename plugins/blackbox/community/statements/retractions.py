@@ -77,7 +77,7 @@ def _verified_withdrawal(row: Mapping[str, Any], environment: str, graph: str) -
         return None
     identifier = envelope.payload.get("identifier", "")
     reporter = envelope.payload.get("reporter", "")
-    if not identifier or not reporter:
+    if not identifier or not threat_ids.is_agent_address(reporter):
         return None
     subject = threat_ids.report_uri(identifier, reporter) + ":retract"
     shown = (

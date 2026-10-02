@@ -149,8 +149,8 @@ class _FrozenClient:
 def test_the_tier_stores_stage_reason_and_source_and_materializes_only_flag_level(monkeypatch):
     from plugins.blackbox.community.verification import VerifiedReport
     listed, unlisted = "c" * 64, "u" * 64
-    reports = [VerifiedReport("s1", "ioc:domain:listed.example", listed, "0x1", "high", (("iocType", "domain"),)),
-               VerifiedReport("s2", "ioc:domain:unlisted.example", unlisted, "0x2", "high", (("iocType", "domain"),))]
+    reports = [VerifiedReport("s1", "ioc:domain:listed.example", listed, "0x1cb7a2e9afbed1e81860f3dd4e4e3b795be5b95a", "high", (("iocType", "domain"),)),
+               VerifiedReport("s2", "ioc:domain:unlisted.example", unlisted, "0x6b865327cda5d374298777f79af02ba0b90512d5", "high", (("iocType", "domain"),))]
     view = _view(partners=[(listed, "acme")])
     monkeypatch.setattr(community_tier.community, "read_verified_reports", lambda c, cfg: _read(reports, view))
     monkeypatch.setattr(community_tier.community, "community_pause_active", lambda c, cfg: False)
@@ -188,7 +188,7 @@ def test_verified_rules_never_expire_or_gain_a_stage(monkeypatch):
 
 
 def test_aggregation_carries_the_signers_a_stage_needs():
-    one, two = Reporter("0xa"), Reporter("0xb")
+    one, two = Reporter("0xf79e09c14d5c229b89c4ac719117cf2bd56fe5f1"), Reporter("0x680964861de62daa6c399f0d8887109f83e17cff")
     from plugins.blackbox.community.verification import ReportVerifier, verify_report_rows
     from _community_rows import NETWORK
     reports, _ = verify_report_rows([signed_row("ioc:domain:x.example", one), signed_row("ioc:domain:x.example", two)],

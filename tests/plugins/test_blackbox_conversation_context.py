@@ -279,7 +279,7 @@ def test_context_never_reaches_outbound_sighting(monkeypatch):
             pass
 
         def agent_identity(self):
-            return {"agentAddress": "0xabc"}
+            return {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}
 
         def status(self):
             return {}

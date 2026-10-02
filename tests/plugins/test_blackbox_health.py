@@ -101,11 +101,11 @@ def test_outcome_line_carries_the_share_outcome_then_the_stage_and_reason():
 
 def test_standing_says_counted_or_probation_with_co_sightings():
     own, other = "c" * 64, "d" * 64
-    reports = (VerifiedReport("s1", THREAT, own, "0x1", "high"), VerifiedReport("s2", "ioc:domain:x", other, "0x2", "high"))
+    reports = (VerifiedReport("s1", THREAT, own, "0x1cb7a2e9afbed1e81860f3dd4e4e3b795be5b95a", "high"), VerifiedReport("s2", "ioc:domain:x", other, "0x6b865327cda5d374298777f79af02ba0b90512d5", "high"))
     heat = {THREAT: HeatEstimate(THREAT, "2026-W40", 56, 2)}
     manifest = km.KeyManifest(environment="n", graph="vm", chain="", root_epoch=1, version=1, curator_keys=("a" * 64, "b" * 64),
                               threshold=2, promotion_author="0x" + "1" * 40, legacy_assets_hash=km.legacy_assets_hash([]))
-    counted = cv.CuratorView(manifest=manifest, counted={own: cv.CountedAuthor(own, "0x1", "partner", "acme", "2027-01-01")})
+    counted = cv.CuratorView(manifest=manifest, counted={own: cv.CountedAuthor(own, "0x1cb7a2e9afbed1e81860f3dd4e4e3b795be5b95a", "partner", "acme", "2027-01-01")})
     lines = report_tracking.standing_lines(own, CommunityRead(ReadState.ROWS, reports=reports, heat=heat, curator=counted))
     assert lines[0].startswith("Standing: COUNTED (partner, acme)") and "~56 agent" in lines[1] and "1 verified report" in lines[1]
     probation = report_tracking.standing_lines(own, CommunityRead(ReadState.ROWS, reports=reports, curator=cv.CuratorView(manifest=manifest)))

@@ -107,12 +107,12 @@ def test_a_report_dated_in_the_future_is_refused():
     future = datetime.now(timezone.utc) + timedelta(hours=2)
     with pytest.raises(ReportValidationError):
         report_builder.build_report_quads(identifier="ioc:domain:x.example", category="ioc", severity="high",
-                                          reporter_address="0xabc", ioc_type="domain", ioc_context="in-skill", ts=future)
+                                          reporter_address="0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a", ioc_type="domain", ioc_context="in-skill", ts=future)
 
 
 def test_the_builder_emits_only_validated_fields():
     quads = report_builder.build_report_quads(identifier="dep:pypi:evil-pkg@1.0", category="dependency",
-                                              severity="critical", reporter_address="0xabc", ecosystem="PyPI",
+                                              severity="critical", reporter_address="0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a", ecosystem="PyPI",
                                               package_name="Evil_Pkg", package_version="1.0", kind="malware",
                                               reason="exfil")
     names = {q["object"] for q in quads if q["predicate"] == constants.PACKAGE_NAME_PRED}

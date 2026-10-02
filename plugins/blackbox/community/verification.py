@@ -100,7 +100,9 @@ class ReportVerifier:
         identifier = payload.get("identifier", "")
         reporter = payload.get("reporter", "")
         severity = payload.get("severity", "")
-        if not identifier or not reporter or payload.get("subject") != threat_ids.report_uri(identifier, reporter):
+        if not identifier or not threat_ids.is_agent_address(reporter):
+            return None                                             # KI-196: free text is not a reporter
+        if payload.get("subject") != threat_ids.report_uri(identifier, reporter):
             return None
         shown = (
             extract_binding(row.get("r")),
