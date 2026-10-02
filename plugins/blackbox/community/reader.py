@@ -16,7 +16,7 @@ import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, extract_binding
@@ -185,19 +185,27 @@ def community_pause_active(client: DkgClient, cfg: BlackboxConfig) -> bool:
 
 
 def fetch_community_report_rows(client: DkgClient, cfg: BlackboxConfig) -> Optional[List[Dict[str, Any]]]:
-    """Page every ThreatReport from the community graph's shared memory.
+    """Page every ThreatReport from the community graph's shared memory
+    (see :func:`page_community_rows`)."""
+    return page_community_rows(client, cfg, _community_reports_sparql)
+
+
+def page_community_rows(client: DkgClient, cfg: BlackboxConfig,
+                        sparql_after: Callable[[str], str]) -> Optional[List[Dict[str, Any]]]:
+    """Page every row a community query returns; ``sparql_after(cursor)``
+    builds one page's query (subjects after *cursor*, ordered, LIMITed).
 
     Same cursor discipline as the verified pager (monotonic subject cursor,
     bounded pages, hard row ceiling). Returns None when ANY page fails or
     comes back malformed, so the caller keeps last-good (fail-open); [] when
-    the node answered that the graph holds no reports.
+    the node answered that the graph holds no such rows.
     """
     rows: List[Dict[str, Any]] = []
     after = ""
     sentinel = object()
     while len(rows) < _COMMUNITY_MAX_ROWS:
         page = client.query(
-            _community_reports_sparql(after),
+            sparql_after(after),
             cfg.community_graph_id,
             view=constants.VIEW_SHARED_WORKING_MEMORY,
             on_error=sentinel,
