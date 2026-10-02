@@ -57,6 +57,13 @@ def _as_int(value: Any, default: int) -> int:
         return default
 
 
+def _as_float(value: Any, default: float) -> float:
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+
+
 def _env_or(entry: Dict[str, Any], *, env: str, key: str, default: Any) -> Any:
     """Resolve a single config value: env var wins, then config entry, then default."""
     env_val = os.environ.get(env)
@@ -116,6 +123,9 @@ class BlackboxConfig:
     community_graph_peer_id: str = ""
     #: Seconds between community-pulse probes (R16); 0 disables the pulse.
     community_poll_interval: int = 20
+    #: Days per keep-alive epoch (R5): this node re-publishes a copy of each of
+    #: its live reports once per epoch (TTL/3 of the default 30-day expiry); 0 = off.
+    community_keepalive_epoch_days: float = 10.0
     block_severity: str = "critical"
     dashboard_port: int = 9700
     discover: bool = True
@@ -338,18 +348,8 @@ def load_blackbox_config() -> BlackboxConfig:
         dkg_url=dkg_url,
         dkg_home=dkg_home,
         dkg_bin=dkg_bin,
-        sync_interval=max(
-            3600,
-            _as_int(
-                _env_or(
-                    entry,
-                    env="BLACKBOX_SYNC_INTERVAL",
-                    key="sync_interval",
-                    default=3600,
-                ),
-                3600,
-            ),
-        ),
+        sync_interval=max(3600, _as_int(_env_or(entry, env="BLACKBOX_SYNC_INTERVAL", key="sync_interval",
+                                                default=3600), 3600)),
         # Community sharing switches (documented in README as `report` /
         # `report_min_severity`). `report` defaults OFF pending the launch
         # default-on/off decision; the daily cap defaults to a real bound so
@@ -372,11 +372,11 @@ def load_blackbox_config() -> BlackboxConfig:
                                              default="")).strip(),
         community_poll_interval=_as_int(_env_or(entry, env="BLACKBOX_COMMUNITY_POLL_INTERVAL",
                                                 key="community_poll_interval", default=20), 20),
+        community_keepalive_epoch_days=_as_float(_env_or(entry, env="BLACKBOX_COMMUNITY_KEEPALIVE_EPOCH_DAYS",
+                                                         key="community_keepalive_epoch_days", default=10.0), 10.0),
         report_min_severity=report_min_severity,
         block_severity=block_severity,
-        dashboard_port=_as_int(
-            _env_or(entry, env="BLACKBOX_DASHBOARD_PORT", key="dashboard_port", default=9700), 9700
-        ),
+        dashboard_port=_as_int(_env_or(entry, env="BLACKBOX_DASHBOARD_PORT", key="dashboard_port", default=9700), 9700),
         discover=_as_bool(_env_or(entry, env="BLACKBOX_DISCOVER", key="discover", default=True), True),
         osv_lookup=_as_bool(
             _env_or(entry, env="BLACKBOX_OSV_LOOKUP", key="osv_lookup", default=True), True

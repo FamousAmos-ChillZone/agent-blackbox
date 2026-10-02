@@ -68,6 +68,8 @@ def graph_tier_item(item: Mapping[str, Any], *, community: bool) -> Dict[str, An
             "stageReason": safe_text(item.get("stageReason"), 200),
             "enforcement": safe_text(item.get("enforcement"), 16),
             "disputed": safe_text(item.get("disputed"), 4),
+            # R5: "no" = the network copies expired and this node keeps the threat locally for a while.
+            "networkLive": safe_text(item.get("networkLive") or "yes", 3),
         })
     return out
 

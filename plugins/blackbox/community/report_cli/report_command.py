@@ -297,7 +297,7 @@ def cmd_report(args: argparse.Namespace) -> int:
         **finding["fields"],
     )
     outcome, detail = statement_verbs.send_and_record(client, cfg, identifier=identifier, category=finding["category"],
-                                       severity=finding["severity"], subject=subject, name=name, quads=q)
+                                       severity=finding["severity"], subject=subject, name=name, quads=q, keep_alive=True)
     if outcome is sharing.ShareOutcome.FAILED:
         return _queue_refused_share(cfg, finding, subject=subject, name=name, quads=q, detail=detail)
     audit.mark_reported(identifier)

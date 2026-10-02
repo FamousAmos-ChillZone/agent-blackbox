@@ -236,7 +236,17 @@ def _apply_overlays(rs: compiler.Ruleset, client: Optional[DkgClient], config: B
         community_tier.apply_community_tier(rs, client, config, _latest_cached_ruleset(config.context_graph_id))
     _publish_digests(client, config)
     _retry_shares(client, config)
+    _keep_reports_alive(client, config)
     community.PULSE.reset()   # a full read just happened; the next pulse starts from it
+
+
+def _keep_reports_alive(client: DkgClient, config: BlackboxConfig) -> None:
+    """R5: the refresh cycle is the publish step for keep-alive — this node's
+    own live reports get this epoch's copy here (when sharing is on). Fail-open."""
+    try:
+        community.publish_due_copies(client, config)
+    except Exception as exc:  # pragma: no cover - never degrade the refresh
+        logger.warning("blackbox: keep-alive copies not published this refresh: %s", exc)
 
 
 def _retry_shares(client: DkgClient, config: BlackboxConfig) -> None:

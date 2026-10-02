@@ -20,7 +20,8 @@ from .. import reader as graph_reader
 
 #: How a ledger outcome is shown (community.ShareOutcome values).
 _OUTCOME_LABELS = {"accepted": "ok", "already-shared": "already shared", "failed": "FAILED",
-                   "retrying": "retrying", "failed-after-retries": "FAILED after retries"}   # R16
+                   "retrying": "retrying", "failed-after-retries": "FAILED after retries",   # R16
+                   "kept-alive": "kept alive"}                                                # R5
 
 
 def outcome_line(row: Dict[str, Any], compiled: Dict[str, Dict[str, Any]]) -> str:

@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from .. import audit, detection
 from .. import community
 from ..kernel import threat_ids
-from . import report_schema, report_signer, share_retry
+from . import keep_alive, report_schema, report_signer, share_retry
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, DkgError
 
@@ -225,6 +225,9 @@ def _share_sighting(
                                        error=detail)
         return
     _ledger_share(finding, subject, name, ok=outcome is ShareOutcome.ACCEPTED, error=detail, outcome=outcome.value)
+    if outcome is ShareOutcome.ACCEPTED:   # R5: this node keeps its own live reports on the network
+        keep_alive.remember_accepted_share(cfg, name=name, identifier=identifier, subject=subject,
+                                           severity=str(finding.get("severity") or "info"), quads=q)
 
 
 def _ledger_share(finding: Dict[str, Any], subject: str, name: str, *, ok: bool, error: str = "",

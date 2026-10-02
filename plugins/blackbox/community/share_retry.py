@@ -41,6 +41,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from .. import audit
 from ..kernel import constants
 from ..kernel.dkg_client import DkgClient
+from . import keep_alive
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +251,9 @@ def retry_due_shares(client: DkgClient, cfg: Any, queue: Optional[ShareRetryQueu
                                    ok=outcome is sharing.ShareOutcome.ACCEPTED, error=detail, outcome=outcome.value)
         if outcome is sharing.ShareOutcome.ACCEPTED:
             accepted += 1
+            # R5: only reports are ever queued here, and an accepted report is kept alive by its author.
+            keep_alive.remember_accepted_share(cfg, name=share.name, identifier=share.identifier, subject=share.subject,
+                                               severity=share.severity, quads=share.quads)
     if accepted:
         logger.info("blackbox: %d queued community share(s) accepted on retry", accepted)
     return accepted

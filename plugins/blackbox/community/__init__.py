@@ -28,6 +28,9 @@ Public surface:
   a community threat's local stage from the counted-author list (R3).
 * :func:`record_verified_sighting` / :func:`publish_due_digests` — the
   seen-again counter: tally verified matches, publish one weekly digest (R2b).
+* :func:`publish_due_copies` — keep-alive (R5): this node re-publishes an
+  epoch-named copy of each of its own live reports; :func:`lifetime_days` —
+  how long a community statement lives, per threat type (plan §03).
 * :func:`contributing_agent_count`, :func:`community_agents`,
   :func:`most_reported_threats`, :func:`reports_signed_by` — statistics over
   verified reports, counted by signer (unsanitized; the caller escapes).
@@ -50,7 +53,9 @@ from .verification import ReportVerifier, VerifiedReport, verify_report_rows
 from .report_signer import network_environment
 from .aggregation import CommunityRule, aggregate_community_reports
 from .digest import publish_due_digests, record_verified_sighting
+from .keep_alive import publish_due_copies
 from .pulse import PULSE
+from .statements.lifetimes import lifetime_days
 from .share_retry import retry_due_shares, share_retry_stats
 from .stages import Enforcement, Stage, StageResult, stage_for
 from .statements.curator_view import VERIFIED_GRAPH_KINDS, CuratorView, counted_dispute_weight
@@ -102,6 +107,8 @@ __all__ = [
     "StageResult",
     "counted_dispute_weight",
     "publish_due_digests",
+    "publish_due_copies",
+    "lifetime_days",
     "PULSE",
     "retry_due_shares",
     "share_retry_stats",

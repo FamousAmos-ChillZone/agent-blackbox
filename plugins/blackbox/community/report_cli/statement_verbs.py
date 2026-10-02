@@ -16,20 +16,27 @@ from typing import Dict, List, Optional, Tuple
 from ... import audit
 from ...kernel import display_safety, threat_ids
 from ...kernel.dkg_client import DkgClient
+from .. import keep_alive as keep_alive_mod
 from .. import report_builder, report_schema, report_signer, sharing
 
 
 def send_and_record(client: DkgClient, cfg, *, identifier: str, category: str, severity: str,
-                     subject: str, name: str, quads: List[Dict[str, str]]) -> Tuple["sharing.ShareOutcome", str]:
+                     subject: str, name: str, quads: List[Dict[str, str]],
+                     keep_alive: bool = False) -> Tuple["sharing.ShareOutcome", str]:
     """Send one built statement to the community graph and record the attempt
     in the local share ledger, success or failure (KI-015). Returns
-    (outcome, detail) for the caller to report."""
+    (outcome, detail) for the caller to report. *keep_alive* (reports only —
+    disputes and retractions are final) remembers an ACCEPTED statement so this
+    node re-publishes it each epoch (R5)."""
     outcome, detail = sharing.send_report(client, cfg.community_graph_id, name, quads)
     audit.record_share_outcome(
         identifier=identifier, category=category, severity=severity,
         subject=subject, asset_name=name, ok=outcome is sharing.ShareOutcome.ACCEPTED,
         error=detail, outcome=outcome.value,
     )
+    if keep_alive and outcome is sharing.ShareOutcome.ACCEPTED:
+        keep_alive_mod.remember_accepted_share(cfg, name=name, identifier=identifier, subject=subject,
+                                               severity=severity, quads=quads)
     return outcome, detail
 
 
@@ -91,6 +98,7 @@ def submit_retraction(client: DkgClient, cfg, identifier: str, reporter: str,
         print(f"Retraction FAILED: {display_safety.term_safe(detail, 160)}")
         print("The attempt is recorded in your local reports ledger.")
         return 1
+    keep_alive_mod.forget_retracted(identifier)   # R5: a retracted report is never kept alive again
     print(f"Retraction shared for: {display_safety.term_safe(identifier)}")
     print("Nodes running this version or later stop counting your report; older nodes count it until")
     print("they update. The report's record stays on the network — a shared graph cannot delete it.")

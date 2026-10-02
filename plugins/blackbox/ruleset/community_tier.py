@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from .. import community
 from ..kernel import threat_ids
@@ -43,6 +43,7 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
     """
     if not cfg.community_graph_id:
         return
+    previous = dict(prior.community) if prior is not None else {}   # captured first: *prior* may be *rs* itself
     try:
         if community.community_pause_active(client, cfg):
             logger.warning("blackbox: community ingest PAUSED by curator flag")
@@ -62,10 +63,37 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
             _keep_last_good(rs, prior)
             return
         rules = community.aggregate_community_reports(read.reports, _first_seen_history(prior))
-        rs.community = {rule.identifier: {**rule.as_rule(), **_stage_fields(rule, read)} for rule in rules}
+        rs.community = {rule.identifier: {**rule.as_rule(), **_stage_fields(rule, read), "networkLive": "yes"}
+                        for rule in rules}
+        _carry_kept_locally(rs, previous, time.time())
         materialize_community_rules(rs)
     except Exception as exc:  # pragma: no cover - fail open at the tier boundary
         logger.debug("blackbox: community tier skipped: %s", exc)
+
+
+#: R5 reader persistence: a counted threat whose network copies expired stays
+#: in this node's tier this long after it was last read, so a slow-burn threat
+#: survives its author's silence on the reader side too (plan §06: ≤90 d).
+KEPT_LOCALLY_DAYS = 90
+_DAY_SECONDS = 86_400.0
+
+
+def _carry_kept_locally(rs: compiler.Ruleset, previous: Dict[str, Dict[str, Any]], now: float) -> None:
+    """Carry over entries the fresh read no longer has — only threats with at
+    least one counted cluster, within their type's lifetime (decay on this
+    node's observation time, never the sender's), gone for ≤ KEPT_LOCALLY_DAYS.
+    They keep their last stage and are marked ``networkLive: no`` so the
+    dashboard shows "kept locally" apart from what the network still carries."""
+    for identifier, rule in previous.items():
+        if identifier in rs.community or int(rule.get("counted") or 0) < 1:
+            continue
+        gone_since = float(rule.get("keptSince") or now)
+        first_seen = float(rule.get("firstSeen") or now)
+        if now - gone_since > KEPT_LOCALLY_DAYS * _DAY_SECONDS:
+            continue
+        if now - first_seen > community.lifetime_days(identifier) * _DAY_SECONDS:
+            continue
+        rs.community[identifier] = {**rule, "networkLive": "no", "keptSince": gone_since}
 
 
 def reapply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxConfig) -> None:
