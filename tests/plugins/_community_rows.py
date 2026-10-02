@@ -52,3 +52,17 @@ def signed_row(identifier: str, reporter: Reporter, severity: str = "high", cate
         if obj.startswith('"') and obj.endswith('"'):   # plain literals only (skip IRIs and typed dates)
             row[quad["predicate"].rsplit("/", 1)[-1]] = json.loads(obj)
     return row
+
+
+def signed_retraction_row(identifier: str, reporter: Reporter, environment: str = NETWORK,
+                          graph: str = GRAPH, signed: bool = True) -> Dict[str, str]:
+    """One retraction row as the reader's retraction query returns it (Refine R1)."""
+    signer = ReportSigner(private_key=reporter.key, environment=environment, graph=graph) if signed else None
+    quads = report_builder.build_retraction_quads(identifier=identifier, reporter_address=reporter.address,
+                                                  signer=signer)
+    row = {"r": quads[0]["subject"]}
+    for quad in quads:
+        obj = quad["object"]
+        if obj.startswith('"') and obj.endswith('"'):
+            row[quad["predicate"].rsplit("/", 1)[-1]] = json.loads(obj)
+    return row

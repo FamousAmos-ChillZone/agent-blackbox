@@ -33,6 +33,8 @@ XSD_DATETIME = "http://www.w3.org/2001/XMLSchema#dateTime"
 
 REPORT_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}ThreatReport"
 FALSE_POSITIVE_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}FalsePositive"
+#: A reporter withdrawing its own report (Refine R1, lifecycle RETRACT).
+RETRACTION_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}Retraction"
 
 # Blackbox predicates -------------------------------------------------------
 IDENTIFIER_PRED = f"{BLACKBOX_ONTOLOGY}identifier"

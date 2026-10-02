@@ -21,6 +21,7 @@ from ..kernel import constants
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, extract_binding
 from ..kernel import sparql_text
+from . import retractions
 from .report_signer import network_environment
 from .verification import ReportVerifier, VerifiedReport, verify_report_rows
 
@@ -283,7 +284,8 @@ def read_verified_reports(client: DkgClient, cfg: BlackboxConfig) -> CommunityRe
     start here. UNAVAILABLE when any page failed or came back malformed, when
     the node's network id is unknown (nothing can be verified), or when the
     graph reads empty but the node cannot confirm it is subscribed and
-    synced. No community graph configured = AUTHORISED_EMPTY.
+    synced. No community graph configured = AUTHORISED_EMPTY. Reports their
+    own signer retracted are left out (:mod:`.retractions`).
     """
     if not cfg.community_graph_id:
         return CommunityRead(ReadState.AUTHORISED_EMPTY)
@@ -301,7 +303,13 @@ def read_verified_reports(client: DkgClient, cfg: BlackboxConfig) -> CommunityRe
             return CommunityRead(ReadState.AUTHORISED_EMPTY)
         return _unavailable("empty read without proof of a synced subscription")
     reports, _dropped = verify_report_rows(rows, ReportVerifier(environment, cfg.community_graph_id))
-    return CommunityRead(ReadState.ROWS, reports=tuple(reports))
+    # Refine R1: honour retractions. A failed retraction read makes the whole
+    # read unavailable (keep last-good) rather than count withdrawn reports.
+    retraction_rows = page_community_rows(client, cfg, retractions.retractions_sparql)
+    if retraction_rows is None:
+        return _unavailable("a page of retractions failed or was malformed")
+    withdrawn = retractions.verified_retractions(retraction_rows, environment, cfg.community_graph_id)
+    return CommunityRead(ReadState.ROWS, reports=tuple(retractions.apply_retractions(reports, withdrawn)))
 
 
 def _cap_per_author(reports: Iterable[VerifiedReport], prior_first_seen: Dict[str, float]) -> List[VerifiedReport]:

@@ -2,7 +2,7 @@
 
 Manual reports go through the same share path as automatic ones; also
 ``--status`` (this node's contributions, from the share ledger plus the
-graph). Disputes are in :mod:`.statement_verbs`.
+graph). Disputes and retractions are in :mod:`.statement_verbs`.
 """
 
 from __future__ import annotations
@@ -180,6 +180,7 @@ _REPORT_FLAGS: Tuple[Tuple[Tuple[str, ...], Dict[str, Any]], ...] = (
     (("--status",), dict(action="store_true", help="Show what this node has contributed (ledger + graph)")),
     (("--false-positive",), dict(dest="false_positive", metavar="IDENTIFIER",
                                  help="Dispute a community threat (needs --reason)")),
+    (("--retract",), dict(metavar="IDENTIFIER", help="Withdraw this node's own report of IDENTIFIER (final)")),
     (("--ioc-type",), dict(dest="ioc_type", choices=list(threat_ids.IOC_TYPES), help="ioc: indicator type")),
     (("--value",), dict(help="ioc: the indicator value (domain/url/ip/hash/...)")),
     (("--pattern",), dict(help="injection: the pattern — hashed here, never sent")),
@@ -244,8 +245,8 @@ def cmd_report(args: argparse.Namespace) -> int:
     if resolved is None:
         return 1
     reporter, signer = resolved
-    if args.false_positive:
-        return statement_verbs.submit_false_positive(client, cfg, args.false_positive, args.reason, reporter, signer)
+    if args.false_positive or args.retract:
+        return statement_verbs.submit_statement(client, cfg, args, reporter, signer)
     finding, err = _report_finding_from_args(args)
     if finding is None:
         print(f"Invalid report: {err}")

@@ -1,13 +1,16 @@
-"""Statements about other reports — `blackbox report --false-positive` —
-and the send-and-record step every manual statement shares.
+"""Statements about reports — `blackbox report --false-positive` and
+`--retract` — and the send-and-record step every manual statement shares.
 
 :func:`send_and_record` sends one built statement and writes the local share
-ledger (KI-015: every attempt, success or failure). :func:`submit_false_positive`
-is the DISPUTE verb. Called by :func:`.report_command.cmd_report`.
+ledger (KI-015: every attempt, success or failure). :func:`submit_statement`
+dispatches to the DISPUTE verb (:func:`submit_false_positive`) or the RETRACT
+verb (:func:`submit_retraction`, Refine R1). Called by
+:func:`.report_command.cmd_report`.
 """
 
 from __future__ import annotations
 
+import argparse
 from typing import Dict, List, Optional, Tuple
 
 from .. import audit
@@ -54,4 +57,41 @@ def submit_false_positive(client: DkgClient, cfg, identifier: str, reason: Optio
         print(f"Dispute already on the community graph for: {display_safety.term_safe(identifier)} (not re-sent)")
         return 0
     print(f"False-positive signal shared for: {display_safety.term_safe(identifier)}")
+    return 0
+
+
+def submit_statement(client: DkgClient, cfg, args: argparse.Namespace, reporter: str,
+                     signer: report_signer.ReportSigner) -> int:
+    """A dispute (``--false-positive``) or a retraction (``--retract``)."""
+    if args.false_positive:
+        return submit_false_positive(client, cfg, args.false_positive, args.reason, reporter, signer)
+    return submit_retraction(client, cfg, args.retract, reporter, signer)
+
+
+def submit_retraction(client: DkgClient, cfg, identifier: str, reporter: str,
+                      signer: report_signer.ReportSigner) -> int:
+    """Withdraw this node's own report (lifecycle: RETRACT, Refine R1).
+
+    Readers drop every report this node's key signed for the identifier
+    (:mod:`.retractions`). Final: the same report cannot be re-sent.
+    """
+    try:
+        identifier = report_schema.validate_statement_identifier(identifier)
+    except report_schema.ReportValidationError as exc:
+        print(f"Invalid retraction: {exc}")
+        print("Nothing was submitted.")
+        return 2
+    quads = report_builder.build_retraction_quads(identifier=identifier, reporter_address=reporter,
+                                                  framework=sharing.HOST_FRAMEWORK, signer=signer)
+    name = f"retract-{threat_ids.stable_hash(identifier + reporter, 16)}"
+    subject = threat_ids.report_uri(identifier, reporter) + ":retract"
+    outcome, detail = send_and_record(client, cfg, identifier=identifier, category="retraction",
+                                      severity="info", subject=subject, name=name, quads=quads)
+    if outcome is sharing.ShareOutcome.FAILED:
+        print(f"Retraction FAILED: {display_safety.term_safe(detail, 160)}")
+        print("The attempt is recorded in your local reports ledger.")
+        return 1
+    print(f"Retraction shared for: {display_safety.term_safe(identifier)}")
+    print("Nodes running this version or later stop counting your report; older nodes count it until")
+    print("they update. The report's record stays on the network — a shared graph cannot delete it.")
     return 0

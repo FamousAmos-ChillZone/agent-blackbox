@@ -17,7 +17,8 @@ Public surface:
   reporting identity is resolved by ``kernel.identity.reporter_address``.
 * :func:`add_report_parser` + :func:`cmd_report` (``blackbox report``), :func:`print_community_status`
   (the status block), :func:`ensure_community_subscription` (join on sync).
-* :func:`build_report_quads` / :func:`build_false_positive_quads` — the
+* :func:`build_report_quads` / :func:`build_false_positive_quads` /
+  :func:`build_retraction_quads` — the
   privacy-safe statements a report or dispute shares (write side).
 * :func:`read_verified_reports` — THE community read: fetch + verify (R0c/R0d).
 * :func:`contributing_agent_count`, :func:`community_agents`,
@@ -33,7 +34,7 @@ Usage::
 
 from __future__ import annotations
 
-from .report_builder import build_false_positive_quads, build_report_quads
+from .report_builder import build_false_positive_quads, build_report_quads, build_retraction_quads
 from .membership import ensure_community_subscription
 from .report_command import add_report_parser, cmd_report, print_community_status
 from .sharing import NEVER_SHARED_SOURCES, CommunitySharePolicy, spawn_community_share
@@ -63,6 +64,7 @@ __all__ = [
     "VerifiedReport",
     "aggregate_community_reports",
     "build_false_positive_quads",
+    "build_retraction_quads",
     "build_report_quads",
     "add_report_parser",
     "cmd_report",

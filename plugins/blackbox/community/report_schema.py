@@ -233,10 +233,16 @@ def validate_dispute(*, identifier: str, reason: str) -> Tuple[str, str]:
     :class:`ReportValidationError`. The reason is REQUIRED and closed
     (``constants.FALSE_POSITIVE_REASONS``, plan §04); the disputed identifier is
     a single short token, never free text."""
+    return validate_statement_identifier(identifier), _one_of("reason", reason, constants.FALSE_POSITIVE_REASONS)
+
+
+def validate_statement_identifier(identifier: str) -> str:
+    """The threat identifier a dispute or retraction names, stripped — a single
+    short token, never free text — or :class:`ReportValidationError`."""
     identifier = str(identifier or "").strip()
     if not identifier or len(identifier) > MAX_IDENTIFIER_CHARS or _CONTROL.search(identifier) or " " in identifier:
-        _fail("the disputed identifier must be a short single token without control characters")
-    return identifier, _one_of("reason", reason, constants.FALSE_POSITIVE_REASONS)
+        _fail("the identifier must be a short single token without control characters")
+    return identifier
 
 
 def _aware(ts: datetime) -> datetime:

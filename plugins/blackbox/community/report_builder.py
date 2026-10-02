@@ -5,7 +5,8 @@ One subject per (reporter, threat) — ``urn:guardian:report:{reporter}:{hash}``
 prompt or command text; literals are capped by :mod:`..kernel.rdf_terms`.
 
 Usage: ``community.build_report_quads(identifier, severity=..., reporter_address=...)``
-· ``community.build_false_positive_quads(identifier, reporter_address=..., reason=...)``.
+· ``community.build_false_positive_quads(identifier, reporter_address=..., reason=...)``
+· ``community.build_retraction_quads(identifier, reporter_address=..., signer=...)``.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from ..kernel import constants
 from ..kernel import rdf_terms
 from ..kernel import threat_ids
 from . import report_schema
-from .report_signer import DISPUTE_STATEMENT, REPORT_STATEMENT, ReportSigner
+from .report_signer import DISPUTE_STATEMENT, REPORT_STATEMENT, RETRACT_STATEMENT, ReportSigner
 
 # ---------------------------------------------------------------------------
 # Threat / report quad builders
@@ -160,4 +161,40 @@ def build_false_positive_quads(
         payload = {"subject": subj, "identifier": identifier, "reporter": reporter,
                    "framework": framework, "day": day.date().isoformat(), "reason": reason}
         out.append(_signature_quad(subj, signer, DISPUTE_STATEMENT, payload))
+    return out
+
+
+def build_retraction_quads(
+    *,
+    identifier: str,
+    reporter_address: str,
+    framework: str = "hermes",
+    ts: Optional[datetime] = None,
+    signer: Optional[ReportSigner] = None,
+) -> List[rdf_terms.Quad]:
+    """A retraction: "I withdraw my report of this threat" (Refine R1, RETRACT).
+
+    Subject ``report_uri(identifier, reporter) + ":retract"`` — one per
+    (reporter, threat), beside the report and any dispute. Readers honour a
+    retraction only when it is signed (``blackbox.retract``) by the SAME key
+    that signed the report: it withdraws that signer's voice and nobody
+    else's (see :mod:`.retractions`). Day-rounded like every statement. An
+    unsigned retraction is built (for symmetry with the other builders) but
+    no reader acts on it.
+    """
+    identifier = report_schema.validate_statement_identifier(identifier)
+    subj = threat_ids.report_uri(identifier, reporter_address) + ":retract"
+    day = _day(ts)
+    reporter = reporter_address.strip().lower()   # report_uri above refused a blank one
+    out = [
+        rdf_terms.make_quad(subj, constants.RDF_TYPE, rdf_terms.iri(constants.RETRACTION_TYPE_IRI)),
+        rdf_terms.make_quad(subj, constants.IDENTIFIER_PRED, rdf_terms.literal(identifier)),
+        rdf_terms.make_quad(subj, constants.REPORTER_PRED, rdf_terms.literal(reporter)),
+        rdf_terms.make_quad(subj, constants.FRAMEWORK_PRED, rdf_terms.literal(framework)),
+        rdf_terms.make_quad(subj, constants.SCHEMA_DATE_MODIFIED_PRED, rdf_terms.datetime_literal(day)),
+    ]
+    if signer is not None:
+        payload = {"subject": subj, "identifier": identifier, "reporter": reporter,
+                   "framework": framework, "day": day.date().isoformat()}
+        out.append(_signature_quad(subj, signer, RETRACT_STATEMENT, payload))
     return out

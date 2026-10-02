@@ -4,7 +4,8 @@ Every report and dispute this node shares carries a signed envelope
 (:mod:`..kernel.signing`) made with this node's reporter key
 (:mod:`..kernel.reporter_key`). The signature is bound to:
 
-* the statement type — ``blackbox.report`` or ``blackbox.dispute``;
+* the statement type — ``blackbox.report``, ``blackbox.dispute`` or
+  ``blackbox.retract``;
 * the environment — the DKG network id the node runs on, so a statement
   signed on a test network can never be replayed on mainnet;
 * the community graph it is shared to.
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 REPORT_STATEMENT = "blackbox.report"
 DISPUTE_STATEMENT = "blackbox.dispute"
+RETRACT_STATEMENT = "blackbox.retract"   # Refine R1: a reporter withdrawing its own report
 #: Bump when the signed payload's fields change meaning (readers check it).
 STATEMENT_SCHEMA_VERSION = 1
 
