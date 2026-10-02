@@ -57,6 +57,8 @@ def test_a_healthy_node_has_nothing_to_do():
     ({"revoked": {THREAT: 0}}, health.HealthClass.INFO, "REVOKED"),
     ({"revoked": {THREAT: 3}}, health.HealthClass.ACTION, "blocked 3"),
     ({"held_back": 7}, health.HealthClass.INFO, "held"),
+    ({"pending_shares": 2}, health.HealthClass.INFO, "waiting for the network"),      # R16: retried automatically
+    ({"shares_given_up": 1}, health.HealthClass.ACTION, "could not be shared"),       # R16: the operator must look
 ])
 def test_every_operator_state_has_a_class_and_a_what_to_do(over, klass, needle):
     items = health.operator_health(_inputs(**over))

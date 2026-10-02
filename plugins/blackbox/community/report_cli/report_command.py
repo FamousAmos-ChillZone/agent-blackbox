@@ -13,7 +13,7 @@ import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from ... import audit
 from ... import detection
-from .. import graph_stats, report_builder, report_schema, report_signer, sharing
+from .. import graph_stats, report_builder, report_schema, report_signer, sharing, share_retry
 from . import report_rights, report_tracking, statement_verbs
 from .. import reader as graph_reader
 from ...kernel import constants, threat_ids
@@ -134,6 +134,17 @@ _REPORT_FIELDS = {
     "skill": _skill_args,
     "ioc": _ioc_args,
 }
+
+
+def _queue_refused_share(cfg, finding, *, subject: str, name: str, quads, detail: str) -> int:
+    """R16: a refused write is queued for automatic retry, and the operator is told so."""
+    share_retry.queue_failed_share(graph=cfg.community_graph_id, name=name, identifier=finding["identifier"],
+                                   category=finding["category"], severity=finding["severity"], subject=subject,
+                                   quads=quads, error=detail)
+    print(f"Share refused for now: {display_safety.term_safe(detail, 160)}")
+    print("Queued for automatic retry (a newly subscribed node is refused for a few minutes). "
+          "`blackbox report --status` shows it as 'retrying' until it lands.")
+    return 1
 
 
 def _report_finding_from_args(args: argparse.Namespace) -> "tuple[Optional[dict], str]":
@@ -288,9 +299,7 @@ def cmd_report(args: argparse.Namespace) -> int:
     outcome, detail = statement_verbs.send_and_record(client, cfg, identifier=identifier, category=finding["category"],
                                        severity=finding["severity"], subject=subject, name=name, quads=q)
     if outcome is sharing.ShareOutcome.FAILED:
-        print(f"Share FAILED: {display_safety.term_safe(detail, 160)}")
-        print("The attempt is recorded in your local reports ledger.")
-        return 1
+        return _queue_refused_share(cfg, finding, subject=subject, name=name, quads=q, detail=detail)
     audit.mark_reported(identifier)
     if outcome is sharing.ShareOutcome.REJECTED_SAME_VERSION:
         print(f"Already on the community graph — not re-sent ({display_safety.term_safe(detail, 120)}).")

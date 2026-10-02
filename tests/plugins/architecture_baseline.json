@@ -2,7 +2,7 @@
   "_comment": "Baselined when the structure guard landed (2026-10-01). Numbers may only shrink: lower them in the commit that shrinks the code; delete an entry once it is under the alarm. Never raise one.",
   "files": {
     "dashboard/server.py": 2245,
-    "kernel/config.py": 440,
+    "kernel/config.py": 432,
     "kernel/dkg_client.py": 641,
     "sync/command.py": 1449,
     "sync/managed_node.py": 427
@@ -15,7 +15,7 @@
     "attach/openclaw_json5.py::_json5_to_json": 156,
     "audit/activity.py::read_local_activity": 138,
     "cli.py::setup_cli": 81,
-    "community/report_cli/report_command.py::cmd_report": 62,
+    "community/report_cli/report_command.py::cmd_report": 60,
     "curate/catalog_import.py::_entry_to_threat": 114,
     "dashboard/command.py::_replace_existing_dashboard": 65,
     "dashboard/server.py::_blackbox_sync_health": 110,
@@ -36,7 +36,7 @@
     "detection/detectors.py::discover_dependency_candidates": 52,
     "detection/reviewer_setup.py::cmd_setup_llm": 102,
     "guard/hooks.py::on_pre_tool_call": 49,
-    "kernel/config.py::load_blackbox_config": 170,
+    "kernel/config.py::load_blackbox_config": 160,
     "kernel/settings.py::_validate": 99,
     "ruleset/compiler.py::Ruleset.graph_entries": 47,
     "ruleset/compiler.py::build_from_rows": 75,

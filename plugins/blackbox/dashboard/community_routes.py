@@ -179,14 +179,17 @@ def _curator_payload(view: Any) -> Dict[str, Any]:
 
 def health_payload(community_read: CommunityReadSource, node_reachable: Callable[[Any], bool]) -> Dict[str, Any]:
     """R10: the operator's health items from the same inputs `blackbox status` uses."""
-    from .. import audit, ruleset
+    from .. import audit, community, ruleset
     from ..kernel import health
     from ..kernel.config import load_blackbox_config
 
     cfg = load_blackbox_config()
+    ruleset.pulse(cfg)   # R16: the dashboard is a long-lived process — its health poll keeps the pulse going
     rs = ruleset.peek(cfg)
     read = community_read(cfg) if getattr(cfg, "community_graph_id", "") else None
-    inputs = health.gather(cfg, rs, node_reachable(cfg), read, audit.blocked_counts_by_identifier(), time.time())
+    retries = community.share_retry_stats()
+    inputs = health.gather(cfg, rs, node_reachable(cfg), read, audit.blocked_counts_by_identifier(), time.time(),
+                           pending_shares=retries.pending, shares_given_up=retries.given_up)
     items = health.operator_health(inputs)
     return {"items": [{**item.as_dict(), "red": health.red(item)} for item in items],
             "ruleset_age": health.ruleset_age_text(inputs.ruleset_age_s), "community_paused": inputs.community_paused}

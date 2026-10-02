@@ -50,6 +50,8 @@ from .verification import ReportVerifier, VerifiedReport, verify_report_rows
 from .report_signer import network_environment
 from .aggregation import CommunityRule, aggregate_community_reports
 from .digest import publish_due_digests, record_verified_sighting
+from .pulse import PULSE
+from .share_retry import retry_due_shares, share_retry_stats
 from .stages import Enforcement, Stage, StageResult, stage_for
 from .statements.curator_view import VERIFIED_GRAPH_KINDS, CuratorView, counted_dispute_weight
 from .statements.curator_statements import manifest_quads as key_manifest_quads
@@ -100,6 +102,9 @@ __all__ = [
     "StageResult",
     "counted_dispute_weight",
     "publish_due_digests",
+    "PULSE",
+    "retry_due_shares",
+    "share_retry_stats",
     "stage_for",
     "read_curator_view",
     "record_verified_sighting",

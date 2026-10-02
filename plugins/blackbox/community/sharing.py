@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from .. import audit, detection
 from .. import community
 from ..kernel import threat_ids
-from . import report_schema, report_signer
+from . import report_schema, report_signer, share_retry
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, DkgError
 
@@ -214,7 +214,16 @@ def _share_sighting(
         outcome, detail = send_report(client, cfg.community_graph_id, name, q)
     except Exception as exc:  # pragma: no cover - fail open (building the report failed)
         logger.debug("blackbox: sighting share error: %s", exc)
-        outcome, detail = ShareOutcome.FAILED, str(exc)
+        _ledger_share(finding, subject, name, ok=False, error=str(exc), outcome=ShareOutcome.FAILED.value)
+        return
+    if outcome is ShareOutcome.FAILED:
+        # R16 (KI-202): a refused write is retried with backoff — a newly subscribed
+        # node is refused for minutes on mainnet; its first catches must not be lost.
+        share_retry.queue_failed_share(graph=cfg.community_graph_id, name=name, identifier=identifier,
+                                       category=str(finding.get("category") or ""),
+                                       severity=str(finding.get("severity") or "info"), subject=subject, quads=q,
+                                       error=detail)
+        return
     _ledger_share(finding, subject, name, ok=outcome is ShareOutcome.ACCEPTED, error=detail, outcome=outcome.value)
 
 

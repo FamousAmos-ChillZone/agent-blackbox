@@ -27,6 +27,7 @@ from __future__ import annotations
 from .compiler import Ruleset, build_from_rows, verified_identifiers
 from .errors import RulesetRefreshIncomplete, RulesetRefreshLockUnavailable, RulesetRefreshUnavailable
 from .fetching import fetch_tier
+from .pulse_beat import pulse
 from .refresh_cycle import get, peek, refresh
 
 __all__ = [
@@ -38,6 +39,7 @@ __all__ = [
     "fetch_tier",
     "get",
     "peek",
+    "pulse",
     "refresh",
     "verified_identifiers",
 ]

@@ -110,10 +110,12 @@ class BlackboxConfig:
     #: config entry ``community_graph_id`` → shipped default). Empty means the
     #: community feature is dormant regardless of ``report``.
     community_graph_id: str = constants.DEFAULT_COMMUNITY_GRAPH_ID
-    #: Curator peer id for community-graph enrollment (KI-040: SWM
-    #: participation is enrollment-mediated; the join request needs the
-    #: curator's libp2p peer id). Optional — open enrollment auto-approves.
+    #: Curator peer id for a JOIN request — empty by default and meant to stay so:
+    #: the community graph is PUBLIC, trust is enforced at READ time (decision 9
+    #: as amended 2026-10-02). Set only for a deliberately gated sandbox graph.
     community_graph_peer_id: str = ""
+    #: Seconds between community-pulse probes (R16); 0 disables the pulse.
+    community_poll_interval: int = 20
     block_severity: str = "critical"
     dashboard_port: int = 9700
     discover: bool = True
@@ -364,22 +366,12 @@ def load_blackbox_config() -> BlackboxConfig:
                 constants.DEFAULT_DAILY_REPORT_LIMIT,
             ),
         ),
-        community_graph_id=str(
-            _env_or(
-                entry,
-                env="BLACKBOX_COMMUNITY_GRAPH_ID",
-                key="community_graph_id",
-                default=constants.DEFAULT_COMMUNITY_GRAPH_ID,
-            )
-        ).strip(),
-        community_graph_peer_id=str(
-            _env_or(
-                entry,
-                env="BLACKBOX_COMMUNITY_GRAPH_PEER_ID",
-                key="community_graph_peer_id",
-                default="",
-            )
-        ).strip(),
+        community_graph_id=str(_env_or(entry, env="BLACKBOX_COMMUNITY_GRAPH_ID", key="community_graph_id",
+                                        default=constants.DEFAULT_COMMUNITY_GRAPH_ID)).strip(),
+        community_graph_peer_id=str(_env_or(entry, env="BLACKBOX_COMMUNITY_GRAPH_PEER_ID", key="community_graph_peer_id",
+                                             default="")).strip(),
+        community_poll_interval=_as_int(_env_or(entry, env="BLACKBOX_COMMUNITY_POLL_INTERVAL",
+                                                key="community_poll_interval", default=20), 20),
         report_min_severity=report_min_severity,
         block_severity=block_severity,
         dashboard_port=_as_int(

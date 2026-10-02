@@ -28,6 +28,7 @@ from . import curator_tier
 from .. import community
 from . import locks
 from .memory_cache import RulesetCache
+from . import pulse_beat
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +235,16 @@ def _apply_overlays(rs: compiler.Ruleset, client: Optional[DkgClient], config: B
     else:
         community_tier.apply_community_tier(rs, client, config, _latest_cached_ruleset(config.context_graph_id))
     _publish_digests(client, config)
+    _retry_shares(client, config)
+    community.PULSE.reset()   # a full read just happened; the next pulse starts from it
+
+
+def _retry_shares(client: DkgClient, config: BlackboxConfig) -> None:
+    """R16: every periodic beat also retries refused community shares. Fail-open."""
+    try:
+        community.retry_due_shares(client, config)
+    except Exception as exc:  # pragma: no cover - never degrade the refresh
+        logger.debug("blackbox: share retry skipped this beat: %s", exc)
 
 
 def _publish_digests(client: DkgClient, config: BlackboxConfig) -> None:
@@ -320,6 +331,8 @@ def get(config: Optional[BlackboxConfig] = None) -> compiler.Ruleset:
         except Exception:  # pragma: no cover
             with _refreshing_lock:
                 _refreshing = False
+    else:
+        pulse_beat.pulse(config)   # R16: the cheap beat between refreshes (never blocks)
     return cached
 
 

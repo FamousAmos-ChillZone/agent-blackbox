@@ -150,7 +150,7 @@ def test_share_failure_exits_nonzero_and_ledgers(monkeypatch, bb_home, capsys):
     monkeypatch.setattr(kernel_identity, "reporter_address", lambda c: REPORTER)
     rc = report_command.cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example", context="fetched-by-tool"))
     assert rc == 1
-    assert "FAILED" in capsys.readouterr().out
+    assert "refused for now" in capsys.readouterr().out
     rows = audit.read_share_ledger()
     assert rows and rows[0]["ok"] is False
 

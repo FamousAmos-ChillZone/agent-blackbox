@@ -58,7 +58,9 @@ class HealthInputs:
     ("" when the last community read was fine); ``curator_trusted`` (a key
     manifest this network trusts); ``backlog`` (lanes text, "" when none);
     ``away_keys``; ``revoked`` ({identifier: actions it BLOCKED here});
-    ``held_back`` (statements over the per-author budget).
+    ``held_back`` (statements over the per-author budget); ``pending_shares``
+    (this node's reports waiting to be retried, R16); ``shares_given_up``
+    (reports abandoned after the retry window).
     """
 
     node_reachable: bool
@@ -73,6 +75,8 @@ class HealthInputs:
     away_keys: int = 0
     revoked: Mapping[str, int] = None  # type: ignore[assignment]
     held_back: int = 0
+    pending_shares: int = 0
+    shares_given_up: int = 0
 
 
 #: A ruleset older than this many sync intervals is stale.
@@ -128,6 +132,14 @@ def _community(inputs: HealthInputs) -> List[HealthItem]:
     if inputs.held_back:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"{inputs.held_back} community statement(s) held by the per-author daily budget",
                                 "nothing to do — a flooding author is being rate-limited by every reader"))
+    if inputs.pending_shares:
+        items.append(HealthItem(_OPERATOR, HealthClass.INFO,
+                                f"{inputs.pending_shares} report(s) waiting for the network to accept this node's writes",
+                                "nothing to do — a newly subscribed node is refused for a few minutes; they are retried automatically"))
+    if inputs.shares_given_up:
+        items.append(HealthItem(_OPERATOR, HealthClass.ACTION,
+                                f"{inputs.shares_given_up} report(s) could not be shared within 24 h",
+                                "run `blackbox sync --wait`; check the node is subscribed to the community graph, then `blackbox report --status`"))
     return items
 
 
@@ -144,10 +156,11 @@ def red(item: HealthItem) -> bool:
 
 
 def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked_by_identifier: Mapping[str, int],
-           now: float) -> HealthInputs:
+           now: float, *, pending_shares: int = 0, shares_given_up: int = 0) -> HealthInputs:
     """Build :class:`HealthInputs` from a config, a compiled ruleset, node
-    reachability, the last community read (or None) and how many actions each
-    threat blocked here (``audit.blocked_counts_by_identifier()``)."""
+    reachability, the last community read (or None), how many actions each
+    threat blocked here (``audit.blocked_counts_by_identifier()``) and the
+    share-retry counts (``community.share_retry_stats()``)."""
     view = getattr(read, "curator", None)
     revoked = {ident: int(blocked_by_identifier.get(ident, 0)) for ident in (view.revoked if view is not None else ())}
     return HealthInputs(
@@ -163,6 +176,8 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         away_keys=len(view.away) if view is not None else 0,
         revoked=revoked,
         held_back=int(getattr(read, "held_back", 0) or 0),
+        pending_shares=int(pending_shares),
+        shares_given_up=int(shares_given_up),
     )
 
 
