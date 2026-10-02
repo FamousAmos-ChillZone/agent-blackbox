@@ -815,3 +815,16 @@ def test_sync_activity_keeps_new_catchup_visible_after_authoritative_transfer():
 
     assert activity["status"] == "running"
     assert activity["phase"] == "network-catchup"
+
+
+def test_the_worker_refreshes_soon_when_nothing_was_ever_compiled():
+    """KI-205: a never-compiled home does not wait a full sync interval for its first refresh."""
+    from plugins.blackbox.dashboard import sync_timing
+    from plugins.blackbox.kernel.config import BlackboxConfig
+    from plugins.blackbox.ruleset import compiler
+    cfg = BlackboxConfig(sync_interval=3600)
+    never = compiler.Ruleset()                                   # synced_at 0
+    compiled = compiler.Ruleset()
+    compiled.synced_at = 1.0
+    assert sync_timing.initial_sync_delay(cfg, never, 5.0, 10.0) == 10.0
+    assert sync_timing.initial_sync_delay(cfg, compiled, 5.0, 10.0) == 3600.0

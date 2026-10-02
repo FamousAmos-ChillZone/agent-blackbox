@@ -49,11 +49,23 @@ class _Graph:
     def context_graphs(self):
         return [{"id": GRAPH, "subscribed": True, "synced": True}]
 
+    def __init__(self, reports=(), disputes=()):
+        self.reports = list(reports)
+        self.disputes = list(disputes)
+        self.probes = 0
+
     def query(self, sparql, cg_id, view=None, on_error=None, **kw):
-        if "COUNT(DISTINCT ?r) AS ?n) (MAX" in sparql:
+        if "GROUP BY ?t" in sparql:                                 # the grouped fingerprint
             self.probes += 1
-            last = max((r["r"] for r in self.reports), default="")
-            return [{"n": str(len(self.reports)), "last": last}]
+            rows = []
+            for kind, items in (("ThreatReport", self.reports), ("FalsePositive", self.disputes)):
+                if items:
+                    rows.append({"t": f"http://umanitek.ai/ontology/guardian/{kind}", "n": str(len(items)),
+                                 "last": max(r["r"] for r in items)})
+            return rows
+        if "g:FalsePositive" in sparql:
+            served, self.disputes = list(self.disputes), self.disputes
+            return served if not kw.get("_served") else []
         if "g:ThreatReport" in sparql and "?identifier" in sparql:
             served, self.reports = list(self.reports), self.reports    # the pager stops on a short page
             return served if not kw.get("_served") else []
@@ -66,7 +78,7 @@ class _Graph:
 def test_the_fingerprint_is_count_and_newest_subject_and_fails_open():
     graph = _Graph([signed_row(THREAT, Reporter("0xa"))])
     fp = pulse_module.fingerprint(graph, BlackboxConfig(community_graph_id=GRAPH))
-    assert fp.startswith("1:urn:guardian:report:")
+    assert fp.startswith("ThreatReport=1:urn:guardian:report:")
     assert pulse_module.fingerprint(graph, BlackboxConfig(community_graph_id="")) is None
 
     class _Down(_Graph):
@@ -88,6 +100,18 @@ def test_the_first_probe_is_a_baseline_and_only_a_different_graph_counts_as_chan
     assert pulse.changed(graph, cfg) is False                 # and is now the baseline
     clock.now += 20
     assert pulse.due(20) and not pulse.due(0)                 # 0 = off
+
+
+def test_a_new_dispute_changes_the_fingerprint_too():
+    """Bench finding 2026-10-02: statements arrived only on the full refresh — the grouped probe counts them."""
+    from _community_rows import signed_dispute_row
+    pulse = pulse_module.CommunityPulse(clock=_Clock())
+    cfg = BlackboxConfig(community_graph_id=GRAPH)
+    graph = _Graph([signed_row(THREAT, Reporter("0xa"))])
+    assert pulse.changed(graph, cfg) is False and pulse.report_count == 1
+    graph.disputes.append(signed_dispute_row(THREAT, Reporter("0xb")))
+    assert pulse.changed(graph, cfg) is True and pulse.report_count == 1   # a dispute, not a report
+    assert pulse_module.fingerprint(graph, cfg).startswith("FalsePositive=1:")
 
 
 def test_a_failed_probe_never_reports_a_change():

@@ -31,6 +31,7 @@ from typing import Any, Dict, List, Set, Tuple
 from ..sync import state as sync_state
 from ..sync import read_durable_progress
 from . import community_routes
+from . import sync_timing
 from .safe_payloads import graph_tier_item, safe_identifier, safe_text
 
 logger = logging.getLogger(__name__)
@@ -1109,13 +1110,8 @@ def create_app(*, manage_blackbox: bool = False):
         duration is deducted from the wait so a refresh *starts* every
         ``sync_interval`` seconds even when the sync itself is slow."""
         last_total: Any = None
-        # The installer performs an authoritative catch-up before it starts the
-        # dashboard. Waiting one configured period avoids immediately repeating
-        # that expensive transfer and keeps short-lived test/app probes inert.
-        initial_interval = max(
-            _RULESET_MIN_RETRY_SEC,
-            float(load_blackbox_config().sync_interval or _RULESET_EMPTY_RETRY_SEC),
-        )
+        first_cfg = load_blackbox_config()   # KI-205: a never-compiled home refreshes soon, not in an hour
+        initial_interval = sync_timing.initial_sync_delay(first_cfg, ruleset.peek(first_cfg), _RULESET_MIN_RETRY_SEC, _RULESET_EMPTY_RETRY_SEC)
         for _ in range(int(initial_interval * 10)):
             if _rescan_state["stop"]:
                 return

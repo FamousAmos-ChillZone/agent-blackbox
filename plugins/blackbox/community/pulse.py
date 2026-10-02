@@ -31,25 +31,34 @@ from ..kernel.dkg_client import DkgClient, extract_binding
 
 logger = logging.getLogger(__name__)
 
-#: One aggregate over the community graph's shared memory: how many reports,
-#: and the newest subject (subjects are unique per reporter and threat).
+#: One grouped aggregate over the community graph's shared memory: per statement
+#: kind (reports, retractions, disputes, digests) how many there are and the
+#: newest subject — so a retraction or a dispute changes the fingerprint too,
+#: not only a new report (bench finding 2026-10-02). Kinds absent from the
+#: graph simply return no row.
+_STATEMENT_KINDS = ("ThreatReport", "Retraction", "FalsePositive", "SightingDigest")
 _FINGERPRINT_SPARQL = (
-    "SELECT (COUNT(DISTINCT ?r) AS ?n) (MAX(STR(?r)) AS ?last) WHERE { "
-    "?r a <http://umanitek.ai/ontology/guardian/ThreatReport> }"
+    "PREFIX g: <http://umanitek.ai/ontology/guardian/> "
+    "SELECT ?t (COUNT(DISTINCT ?r) AS ?n) (MAX(STR(?r)) AS ?last) WHERE { "
+    "VALUES ?t { " + " ".join(f"g:{kind}" for kind in _STATEMENT_KINDS) + " } ?r a ?t } GROUP BY ?t"
 )
 
 
 def fingerprint(client: DkgClient, cfg: Any) -> Optional[str]:
-    """``"<count>:<newest subject>"`` for the community graph, or None when the
-    probe failed (fail-open: no change is ever inferred from a failed probe)."""
+    """``"ThreatReport=<count>:<newest subject>;Retraction=…"`` (kinds sorted,
+    absent kinds omitted; ``""`` for an empty graph), or None when the probe
+    failed (fail-open: no change is ever inferred from a failed probe)."""
     graph = str(getattr(cfg, "community_graph_id", "") or "")
     if not graph:
         return None
     rows = client.query(_FINGERPRINT_SPARQL, graph, view=constants.VIEW_SHARED_WORKING_MEMORY, on_error=None)
-    if not rows:
+    if rows is None:
         return None
-    first = rows[0]
-    return f"{extract_binding(first.get('n')) or '0'}:{extract_binding(first.get('last')) or ''}"
+    parts = []
+    for row in rows:
+        kind = extract_binding(row.get("t")).rsplit("/", 1)[-1]
+        parts.append(f"{kind}={extract_binding(row.get('n')) or '0'}:{extract_binding(row.get('last')) or ''}")
+    return ";".join(sorted(parts))
 
 
 class CommunityPulse:
@@ -101,11 +110,14 @@ class CommunityPulse:
     def report_count(self) -> int:
         """How many reports the last successful probe counted (0 before any)."""
         with self._lock:
-            head = (self._fingerprint or "0:").split(":", 1)[0]
-        try:
-            return int(head)
-        except ValueError:
-            return 0
+            parts = (self._fingerprint or "").split(";")
+        for part in parts:
+            if part.startswith("ThreatReport="):
+                try:
+                    return int(part[len("ThreatReport="):].split(":", 1)[0])
+                except ValueError:
+                    return 0
+        return 0
 
     def reset(self) -> None:
         """Forget the baseline (tests, and after a full refresh re-read everything)."""
