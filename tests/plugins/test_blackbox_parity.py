@@ -8,6 +8,7 @@ fails until the fixture is regenerated — forcing the TS mirror to be updated t
 """
 
 import json
+import pytest
 from pathlib import Path
 
 from _blackbox_loader import load_blackbox
@@ -54,6 +55,12 @@ def test_report_uri_parity():
     shell_shapes = load_blackbox("detection.shell_shapes")
     threat_ids = load_blackbox("kernel.threat_ids")
     for case in _fixture()["reportUris"]:
+        if not case["reporter"].strip():
+            # LES-003 (Refine R0): Python refuses a blank reporter; the OpenClaw
+            # bridge still substitutes "anonymous" until it is ported (KI-182).
+            with pytest.raises(ValueError):
+                threat_ids.report_uri(case["identifier"], case["reporter"])
+            continue
         assert (
             threat_ids.report_uri(case["identifier"], case["reporter"]) == case["reportUri"]
         ), case["identifier"]

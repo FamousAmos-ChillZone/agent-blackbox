@@ -110,7 +110,7 @@ def build_report_quads(
     subj = threat_ids.report_uri(identifier, reporter_address)
     threat = threat_ids.threat_uri(identifier)
     day = _day(ts)
-    reporter = (reporter_address or "anonymous").lower()
+    reporter = reporter_address.strip().lower()   # report_uri above refused a blank one
     severity = constants.normalize_severity(severity)
     fields = _evidence(category, evidence)
     out: List[rdf_terms.Quad] = [
@@ -153,7 +153,7 @@ def build_false_positive_quads(
     """
     subj = threat_ids.report_uri(identifier, reporter_address) + ":fp"
     day = _day(ts)
-    reporter = (reporter_address or "").lower()
+    reporter = reporter_address.strip().lower()   # report_uri above refused a blank one
     out = [
         rdf_terms.make_quad(subj, constants.RDF_TYPE, rdf_terms.iri(constants.FALSE_POSITIVE_TYPE_IRI)),
         rdf_terms.make_quad(subj, constants.IDENTIFIER_PRED, rdf_terms.literal(identifier)),

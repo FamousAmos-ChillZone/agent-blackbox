@@ -156,3 +156,15 @@ def test_assert_quads_literal_size_rejects_manual_oversized_literal():
         assert "exceeds Blackbox cap" in str(exc)
     else:
         raise AssertionError("expected oversized literal rejection")
+
+
+def test_a_blank_reporter_is_refused_never_replaced_by_a_placeholder():
+    """LES-003 / KI-003 (Refine R0): no "anonymous" ghost identity, anywhere."""
+    import pytest
+    from plugins.blackbox.community import report_builder as rb
+    with pytest.raises(ValueError):
+        threat_ids.report_uri("ioc:domain:x.example", "  ")
+    with pytest.raises(ValueError):
+        rb.build_report_quads(identifier="ioc:domain:x.example", category="ioc", severity="high", reporter_address="")
+    with pytest.raises(ValueError):
+        rb.build_false_positive_quads(identifier="ioc:domain:x.example", reporter_address="")

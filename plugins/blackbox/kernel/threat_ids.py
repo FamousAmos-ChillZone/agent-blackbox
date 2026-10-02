@@ -49,9 +49,14 @@ def report_uri(identifier: str, agent_address: str) -> str:
     SWM root entities are first-writer-wins, so each submitter's sighting of a
     threat gets its own subject: ``urn:guardian:report:{addrLower}:{h}`` where
     ``h`` is ``sha256(identifier)[:16]``. Counting distinct reporters of a
-    threat therefore counts distinct namespaces.
+    threat therefore counts distinct namespaces. Raises ``ValueError`` for a
+    blank address (no fallback identity, LES-003).
     """
-    addr = (agent_address or "anonymous").lower()
+    addr = str(agent_address or "").strip().lower()
+    if not addr:
+        # LES-003 / KI-003: a shared placeholder ("anonymous") would merge every
+        # identity-less node onto one subject — refuse, never substitute.
+        raise ValueError("a report subject needs a resolved reporter address")
     return f"urn:guardian:report:{addr}:{stable_hash(identifier, 16)}"
 
 
