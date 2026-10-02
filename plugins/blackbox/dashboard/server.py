@@ -180,6 +180,7 @@ def _sanitized_ledger(limit: int = 50) -> List[Dict[str, Any]]:
                 "category": _safe_text(row.get("category"), 32),
                 "severity": _safe_text(row.get("severity"), 16),
                 "ok": bool(row.get("ok")),
+                "outcome": _safe_text(row.get("outcome") or ("accepted" if row.get("ok") else "failed"), 32),
             })
     except Exception:  # pragma: no cover - fail open
         return []
@@ -2140,11 +2141,10 @@ def create_app(*, manage_blackbox: bool = False):
             "new_today": fresh_today,
             "last_refresh": rs.synced_at or None,
             "last_share": ledger[0] if ledger else None,
-            "contributing_agents": None,  # distinct verified signers, below
+            # distinct VERIFIED signers (R0d); None when no community graph is configured
+            "contributing_agents": community.contributing_agent_count(_verified_reports(cfg)) if cfg.community_graph_id else None,
         }
 
-        if stats["configured"]:  # distinct VERIFIED signers (R0d)
-            stats["contributing_agents"] = community.contributing_agent_count(_verified_reports(cfg))
         return stats
 
     @app.get("/api/reports")

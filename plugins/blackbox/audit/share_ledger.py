@@ -49,8 +49,13 @@ def record_share_outcome(
     asset_name: str,
     ok: bool,
     error: str = "",
+    outcome: str = "",
 ) -> None:
     """Append one outbound-share attempt (success or failure) to the ledger.
+
+    ``outcome`` names what happened in more detail than ``ok``
+    (``accepted`` / ``already-shared`` / ``failed`` — community.ShareOutcome);
+    ``ok`` stays True only when a report actually reached the network.
 
     Called by the community share worker AFTER the share resolves, never on
     the hook hot path. ``error`` is sanitized like every audit text so a
@@ -67,6 +72,7 @@ def record_share_outcome(
                 "subject": str(subject or "")[:512],
                 "asset_name": str(asset_name or "")[:128],
                 "ok": bool(ok),
+                "outcome": str(outcome or ("accepted" if ok else "failed"))[:32],
                 "error": redaction.sanitize_text(error, 400) if error else "",
             },
         )
@@ -105,6 +111,21 @@ def read_share_ledger(limit: int = 100) -> List[Dict[str, Any]]:
 # sighting KA name is stable per identifier+reporter, so a re-share only
 # refreshes dateModified) — skip it to keep reports low-noise.
 REPORT_COOLDOWN_SECS = 6 * 3600
+
+
+def previously_accepted(asset_name: str) -> bool:
+    """True when this node's ledger shows *asset_name* reached the network
+    before (rows written before the outcome field count by ``ok``)."""
+    if not asset_name:
+        return False
+    for row in read_share_ledger(limit=_LEDGER_SCAN_LIMIT):
+        if row.get("asset_name") == asset_name and row.get("outcome", "accepted" if row.get("ok") else "") == "accepted":
+            return True
+    return False
+
+
+#: How far back previously_accepted looks (the ledger is size-capped on disk).
+_LEDGER_SCAN_LIMIT = 100_000
 
 
 def _read_rate_state() -> Dict[str, Any]:

@@ -39,6 +39,7 @@ from .share_ledger import (
     mark_reported,
     read_share_ledger,
     recently_reported,
+    previously_accepted,
     record_share_outcome,
 )
 
@@ -58,6 +59,7 @@ __all__ = [
     "record",
     "record_dependency",
     "record_file_access",
+    "previously_accepted",
     "record_share_outcome",
     "redact",
     "sanitize_text",

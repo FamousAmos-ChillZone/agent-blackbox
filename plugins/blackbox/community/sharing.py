@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Dict, Optional
+from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 from .. import audit
 from .. import community
 from ..kernel import threat_ids
@@ -105,6 +106,48 @@ class CommunitySharePolicy:
         return True, "ok"
 
 
+class ShareOutcome(Enum):
+    """What sending one report achieved — shown apart, never conflated (KI-104).
+
+    ``ACCEPTED`` — a new report reached the network. ``REJECTED_SAME_VERSION``
+    — this exact report was shared before; peers refuse a same-version
+    re-share (KI-103), so it is not re-sent and is NOT counted as a new
+    contribution. ``FAILED`` — the send failed.
+    """
+
+    ACCEPTED = "accepted"
+    REJECTED_SAME_VERSION = "already-shared"
+    FAILED = "failed"
+
+
+#: The daemon's reply when a report with this name already exists sealed and it
+#: refuses to rewrite it (DKG 10.0.20, captured on the R0P bench 2026-10-01).
+#: Matched narrowly against that exact text (LES-015).
+_ALREADY_SEALED_REPLY = "is not an active working memory draft"
+
+
+def send_report(client: DkgClient, graph: str, name: str, quads: List[Dict[str, str]]) -> Tuple[ShareOutcome, str]:
+    """Send one built report and say honestly what happened: (outcome, detail).
+
+    A report this node already got onto the network (its ledger says so) is
+    not re-sent; neither is one the daemon reports as already sealed. Both
+    come back as REJECTED_SAME_VERSION — before KI-180 the first was logged
+    as a failure, before KI-104 the second as a success.
+    """
+    if audit.previously_accepted(name):
+        return ShareOutcome.REJECTED_SAME_VERSION, "already shared earlier; a same-version re-share is refused by peers"
+    try:
+        result = client.share_knowledge_asset(graph, name, quads)
+    except Exception as exc:  # the outermost send boundary: any failure is FAILED, never raised
+        if isinstance(exc, DkgError) and _ALREADY_SEALED_REPLY in str(exc).lower():
+            return ShareOutcome.REJECTED_SAME_VERSION, "the node already holds this report sealed (not re-sent)"
+        logger.debug("blackbox: report share failed: %s", exc)
+        return ShareOutcome.FAILED, str(exc)
+    if isinstance(result, dict) and result.get("idempotent"):
+        return ShareOutcome.REJECTED_SAME_VERSION, "the node reported this report as already shared"
+    return ShareOutcome.ACCEPTED, ""
+
+
 def spawn_community_share(
     client: DkgClient, cfg: BlackboxConfig, finding: Dict[str, Any], reporter: str
 ) -> threading.Thread:
@@ -154,18 +197,15 @@ def _share_sighting(
             signer=signer,
             **{k: v for k, v in fields.items() if v is not None},
         )
-        client.share_knowledge_asset(cfg.community_graph_id, name, q)
-    except DkgError as exc:
-        logger.debug("blackbox: sighting share failed: %s", exc)
-        _ledger_share(finding, subject, name, ok=False, error=str(exc))
-    except Exception as exc:  # pragma: no cover - fail open
+        outcome, detail = send_report(client, cfg.community_graph_id, name, q)
+    except Exception as exc:  # pragma: no cover - fail open (building the report failed)
         logger.debug("blackbox: sighting share error: %s", exc)
-        _ledger_share(finding, subject, name, ok=False, error=str(exc))
-    else:
-        _ledger_share(finding, subject, name, ok=True)
+        outcome, detail = ShareOutcome.FAILED, str(exc)
+    _ledger_share(finding, subject, name, ok=outcome is ShareOutcome.ACCEPTED, error=detail, outcome=outcome.value)
 
 
-def _ledger_share(finding: Dict[str, Any], subject: str, name: str, *, ok: bool, error: str = "") -> None:
+def _ledger_share(finding: Dict[str, Any], subject: str, name: str, *, ok: bool, error: str = "",
+                  outcome: str = "") -> None:
     audit.record_share_outcome(
         identifier=str(finding.get("identifier") or ""),
         category=str(finding.get("category") or ""),
@@ -174,4 +214,5 @@ def _ledger_share(finding: Dict[str, Any], subject: str, name: str, *, ok: bool,
         asset_name=name,
         ok=ok,
         error=error,
+        outcome=outcome,
     )

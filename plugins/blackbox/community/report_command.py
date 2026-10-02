@@ -11,7 +11,7 @@ import argparse
 import logging
 from typing import Any, Dict, Optional, Tuple
 from .. import audit
-from . import graph_stats, report_builder, report_signer
+from . import graph_stats, report_builder, report_signer, sharing
 from . import reader as graph_reader
 from ..kernel import threat_ids
 
@@ -194,22 +194,20 @@ def cmd_report(args: argparse.Namespace) -> int:
         signer=signer,
         **finding["fields"],
     )
-    try:
-        client.share_knowledge_asset(cfg.community_graph_id, name, q)
-    except Exception as exc:
-        audit.record_share_outcome(
-            identifier=identifier, category=finding["category"],
-            severity=finding["severity"], subject=subject, asset_name=name,
-            ok=False, error=str(exc),
-        )
-        print(f"Share FAILED: {display_safety.term_safe(str(exc), 160)}")
+    outcome, detail = sharing.send_report(client, cfg.community_graph_id, name, q)
+    audit.record_share_outcome(
+        identifier=identifier, category=finding["category"], severity=finding["severity"],
+        subject=subject, asset_name=name, ok=outcome is sharing.ShareOutcome.ACCEPTED,
+        error=detail, outcome=outcome.value,
+    )
+    if outcome is sharing.ShareOutcome.FAILED:
+        print(f"Share FAILED: {display_safety.term_safe(detail, 160)}")
         print("The attempt is recorded in your local reports ledger.")
         return 1
     audit.mark_reported(identifier)
-    audit.record_share_outcome(
-        identifier=identifier, category=finding["category"],
-        severity=finding["severity"], subject=subject, asset_name=name, ok=True,
-    )
+    if outcome is sharing.ShareOutcome.REJECTED_SAME_VERSION:
+        print(f"Already on the community graph — not re-sent ({display_safety.term_safe(detail, 120)}).")
+        return 0
     print("Report shared to the community graph.")
     print(f"  identifier: {display_safety.term_safe(identifier)}")
     print(f"  subject:    {display_safety.term_safe(subject)}")
@@ -242,17 +240,24 @@ def _submit_false_positive(client: DkgClient, cfg, identifier: str, reporter: st
     q = report_builder.build_false_positive_quads(identifier=identifier, reporter_address=reporter, signer=signer)
     name = f"fp-{threat_ids.stable_hash(identifier + reporter, 16)}"
     subject = threat_ids.report_uri(identifier, reporter) + ":fp"
-    try:
-        client.share_knowledge_asset(cfg.community_graph_id, name, q)
-    except Exception as exc:
-        print(f"Dispute FAILED: {display_safety.term_safe(str(exc), 160)}")
+    outcome, detail = sharing.send_report(client, cfg.community_graph_id, name, q)
+    if outcome is sharing.ShareOutcome.FAILED:
+        print(f"Dispute FAILED: {display_safety.term_safe(detail, 160)}")
         return 1
     audit.record_share_outcome(
         identifier=identifier, category="false-positive", severity="info",
-        subject=subject, asset_name=name, ok=True,
+        subject=subject, asset_name=name, ok=outcome is sharing.ShareOutcome.ACCEPTED,
+        error=detail, outcome=outcome.value,
     )
+    if outcome is sharing.ShareOutcome.REJECTED_SAME_VERSION:
+        print(f"Dispute already on the community graph for: {display_safety.term_safe(identifier)} (not re-sent)")
+        return 0
     print(f"False-positive signal shared for: {display_safety.term_safe(identifier)}")
     return 0
+
+
+#: How a ledger outcome is shown (community.ShareOutcome values).
+_OUTCOME_LABELS = {"accepted": "ok", "already-shared": "already shared", "failed": "FAILED"}
 
 
 def _report_status(cfg) -> int:
@@ -263,7 +268,7 @@ def _report_status(cfg) -> int:
     else:
         print(f"Community contributions from this node (newest first, {len(rows)} shown):")
         for row in rows:
-            outcome = "ok" if row.get("ok") else "FAILED"
+            outcome = _OUTCOME_LABELS.get(str(row.get("outcome") or ("accepted" if row.get("ok") else "failed")), "FAILED")
             print(f"  {display_safety.term_safe(row.get('ts'), 24)}  [{outcome}]  "
                   f"{display_safety.term_safe(row.get('category'), 16)}  {display_safety.term_safe(row.get('identifier'), 96)}")
     if cfg.community_graph_id:

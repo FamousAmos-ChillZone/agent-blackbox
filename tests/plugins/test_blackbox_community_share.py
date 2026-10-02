@@ -327,3 +327,85 @@ def test_ledger_records_failure_with_sanitized_error(bb_home):
 
 def test_share_failure_is_fail_open(bb_home):
     community_sharing._share_sighting(FakeClient(fail=True), CFG_ON, _finding().to_dict(), REPORTER)
+
+
+# ---------------------------------------------------------------------------
+# Share outcomes (Refine R0, KI-180 / KI-104): never a fake failure, never a
+# fake success
+# ---------------------------------------------------------------------------
+
+# The daemon's exact reply on DKG 10.0.20 when the report already exists sealed
+# (captured on the R0P bench, 2026-10-01).
+_SEALED_REPLY = ('POST /api/knowledge-assets -> 500: {"error":"Assertion \\"report-x\\" is not an active '
+                 'Working Memory draft; reopen it before mutating it"}')
+
+
+class _SendClient:
+    def __init__(self, result=None, raises=None):
+        self.result, self.raises, self.calls = result, raises, 0
+
+    def share_knowledge_asset(self, graph, name, quads):
+        self.calls += 1
+        if self.raises is not None:
+            raise self.raises
+        return self.result if self.result is not None else {"state": "succeeded"}
+
+
+def _send(client, name="report-x"):
+    return community_sharing.send_report(client, DEV_GRAPH, name, [])
+
+
+def test_new_report_is_accepted(bb_home):
+    outcome, _ = _send(_SendClient())
+    assert outcome is community_sharing.ShareOutcome.ACCEPTED
+
+
+def test_10_0_20_already_sealed_reply_is_same_version_not_failure(bb_home):
+    """KI-180: this used to be ledgered as a FAILED share."""
+    outcome, detail = _send(_SendClient(raises=DkgError(_SEALED_REPLY)))
+    assert outcome is community_sharing.ShareOutcome.REJECTED_SAME_VERSION
+    assert "sealed" in detail
+
+
+def test_idempotent_answer_is_same_version_not_success(bb_home):
+    """KI-104: a same-version re-share used to count as a new contribution."""
+    outcome, _ = _send(_SendClient(result={"name": "report-x", "idempotent": True}))
+    assert outcome is community_sharing.ShareOutcome.REJECTED_SAME_VERSION
+
+
+def test_a_report_already_accepted_is_not_resent(bb_home):
+    audit.record_share_outcome(identifier="ioc:x", category="ioc", severity="high", subject="s",
+                               asset_name="report-x", ok=True, outcome="accepted")
+    client = _SendClient()
+    outcome, _ = _send(client)
+    assert outcome is community_sharing.ShareOutcome.REJECTED_SAME_VERSION
+    assert client.calls == 0                      # no network call at all
+
+
+@pytest.mark.parametrize("error", [DkgError("POST /api/knowledge-assets -> 503: busy"), RuntimeError("node exploded")])
+def test_other_errors_fail(error, bb_home):
+    outcome, detail = _send(_SendClient(raises=error))
+    assert outcome is community_sharing.ShareOutcome.FAILED and detail
+
+
+def test_the_ledger_records_the_outcome(bb_home):
+    finding = {"identifier": "ioc:domain:x.example", "category": "ioc", "severity": "high", "fields": {}}
+    community_sharing._ledger_share(finding, "s", "report-y", ok=False, error="d", outcome="already-shared")
+    row = audit.read_share_ledger(limit=1)[0]
+    assert row["outcome"] == "already-shared" and row["ok"] is False
+
+
+def test_auto_share_of_an_existing_report_is_ledgered_as_already_shared(bb_home):
+    """KI-180 end to end through the share worker: a 10.0.20 'already sealed'
+    reply lands in the ledger as already-shared — not as a FAILED share."""
+
+    class _NodeHoldsIt(_SendClient):
+        def status(self):
+            return {"networkId": TEST_NETWORK}
+
+    finding = {"identifier": "ioc:domain:again.example", "category": "ioc", "severity": "high",
+               "fields": {"ioc_type": "domain"}}
+    community_sharing._share_sighting(_NodeHoldsIt(raises=DkgError(_SEALED_REPLY)), CFG_ON, finding, REPORTER)
+    row = audit.read_share_ledger(limit=1)[0]
+    assert row["identifier"] == "ioc:domain:again.example"
+    assert row["outcome"] == "already-shared" and row["ok"] is False
