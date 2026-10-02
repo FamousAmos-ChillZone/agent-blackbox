@@ -9,6 +9,7 @@ through :func:`..kernel.sparql_text.sparql_string_literal`; IRIs are checked aga
 from __future__ import annotations
 
 import json
+import re
 from typing import List
 
 _SELECT_COLUMNS = """?threat ?rdfType ?identifier ?severity ?name ?description
@@ -26,6 +27,8 @@ PREFIX schema: <http://schema.org/>
 """
 _VM_PARTITION_QUERY_LIMIT = 50_000
 _FORBIDDEN_IRI_CHARS = frozenset('<>"{}|^`\\\r\n\t')
+#: A wallet-namespaced graph id starts with its owner's address (lowercased here).
+_WALLET_ADDRESS = re.compile(r"0x[0-9a-f]{40}")
 
 
 def _threat_cursor_filter(after: str) -> str:
@@ -217,15 +220,30 @@ def _context_graph_data_uri(cg_id: str) -> str:
 
 
 def _verified_partitions_sparql(cg_id: str) -> str:
+    """The verified graph's VM assertion graphs, PINNED to the graph owner.
+
+    KI-106 (Refine R0): any authorized publisher can write the verified
+    graph, so only assets whose on-chain UAL sits in the owner's namespace
+    (``did:dkg:<chain>/<owner>/<id>`` — the ``0x…`` prefix of a
+    wallet-namespaced graph id) are read. Bench-checked 2026-10-01 on a
+    mainnet node: all 178 verified assets carry the owner segment and no
+    attribution predicate, so this is the key the data actually has. A graph
+    id that is not wallet-namespaced is not pinned. (Pull-synced metadata is
+    responder-asserted; the cryptographic pin is R7a's signed envelope.)
+    """
     data_graph = _context_graph_data_uri(cg_id)
     if not data_graph:
         return ""
     vm_prefix = f"{data_graph}/_verifiable_memory/"
+    owner = str(cg_id).split("/", 1)[0].lower()
+    pin = ""
+    if _WALLET_ADDRESS.fullmatch(owner):
+        pin = f"    ?ka dkg:kaUal ?kaUal .\n    FILTER(CONTAINS(LCASE(STR(?kaUal)), {json.dumps('/' + owner + '/')}))\n"
     return f"""PREFIX dkg: <http://dkg.io/ontology/>
 SELECT DISTINCT ?assertionGraph ?status WHERE {{
   GRAPH <{data_graph}/_meta> {{
     ?ka dkg:assertionGraph ?assertionGraph .
-    OPTIONAL {{ ?ka dkg:status ?status . }}
+{pin}    OPTIONAL {{ ?ka dkg:status ?status . }}
   }}
   FILTER(STRSTARTS(STR(?assertionGraph), {json.dumps(vm_prefix)}))
 }}

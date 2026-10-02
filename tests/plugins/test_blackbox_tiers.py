@@ -565,3 +565,20 @@ def test_allow_report_daily_counter_independent_of_cooldown():
     assert audit.recently_reported("id-never-reported") is False
 
 
+
+
+# --- KI-106: verified partitions are pinned to the graph owner (Refine R0) -------------------
+
+
+def test_verified_partitions_are_pinned_to_the_graph_owner():
+    from plugins.blackbox.ruleset import graph_queries
+    owner = "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70"
+    sparql = graph_queries._verified_partitions_sparql(f"{owner}/agent-blackbox-vm")
+    assert "dkg:kaUal ?kaUal" in sparql
+    assert f'"/{owner.lower()}/"' in sparql      # UALs are compared lowercase
+
+
+def test_a_graph_that_is_not_wallet_namespaced_is_not_pinned():
+    from plugins.blackbox.ruleset import graph_queries
+    sparql = graph_queries._verified_partitions_sparql("agent-blackbox-vm")
+    assert "kaUal" not in sparql and "assertionGraph" in sparql
