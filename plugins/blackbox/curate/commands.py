@@ -62,6 +62,7 @@ def add_curate_parser(sub: "argparse._SubParsersAction", *, compiled_ruleset: Op
     w.add_argument("--once", action="store_true")
     vi = verbs_.add_parser("views", help="Install the saved node-UI queries (query catalog)")
     vi.add_argument("--install", action="store_true", required=True)
+    _add_reputation(verbs_)
     v = verbs_.add_parser("view", help="Run one saved view from the CLI")
     v.add_argument("slug", choices=[x.slug for x in (*node_ui_views.COMMUNITY_VIEWS, *node_ui_views.VERIFIED_VIEWS)])
 
@@ -89,6 +90,25 @@ def _add_propose(verbs_: Any) -> None:
     p.add_argument("--to", default="", metavar="PEER", help="send to this curator peer (name or peer id)")
 
 
+def _add_reputation(verbs_: Any) -> None:
+    """R4: the curator-private reputation verbs (``outcome``, ``graduate``)."""
+    o = verbs_.add_parser("outcome", help="R4: record a curator decision about a reporter's report in the PRIVATE reputation ledger")
+    o.add_argument("key", help="the reporter KEY (64 hex) — the identity, never an address")
+    decided = o.add_mutually_exclusive_group(required=True)
+    decided.add_argument("--confirmed", action="store_true")
+    decided.add_argument("--rejected", action="store_true")
+    o.add_argument("--novel", action="store_true", help="the report earned a novelty credit (judge with the §05 rules first)")
+    o.add_argument("--strike", action="store_true", help="confirmed bad faith")
+    o.add_argument("--first-seen", dest="first_seen", default="", help="UTC day of the reporter's first share (new entries)")
+    o.add_argument("--day", default="", help="UTC day of the decision (default today)")
+    g = verbs_.add_parser("graduate", help="R4: who graduates or is demoted today; --propose builds the counted-author proposal")
+    g.add_argument("--propose", metavar="KEY", default="", help="propose the listing / delisting this key calls for")
+    g.add_argument("--address", default="", help="the reporter's agent address (display only; required with --propose)")
+    g.add_argument("--cluster", default="", help="collapse: list the key under this shared cluster id")
+    g.add_argument("--erase", metavar="KEY", default="", help="crypto-shred this reporter's ledger entry (erasure request)")
+    g.add_argument("--to", default="", metavar="PEER")
+
+
 def _add_consent(parser: Any) -> None:
     parser.add_argument("--code", default=None, help="the 8-hex confirmation code shown for this content")
     parser.add_argument("--yes", action="store_true", help="SANDBOX only: consent without typing the code")
@@ -110,7 +130,7 @@ def cmd_curate(args: argparse.Namespace) -> int:
 
 
 def _usage(args: argparse.Namespace) -> int:
-    print("usage: blackbox curate {keys,manifest,queue,show,propose,inbox,approve,publish,reject,list,watch,views,view}")
+    print("usage: blackbox curate {keys,manifest,queue,show,propose,inbox,approve,publish,reject,list,watch,views,view,outcome,graduate}")
     return 2
 
 
@@ -296,8 +316,46 @@ def _watch(args: argparse.Namespace) -> int:
         time.sleep(max(5.0, args.interval))
 
 
+def _today() -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime())
+
+
+def _outcome(args: argparse.Namespace) -> int:
+    standing = verbs.record_outcome(args.key, confirmed=args.confirmed, day=args.day or _today(), novel=args.novel,
+                                    strike=args.strike, first_seen_day=args.first_seen)
+    print(f"recorded for {_term(args.key[:16], 16)}…: band {standing.band.value} · confirmed {standing.confirmed} · "
+          f"rejected {standing.rejected} · strikes {standing.strikes} · novel {standing.novel_credits}")
+    return 0
+
+
+def _graduate(args: argparse.Namespace) -> int:
+    today = _today()
+    if args.erase:
+        print("erased" if community.reputation.ReputationLedger().erase(args.erase) else "no ledger entry for that key")
+        return 0
+    if args.propose:
+        if not args.address:
+            print("--address is required with --propose (the agent address shown on the list)")
+            return 2
+        proposal = verbs.propose_graduation(_ctx(args), ProposalStore(), key=args.propose, address=args.address, today=today,
+                                            cluster=args.cluster)
+        print(f"proposed {proposal.id} ({proposal.kind} · {_term(proposal.identifier, 80)})")
+        if args.to:
+            result = verbs.send(_ctx(args), proposal, args.to)
+            print(f"sent to {_term(args.to, 60)}: delivered={result.get('delivered')}")
+        return 0
+    rows = verbs.graduation_candidates(today)
+    if not rows:
+        print("the reputation ledger is empty")
+        return 0
+    for standing, score, action in rows:
+        print(f"{standing.key[:16]}…  {standing.band.value:<11} rep {score:.2f}  confirmed {standing.confirmed} rejected "
+              f"{standing.rejected} strikes {standing.strikes} novel {standing.novel_credits}  {action or '-'}")
+    return 0
+
+
 _VERBS: Dict[str, Callable[[argparse.Namespace], int]] = {
     "keys": _keys, "manifest": _manifest, "queue": _queue, "show": _show, "propose": _propose, "inbox": _inbox,
     "approve": _approve, "publish": _publish, "reject": _reject, "list": _list, "watch": _watch, "views": _views,
-    "view": _view,
+    "view": _view, "outcome": _outcome, "graduate": _graduate,
 }

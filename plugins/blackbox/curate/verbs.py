@@ -17,6 +17,7 @@ confirmations, rejections, deferrals and notices -> the COMMUNITY graph.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -28,6 +29,7 @@ from ..kernel.signing.statement_order import CuratorStatement
 from . import consent, dossier, keys, promotion, transport
 from .context import CurateContext
 from .proposal import Proposal, ProposalState, ProposalStore
+from ..community import reputation
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +88,54 @@ def propose_statement(ctx: CurateContext, store: ProposalStore, *, kind: Curator
     except ValueError as exc:
         raise VerbError(str(exc)) from exc
     return _stored(store, kind.value, identifier, envelope, graph, {signing.public_key_hex(key): evidence or "n/a"})
+
+
+def record_outcome(key: str, *, confirmed: bool, day: str, novel: bool = False, strike: bool = False,
+                   first_seen_day: str = "", ledger: Optional[reputation.ReputationLedger] = None) -> reputation.ReporterStanding:
+    """R4: one curator decision about one of *key*'s reports goes into the
+    curator-PRIVATE ledger (never published). A strike is confirmed bad faith;
+    novelty is judged by :func:`community.reputation.novelty_credit` first."""
+    if len(key) != 64:
+        raise VerbError("a reporter KEY (64 hex) is the identity, never an address")
+    return (ledger or reputation.ReputationLedger()).record(key.lower(), reputation.Outcome(day, confirmed), novel=novel,
+                                                              strike=strike, first_seen_day=first_seen_day)
+
+
+def graduation_candidates(today: str, ledger: Optional[reputation.ReputationLedger] = None
+                          ) -> List[Tuple[reputation.ReporterStanding, float, str]]:
+    """R4: every ledgered reporter with its reputation and what today calls for:
+    'graduate', 'demote', or '' (nothing). Read-only."""
+    book = ledger or reputation.ReputationLedger()
+    rows = []
+    for key in book.keys():
+        standing, score = book.standing(key), book.reputation(key, today)
+        action = ("graduate" if reputation.graduates(standing, today)
+                  else "demote" if reputation.demotion(standing, score, today) is not None else "")
+        rows.append((standing, score, action))
+    return rows
+
+
+def propose_graduation(ctx: CurateContext, store: ProposalStore, *, key: str, address: str, today: str,
+                       cluster: str = "", ledger: Optional[reputation.ReputationLedger] = None) -> Proposal:
+    """R4: turn a standing into the counted-author proposal it calls for
+    (graduation lists, demotion delists, a collapse shares an org) — the same
+    2-of-3 flow as every nomination; readers never see the ledger."""
+    book = ledger or reputation.ReputationLedger()
+    standing = book.standing(key.lower())
+    fields = reputation.nomination_fields(standing, address=address, today=today,
+                                          reputation=book.reputation(key.lower(), today), cluster=cluster)
+    if fields is None:
+        raise VerbError(f"nothing to propose for this reporter today (band {standing.band.value}, "
+                        f"{standing.novel_credits} novel credit(s), {standing.strikes} strike(s))")
+    proposal = propose_statement(ctx, store, kind=CuratorStatement.COUNTED_AUTHORS, identifier=f"author:{key.lower()}",
+                                 fields=fields, evidence=f"reputation ledger {today}")
+    if fields["listed"] == "yes" and standing.band is reputation.ReputationBand.PROBATION:
+        book.set_standing(replace(standing, band=reputation.ReputationBand.ESTABLISHED, org=cluster))
+    elif fields["listed"] == "no":
+        demoted = reputation.demotion(standing, book.reputation(key.lower(), today), today)
+        if demoted is not None:
+            book.set_standing(demoted)
+    return proposal
 
 
 def _stored(store: ProposalStore, kind: str, identifier: str, envelope: signing.SignedEnvelope, graph: str,

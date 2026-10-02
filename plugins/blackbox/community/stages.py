@@ -109,9 +109,12 @@ class Clusters:
 
 def clusters_for(authors: Iterable[str], view: CuratorView) -> Clusters:
     """Count the counted clusters among *authors* (reporter keys): one per
-    partner organisation, one per established author; unlisted authors none."""
+    partner organisation, one per established author; unlisted authors none.
+    R4: established keys the curator listed under the same non-empty ``org``
+    are a published COLLAPSE (same transport peer, 90-day overlap) and count
+    once, like a partner organisation's keys."""
     orgs = set()
-    established = 0
+    established_clusters = set()
     for author in set(authors):
         entry = view.counted.get(author)
         if entry is None:
@@ -119,8 +122,8 @@ def clusters_for(authors: Iterable[str], view: CuratorView) -> Clusters:
         if entry.author_class == "partner":
             orgs.add(entry.org or entry.key)
         else:
-            established += 1
-    return Clusters(partner=len(orgs), established=established)
+            established_clusters.add(entry.org or entry.key)
+    return Clusters(partner=len(orgs), established=len(established_clusters))
 
 
 @dataclass(frozen=True)

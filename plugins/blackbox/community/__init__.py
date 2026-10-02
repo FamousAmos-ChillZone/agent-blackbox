@@ -28,6 +28,8 @@ Public surface:
   a community threat's local stage from the counted-author list (R3).
 * :func:`record_verified_sighting` / :func:`publish_due_digests` — the
   seen-again counter: tally verified matches, publish one weekly digest (R2b).
+* :mod:`reputation` — automated graduation, novelty, partners, collusion and the
+  curator-private ledger (R4); readers see its decisions only through the counted-author list.
 * :func:`publish_due_copies` — keep-alive (R5): this node re-publishes an
   epoch-named copy of each of its own live reports; :func:`lifetime_days` —
   how long a community statement lives, per threat type (plan §03).
@@ -54,6 +56,7 @@ from .report_signer import network_environment
 from .aggregation import CommunityRule, aggregate_community_reports
 from .digest import publish_due_digests, record_verified_sighting
 from .keep_alive import publish_due_copies
+from . import reputation
 from .pulse import PULSE
 from .pulse import fingerprint as community_fingerprint
 from .statements.lifetimes import lifetime_days
@@ -109,6 +112,7 @@ __all__ = [
     "counted_dispute_weight",
     "publish_due_digests",
     "publish_due_copies",
+    "reputation",
     "lifetime_days",
     "PULSE",
     "community_fingerprint",
