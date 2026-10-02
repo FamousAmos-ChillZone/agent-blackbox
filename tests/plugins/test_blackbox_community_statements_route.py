@@ -18,6 +18,7 @@ from plugins.blackbox.community.statements.digests import HeatEstimate, Verified
 from plugins.blackbox.community.statements.disputes import VerifiedDispute
 from plugins.blackbox.community.statements.retractions import VerifiedRetraction
 from plugins.blackbox.dashboard import community_routes
+from plugins.blackbox.kernel import display_safety
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.kernel.signing import key_manifest as km
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind
@@ -82,8 +83,12 @@ def test_statements_carry_who_when_why(configured):
 
 
 def test_community_strings_are_sanitized(configured):
+    """R8 / KI-191: the JSON carries plain text (the page escapes once);
+    controls are stripped, and an identifier is served verbatim — it is a token
+    the page hands back — never defanged or entity-escaped."""
     identifier = community_routes.community_statements_payload(lambda cfg: _read())["disputes"][0]["identifier"]
-    assert "<script>" not in identifier and "&lt;script&gt;" in identifier
+    assert "&lt;" not in identifier and "\x1b" not in identifier
+    assert identifier == display_safety.strip_controls(_read().disputes[0].identifier)[:512]
 
 
 def test_unconfigured_and_unreadable_states(monkeypatch, configured):

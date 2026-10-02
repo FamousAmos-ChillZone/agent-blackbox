@@ -46,7 +46,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, Dict, Mapping, Optional, Tuple
 
 from .. import detection
-from ..kernel import constants, threat_ids
+from ..kernel import constants, display_safety, threat_ids
 
 #: Longest identifier / evidence value a report may carry.
 MAX_IDENTIFIER_CHARS = 512
@@ -59,7 +59,6 @@ _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 #: A heuristic's id is its pattern hash; a verified-corpus id is the threat's
 #: slug (``injection:seed-000``) — either way a lowercase slug, never free text.
 _INJECTION_ID = re.compile(r"injection:[a-z0-9][a-z0-9._-]{0,63}")
-_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
 class ReportValidationError(ValueError):
@@ -192,9 +191,17 @@ _VALIDATORS: Dict[str, Callable[[Mapping[str, str]], Tuple[Optional[str], Dict[s
 }
 
 
+def _is_clean_token(identifier: str) -> bool:
+    """A short single token: no spaces, and no control or FORMAT characters
+    (bidi overrides, zero-width — §07: strip C0/C1, ESC, CR/LF, bidi and
+    zero-width; ingest refuses, never repairs)."""
+    return bool(identifier) and len(identifier) <= MAX_IDENTIFIER_CHARS and " " not in identifier \
+        and display_safety.strip_controls(identifier) == identifier
+
+
 def _check_identifier(category: str, identifier: str, derived: Optional[str], evidence: Mapping[str, str]) -> None:
-    if not identifier or len(identifier) > MAX_IDENTIFIER_CHARS or _CONTROL.search(identifier) or " " in identifier:
-        _fail("identifier must be a short single token without control characters")
+    if not _is_clean_token(identifier):
+        _fail("identifier must be a short single token without control or format characters")
     if derived is not None and identifier != derived:
         _fail(f"identifier does not match its fields (expected {derived})")
     if category == "injection" and not _INJECTION_ID.fullmatch(identifier):
@@ -204,6 +211,8 @@ def _check_identifier(category: str, identifier: str, derived: Optional[str], ev
         value = identifier[len(prefix):] if identifier.startswith(prefix) else ""
         if not value or threat_ids.ioc_identifier(evidence["ioc_type"], value) != identifier:
             _fail("an ioc identifier must be the canonical ioc:<type>:<value>")
+        if not threat_ids.ioc_value_is_well_formed(evidence["ioc_type"], value):
+            _fail(f"the {evidence['ioc_type']} value does not have the shape that type allows")
 
 
 def validate_report(*, identifier: str, category: str, severity: str, framework: str,
@@ -240,8 +249,8 @@ def validate_statement_identifier(identifier: str) -> str:
     """The threat identifier a dispute or retraction names, stripped — a single
     short token, never free text — or :class:`ReportValidationError`."""
     identifier = str(identifier or "").strip()
-    if not identifier or len(identifier) > MAX_IDENTIFIER_CHARS or _CONTROL.search(identifier) or " " in identifier:
-        _fail("the identifier must be a short single token without control characters")
+    if not _is_clean_token(identifier):
+        _fail("the identifier must be a short single token without control or format characters")
     return identifier
 
 

@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Set, Tuple
 from ..sync import state as sync_state
 from ..sync import read_durable_progress
 from . import community_routes
-from .safe_payloads import safe_text
+from .safe_payloads import safe_identifier, safe_text
 
 logger = logging.getLogger(__name__)
 
@@ -1980,7 +1980,7 @@ def create_app(*, manage_blackbox: bool = False):
                 # serving boundary, reporterCount + recency carried for the UI.
                 all_threats = [
                     {
-                        "identifier": safe_text(item.get("identifier")),
+                        "identifier": safe_identifier(item.get("identifier")),
                         "category": item.get("category") or "other",
                         "severity": str(item.get("severity") or "info").lower(),
                         "name": safe_text(item.get("name") or ""),
@@ -2124,13 +2124,13 @@ def create_app(*, manage_blackbox: bool = False):
             rs = ruleset.peek(cfg)
             rule = (getattr(rs, "community", {}) or {}).get(identifier)
             if not rule:
-                return {"identifier": safe_text(identifier), "tier": "community", "found": False}
+                return {"identifier": safe_identifier(identifier), "tier": "community", "found": False}
             detail = {
                 safe_text(k, 64): (safe_text(v) if isinstance(v, str) else v)
                 for k, v in rule.items()
             }
             detail.update({
-                "identifier": safe_text(identifier),
+                "identifier": safe_identifier(identifier),
                 "tier": "community",
                 "found": True,
                 "reporters": int(rule.get("reporterCount") or 0),

@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict
 from ..kernel.redaction import redact_secret_values
+from ..kernel import display_safety
 
 # ---------------------------------------------------------------------------
 # Redaction (ported verbatim from the original plugin/node-ui regexes)
@@ -25,12 +26,14 @@ _SECRET_KEY_RE = re.compile(
 
 
 def sanitize_text(value: str, max_len: int = _MAX_TEXT) -> str:
-    """Redact common secret shapes from *value* and truncate to *max_len*.
+    """Redact common secret shapes from *value*, fold CR/LF and strip control
+    characters (R8: a value can never forge a log line or drive a terminal
+    that tails the log), then truncate to *max_len*.
 
     Redacts with ``kernel.redaction`` (the one implementation) BEFORE
     truncating, so a secret never lands raw — or half-cut — in the audit log.
     """
-    text = redact_secret_values(str(value))
+    text = display_safety.log_safe(redact_secret_values(str(value)), limit=max_len + 32)
     if len(text) > max_len:
         return text[:max_len] + "...[truncated]"
     return text

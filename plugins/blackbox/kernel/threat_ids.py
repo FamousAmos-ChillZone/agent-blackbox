@@ -210,6 +210,38 @@ def normalize_ioc_value(ioc_type: str, value: str) -> str:
     return raw
 
 
+#: The shape a canonical IOC value must have, per type (§07: an allowlist
+#: grammar per field — ingest refuses anything else, never repairs it).
+#: Hosts: ASCII labels (Punycode after :func:`_idna_host`), ≤16 labels, a
+#: letter-led top label; URLs: http(s), a host or IPv4, optional port, a path
+#: free of whitespace and the characters that end a URL in HTML/shell;
+#: IPs: IPv4 (IPv6 is not an identifier yet, KI-193); hashes: 32–128 hex;
+#: wallets/contracts: one alphanumeric token (EVM hex, base58, bech32).
+_HOST_SHAPE = r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){1,16}[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?"
+_IPV4_SHAPE = r"(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)"
+_IOC_VALUE_SHAPES = {
+    "domain": re.compile(_HOST_SHAPE),
+    "url": re.compile(rf"https?://(?:{_HOST_SHAPE}|{_IPV4_SHAPE})(?::\d{{1,5}})?(?:[/?#][^\s<>\"'`\\^{{}}|\[\]]*)?"),
+    "ip": re.compile(_IPV4_SHAPE),
+    "hash": re.compile(r"[a-f0-9]{32,128}"),
+    "wallet": re.compile(r"[A-Za-z0-9]{20,128}"),
+    "contract": re.compile(r"[A-Za-z0-9]{20,128}"),
+}
+MAX_IOC_VALUE_CHARS = 2048
+
+
+def ioc_value_is_well_formed(ioc_type: str, value: str) -> bool:
+    """Whether a CANONICAL IOC value (see :func:`normalize_ioc_value`) has the
+    shape its type allows. False for an unknown type or an over-long value.
+    Hosts are bounded to 253 characters as DNS is."""
+    shape = _IOC_VALUE_SHAPES.get((ioc_type or "").strip().lower())
+    if shape is None or not value or len(value) > MAX_IOC_VALUE_CHARS:
+        return False
+    if ioc_type == "domain" and len(value) > 253:
+        return False
+    return shape.fullmatch(value) is not None
+
+
 def ioc_identifier(ioc_type: str, value: str) -> str:
     """``ioc:{type}:{normalized-value}`` — the shared IOC id (see :func:`normalize_ioc_value`)."""
     return f"ioc:{(ioc_type or '').strip().lower()}:{normalize_ioc_value(ioc_type, value)}"

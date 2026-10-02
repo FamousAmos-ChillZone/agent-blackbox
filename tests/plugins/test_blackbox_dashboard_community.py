@@ -124,13 +124,17 @@ def test_graph_tier_community_serves_rows(client):
     assert "coming_soon" not in graph
 
 
-def test_hostile_community_strings_escaped_and_clamped(client):
+def test_hostile_community_strings_stripped_and_clamped(client):
+    """R8 / KI-191: JSON carries plain text — the page HTML-escapes exactly
+    once at insertion, so the payload is NOT entity-escaped (that produced the
+    double-escaped ``&amp;lt;`` on the benches); controls are stripped, free
+    text clamped, hostnames in free text defanged."""
     graph = client.get("/api/graph?tier=community").json()
     payload = json.dumps(graph)
-    assert "<script>" not in payload  # escaped
+    assert "&lt;" not in payload  # not escaped here
     assert "\\u001b" not in payload  # control chars stripped
     for threat in graph["threats"]:
-        assert len(threat.get("name") or "") <= 300  # clamped (256 + escapes)
+        assert len(threat.get("name") or "") <= 256 + 3 * 16  # clamped before defanging adds "[.]"
 
 
 def test_threat_detail_community(client):

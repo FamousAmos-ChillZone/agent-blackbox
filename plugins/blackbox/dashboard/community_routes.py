@@ -23,7 +23,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
-from .safe_payloads import safe_text, sanitized_ledger
+from .safe_payloads import safe_identifier, safe_text, sanitized_ledger
 
 
 @dataclass(frozen=True)
@@ -117,7 +117,7 @@ def reports_payload(verified_reports: VerifiedReportsRead, limit: int) -> Any:
         outbound.append({**row, "stage": safe_text(rule.get("stage"), 16), "stage_reason": safe_text(rule.get("stageReason"), 200)})
     # Most-reported threats by distinct VERIFIED signers (R0d).
     board = [
-        {"identifier": safe_text(t["identifier"]), "reporters": t["reporters"], "severity": safe_text(t["severity"], 16)}
+        {"identifier": safe_identifier(t["identifier"]), "reporters": t["reporters"], "severity": safe_text(t["severity"], 16)}
         for t in community.most_reported_threats(verified_reports(cfg), limit)
     ]
     return {
@@ -140,16 +140,16 @@ def community_statements_payload(community_read: CommunityReadSource) -> Dict[st
     return {
         "configured": True,
         "available": True,
-        "disputes": [{"identifier": safe_text(d.identifier), "who": safe_text(d.reporter, 64),
+        "disputes": [{"identifier": safe_identifier(d.identifier), "who": safe_text(d.reporter, 64),
                       "signer": safe_text(d.author[:16], 16), "when": safe_text(d.day, 16),
                       "why": safe_text(d.reason, 32)} for d in read.disputes[:_MAX_ROWS]],
-        "retractions": [{"identifier": safe_text(r.identifier), "who": safe_text(r.reporter, 64),
+        "retractions": [{"identifier": safe_identifier(r.identifier), "who": safe_text(r.reporter, 64),
                          "signer": safe_text(r.author[:16], 16), "when": safe_text(r.day, 16)}
                         for r in read.retractions[:_MAX_ROWS]],
         "digests": [{"who": safe_text(d.reporter, 64), "signer": safe_text(d.author[:16], 16), "week": safe_text(d.week, 12),
                      "threats": len(d.entries), "counted": read.curator.is_counted(d.author)}
                     for d in read.digests[:_MAX_ROWS]],
-        "heat": [{"identifier": safe_text(h.identifier), "week": safe_text(h.week, 12), "agents": h.agents,
+        "heat": [{"identifier": safe_identifier(h.identifier), "week": safe_text(h.week, 12), "agents": h.agents,
                   "digests": h.digests} for h in sorted(read.heat.values(), key=lambda h: -h.agents)[:_MAX_ROWS]],
         "held_back": int(read.held_back),
         "pending_tombstones": int(read.pending_tombstones),
@@ -165,7 +165,7 @@ def _curator_payload(view: Any) -> Dict[str, Any]:
         "trusted": True,
         "manifest": {"root_epoch": manifest.root_epoch, "version": manifest.version,
                      "keys": len(manifest.curator_keys), "threshold": manifest.threshold},
-        "verdicts": [{"identifier": safe_text(identifier), "verdict": record.kind.value.split(".", 1)[1],
+        "verdicts": [{"identifier": safe_identifier(identifier), "verdict": record.kind.value.split(".", 1)[1],
                       "when": safe_text(record.day, 16), "why": safe_text(record.field("reason"), 32),
                       "keys": len(record.signers)} for identifier, record in list(view.verdicts.items())[:_MAX_ROWS]],
         "counted_authors": [{"address": safe_text(a.address, 64), "class": a.author_class, "org": safe_text(a.org, 64),
