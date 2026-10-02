@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional, Tuple
 from .. import audit
 from . import graph_stats, report_builder, report_signer, sharing
 from . import reader as graph_reader
-from ..kernel import threat_ids
+from ..kernel import constants, threat_ids
 
 from ..kernel.config import load_blackbox_config
 from ..kernel.dkg_client import DkgClient
@@ -67,6 +67,63 @@ _REPORT_REQUIRED_ARGS: Dict[str, "tuple[str, ...]"] = {
 _FLAG_NAMES = {"version": "package-version"}
 
 
+#: (identifier, fields, error) for one report type's parsed args.
+_ParsedReport = Tuple[str, Dict[str, Any], str]
+
+
+def _injection_args(args: argparse.Namespace) -> _ParsedReport:
+    return threat_ids.injection_identifier(args.pattern), {"pattern": args.pattern, "owasp_category": args.owasp}, ""
+
+
+def _escalation_args(args: argparse.Namespace) -> _ParsedReport:
+    return (threat_ids.escalation_identifier(args.tool, args.arg_shape),
+            {"tool_name": args.tool, "arg_shape": args.arg_shape}, "")
+
+
+def _dependency_args(args: argparse.Namespace) -> _ParsedReport:
+    fields = {
+        "ecosystem": args.ecosystem.strip().lower(),
+        "package_name": threat_ids.canonical_package_name(args.ecosystem, args.name),
+        "package_version": args.version,
+        "advisory_id": args.advisory_id,
+        "kind": args.kind,
+    }
+    return threat_ids.dependency_identifier(args.ecosystem, args.name, args.version), fields, ""
+
+
+def _fileaccess_args(args: argparse.Namespace) -> _ParsedReport:
+    return (threat_ids.fileaccess_identifier(args.tool, args.category),
+            {"tool_name": args.tool, "file_category": args.category}, "")
+
+
+def _skill_args(args: argparse.Namespace) -> _ParsedReport:
+    if args.skill_version:
+        identifier = threat_ids.skill_version_identifier(args.skill_name, args.skill_version)
+    elif args.danger_shape:
+        identifier = threat_ids.skill_shape_identifier(args.skill_name, args.danger_shape)
+    else:
+        return "", {}, "--type skill requires --skill-version or --danger-shape"
+    fields = {"skill_name": args.skill_name, "skill_version": args.skill_version, "danger_shape": args.danger_shape}
+    return identifier, fields, ""
+
+
+def _ioc_args(args: argparse.Namespace) -> _ParsedReport:
+    return threat_ids.ioc_identifier(args.ioc_type, args.value), {"ioc_type": args.ioc_type}, ""
+
+
+#: Report type -> how its args become (identifier, fields). Strategy table: one
+#: small function per type, each deriving the identifier with the SAME helpers
+#: automatic detection uses.
+_REPORT_FIELDS = {
+    "injection": _injection_args,
+    "escalation": _escalation_args,
+    "dependency": _dependency_args,
+    "fileaccess": _fileaccess_args,
+    "skill": _skill_args,
+    "ioc": _ioc_args,
+}
+
+
 def _report_finding_from_args(args: argparse.Namespace) -> "tuple[Optional[dict], str]":
     """Factory: parsed report args → the finding dict the share path expects.
 
@@ -83,40 +140,9 @@ def _report_finding_from_args(args: argparse.Namespace) -> "tuple[Optional[dict]
     missing = [f"--{_FLAG_NAMES.get(name, name.replace('_', '-'))}" for name in required if not getattr(args, name, None)]
     if missing:
         return None, f"--type {rtype} requires {', '.join(missing)}"
-    fields: Dict[str, Any] = {}
-    if rtype == "injection":
-        identifier = threat_ids.injection_identifier(args.pattern)
-        fields = {"pattern": args.pattern, "owasp_category": args.owasp}
-    elif rtype == "escalation":
-        identifier = threat_ids.escalation_identifier(args.tool, args.arg_shape)
-        fields = {"tool_name": args.tool, "arg_shape": args.arg_shape}
-    elif rtype == "dependency":
-        identifier = threat_ids.dependency_identifier(args.ecosystem, args.name, args.version)
-        fields = {
-            "ecosystem": args.ecosystem.strip().lower(),
-            "package_name": threat_ids.canonical_package_name(args.ecosystem, args.name),
-            "package_version": args.version,
-            "advisory_id": args.advisory_id,
-            "kind": args.kind,
-        }
-    elif rtype == "fileaccess":
-        identifier = threat_ids.fileaccess_identifier(args.tool, args.category)
-        fields = {"tool_name": args.tool, "file_category": args.category}
-    elif rtype == "skill":
-        if args.skill_version:
-            identifier = threat_ids.skill_version_identifier(args.skill_name, args.skill_version)
-        elif args.danger_shape:
-            identifier = threat_ids.skill_shape_identifier(args.skill_name, args.danger_shape)
-        else:
-            return None, "--type skill requires --skill-version or --danger-shape"
-        fields = {
-            "skill_name": args.skill_name,
-            "skill_version": args.skill_version,
-            "danger_shape": args.danger_shape,
-        }
-    else:  # ioc
-        identifier = threat_ids.ioc_identifier(args.ioc_type, args.value)
-        fields = {"ioc_type": args.ioc_type}
+    identifier, fields, err = _REPORT_FIELDS[rtype](args)
+    if err:
+        return None, err
     return {
         "identifier": identifier,
         "category": rtype,
@@ -124,6 +150,49 @@ def _report_finding_from_args(args: argparse.Namespace) -> "tuple[Optional[dict]
         "source": "custom-manual",  # never auto-shared; explicit path only
         "fields": {k: v for k, v in fields.items() if v},
     }, ""
+
+
+def add_report_parser(sub: "argparse._SubParsersAction") -> None:
+    """Register ``blackbox report`` and its flags on the CLI's sub-parsers.
+
+    Called once by ``cli.setup_cli``; the parsed namespace goes to
+    :func:`cmd_report`.
+    """
+    report = sub.add_parser("report", help="Report a threat to the community graph / view your contributions")
+    report.add_argument(
+        "--type", required=False,
+        choices=["injection", "escalation", "dependency", "fileaccess", "skill", "ioc"],
+    )
+    report.add_argument(
+        "--status", action="store_true",
+        help="Show what this node has contributed (offline ledger + graph profile)",
+    )
+    report.add_argument(
+        "--false-positive", dest="false_positive", metavar="IDENTIFIER",
+        help="Dispute a community threat: submit a false-positive signal for IDENTIFIER",
+    )
+    report.add_argument("--ioc-type", dest="ioc_type", choices=list(threat_ids.IOC_TYPES),
+                        help="ioc: indicator type")
+    report.add_argument("--value", help="ioc: the indicator value (domain/url/ip/hash/...)")
+    report.add_argument("--pattern", help="injection: regex source")
+    report.add_argument("--owasp", help="injection: OWASP category (e.g. LLM01)")
+    report.add_argument("--tool", help="escalation/fileaccess: tool name")
+    report.add_argument("--arg-shape", dest="arg_shape", help="escalation: arg shape slug")
+    report.add_argument("--ecosystem", help="dependency: ecosystem (npm/pypi/...)")
+    report.add_argument("--name", help="dependency: package name (or threat display name)")
+    report.add_argument("--package-version", dest="version", help="dependency: package version (KI-066: Hermes owns --version)")
+    report.add_argument("--advisory-id", dest="advisory_id", help="dependency: advisory id")
+    report.add_argument(
+        "--kind", choices=[constants.KIND_MALWARE, constants.KIND_VULNERABILITY],
+        help="dependency: malware (blocks) or vulnerability (flags only)",
+    )
+    report.add_argument("--category", help="fileaccess: sensitive-path category (e.g. ssh-private-key)")
+    report.add_argument("--skill-name", dest="skill_name", help="skill: skill name")
+    report.add_argument("--skill-version", dest="skill_version", help="skill: known-bad version")
+    report.add_argument("--danger-shape", dest="danger_shape", help="skill: danger shape slug (e.g. shell-exec)")
+    report.add_argument("--severity", default="high", choices=list(constants.SEVERITY_ORDER))
+    report.add_argument("--description", default="", help="Human-readable description")
+    report.set_defaults(func=cmd_report)
 
 
 def cmd_report(args: argparse.Namespace) -> int:

@@ -13,14 +13,12 @@ from __future__ import annotations
 import argparse
 import logging
 from . import attach, audit, ruleset
-from .kernel import threat_ids
 from .kernel import yaml_files
-from .kernel import constants
 from .kernel.config import load_blackbox_config
 from .kernel.dkg_client import DkgClient
 from .attach import cmd_attach, cmd_detach
 from .chat import add_blackbox_chat_args, cmd_chat
-from .community import cmd_report, print_community_status
+from .community import add_report_parser, print_community_status
 from .dashboard import cmd_dashboard
 from .detection import cmd_setup_llm
 from .sync import cmd_sync
@@ -87,41 +85,7 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
     detach_p.add_argument("--openclaw-only", action="store_true", help="Only detach from OpenClaw workspaces")
     detach_p.set_defaults(func=cmd_detach)
 
-    report = sub.add_parser("report", help="Report a threat to the community graph / view your contributions")
-    report.add_argument(
-        "--type", required=False,
-        choices=["injection", "escalation", "dependency", "fileaccess", "skill", "ioc"],
-    )
-    report.add_argument(
-        "--status", action="store_true",
-        help="Show what this node has contributed (offline ledger + graph profile)",
-    )
-    report.add_argument(
-        "--false-positive", dest="false_positive", metavar="IDENTIFIER",
-        help="Dispute a community threat: submit a false-positive signal for IDENTIFIER",
-    )
-    report.add_argument("--ioc-type", dest="ioc_type", choices=list(threat_ids.IOC_TYPES),
-                        help="ioc: indicator type")
-    report.add_argument("--value", help="ioc: the indicator value (domain/url/ip/hash/...)")
-    report.add_argument("--pattern", help="injection: regex source")
-    report.add_argument("--owasp", help="injection: OWASP category (e.g. LLM01)")
-    report.add_argument("--tool", help="escalation/fileaccess: tool name")
-    report.add_argument("--arg-shape", dest="arg_shape", help="escalation: arg shape slug")
-    report.add_argument("--ecosystem", help="dependency: ecosystem (npm/pypi/...)")
-    report.add_argument("--name", help="dependency: package name (or threat display name)")
-    report.add_argument("--package-version", dest="version", help="dependency: package version (KI-066: Hermes owns --version)")
-    report.add_argument("--advisory-id", dest="advisory_id", help="dependency: advisory id")
-    report.add_argument(
-        "--kind", choices=[constants.KIND_MALWARE, constants.KIND_VULNERABILITY],
-        help="dependency: malware (blocks) or vulnerability (flags only)",
-    )
-    report.add_argument("--category", help="fileaccess: sensitive-path category (e.g. ssh-private-key)")
-    report.add_argument("--skill-name", dest="skill_name", help="skill: skill name")
-    report.add_argument("--skill-version", dest="skill_version", help="skill: known-bad version")
-    report.add_argument("--danger-shape", dest="danger_shape", help="skill: danger shape slug (e.g. shell-exec)")
-    report.add_argument("--severity", default="high", choices=list(constants.SEVERITY_ORDER))
-    report.add_argument("--description", default="", help="Human-readable description")
-    report.set_defaults(func=cmd_report)
+    add_report_parser(sub)
 
     dash = sub.add_parser("dashboard", help="Start the local Blackbox dashboard")
     dash.add_argument("--port", type=int, help="Override dashboard port")

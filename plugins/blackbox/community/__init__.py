@@ -15,7 +15,7 @@ Public surface:
 * :class:`CommunitySharePolicy`, ``NEVER_SHARED_SOURCES`` — THE outbound gate;
   :func:`spawn_community_share` sends an allowed finding. This node's
   reporting identity is resolved by ``kernel.identity.reporter_address``.
-* :func:`cmd_report` (``blackbox report``), :func:`print_community_status`
+* :func:`add_report_parser` + :func:`cmd_report` (``blackbox report``), :func:`print_community_status`
   (the status block), :func:`ensure_community_subscription` (join on sync).
 * :func:`build_report_quads` / :func:`build_false_positive_quads` — the
   privacy-safe statements a report or dispute shares (write side).
@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from .report_builder import build_false_positive_quads, build_report_quads
 from .membership import ensure_community_subscription
-from .report_command import cmd_report, print_community_status
+from .report_command import add_report_parser, cmd_report, print_community_status
 from .sharing import NEVER_SHARED_SOURCES, CommunitySharePolicy, spawn_community_share
 from .graph_stats import community_agents, contributing_agent_count, most_reported_threats, reports_signed_by
 from .verification import ReportVerifier, VerifiedReport, verify_report_rows
@@ -64,6 +64,7 @@ __all__ = [
     "aggregate_community_reports",
     "build_false_positive_quads",
     "build_report_quads",
+    "add_report_parser",
     "cmd_report",
     "ensure_community_subscription",
     "community_pause_active",
