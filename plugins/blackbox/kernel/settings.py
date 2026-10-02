@@ -62,12 +62,13 @@ def read_settings() -> Dict[str, Any]:
     }
 
 
-def _validate(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+def _validate(payload: Dict[str, Any], *, sharing_consent: bool = False) -> Tuple[Dict[str, Any], List[str]]:
     """Coerce a settings *payload* into a validated ``blackbox`` config subtree.
 
     Returns ``(entry_updates, errors)``. Unknown keys and invalid values are
     dropped (with an error note) rather than persisted, so a malformed request
-    can never corrupt the config.
+    can never corrupt the config. *sharing_consent* (R13, injected by the caller —
+    the kernel never asks a feature): without it ``report: true`` is refused.
     """
     errors: List[str] = []
     updates: Dict[str, Any] = {}
@@ -76,10 +77,7 @@ def _validate(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
 
     if "mode" in payload:
         mode = str(payload["mode"]).lower()
-        if mode in ("audit", "block"):
-            updates["mode"] = mode
-        else:
-            errors.append(f"invalid mode: {payload['mode']!r}")
+        (updates.__setitem__("mode", mode) if mode in ("audit", "block") else errors.append(f"invalid mode: {payload['mode']!r}"))
 
     for key in ("block_severity", "report_min_severity"):
         if key in payload:
@@ -93,10 +91,12 @@ def _validate(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
         # `report` (KI-005): the community-sharing switch is a real settings
         # key now — validate-then-persist like every other boolean.
         if key in payload:
-            if isinstance(payload[key], bool):
-                updates[key] = payload[key]
-            else:
+            if not isinstance(payload[key], bool):
                 errors.append(f"{key} must be a boolean")
+            elif key == "report" and payload[key] and not sharing_consent:
+                errors.append("report: sharing needs a recorded consent to the reporter terms first (`blackbox report --consent`)")
+            else:
+                updates[key] = payload[key]
 
     if "categories" in payload:
         cats = payload["categories"]
@@ -163,13 +163,13 @@ def _validate(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
     return updates, errors
 
 
-def write_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
+def write_settings(payload: Dict[str, Any], *, sharing_consent: bool = False) -> Dict[str, Any]:
     """Validate *payload* and persist it under ``plugins.entries.blackbox``.
 
     Returns ``{"ok": bool, "errors": [...], "settings": <new read_settings>}``.
     Never raises — a write failure is reported in the result.
     """
-    updates, errors = _validate(payload)
+    updates, errors = _validate(payload, sharing_consent=sharing_consent)
     if not updates:
         return {"ok": False, "errors": errors or ["nothing to update"], "settings": read_settings()}
 

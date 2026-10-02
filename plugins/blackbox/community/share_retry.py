@@ -160,6 +160,13 @@ class ShareRetryQueue:
             pending.sort(key=lambda s: s.first_failed)
             self._save(pending[-MAX_PENDING:], given_up)
 
+    def clear(self) -> int:
+        """Identity erasure (R13): drop every pending share; returns how many."""
+        with self._lock:
+            pending, _given_up = self._load()
+            self._save([], [])
+            return len(pending)
+
     def remove(self, name: str) -> None:
         with self._lock:
             pending, given_up = self._load()

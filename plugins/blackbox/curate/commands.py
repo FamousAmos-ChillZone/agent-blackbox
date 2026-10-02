@@ -65,6 +65,7 @@ def add_curate_parser(sub: "argparse._SubParsersAction", *, compiled_ruleset: Op
     vi = verbs_.add_parser("views", help="Install the saved node-UI queries (query catalog)")
     vi.add_argument("--install", action="store_true", required=True)
     _add_reputation(verbs_)
+    verbs_.add_parser("metrics", help="R15: the latest shadow-phase snapshot and the newcomer calibration gap")
     v = verbs_.add_parser("view", help="Run one saved view from the CLI")
     v.add_argument("slug", choices=[x.slug for x in (*node_ui_views.COMMUNITY_VIEWS, *node_ui_views.VERIFIED_VIEWS)])
 
@@ -365,8 +366,23 @@ def _graduate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _metrics(args: argparse.Namespace) -> int:
+    snapshot = community.shadow.latest()
+    if snapshot is None:
+        print("no shadow snapshots yet (set `community_shadow: true`; one is written per refresh)")
+    else:
+        print(f"{snapshot.at}  community {snapshot.community_total} · already verified {snapshot.already_verified} "
+              f"(delta share {snapshot.delta_share:.0%}) · reporters median {snapshot.reporters_median:.1f} · "
+              f"days to corroborated median {snapshot.days_to_corroborated_median:.1f}")
+        print(f"  stages: {snapshot.stages} · would enforce: {snapshot.would_enforce} · counted {snapshot.counted} / unlisted {snapshot.unlisted}")
+    unlisted, counted, ratio = community.shadow.calibration_gap(community.reputation.ReputationLedger(), _today())
+    print(f"  newcomer calibration: unlisted rejection {unlisted:.0%} vs counted {counted:.0%} → ratio {ratio:.2f}"
+          + (" — REVIEW the graduation rule (gap > 2×)" if ratio > 2 else ""))
+    return 0
+
+
 _VERBS: Dict[str, Callable[[argparse.Namespace], int]] = {
     "keys": _keys, "manifest": _manifest, "queue": _queue, "show": _show, "propose": _propose, "inbox": _inbox,
     "approve": _approve, "publish": _publish, "reject": _reject, "list": _list, "watch": _watch, "views": _views,
-    "view": _view, "outcome": _outcome, "graduate": _graduate,
+    "view": _view, "outcome": _outcome, "graduate": _graduate, "metrics": _metrics,
 }

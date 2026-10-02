@@ -126,6 +126,9 @@ class BlackboxConfig:
     #: Days per keep-alive epoch (R5): this node re-publishes a copy of each of
     #: its live reports once per epoch (TTL/3 of the default 30-day expiry); 0 = off.
     community_keepalive_epoch_days: float = 10.0
+    #: R15 shadow phase: community stages are computed and logged, but every
+    #: community rule is clamped to MONITOR — nothing community-derived reaches an agent.
+    community_shadow: bool = False
     block_severity: str = "critical"
     dashboard_port: int = 9700
     discover: bool = True
@@ -355,17 +358,10 @@ def load_blackbox_config() -> BlackboxConfig:
         # default-on/off decision; the daily cap defaults to a real bound so
         # the safeguard exists the moment sharing turns on (KI-002).
         report=_as_bool(_env_or(entry, env="BLACKBOX_REPORT", key="report", default=False), False),
-        daily_report_limit=constants.effective_daily_report_limit(
-            _as_int(
-                _env_or(
-                    entry,
-                    env="BLACKBOX_DAILY_REPORT_LIMIT",
-                    key="daily_report_limit",
-                    default=constants.DEFAULT_DAILY_REPORT_LIMIT,
-                ),
-                constants.DEFAULT_DAILY_REPORT_LIMIT,
-            ),
-        ),
+        daily_report_limit=constants.effective_daily_report_limit(_as_int(
+            _env_or(entry, env="BLACKBOX_DAILY_REPORT_LIMIT", key="daily_report_limit",
+                    default=constants.DEFAULT_DAILY_REPORT_LIMIT), constants.DEFAULT_DAILY_REPORT_LIMIT)),
+        community_shadow=_as_bool(_env_or(entry, env="BLACKBOX_COMMUNITY_SHADOW", key="community_shadow", default=False), False),
         community_graph_id=str(_env_or(entry, env="BLACKBOX_COMMUNITY_GRAPH_ID", key="community_graph_id",
                                         default=constants.DEFAULT_COMMUNITY_GRAPH_ID)).strip(),
         community_graph_peer_id=str(_env_or(entry, env="BLACKBOX_COMMUNITY_GRAPH_PEER_ID", key="community_graph_peer_id",

@@ -1368,7 +1368,7 @@ def create_app(*, manage_blackbox: bool = False):
         malformed body can't corrupt config.
         """
         try:
-            result = settings.write_settings(payload)
+            result = settings.write_settings(payload, sharing_consent=community.consent.in_force())   # R13: opt-in
             return JSONResponse(result, status_code=200 if result.get("ok") else 400)
         except Exception as exc:  # pragma: no cover - fail open
             logger.debug("blackbox dashboard: write settings failed: %s", exc)

@@ -32,6 +32,8 @@ from pathlib import Path
 from typing import Any, Dict
 
 from ... import audit
+from .. import consent, share_retry
+from .. import keep_alive as keep_alive_mod
 from ...kernel import display_safety, reporter_key, signing
 
 #: Identifies an export file and its layout version.
@@ -44,17 +46,46 @@ _EXPORT_LEDGER_ROWS = 100_000
 def wants_local_verb(args: argparse.Namespace) -> bool:
     """True when *args* ask for one of this module's verbs."""
     return bool(getattr(args, "export", None) or getattr(args, "restore_key", None)
-                or getattr(args, "erase_identity", False))
+                or getattr(args, "erase_identity", False) or getattr(args, "consent", False)
+                or getattr(args, "withdraw_consent", False))
 
 
 def run_local_verb(args: argparse.Namespace) -> int:
     """Run the requested verb; returns the process exit code."""
     store = reporter_key.ReporterKeyStore()
+    if getattr(args, "consent", False):
+        return record_consent()
+    if getattr(args, "withdraw_consent", False):
+        return withdraw_consent()
     if args.export:
         return export_identity(store, Path(args.export).expanduser())
     if args.restore_key:
         return restore_key(store, Path(args.restore_key).expanduser())
     return erase_identity(store, confirmed=bool(args.confirm))
+
+
+def record_consent() -> int:
+    """``--consent``: print the reporter terms, record consent bound to their content (R13)."""
+    text = consent.terms_text()
+    if not text:
+        print("The reporter terms are missing from this installation; nothing can be consented to.")
+        return 1
+    print(text)
+    entry = consent.record()
+    if entry is None:
+        return 1
+    print(f"Consent recorded for terms version {entry.terms_version} at {entry.accepted_at}. Sharing may now run")
+    print("(`report: true` in the config). Withdraw at any time with `blackbox report --withdraw-consent`.")
+    return 0
+
+
+def withdraw_consent() -> int:
+    """``--withdraw-consent``: sharing stops on the next action."""
+    if consent.withdraw():
+        print("Consent withdrawn: nothing further leaves this machine for the community graph.")
+    else:
+        print("No consent was in force.")
+    return 0
 
 
 def export_document(store: reporter_key.ReporterKeyStore) -> Dict[str, Any]:
@@ -130,6 +161,10 @@ def erase_identity(store: reporter_key.ReporterKeyStore, *, confirmed: bool) -> 
         return 2
     had_key = store.erase()
     records = audit.erase_share_records()
+    # R13: erasure must stop every way this node could re-publish its old statements or consent again
+    records += int(keep_alive_mod.LiveReportStore().forget_all())
+    records += int(share_retry.default_queue().clear())
+    records += int(consent.erase())
     print(f"Erased: reporter key {'removed' if had_key else '(none present)'}; {records} local share record file(s).")
     print("Your next report starts a new reporter identity.")
     return 0

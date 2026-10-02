@@ -66,6 +66,8 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
         rs.community = {rule.identifier: {**rule.as_rule(), **_stage_fields(rule, read), "networkLive": "yes"}
                         for rule in rules}
         _carry_kept_locally(rs, previous, time.time())
+        if getattr(cfg, "community_shadow", False):   # R15: stages logged, only MONITOR enforced
+            community.shadow.clamp_to_monitor(rs.community)
         materialize_community_rules(rs)
     except Exception as exc:  # pragma: no cover - fail open at the tier boundary
         logger.debug("blackbox: community tier skipped: %s", exc)

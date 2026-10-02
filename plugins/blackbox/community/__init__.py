@@ -28,6 +28,9 @@ Public surface:
   a community threat's local stage from the counted-author list (R3).
 * :func:`record_verified_sighting` / :func:`publish_due_digests` — the
   seen-again counter: tally verified matches, publish one weekly digest (R2b).
+* :mod:`shadow` — the shadow phase (R15): the MONITOR clamp and the §12 metrics log.
+* :mod:`consent` — the sharing consent record (R13): opt-in, bound to the terms' content, withdrawable;
+  the share gate refuses without it.
 * :mod:`allowlist` — the allowlist / warninglist verdict and canaries (R9): byte-exact
   names hold, look-alikes support the report.
 * :mod:`reputation` — automated graduation, novelty, partners, collusion and the
@@ -58,7 +61,7 @@ from .report_signer import network_environment
 from .aggregation import CommunityRule, aggregate_community_reports
 from .digest import publish_due_digests, record_verified_sighting
 from .keep_alive import publish_due_copies
-from . import allowlist, reputation
+from . import allowlist, consent, reputation, shadow
 from .pulse import PULSE
 from .pulse import fingerprint as community_fingerprint
 from .statements.lifetimes import lifetime_days
@@ -125,6 +128,8 @@ __all__ = [
     "publish_due_copies",
     "reputation",
     "allowlist",
+    "consent",
+    "shadow",
     "lifetime_days",
     "first_seen_trail",
     "PULSE",

@@ -135,6 +135,13 @@ class LiveReportStore:
             live = self._load()
             self._save([replace(r, last_epoch=int(epoch)) if r.name == name else r for r in live])
 
+    def forget_all(self) -> int:
+        """Identity erasure (R13): nothing of this node's is ever re-published again."""
+        with self._lock:
+            live = self._load()
+            self._save([])
+            return len(live)
+
     def forget_identifier(self, identifier: str) -> int:
         """Stop keeping every report of *identifier* alive (a retraction); returns how many."""
         with self._lock:

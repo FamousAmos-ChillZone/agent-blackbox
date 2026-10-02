@@ -2,7 +2,7 @@
   "_comment": "Baselined when the structure guard landed (2026-10-01). Numbers may only shrink: lower them in the commit that shrinks the code; delete an entry once it is under the alarm. Never raise one.",
   "files": {
     "dashboard/server.py": 2241,
-    "kernel/config.py": 432,
+    "kernel/config.py": 428,
     "kernel/dkg_client.py": 641,
     "sync/command.py": 1449,
     "sync/managed_node.py": 427
@@ -36,7 +36,7 @@
     "detection/detectors.py::discover_dependency_candidates": 52,
     "detection/reviewer_setup.py::cmd_setup_llm": 102,
     "guard/hooks.py::on_pre_tool_call": 45,
-    "kernel/config.py::load_blackbox_config": 150,
+    "kernel/config.py::load_blackbox_config": 143,
     "kernel/settings.py::_validate": 99,
     "ruleset/compiler.py::Ruleset.graph_entries": 47,
     "ruleset/compiler.py::build_from_rows": 75,

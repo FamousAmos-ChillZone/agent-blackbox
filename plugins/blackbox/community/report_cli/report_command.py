@@ -13,7 +13,7 @@ import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from ... import audit
 from ... import detection
-from .. import graph_stats, report_builder, report_schema, report_signer, sharing, share_retry
+from .. import consent, graph_stats, report_builder, report_schema, report_signer, sharing, share_retry
 from . import report_rights, report_tracking, statement_verbs
 from .. import reader as graph_reader
 from ...kernel import constants, threat_ids
@@ -228,6 +228,8 @@ _REPORT_FLAGS: Tuple[Tuple[Tuple[str, ...], Dict[str, Any]], ...] = (
     (("--danger-shape",), dict(dest="danger_shape", choices=_choices(detection.SKILL_DANGER_SHAPES),
                                help="skill (local): danger shape")),
     (("--severity",), dict(default="high", choices=list(constants.SEVERITY_ORDER))),
+    (("--consent",), dict(action="store_true", help="read the reporter terms and record consent to share (R13; opt-in)")),
+    (("--withdraw-consent",), dict(dest="withdraw_consent", action="store_true", help="withdraw consent: sharing stops")),
 )
 
 
@@ -260,11 +262,11 @@ def cmd_report(args: argparse.Namespace) -> int:
     if args.status or getattr(args, "standing", False) or report_rights.wants_local_verb(args):   # local: nothing sent
         return _local_verb(cfg, args)
     if not cfg.community_enabled:
-        if not cfg.community_graph_id:
-            print("Community sharing is dormant: no community graph is configured.")
-        else:
-            print("Community sharing is OFF (config key `report: false`).")
+        print("Community sharing is dormant: no community graph is configured." if not cfg.community_graph_id
+              else "Community sharing is OFF (config key `report: false`).")
         print("Nothing was submitted.")
+        return 2
+    if not _consented():   # R13: the same gate as automatic sharing
         return 2
     client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
     resolved = _reporting_identity(client, cfg.community_graph_id)
@@ -308,6 +310,15 @@ def cmd_report(args: argparse.Namespace) -> int:
     print(f"  identifier: {display_safety.term_safe(identifier)}")
     print(f"  subject:    {display_safety.term_safe(subject)}")
     return 0
+
+
+def _consented() -> bool:
+    """R13: a manual report leaves only with a consent record for the current terms."""
+    if consent.in_force():
+        return True
+    print("No sharing consent is recorded for the current reporter terms. Read them and consent with")
+    print("`blackbox report --consent`; nothing was submitted.")
+    return False
 
 
 def _reporting_identity(client: DkgClient, graph: str) -> Optional[Tuple[str, report_signer.ReportSigner]]:

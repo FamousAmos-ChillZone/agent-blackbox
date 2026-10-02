@@ -240,7 +240,18 @@ def _apply_overlays(rs: compiler.Ruleset, client: Optional[DkgClient], config: B
     _publish_digests(client, config)
     _retry_shares(client, config)
     _keep_reports_alive(client, config)
+    _record_shadow_metrics(rs, config)
     community.PULSE.reset()   # a full read just happened; the next pulse starts from it
+
+
+def _record_shadow_metrics(rs: compiler.Ruleset, config: BlackboxConfig) -> None:
+    """R15: in the shadow phase every refresh logs the §12 numbers it computed. Fail-open."""
+    if not getattr(config, "community_shadow", False):
+        return
+    try:
+        community.shadow.write_snapshot(community.shadow.build_snapshot(rs, time.time()))
+    except Exception as exc:  # pragma: no cover - never degrade the refresh
+        logger.debug("blackbox: shadow metrics skipped this refresh: %s", exc)
 
 
 def _keep_reports_alive(client: DkgClient, config: BlackboxConfig) -> None:

@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from .. import audit, detection
 from .. import community
 from ..kernel import threat_ids
-from . import keep_alive, report_schema, report_signer, share_retry
+from . import consent, keep_alive, report_schema, report_signer, share_retry
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, DkgError
 
@@ -65,7 +65,8 @@ class CommunitySharePolicy:
             spawn_community_share(client, cfg, finding_dict, reporter_address)
 
     Gate order (first refusal wins, ``why`` names it for the debug log):
-    ``community off`` → ``excluded source`` → ``vulnerability`` →
+    ``community off`` → ``no consent`` (R13: the operator must have consented to the
+    current reporter terms) → ``excluded source`` → ``vulnerability`` →
     ``community-only match`` → ``no identifier`` → ``no identity`` (KI-003:
     a fallback identity would merge distinct nodes into one ghost reporter —
     refuse instead) → ``not a valid report`` (Refine R1: a finding the report
@@ -91,6 +92,8 @@ class CommunitySharePolicy:
     def decide(self, finding: Dict[str, Any], reporter: Optional[str]) -> "tuple[bool, str]":
         if not self._cfg.community_enabled:
             return False, "community sharing disabled"
+        if not consent.in_force():   # R13: opt-in, bound to the terms' content, withdrawable
+            return False, "no sharing consent recorded for the current reporter terms (`blackbox report --consent`)"
         if finding.get("source") in NEVER_SHARED_SOURCES:
             return False, f"source {finding.get('source')} never leaves the machine"
         if is_vulnerability_finding(finding):
