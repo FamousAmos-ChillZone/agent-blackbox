@@ -152,6 +152,20 @@ def test_a_process_that_starts_with_an_empty_tier_applies_the_reports_already_th
     assert "ioc:domain:other.example" not in refresh_cycle.peek(cfg).community   # waits for a change or the refresh
 
 
+def test_a_wedged_beat_does_not_stall_the_pulse_forever(monkeypatch):
+    """A node call that never returns must not disable the pulse for the life of the process."""
+    cfg = BlackboxConfig(report=True, community_graph_id=GRAPH, context_graph_id=VM_GRAPH, community_poll_interval=20)
+    monkeypatch.setattr(pulse_beat, "_pulsing", True)
+    monkeypatch.setattr(pulse_beat, "_pulsing_since", time.time())
+    assert pulse_beat.pulse(cfg) is False                           # a live beat is respected
+    community.PULSE._last_probe = 0.0
+    monkeypatch.setattr(pulse_beat, "_pulsing_since", time.time() - pulse_beat.STUCK_BEAT_SECONDS - 1)
+    started = threading.Event()
+    monkeypatch.setattr(pulse_beat, "_background_pulse", lambda config: started.set())
+    assert pulse_beat.pulse(cfg) is True                            # a wedged one is replaced
+    assert started.wait(2)
+
+
 def test_the_pulse_is_off_without_a_graph_or_with_interval_zero(monkeypatch):
     called = []
     monkeypatch.setattr(pulse_beat, "DkgClient", lambda *a, **k: called.append(1))

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Optional
 
 from .. import community
@@ -25,20 +26,27 @@ from . import community_tier, disk_cache, locks
 logger = logging.getLogger(__name__)
 
 _pulsing = False
+_pulsing_since = 0.0
 _pulsing_lock = threading.Lock()  # guards the spawn-one-background-pulse flag
+#: A beat older than this is presumed wedged (a node call that never returned):
+#: the next due pulse may start a fresh beat instead of waiting forever.
+STUCK_BEAT_SECONDS = 300.0
 
 
 def pulse(config: Optional[BlackboxConfig] = None) -> bool:
     """Start the beat if it is due; never blocks; returns whether a probe started."""
-    global _pulsing
+    global _pulsing, _pulsing_since
     config = config or load_blackbox_config()
     interval = float(getattr(config, "community_poll_interval", 0) or 0)
     if interval <= 0 or not config.community_graph_id or not community.PULSE.due(interval):
         return False
     with _pulsing_lock:
-        if _pulsing:
+        if _pulsing and time.time() - _pulsing_since < STUCK_BEAT_SECONDS:
             return False
+        if _pulsing:
+            logger.warning("blackbox: a community pulse beat has run for over %d s — starting a fresh one", int(STUCK_BEAT_SECONDS))
         _pulsing = True
+        _pulsing_since = time.time()
     try:
         threading.Thread(target=_background_pulse, args=(config,), name="blackbox-pulse", daemon=True).start()
     except Exception:  # pragma: no cover
