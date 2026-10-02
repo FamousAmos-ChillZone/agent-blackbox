@@ -91,6 +91,9 @@ class HealthInputs:
     future_dated_rows: int = 0           # rows dated after tomorrow
     kill_list_version: int = 0           # the kill list in force (0 = none)
     kill_list_refused: str = ""          # why the newest kill list was refused (last-good kept)
+    manifest_state: str = ""             # R7b: "" | "pending" | "stale"
+    manifest_state_day: str = ""         # the day it takes effect / expired
+    manifest_expires_day: str = ""       # the 30-day-ahead key-expiry alarm
 
 
 #: A ruleset older than this many sync intervals is stale.
@@ -149,6 +152,15 @@ def _trust(inputs: HealthInputs) -> List[HealthItem]:
     if inputs.future_dated_rows:
         items.append(HealthItem(_OPERATOR, HealthClass.SECURITY, f"{inputs.future_dated_rows} future-dated community row(s) ignored",
                                 "nothing to do — a modified client is on the graph; its rows are ignored"))
+    if inputs.manifest_state == "stale":
+        items.append(HealthItem(_OPERATOR, HealthClass.ACTION, f"curator key manifest STALE since {inputs.manifest_state_day}",
+                                "verified rules still block and reductions still apply; new enforcement-raising statements are frozen — update Blackbox or wait for a fresh manifest"))
+    if inputs.manifest_state == "pending":
+        items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"a new curator key manifest takes effect on {inputs.manifest_state_day} (72 h time-lock)",
+                                "nothing to do — the previous manifest stays in force until then"))
+    if inputs.manifest_expires_day and inputs.today and 0 <= _days_between(inputs.today, inputs.manifest_expires_day) <= 30:
+        items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"the curator key manifest expires on {inputs.manifest_expires_day}",
+                                "nothing to do — the curators publish a new manifest; rules keep enforcing either way"))
     if inputs.kill_list_refused:
         items.append(HealthItem(_OPERATOR, HealthClass.SECURITY, f"the newest kill list was refused: {inputs.kill_list_refused}",
                                 f"nothing to do — the last-good kill list (v{inputs.kill_list_version}) stays in force; tell the curators"))
@@ -305,6 +317,9 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         future_dated_rows=int(getattr(read, "future_dated", 0) or 0),
         kill_list_version=int(kill_list.get("version", 0) or 0) if isinstance(kill_list, dict) else 0,
         kill_list_refused=str(getattr(rs, "kill_list_refused", "") or ""),
+        manifest_state=(view.manifest_state if view is not None else ""),
+        manifest_state_day=(view.manifest_state_day if view is not None else ""),
+        manifest_expires_day=(view.manifest_expires_day if view is not None else ""),
     )
 
 

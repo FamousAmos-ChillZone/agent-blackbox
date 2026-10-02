@@ -115,6 +115,8 @@ class Ruleset:
     kill_list: Dict[str, Any] = field(default_factory=dict)
     #: R14: why the newest kill list was refused ("" = none) — the SECURITY alarm reads it.
     kill_list_refused: str = ""
+    #: R7b: "" | "STALE since <day>" | "PENDING until <day>" — the curator manifest's clock as of the last refresh.
+    curator_manifest_state: str = ""
     synced_at: float = 0.0
     context_graph_id: str = ""
     _graph_entries_cache: Dict[str, List[Dict[str, Any]]] = field(

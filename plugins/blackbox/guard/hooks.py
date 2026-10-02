@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple
-from .. import audit, detection, killlist, ruleset
+from .. import audit, detection, killlist, overrides, ruleset
 from ..kernel import config as config_mod, constants
 from ..kernel.config import BlackboxConfig
 from . import background
@@ -79,7 +79,37 @@ def _kill_list_findings(rs: Any, tool_name: str, args: Any) -> List[detection.Fi
     return [found] if found is not None else []
 
 
+def _decision(cfg: BlackboxConfig, findings: List[detection.Finding], blocking: List[detection.Finding]) -> str:
+    """What the hook DID, for the audit row: "block", "flag", or "flag (local override)"
+    when a verified rule would have blocked but the operator unblocked it here (R7b)."""
+    if blocking:
+        return "block"
+    return "flag (local override)" if _overridden(cfg, findings) else "flag"
+
+
+def _overridden(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List[detection.Finding]:
+    """Findings a local override keeps from blocking (empty unless block mode is on)."""
+    try:
+        unblocked = overrides.OverrideStore().unblocked()
+    except Exception:  # pragma: no cover - fail open: no store, no override
+        return []
+    return overrides.demote_blocking(_would_block(cfg, findings), unblocked)[1] if unblocked else []
+
+
 def _blocking(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List[detection.Finding]:
+    """The findings that block this call: :func:`_would_block` minus the
+    operator's local overrides (R7b — a reduction every operator keeps)."""
+    would = _would_block(cfg, findings)
+    if not would:
+        return []
+    try:
+        unblocked = overrides.OverrideStore().unblocked()
+    except Exception:  # pragma: no cover - fail open to the published rule
+        return would
+    return overrides.demote_blocking(would, unblocked)[0]
+
+
+def _would_block(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List[detection.Finding]:
     """The findings that block this call (empty unless block mode is on).
 
     Confirmed findings and custom rules block; community/heuristic ones only
@@ -133,7 +163,7 @@ def on_pre_tool_call(
         if findings:
             # KI-189: the audit row says what the hook DID, not only what it saw —
             # R10's "a revoked threat blocked N actions here" counts these.
-            detail["decision"] = "block" if blocking else "flag"
+            detail["decision"] = _decision(cfg, findings, blocking)
         reporting._report_and_audit(cfg, "pre_tool_call", findings, detail)
         # OSV auto-discovery runs off the blocking path so a network lookup
         # never delays or breaks the tool call.

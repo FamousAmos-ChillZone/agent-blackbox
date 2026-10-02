@@ -39,6 +39,8 @@ def apply_curator_tier(rs: compiler.Ruleset, client: DkgClient, config: Blackbox
         logger.warning("blackbox: curator revocations not applied this refresh: %s", exc)
         return 0
     _apply_kill_list(rs, client, config, view)
+    rs.curator_manifest_state = ({"stale": "STALE since ", "pending": "PENDING until "}.get(view.manifest_state, "")
+                                 + view.manifest_state_day) if view.manifest_state else ""
     removed = rs.drop_identifiers(view.revoked)
     if removed:
         logger.info("blackbox: %d verified rule(s) withdrawn by curator revocation", removed)

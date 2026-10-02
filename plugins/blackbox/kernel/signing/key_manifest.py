@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from datetime import date, timedelta
 from dataclasses import dataclass
 from typing import AbstractSet, Dict, FrozenSet, Iterable, Mapping, Optional, Tuple
 
@@ -51,6 +52,9 @@ KEY_MANIFEST_STATEMENT = "blackbox.key-manifest"
 MIN_THRESHOLD = 2
 #: The most curator keys one manifest may list (the envelope caps signatures).
 MAX_CURATOR_KEYS = 8
+#: R7b: a dated manifest is valid this long, and takes effect this long after its day (the 72 h time-lock).
+MANIFEST_VALID_DAYS = 60
+MANIFEST_TIME_LOCK_DAYS = 3
 _KEY_HEX = re.compile(r"[0-9a-f]{64}")
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 
@@ -83,6 +87,13 @@ class KeyManifest:
     #: R10b: the oldest plugin version that can read the curators' newer statements
     #: ("" = no requirement); omitted from the payload when empty, so older manifests hash the same.
     min_reader_version: str = ""
+    #: R7b: the UTC day the root signed it. A manifest is STALE MANIFEST_VALID_DAYS
+    #: later (raising statements freeze; reductions and existing rules keep working)
+    #: and takes effect only MANIFEST_TIME_LOCK_DAYS after this day. "" = no clock.
+    issued_day: str = ""
+    #: R7b: a sealed break-glass curator key — its signature counts ONLY on
+    #: statements that reduce enforcement (revocations, rejections). "" = none.
+    break_glass_key: str = ""
 
     def __post_init__(self) -> None:
         _validate(self)
@@ -105,6 +116,8 @@ class KeyManifest:
             "promotionAuthor": self.promotion_author,
             "legacyAssetsHash": self.legacy_assets_hash,
             **({"minReaderVersion": self.min_reader_version} if self.min_reader_version else {}),
+            **({"issuedDay": self.issued_day} if self.issued_day else {}),
+            **({"breakGlassKey": self.break_glass_key} if self.break_glass_key else {}),
         }
 
     def content_hash(self) -> str:
@@ -124,7 +137,10 @@ class KeyManifest:
         verified graph — advisory statements live in the community graph)."""
         signers = signing.verified_signers(statement, statement_type=statement_type, environment=self.environment,
                                            graph=graph or self.graph, chain=self.chain, root_epoch=self.root_epoch)
-        return signers & frozenset(self.curator_keys)
+        counted = signers & frozenset(self.curator_keys)
+        if self.break_glass_key and self.break_glass_key in counted and not _reduces(statement_type):
+            counted = counted - {self.break_glass_key}   # R7b: the break-glass key only ever reduces enforcement
+        return counted
 
     def has_quorum(self, statement: Optional[signing.SignedEnvelope], *, statement_type: str,
                    graph: Optional[str] = None) -> bool:
@@ -133,8 +149,40 @@ class KeyManifest:
         return len(self.curator_signers(statement, statement_type=statement_type, graph=graph)) >= self.threshold
 
 
+#: Statement types a break-glass key may sign (reduction-only; the kill-list and
+#: heartbeat live elsewhere and never reduce).
+_REDUCING_STATEMENTS = frozenset({"blackbox.revocation", "blackbox.rejection"})
+
+
+def _reduces(statement_type: str) -> bool:
+    return statement_type in _REDUCING_STATEMENTS
+
+
+def manifest_clock(manifest: KeyManifest, today: str) -> Tuple[str, str]:
+    """R7b: ("" | "pending" | "stale", detail day). A dated manifest is PENDING
+    before its time-lock ends (issued + 3 d, the day it takes effect) and
+    STALE after issued + 60 d (the day it expired). Undated: ""."""
+    if not manifest.issued_day:
+        return "", ""
+    try:
+        issued = date.fromisoformat(manifest.issued_day)
+    except ValueError:
+        return "stale", manifest.issued_day
+    effective = (issued + timedelta(days=MANIFEST_TIME_LOCK_DAYS)).isoformat()
+    expires = (issued + timedelta(days=MANIFEST_VALID_DAYS)).isoformat()
+    if today < effective:
+        return "pending", effective
+    if today > expires:
+        return "stale", expires
+    return "", expires
+
+
 def _validate(manifest: KeyManifest) -> None:
     keys = manifest.curator_keys
+    if manifest.break_glass_key and manifest.break_glass_key not in keys:
+        raise KeyManifestError("the break-glass key must be one of the curator keys")
+    if manifest.issued_day and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", manifest.issued_day):
+        raise KeyManifestError("issued_day must be a UTC day (YYYY-MM-DD)")
     if not all(isinstance(k, str) and _KEY_HEX.fullmatch(k) for k in keys):
         raise KeyManifestError("curator keys must be Ed25519 public keys (64 lower-case hex)")
     if len(set(keys)) != len(keys) or tuple(sorted(keys)) != keys:
@@ -191,6 +239,7 @@ def _from_payload(payload: Mapping[str, str]) -> Optional[KeyManifest]:
             curator_keys=tuple(k for k in payload["curatorKeys"].split(",") if k),
             threshold=int(payload["threshold"]), promotion_author=payload["promotionAuthor"],
             legacy_assets_hash=payload["legacyAssetsHash"], min_reader_version=str(payload.get("minReaderVersion") or ""),
+            issued_day=str(payload.get("issuedDay") or ""), break_glass_key=str(payload.get("breakGlassKey") or ""),
         )
     except (KeyError, ValueError):
         return None

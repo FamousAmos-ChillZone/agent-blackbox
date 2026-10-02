@@ -35,7 +35,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, AbstractSet, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
 from ...kernel import constants, signing, sparql_text
@@ -94,6 +94,13 @@ class CuratorView:
     heartbeats: Mapping[str, str] = field(default_factory=dict)
     last_statement_day: str = ""
     manifest_conflict: bool = False
+    #: R7b: "" | "pending" | "stale" with the day it takes effect / expired; while STALE,
+    #: enforcement-RAISING statements dated after the expiry are frozen out — reductions
+    #: and already-verified rules keep working.
+    manifest_state: str = ""
+    manifest_state_day: str = ""
+    #: R7b: the day the trusted manifest expires ("" when undated) — the 30-day-ahead alarm.
+    manifest_expires_day: str = ""
 
     def is_counted(self, author_key: str) -> bool:
         return author_key in self.counted
@@ -171,31 +178,62 @@ def manifests_conflict(manifests: Iterable[key_manifest.KeyManifest]) -> bool:
 
 
 def _records(rows: Iterable[Mapping[str, Any]], manifest: key_manifest.KeyManifest, graph: str,
-             verified_graph: bool) -> List[CuratorRecord]:
+             verified_graph: bool, *, root_keys: AbstractSet[str] = frozenset(),
+             curators_silent: bool = False) -> List[CuratorRecord]:
     """Verified records from one graph, keeping only types that may live there."""
     records = []
     for row in rows:
-        record = curator_statements.parse_statement(row, manifest, graph=graph)
+        record = curator_statements.parse_statement(row, manifest, graph=graph, root_keys=root_keys,
+                                                    curators_silent=curators_silent)
         if record is not None and (record.kind in VERIFIED_GRAPH_KINDS) == verified_graph:
             records.append(record)
     return records
 
 
+#: R7b: the offline root alone may sign reductions after this many days without any curator heartbeat.
+CURATOR_SILENCE_FOR_ROOT_DAYS = 7
+
+
+def _curators_silent(records: Iterable[CuratorRecord], today: str) -> bool:
+    newest = max((r.day for r in records if r.kind is CuratorStatement.HEARTBEAT), default="")
+    if not newest:
+        return True
+    try:
+        return (date.fromisoformat(today) - date.fromisoformat(newest)).days > CURATOR_SILENCE_FOR_ROOT_DAYS
+    except ValueError:
+        return True
+
+
+def _frozen_out(records: Iterable[CuratorRecord], state: str, since: str) -> List[CuratorRecord]:
+    """While the manifest is STALE, enforcement-raising statements dated after its
+    expiry are frozen out; reductions always apply (LES-016)."""
+    if state != "stale":
+        return list(records)
+    return [r for r in records if not (r.kind.raises_enforcement and r.day > since)]
+
+
 def build_view(manifest: Optional[key_manifest.KeyManifest], verified_rows: Iterable[Mapping[str, Any]],
                community_rows: Iterable[Mapping[str, Any]], *, verified_graph: str, community_graph: str,
-               today: Optional[str] = None, manifest_conflict: bool = False) -> CuratorView:
+               today: Optional[str] = None, manifest_conflict: bool = False,
+               root_keys: AbstractSet[str] = frozenset()) -> CuratorView:
     """The view from a trusted *manifest* and both graphs' statement rows."""
     if manifest is None:
         return CuratorView(manifest_conflict=manifest_conflict)
-    records = (_records(verified_rows, manifest, verified_graph, True)
-               + _records(community_rows, manifest, community_graph, False))
+    day = today or _today()
+    state, state_day = key_manifest.manifest_clock(manifest, day)
+    first_pass = _records(community_rows, manifest, community_graph, False)
+    silent = _curators_silent(first_pass, day)
+    records = _frozen_out(_records(verified_rows, manifest, verified_graph, True, root_keys=root_keys, curators_silent=silent)
+                          + _records(community_rows, manifest, community_graph, False, root_keys=root_keys,
+                                     curators_silent=silent), state, state_day)
     return CuratorView(manifest=manifest, verdicts=_current_verdicts(records),
                        counted=_counted_authors(records, today or _today()),
                        backlog=_latest(r for r in records if r.kind is CuratorStatement.BACKLOG),
                        away=tuple(r for r in records if r.kind is CuratorStatement.AWAY),
                        attestations=_current_attestations(records),
                        heartbeats=_heartbeats(records), last_statement_day=max((r.day for r in records), default=""),
-                       manifest_conflict=manifest_conflict)
+                       manifest_conflict=manifest_conflict, manifest_state=state, manifest_state_day=state_day,
+                       manifest_expires_day=(state_day if state != "pending" else key_manifest.manifest_clock(manifest, state_day)[1]))
 
 
 def _heartbeats(records: Iterable[CuratorRecord]) -> Dict[str, str]:
@@ -251,6 +289,11 @@ def _latest(records: Iterable[CuratorRecord]) -> Optional[CuratorRecord]:
 
 def _today() -> str:
     return datetime.now(timezone.utc).date().isoformat()
+
+
+def today_utc() -> str:
+    """The reader's UTC day (the clock every curator-statement span uses)."""
+    return _today()
 
 
 def counted_dispute_weight(disputes: Iterable[VerifiedDispute], view: CuratorView) -> Dict[str, int]:

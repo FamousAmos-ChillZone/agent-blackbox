@@ -49,6 +49,7 @@ def _serialize(rs: compiler.Ruleset) -> Dict[str, Any]:
         "community_fingerprint": rs.community_fingerprint,
         "kill_list": rs.kill_list,
         "kill_list_refused": rs.kill_list_refused,
+        "curator_manifest_state": rs.curator_manifest_state,
     }
 
 
@@ -96,6 +97,7 @@ def _deserialize(data: Dict[str, Any]) -> compiler.Ruleset:
     rs.community_fingerprint = str(data.get("community_fingerprint") or "")
     rs.kill_list = dict(data.get("kill_list") or {}) if isinstance(data.get("kill_list"), dict) else {}
     rs.kill_list_refused = str(data.get("kill_list_refused") or "")
+    rs.curator_manifest_state = str(data.get("curator_manifest_state") or "")
     return rs
 
 

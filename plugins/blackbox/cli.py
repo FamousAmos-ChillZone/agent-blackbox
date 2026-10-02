@@ -25,6 +25,7 @@ from .community import add_report_parser, print_community_status
 from .curate import add_curate_parser
 from .dashboard import cmd_dashboard
 from .detection import cmd_setup_llm
+from .overrides import add_rules_parser
 from .sync import cmd_sync
 
 logger = logging.getLogger(__name__)
@@ -52,9 +53,8 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
     add_blackbox_chat_args(chat)
     chat.set_defaults(func=cmd_chat)
 
-    sub.add_parser("status", help="Show config, node reachability, ruleset + findings counts").set_defaults(
-        func=_cmd_status
-    )
+    sub.add_parser("status", help="Show config, node reachability, ruleset + findings counts").set_defaults(func=_cmd_status)
+    add_rules_parser(sub)   # R7b: local overrides (unblock / reblock / list)
     sync = sub.add_parser("sync", help="Force a ruleset refresh from the DKG node")
     sync.add_argument(
         "--wait",
@@ -137,6 +137,8 @@ def _cmd_status(args: argparse.Namespace) -> int:
     print(f"  ruleset age:       {health.ruleset_age_text((time.time() - synced_at) if synced_at else None)}")
     if getattr(rs, "community_paused", False):
         print("  community ingest:  PAUSED by the curator")
+    if getattr(rs, "curator_manifest_state", ""):
+        print(f"  curator keys:      {rs.curator_manifest_state}")
     _print_health(cfg, rs, client, reachable)
     print(f"  ruleset:           {counts['injection']} injection, "
           f"{counts['escalation']} escalation, {counts['dependency']} dependency, "

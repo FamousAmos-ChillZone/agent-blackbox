@@ -40,7 +40,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from typing import Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Tuple
+from typing import AbstractSet, Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Tuple
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -117,6 +117,21 @@ def _attested_stage(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
     return dict(extras) if set(extras) == {"stage"} and extras["stage"] in ATTESTABLE_STAGES else None
 
 
+#: R7b (plan §09): a pause lasts at most this long after its signed day.
+PAUSE_MAX_DAYS = 7
+
+
+def _pause(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
+    return _days("until")(extras)
+
+
+def _pause_within_limit(day: str, until: str) -> bool:
+    try:
+        return (date.fromisoformat(until) - date.fromisoformat(day)).days <= PAUSE_MAX_DAYS
+    except ValueError:
+        return False
+
+
 def _backlog(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
     lanes = extras.get("lanes", "").split(",")
     ok = set(extras) == {"lanes", "until"} and bool(lanes) and set(lanes) <= _LANES and _DAY.fullmatch(extras["until"])
@@ -157,7 +172,7 @@ _VALIDATORS: Dict[CuratorStatement, Callable[[Mapping[str, str]], Optional[Dict[
     CuratorStatement.IN_REVIEW: _no_extras,
     CuratorStatement.DEFERRAL: _no_extras,
     CuratorStatement.DEFERRAL_LAPSED: _no_extras,
-    CuratorStatement.PAUSE: _days("until"),
+    CuratorStatement.PAUSE: _pause,
     CuratorStatement.BACKLOG: _backlog,
     CuratorStatement.AWAY: _away,
     CuratorStatement.HEARTBEAT: _heartbeat,
@@ -184,6 +199,8 @@ def _validated_payload(kind: CuratorStatement, payload: Mapping[str, str]) -> Op
     if not _identifier_ok(kind, identifier) or not _DAY.fullmatch(day):
         return None
     extras = _VALIDATORS[kind]({k: v for k, v in payload.items() if k not in ("identifier", "day")})
+    if extras is not None and kind is CuratorStatement.PAUSE and not _pause_within_limit(day, extras["until"]):
+        return None   # R7b: a pause lasts ≤ 7 days; a longer one is not a valid statement
     return None if extras is None else (identifier, day, extras)
 
 
@@ -236,7 +253,8 @@ def manifest_quads(envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
 # -- parse (reader side) -----------------------------------------------------
 
 
-def parse_statement(row: Mapping[str, Any], manifest: Optional[KeyManifest], *, graph: str) -> Optional[CuratorRecord]:
+def parse_statement(row: Mapping[str, Any], manifest: Optional[KeyManifest], *, graph: str,
+                    root_keys: AbstractSet[str] = frozenset(), curators_silent: bool = False) -> Optional[CuratorRecord]:
     """The verified curator statement in *row*, or None to ignore it.
 
     None without a trusted *manifest*, for an unknown type, a payload outside
@@ -262,10 +280,21 @@ def parse_statement(row: Mapping[str, Any], manifest: Optional[KeyManifest], *, 
         return None
     signers = manifest.curator_signers(envelope, statement_type=kind.value, graph=graph)
     needed = manifest.threshold if kind.needs_quorum else 1
-    if len(signers) < needed:
+    if len(signers) < needed and not _root_alone_reduction(envelope, kind, manifest, graph, root_keys, curators_silent):
         return None
     return CuratorRecord(kind=kind, identifier=identifier, sequence=envelope.sequence, day=day,
                          fields=tuple(sorted(extras.items())), signers=signers)
+
+
+def _root_alone_reduction(envelope: signing.SignedEnvelope, kind: CuratorStatement, manifest: KeyManifest, graph: str,
+                          root_keys: AbstractSet[str], curators_silent: bool) -> bool:
+    """R7b asymmetric safety: when no curator key has heartbeated for 7 days, the
+    offline root alone may sign a REDUCTION (revocation, rejection) — never anything else."""
+    if not curators_silent or not kind.terminal or not root_keys:
+        return False
+    signers = signing.verified_signers(envelope, statement_type=kind.value, environment=manifest.environment, graph=graph,
+                                       chain=manifest.chain, root_epoch=manifest.root_epoch)
+    return bool(signers & {k.lower() for k in root_keys})
 
 
 def curator_statements_sparql(after: str) -> str:
