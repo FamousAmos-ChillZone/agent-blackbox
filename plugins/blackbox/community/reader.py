@@ -16,12 +16,12 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, extract_binding
 from ..kernel import sparql_text
-from .statements import author_budget, curator_statements, curator_view, disputes, retractions, tombstones
+from .statements import author_budget, curator_statements, curator_view, digests, disputes, retractions, tombstones
 from .report_signer import network_environment
 from .verification import ReportVerifier, VerifiedReport, verify_report_rows
 
@@ -193,7 +193,10 @@ class CommunityRead:
     Callers act on ``state`` — an UNAVAILABLE read must never be treated as
     "no threats". Refine R2: ``disputes`` — verified disputes (display and,
     later, decay; never enforcement); ``retractions`` — verified retractions
-    (display; withdrawn reports are already left out); ``held_back`` — statements over an
+    (display; withdrawn reports are already left out); ``digests`` — verified
+    weekly sighting digests (one per author and week); ``heat`` — per threat,
+    the estimated agents that met it in the latest digest week, from counted
+    authors only (R2b); ``held_back`` — statements over an
     author's daily budget; ``pending_tombstones`` — retractions waiting for a
     report this node has not seen; ``curator`` — what the curator has said,
     verified (reports of a rejected or revoked threat no longer count).
@@ -204,6 +207,8 @@ class CommunityRead:
     reason: str = ""
     disputes: Tuple[disputes.VerifiedDispute, ...] = ()
     retractions: Tuple[retractions.VerifiedRetraction, ...] = ()
+    digests: Tuple[digests.VerifiedDigest, ...] = ()
+    heat: Mapping[str, digests.HeatEstimate] = field(default_factory=dict)
     held_back: int = 0
     pending_tombstones: int = 0
     curator: curator_view.CuratorView = field(default_factory=curator_view.CuratorView)
@@ -280,10 +285,13 @@ def _honour_statements(client: DkgClient, cfg: BlackboxConfig, environment: str,
     dispute_rows = page_community_rows(client, cfg, disputes.disputes_sparql)
     if retraction_rows is None or dispute_rows is None:
         return _unavailable("a page of retractions or disputes failed or was malformed")
+    # Digests only ADD a heat estimate: a failed page costs this read its heat, never its counts.
+    found_digests = digests.verified_digests(page_community_rows(client, cfg, digests.digests_sparql) or [],
+                                             environment, graph)
     found_retractions = retractions.verified_retractions(retraction_rows, environment, graph)
     found_disputes = disputes.verified_disputes(dispute_rows, environment, graph)
     statements = [author_budget.Statement(item.author, item.subject)
-                  for item in (*reports, *found_retractions, *found_disputes)]
+                  for item in (*reports, *found_retractions, *found_disputes, *found_digests)]
     budget = author_budget.AuthorBudget(author_budget.FirstSeenStore()).admit(statements)
     curator = read_curator_view(client, cfg, environment)
     # A threat the curator rejected or revoked stops counting here (terminal verdicts, R2).
@@ -292,9 +300,12 @@ def _honour_statements(client: DkgClient, cfg: BlackboxConfig, environment: str,
     admitted_retractions = [r for r in found_retractions if r.subject in budget.admitted]
     withdrawn, pending = tombstones.applicable_withdrawals(admitted_retractions, reports, budget.first_seen,
                                                            time.time())
+    admitted_digests = digests.one_per_author_week([d for d in found_digests if d.subject in budget.admitted],
+                                                   budget.first_seen)
     return CommunityRead(ReadState.ROWS, reports=tuple(retractions.apply_retractions(reports, withdrawn)),
                          disputes=tuple(d for d in found_disputes if d.subject in budget.admitted),
-                         retractions=tuple(admitted_retractions),
+                         retractions=tuple(admitted_retractions), digests=tuple(admitted_digests),
+                         heat=digests.heat_for_week(admitted_digests, curator, digests.latest_week(admitted_digests)),
                          held_back=budget.held_back, pending_tombstones=pending, curator=curator)
 
 

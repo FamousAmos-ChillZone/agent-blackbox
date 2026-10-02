@@ -49,6 +49,10 @@ KEY_MANIFEST_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}KeyManifest"
 CURATOR_ROOT_KEYS: Mapping[str, Tuple[str, ...]] = {}
 #: A reporter withdrawing its own report (Refine R1, lifecycle RETRACT).
 RETRACTION_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}Retraction"
+#: One reporter's weekly sighting digest (Refine R2b): verified threats met
+#: that ISO week, as count buckets. The week it covers is ``g:isoWeek``.
+SIGHTING_DIGEST_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}SightingDigest"
+ISO_WEEK_PRED = f"{BLACKBOX_ONTOLOGY}isoWeek"
 
 # Blackbox predicates -------------------------------------------------------
 IDENTIFIER_PRED = f"{BLACKBOX_ONTOLOGY}identifier"

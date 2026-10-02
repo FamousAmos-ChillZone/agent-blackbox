@@ -10,7 +10,9 @@ string is served through :func:`.safe_payloads.safe_text`.
 * ``GET /api/reports`` — the corroboration board + this node's outbound ledger.
 * ``GET /api/community-statements`` — Refine R2: every statement the reader
   honoured, with who / when / why: disputes, curator verdicts, counted
-  authors, backlog and away notices, held-back and pending counts.
+  authors, backlog and away notices, held-back and pending counts, and R2b's
+  weekly sighting digests with the per-threat heat estimate ("seen by ~N
+  agents this week").
 """
 
 from __future__ import annotations
@@ -136,6 +138,11 @@ def community_statements_payload(community_read: CommunityReadSource) -> Dict[st
         "retractions": [{"identifier": safe_text(r.identifier), "who": safe_text(r.reporter, 64),
                          "signer": safe_text(r.author[:16], 16), "when": safe_text(r.day, 16)}
                         for r in read.retractions[:_MAX_ROWS]],
+        "digests": [{"who": safe_text(d.reporter, 64), "signer": safe_text(d.author[:16], 16), "week": safe_text(d.week, 12),
+                     "threats": len(d.entries), "counted": read.curator.is_counted(d.author)}
+                    for d in read.digests[:_MAX_ROWS]],
+        "heat": [{"identifier": safe_text(h.identifier), "week": safe_text(h.week, 12), "agents": h.agents,
+                  "digests": h.digests} for h in sorted(read.heat.values(), key=lambda h: -h.agents)[:_MAX_ROWS]],
         "held_back": int(read.held_back),
         "pending_tombstones": int(read.pending_tombstones),
         "curator": _curator_payload(read.curator),

@@ -67,6 +67,10 @@ def _report_and_audit(cfg: BlackboxConfig, event: str, findings: List[detection.
         if finding.get("source") in community.NEVER_SHARED_SOURCES:
             continue
         identifier = str(finding.get("identifier") or "")
+        # R2b: a VERIFIED-tier match counts in the weekly sighting tally — repeats
+        # too, which the report cooldown below refuses. Community-only matches never do.
+        if finding.get("source") == "public":
+            community.record_verified_sighting(identifier)
         # Per-threat cooldown: a re-fire within the window adds no signal.
         # Stamped BEFORE the share attempt, so a failed share waits out the
         # window too (KI-020, accepted v1 tradeoff — the ledger records the

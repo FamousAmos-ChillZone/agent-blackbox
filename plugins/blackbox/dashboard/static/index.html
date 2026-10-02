@@ -3774,6 +3774,15 @@
     (data.retractions || []).forEach(function (r) {
       rows.push(["retraction", r.identifier, r.who, r.when, "withdrawn by its reporter"]);
     });
+    (data.heat || []).forEach(function (h) {
+      rows.push(["seen again", h.identifier, h.digests + " counted digest" + (h.digests === 1 ? "" : "s"), h.week,
+        "seen by ~" + num(h.agents) + " agent" + (h.agents === 1 ? "" : "s") + " this week"]);
+    });
+    (data.digests || []).forEach(function (d) {
+      if (d.counted) return;   // counted digests are summed into the heat rows above
+      rows.push(["sighting digest", d.threats + " verified threat" + (d.threats === 1 ? "" : "s"), d.who, d.week,
+        "new reporter \u00b7 counted 0"]);
+    });
     (curator.verdicts || []).forEach(function (v) {
       rows.push(["curator: " + v.verdict, v.identifier, v.keys + " curator key" + (v.keys === 1 ? "" : "s"), v.when, v.why || ""]);
     });

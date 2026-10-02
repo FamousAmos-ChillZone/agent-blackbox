@@ -25,6 +25,7 @@ from . import errors
 from . import fetching
 from . import community_tier
 from . import curator_tier
+from .. import community
 from . import locks
 from .memory_cache import RulesetCache
 
@@ -232,6 +233,16 @@ def _apply_overlays(rs: compiler.Ruleset, client: Optional[DkgClient], config: B
         community_tier.reapply_community_tier(rs, client, config)
     else:
         community_tier.apply_community_tier(rs, client, config, _latest_cached_ruleset(config.context_graph_id))
+    _publish_digests(client, config)
+
+
+def _publish_digests(client: DkgClient, config: BlackboxConfig) -> None:
+    """R2b: the refresh cycle is the one periodic beat, so a completed week's
+    sighting digest leaves here (when sharing is on). Fail-open."""
+    try:
+        community.publish_due_digests(client, config)
+    except Exception as exc:  # pragma: no cover - never degrade the refresh
+        logger.warning("blackbox: sighting digest not published this refresh: %s", exc)
 
 
 def _restore_tiers(rs: compiler.Ruleset, prior: compiler.Ruleset, tiers: List[str]) -> None:

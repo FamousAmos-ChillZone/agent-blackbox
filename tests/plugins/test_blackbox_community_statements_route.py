@@ -13,6 +13,8 @@ import pytest
 from plugins.blackbox.community import CommunityRead, ReadState
 from plugins.blackbox.community.statements import curator_view as cv
 from plugins.blackbox.community.statements.curator_statements import CuratorRecord
+from plugins.blackbox.community import digest
+from plugins.blackbox.community.statements.digests import HeatEstimate, VerifiedDigest
 from plugins.blackbox.community.statements.disputes import VerifiedDispute
 from plugins.blackbox.community.statements.retractions import VerifiedRetraction
 from plugins.blackbox.dashboard import community_routes
@@ -44,7 +46,13 @@ def _read():
                               reason="wrong", day="2026-10-01")
     retraction = VerifiedRetraction(author="f" * 64, identifier="ioc:domain:mine.example", subject="t",
                                     reporter="0xretractor", day="2026-10-02")
-    return CommunityRead(ReadState.ROWS, disputes=(dispute,), retractions=(retraction,), held_back=7,
+    counted_digest = VerifiedDigest(subject="g1", author="d" * 64, reporter="0x" + "d" * 40, week="2026-W40",
+                                    entries=digest.build_digest({"dep:npm:x@1": 12}))
+    newcomer_digest = VerifiedDigest(subject="g2", author="n" * 64, reporter="0xnew", week="2026-W40",
+                                     entries=digest.build_digest({"dep:npm:x@1": 400}))
+    heat = {"dep:npm:x@1": HeatEstimate(identifier="dep:npm:x@1", week="2026-W40", agents=55, digests=1)}
+    return CommunityRead(ReadState.ROWS, disputes=(dispute,), retractions=(retraction,),
+                         digests=(counted_digest, newcomer_digest), heat=heat, held_back=7,
                          pending_tombstones=2, curator=_view())
 
 
@@ -65,6 +73,9 @@ def test_statements_carry_who_when_why(configured):
     assert payload["curator"]["counted_authors"][0]["org"] == "acme"
     assert payload["curator"]["away"][0]["until"] == "2026-10-05"
     assert (payload["held_back"], payload["pending_tombstones"]) == (7, 2)
+    assert payload["heat"] == [{"identifier": "dep:npm:x@1", "week": "2026-W40", "agents": 55, "digests": 1}]
+    assert [(d["who"], d["counted"], d["threats"]) for d in payload["digests"]] == [("0x" + "d" * 40, True, 1),
+                                                                                    ("0xnew", False, 1)]
     retraction = payload["retractions"][0]
     assert (retraction["identifier"], retraction["who"], retraction["when"]) == ("ioc:domain:mine.example",
                                                                                  "0xretractor", "2026-10-02")
