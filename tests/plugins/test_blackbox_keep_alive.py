@@ -309,3 +309,26 @@ def test_the_store_file_holds_no_unexpected_fields(tmp_path):
     _remember(store, "report-a")
     data = json.loads((tmp_path / "live.json").read_text(encoding="utf-8"))
     assert set(data["live"][0]) == {"name", "graph", "identifier", "subject", "severity", "quads", "first_shared", "last_epoch"}
+
+
+def test_a_transient_empty_view_during_a_replay_never_wipes_the_tier(monkeypatch):
+    """KI-210 (bench 2026-10-02 23:23Z): a catalog replay after a peer reconnect emptied the
+    shared-memory view for ~3 minutes while the graph still held every report. An authorised-empty
+    read in that window keeps last-good; a genuinely empty graph (the probe counts nothing) applies."""
+    monkeypatch.setattr(community_tier.time, "time", lambda: NOW)
+    prior = Ruleset()
+    prior.community = _counted()
+    client = _authorised_empty()
+    monkeypatch.setattr(community_tier.community, "community_fingerprint", lambda c, cfg: "ThreatReport=7:urn:x")
+    rs = Ruleset()
+    community_tier.apply_community_tier(rs, client, CFG, prior)
+    assert rs.community == prior.community and THREAT in rs.ioc                     # last-good, still matchable
+    monkeypatch.setattr(community_tier.community, "community_fingerprint", lambda c, cfg: "")
+    rs2 = Ruleset()
+    community_tier.apply_community_tier(rs2, _authorised_empty(), CFG, prior)
+    assert THREAT in rs2.community and rs2.community[THREAT]["networkLive"] == "no"   # truly empty: R5 keeps counted threats locally
+    uncounted = Ruleset()
+    uncounted.community = _counted(counted="0")
+    rs3 = Ruleset()
+    community_tier.apply_community_tier(rs3, _authorised_empty(), CFG, uncounted)
+    assert rs3.community == {}

@@ -62,6 +62,9 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
             # Never mistake "could not read" for "no threats" (KI-112).
             _keep_last_good(rs, prior)
             return
+        if not read.reports and previous and _graph_still_has_reports(client, cfg):   # KI-210: a replay window
+            _keep_last_good(rs, prior)
+            return
         rules = community.aggregate_community_reports(read.reports, _first_seen_history(prior))
         rs.community = {rule.identifier: {**rule.as_rule(), **_stage_fields(rule, read), "networkLive": "yes"}
                         for rule in rules}
@@ -71,6 +74,20 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
         materialize_community_rules(rs)
     except Exception as exc:  # pragma: no cover - fail open at the tier boundary
         logger.debug("blackbox: community tier skipped: %s", exc)
+
+
+def _graph_still_has_reports(client: DkgClient, cfg: BlackboxConfig) -> bool:
+    """KI-210 (bench 2026-10-02): a catalog replay after a peer reconnect empties the
+    shared-memory view for a few minutes while the graph still holds every report; an
+    "authorised empty" read in that window must not wipe the tier. One aggregate probe —
+    does the graph still count any report? A failed probe answers False (never invent reports)."""
+    try:
+        if community.community_fingerprint(client, cfg) in (None, ""):
+            return False
+        logger.warning("blackbox: community read came back empty while the graph still holds reports — transient replay; last-good kept")
+        return True
+    except Exception:  # pragma: no cover - fail open to the read
+        return False
 
 
 #: R5 reader persistence: a counted threat whose network copies expired stays
