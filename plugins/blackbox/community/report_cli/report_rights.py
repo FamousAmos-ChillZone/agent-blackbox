@@ -31,8 +31,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-from .. import audit
-from ..kernel import display_safety, reporter_key, signing
+from ... import audit
+from ...kernel import display_safety, reporter_key, signing
 
 #: Identifies an export file and its layout version.
 EXPORT_FORMAT = "blackbox-reporter-export"

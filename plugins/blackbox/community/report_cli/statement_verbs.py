@@ -13,10 +13,10 @@ from __future__ import annotations
 import argparse
 from typing import Dict, List, Optional, Tuple
 
-from .. import audit
-from ..kernel import display_safety, threat_ids
-from ..kernel.dkg_client import DkgClient
-from . import report_builder, report_schema, report_signer, sharing
+from ... import audit
+from ...kernel import display_safety, threat_ids
+from ...kernel.dkg_client import DkgClient
+from .. import report_builder, report_schema, report_signer, sharing
 
 
 def send_and_record(client: DkgClient, cfg, *, identifier: str, category: str, severity: str,

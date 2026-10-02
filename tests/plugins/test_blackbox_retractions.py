@@ -16,7 +16,8 @@ import pytest
 from _community_rows import GRAPH, NETWORK, Reporter, signed_retraction_row, signed_row
 
 from plugins.blackbox import audit, cli
-from plugins.blackbox.community import ReadState, read_verified_reports, report_builder, report_command
+from plugins.blackbox.community import ReadState, read_verified_reports, report_builder
+from plugins.blackbox.community.report_cli import report_command
 from plugins.blackbox.community.report_signer import (
     DISPUTE_STATEMENT, REPORT_STATEMENT, RETRACT_STATEMENT, ReportSigner,
 )

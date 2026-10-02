@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from plugins.blackbox import cli, detection, ruleset
-from plugins.blackbox.community import report_command as report_command
+from plugins.blackbox.community.report_cli import report_command as report_command
 from plugins.blackbox.sync import command as sync_command
 from plugins.blackbox.guard import hooks
 from plugins.blackbox.guard import reporting as guard_reporting

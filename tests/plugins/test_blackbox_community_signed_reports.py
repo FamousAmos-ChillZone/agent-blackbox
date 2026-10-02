@@ -15,7 +15,8 @@ from datetime import datetime, timezone
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from plugins.blackbox.community import report_builder, report_command, report_signer, sharing
+from plugins.blackbox.community import report_builder, report_signer, sharing
+from plugins.blackbox.community.report_cli import report_command
 from plugins.blackbox.kernel import constants, signing
 from plugins.blackbox.kernel.config import BlackboxConfig
 

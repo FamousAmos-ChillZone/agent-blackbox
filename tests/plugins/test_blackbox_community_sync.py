@@ -16,7 +16,7 @@ import pytest
 from plugins.blackbox import audit, cli
 from plugins.blackbox.kernel import display_safety as display_safety
 from plugins.blackbox.community import membership
-from plugins.blackbox.community import report_command as report_command
+from plugins.blackbox.community.report_cli import report_command
 from plugins.blackbox.sync import command as sync_command
 from plugins.blackbox.kernel.config import BlackboxConfig
 

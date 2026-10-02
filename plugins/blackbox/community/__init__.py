@@ -43,7 +43,7 @@ from __future__ import annotations
 
 from .report_builder import build_false_positive_quads, build_report_quads, build_retraction_quads
 from .membership import ensure_community_subscription
-from .report_command import add_report_parser, cmd_report, print_community_status
+from .report_cli import add_report_parser, cmd_report, print_community_status
 from .sharing import NEVER_SHARED_SOURCES, CommunitySharePolicy, spawn_community_share
 from .graph_stats import community_agents, contributing_agent_count, most_reported_threats, reports_signed_by
 from .verification import ReportVerifier, VerifiedReport, verify_report_rows

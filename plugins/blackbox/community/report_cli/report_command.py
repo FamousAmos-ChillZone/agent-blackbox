@@ -11,15 +11,16 @@ from __future__ import annotations
 import argparse
 import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
-from .. import audit
-from .. import detection
-from . import graph_stats, report_builder, report_rights, report_schema, report_signer, sharing, statement_verbs
-from . import reader as graph_reader
-from ..kernel import constants, threat_ids
+from ... import audit
+from ... import detection
+from .. import graph_stats, report_builder, report_schema, report_signer, sharing
+from . import report_rights, statement_verbs
+from .. import reader as graph_reader
+from ...kernel import constants, threat_ids
 
-from ..kernel.config import load_blackbox_config
-from ..kernel.dkg_client import DkgClient
-from ..kernel import display_safety, identity, reporter_key
+from ...kernel.config import load_blackbox_config
+from ...kernel.dkg_client import DkgClient
+from ...kernel import display_safety, identity, reporter_key
 
 logger = logging.getLogger(__name__)
 

@@ -16,7 +16,7 @@ import stat
 import pytest
 
 from plugins.blackbox import audit, cli
-from plugins.blackbox.community import report_command
+from plugins.blackbox.community.report_cli import report_command
 from plugins.blackbox.kernel import reporter_key
 
 

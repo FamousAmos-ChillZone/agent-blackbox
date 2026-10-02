@@ -15,7 +15,7 @@ import argparse
 import pytest
 
 from plugins.blackbox import audit, cli
-from plugins.blackbox.community import report_command as report_command
+from plugins.blackbox.community.report_cli import report_command as report_command
 from plugins.blackbox.kernel import constants
 from plugins.blackbox.kernel import identity as kernel_identity
 from plugins.blackbox.kernel.config import BlackboxConfig
