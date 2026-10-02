@@ -375,7 +375,11 @@ def test_reapply_on_a_reused_ruleset_replaces_stale_community_entries():
     client = FakeClient(report_rows=[signed_row("ioc:domain:fresh.example", Reporter("0xr1"))])
     reapply_community_tier(rs, client, CFG)
     assert "ioc:domain:stale.example" not in rs.ioc and "ioc:domain:stale.example" not in rs.community
-    assert "ioc:domain:fresh.example" in rs.ioc
+    # Refine R3 / decision 15: ONE report from an UNLISTED author is MONITOR-only — it lives in the
+    # community store with its stage, and never materializes into the matchable lookups.
+    fresh = rs.community["ioc:domain:fresh.example"]
+    assert (fresh["stage"], fresh["enforcement"]) == ("reported", "monitor")
+    assert "ioc:domain:fresh.example" not in rs.ioc
 
 
 # ---------------------------------------------------------------------------

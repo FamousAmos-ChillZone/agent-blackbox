@@ -156,7 +156,7 @@ def test_statement_types_know_whether_they_raise_or_end_enforcement():
     assert {k for k in kinds if k.raises_enforcement} == {kinds.PROMOTION, kinds.PAUSE, kinds.CONFIRMATION,
                                                          kinds.COUNTED_AUTHORS, kinds.BACKLOG}
     assert {k for k in kinds if k.terminal} == {kinds.REVOCATION, kinds.REJECTION}
-    assert {k for k in kinds if not k.needs_quorum} == {kinds.IN_REVIEW, kinds.DEFERRAL_LAPSED, kinds.AWAY}
+    assert {k for k in kinds if not k.needs_quorum} == {kinds.IN_REVIEW, kinds.DEFERRAL, kinds.DEFERRAL_LAPSED, kinds.AWAY}
 
 
 # ------------------------------------------------------------------ legacy corpus

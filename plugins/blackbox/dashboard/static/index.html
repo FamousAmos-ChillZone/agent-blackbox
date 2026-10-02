@@ -4162,7 +4162,7 @@
             kind: "leaf", cat: ck, label: leafLabel(t),
             color: CATS[ck].color, ring: SEV_COLOR[sev] || SEV_COLOR.info,
             severity: sev, identifier: t.identifier || "", name: t.name || "", val: 5,
-            tier: tier
+            tier: tier, stage: t.stage || "", stageReason: t.stageReason || "", enforcement: t.enforcement || ""
           });
           links.push({ source: nodes[nodes.length - 1].id, target: parentId, kind: "leaf" });
         });
@@ -4759,6 +4759,8 @@
         '<span class="t-cat">' + esc(meta.name) + '</span>' +
       '</div>' +
       (tmeta.length ? '<div class="t-cat">' + esc(tmeta.join(" · ")) + '</div>' : '') +
+      (node.stage ? '<div class="t-cat">stage: ' + esc(node.stage) + ' (local) · ' + esc(node.enforcement || "") +
+        (node.stageReason ? ' — ' + esc(node.stageReason) : '') + '</div>' : '') +
     '</div>';
   }
 

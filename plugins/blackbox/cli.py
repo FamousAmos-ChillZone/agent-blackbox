@@ -85,7 +85,7 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
     detach_p.add_argument("--openclaw-only", action="store_true", help="Only detach from OpenClaw workspaces")
     detach_p.set_defaults(func=cmd_detach)
 
-    add_report_parser(sub)
+    add_report_parser(sub, compiled_community=lambda cfg: ruleset.peek(cfg).community)
 
     dash = sub.add_parser("dashboard", help="Start the local Blackbox dashboard")
     dash.add_argument("--port", type=int, help="Override dashboard port")

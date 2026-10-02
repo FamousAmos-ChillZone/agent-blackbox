@@ -13,6 +13,7 @@ Usage (inside ruleset/): ``community_tier.apply_community_tier(rs, client, cfg, 
 from __future__ import annotations
 
 import logging
+import time
 from typing import Dict, Optional
 
 from .. import community
@@ -61,7 +62,7 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
             _keep_last_good(rs, prior)
             return
         rules = community.aggregate_community_reports(read.reports, _first_seen_history(prior))
-        rs.community = {rule.identifier: rule.as_rule() for rule in rules}
+        rs.community = {rule.identifier: {**rule.as_rule(), **_stage_fields(rule, read)} for rule in rules}
         materialize_community_rules(rs)
     except Exception as exc:  # pragma: no cover - fail open at the tier boundary
         logger.debug("blackbox: community tier skipped: %s", exc)
@@ -82,6 +83,15 @@ def reapply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: Blackbo
             del table[key]
     apply_community_tier(rs, client, cfg, rs)
     rs._graph_entries_cache.clear()
+
+
+def _stage_fields(rule: community.CommunityRule, read: community.CommunityRead) -> Dict[str, str]:
+    """R3: the threat's local stage, from the same inputs every node has —
+    its signers, the curator view, counted disputes and the current verdict."""
+    dispute_weight = community.counted_dispute_weight(read.disputes, read.curator).get(rule.identifier, 0)
+    result = community.stage_for(rule.identifier, rule.authors, rule.first_seen, read.curator, dispute_weight,
+                                 read.curator.verdict(rule.identifier), time.time())
+    return result.as_fields()
 
 
 def _first_seen_history(prior: Optional[compiler.Ruleset]) -> Dict[str, float]:
@@ -107,8 +117,13 @@ def materialize_community_rules(rs: compiler.Ruleset) -> None:
 
     Only identifier-keyed O(1) structures — nothing community-sourced ever
     reaches a pattern compile or scan list. Public rules keep precedence.
+    R3: only rules whose local stage allows FLAG are matchable; MONITOR-level
+    ones (unlisted authors only, held, deferred, rejected, revoked, expired)
+    stay in the display store and never fire in the hot path.
     """
     for identifier, rule in rs.community.items():
+        if rule.get("enforcement") == "monitor":
+            continue
         if identifier.startswith("dep:"):
             eco = str(rule.get("packageEcosystem") or "").lower()
             pkg = str(rule.get("packageName") or "").lower()

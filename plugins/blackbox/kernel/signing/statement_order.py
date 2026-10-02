@@ -52,6 +52,7 @@ class CuratorStatement(Enum):
     REVOCATION = "blackbox.revocation"           # a verified threat is withdrawn (reduces; terminal)
     REJECTION = "blackbox.rejection"             # a reported threat is refused (reduces; terminal)
     IN_REVIEW = "blackbox.in-review"             # the curator acknowledged a report (advisory)
+    DEFERRAL = "blackbox.deferral"               # corroborated but no independent evidence yet (advisory; §09: single-key)
     DEFERRAL_LAPSED = "blackbox.deferral-lapsed"  # a DEFERRED threat lapsed after 30 d (advisory)
     AWAY = "blackbox.away"                       # one curator key is away {key, from, until} (advisory)
 
@@ -70,8 +71,9 @@ class CuratorStatement(Enum):
         """True when the statement needs the manifest's full threshold of
         curator keys (2-of-3). Plan §09: promotion, rejection, revocation, the
         denylist (counted-author list) and anything raising enforcement or
-        suppressing an alarm. Only in-review, deferral-lapsed and away notices
-        are single-key: they never change enforcement."""
+        suppressing an alarm. Only in-review, deferral, deferral-lapsed and
+        away notices are single-key: they never raise enforcement (deferring
+        is single-key by §09)."""
         return self not in _SINGLE_KEY
 
 
@@ -80,7 +82,8 @@ _TERMINAL = frozenset({CuratorStatement.REVOCATION, CuratorStatement.REJECTION})
 _RAISING = frozenset({CuratorStatement.PROMOTION, CuratorStatement.PAUSE, CuratorStatement.CONFIRMATION,
                       CuratorStatement.COUNTED_AUTHORS, CuratorStatement.BACKLOG})
 #: The only statements one curator key may make alone.
-_SINGLE_KEY = frozenset({CuratorStatement.IN_REVIEW, CuratorStatement.DEFERRAL_LAPSED, CuratorStatement.AWAY})
+_SINGLE_KEY = frozenset({CuratorStatement.IN_REVIEW, CuratorStatement.DEFERRAL, CuratorStatement.DEFERRAL_LAPSED,
+                         CuratorStatement.AWAY})
 
 
 @dataclass(frozen=True)

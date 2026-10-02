@@ -21,6 +21,8 @@ Public surface:
   :func:`build_retraction_quads` — the
   privacy-safe statements a report or dispute shares (write side).
 * :func:`read_verified_reports` — THE community read: fetch + verify (R0c/R0d).
+* :func:`stage_for` (+ :class:`Stage`, :class:`Enforcement`, :class:`StageResult`) —
+  a community threat's local stage from the counted-author list (R3).
 * :func:`record_verified_sighting` / :func:`publish_due_digests` — the
   seen-again counter: tally verified matches, publish one weekly digest (R2b).
 * :func:`contributing_agent_count`, :func:`community_agents`,
@@ -45,6 +47,8 @@ from .verification import ReportVerifier, VerifiedReport, verify_report_rows
 from .report_signer import network_environment
 from .aggregation import CommunityRule, aggregate_community_reports
 from .digest import publish_due_digests, record_verified_sighting
+from .stages import Enforcement, Stage, StageResult, stage_for
+from .statements.curator_view import counted_dispute_weight
 from .reader import (
     COMMUNITY_PAUSE_SUBJECT,
     community_pause_active,
@@ -80,7 +84,12 @@ __all__ = [
     "network_environment",
     "fetch_community_report_rows",
     "print_community_status",
+    "Enforcement",
+    "Stage",
+    "StageResult",
+    "counted_dispute_weight",
     "publish_due_digests",
+    "stage_for",
     "read_curator_view",
     "record_verified_sighting",
     "read_verified_reports",

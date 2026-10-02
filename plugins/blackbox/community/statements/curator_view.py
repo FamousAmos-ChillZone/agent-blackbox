@@ -54,7 +54,7 @@ VERIFIED_GRAPH_KINDS = frozenset({CuratorStatement.PROMOTION, CuratorStatement.R
                                   CuratorStatement.PAUSE, CuratorStatement.COUNTED_AUTHORS})
 #: Statement types that decide a threat's verdict.
 _VERDICT_KINDS = frozenset({CuratorStatement.CONFIRMATION, CuratorStatement.REJECTION, CuratorStatement.REVOCATION,
-                            CuratorStatement.IN_REVIEW, CuratorStatement.DEFERRAL_LAPSED})
+                            CuratorStatement.IN_REVIEW, CuratorStatement.DEFERRAL, CuratorStatement.DEFERRAL_LAPSED})
 
 
 @dataclass(frozen=True)

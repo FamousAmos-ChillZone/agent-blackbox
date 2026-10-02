@@ -58,6 +58,8 @@ class CommunityRule:
     first_seen: float
     last_seen: float
     fields: "tuple[tuple[str, str], ...]" = ()
+    #: The verified signer keys behind it (Refine R3: stages count counted clusters among them).
+    authors: "tuple[str, ...]" = ()
 
     _CLAMP = 256
 
@@ -127,6 +129,7 @@ def aggregate_community_reports(
             first_seen=float(prior_first_seen.get(identifier, now)),
             last_seen=now,
             fields=tuple(sorted(slot["fields"].items())),
+            authors=tuple(sorted(slot["authors"])),
         )
         for identifier, slot in grouped.items()
     ]

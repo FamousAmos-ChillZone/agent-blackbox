@@ -78,6 +78,9 @@ def _copy_community_stats(entry: Dict[str, Any], rule: Dict[str, Any]) -> None:
     entry["reporterCount"] = int(rule.get("reporterCount") or 0)
     entry["firstSeen"] = rule.get("firstSeen")
     entry["lastSeen"] = rule.get("lastSeen")
+    for key in ("stage", "stageReason", "stageSource", "enforcement", "disputed"):   # Refine R3
+        if rule.get(key):
+            entry[key] = rule[key]
 
 
 @dataclass

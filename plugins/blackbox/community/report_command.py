@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from .. import audit
 from .. import detection
 from . import graph_stats, report_builder, report_rights, report_schema, report_signer, sharing, statement_verbs
@@ -218,14 +218,21 @@ _REPORT_FLAGS: Tuple[Tuple[Tuple[str, ...], Dict[str, Any]], ...] = (
 )
 
 
-def add_report_parser(sub: "argparse._SubParsersAction") -> None:
+#: cfg -> the compiled community store ({identifier: rule dict with stage fields}).
+CompiledCommunity = Callable[[Any], Dict[str, Dict[str, Any]]]
+
+
+def add_report_parser(sub: "argparse._SubParsersAction", *, compiled_community: Optional[CompiledCommunity] = None) -> None:
     """Register ``blackbox report`` and its flags (:data:`_REPORT_FLAGS`) on
     the CLI's sub-parsers. Called once by ``cli.setup_cli``; the parsed
-    namespace goes to :func:`cmd_report`."""
+    namespace goes to :func:`cmd_report`. *compiled_community* is injected by
+    the composition root (the ruleset depends on this package, not the other
+    way round): ``--status`` prints each community threat's local stage from
+    it (R3)."""
     report = sub.add_parser("report", help="Report a threat to the community graph / view your contributions")
     for flags, options in _REPORT_FLAGS:
         report.add_argument(*flags, **options)
-    report.set_defaults(func=cmd_report)
+    report.set_defaults(func=cmd_report, compiled_community=compiled_community)
 
 
 def cmd_report(args: argparse.Namespace) -> int:
@@ -238,7 +245,7 @@ def cmd_report(args: argparse.Namespace) -> int:
     """
     cfg = load_blackbox_config()
     if args.status or report_rights.wants_local_verb(args):   # local verbs: no node, nothing sent
-        return _report_status(cfg) if args.status else report_rights.run_local_verb(args)
+        return _local_verb(cfg, args)
     if not cfg.community_enabled:
         if not cfg.community_graph_id:
             print("Community sharing is dormant: no community graph is configured.")
@@ -308,12 +315,41 @@ def _reporting_identity(client: DkgClient, graph: str) -> Optional[Tuple[str, re
     return reporter, signer
 
 
+#: Most community threats `report --status` lists with their stage.
+_STATUS_STAGE_ROWS = 25
+
+
+def _print_stages(community_rules: Dict[str, Dict[str, Any]]) -> None:
+    """R3: every community threat's local stage and reason (counts per stage,
+    then the first rows) — the compiled ruleset's view, so it is offline-safe."""
+    staged = [(ident, rule) for ident, rule in community_rules.items() if rule.get("stage")]
+    if not staged:
+        return
+    by_stage: Dict[str, int] = {}
+    for _ident, rule in staged:
+        by_stage[str(rule["stage"])] = by_stage.get(str(rule["stage"]), 0) + 1
+    print("Community threats by local stage: " + ", ".join(f"{s} {n}" for s, n in sorted(by_stage.items())))
+    for ident, rule in staged[:_STATUS_STAGE_ROWS]:
+        print(f"  [{display_safety.term_safe(rule['stage'], 12)} · {display_safety.term_safe(rule.get('enforcement'), 8)}]  "
+              f"{display_safety.term_safe(ident, 80)}  — {display_safety.term_safe(rule.get('stageReason'), 110)}")
+    if len(staged) > _STATUS_STAGE_ROWS:
+        print(f"  … and {len(staged) - _STATUS_STAGE_ROWS} more (the dashboard lists them all).")
+
+
 #: How a ledger outcome is shown (community.ShareOutcome values).
 _OUTCOME_LABELS = {"accepted": "ok", "already-shared": "already shared", "failed": "FAILED"}
 
 
-def _report_status(cfg) -> int:
-    """Lifecycle TRACK: the ledger first (offline-safe), Q9 when reachable."""
+def _local_verb(cfg, args: argparse.Namespace) -> int:
+    """``--status``, or one of the identity-rights verbs: no node, nothing sent."""
+    if args.status:
+        return _report_status(cfg, getattr(args, "compiled_community", None))
+    return report_rights.run_local_verb(args)
+
+
+def _report_status(cfg, compiled_community: Optional[CompiledCommunity] = None) -> int:
+    """Lifecycle TRACK: the ledger first (offline-safe), Q9 when reachable,
+    then every community threat's local stage (R3) from the compiled store."""
     rows = audit.read_share_ledger(limit=50)
     if not rows:
         print("No community reports from this node yet.")
@@ -336,6 +372,8 @@ def _report_status(cfg) -> int:
                 # never rows that merely claim our address.
                 count = graph_stats.reports_signed_by(read.reports, own_author)
                 print(f"On the community graph: {count} verified report(s) signed by this node.")
+            if compiled_community is not None:
+                _print_stages(compiled_community(cfg))
         except Exception as exc:
             logger.debug("blackbox: report --status graph read failed: %s", exc)
     return 0
