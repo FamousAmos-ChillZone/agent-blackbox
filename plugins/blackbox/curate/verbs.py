@@ -16,14 +16,16 @@ confirmations, rejections, deferrals and notices -> the COMMUNITY graph.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import replace
-from typing import Dict, Iterable, List, Mapping, Optional, Tuple
+from datetime import date, datetime, timezone
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from .. import audit, community
-from ..kernel import node_routes, signing, threat_ids
+from .. import audit, community, killlist
+from ..kernel import health, node_routes, signing, threat_ids
 from ..kernel.signing import key_manifest
 from ..kernel.signing.statement_order import CuratorStatement
 from . import consent, dossier, keys, promotion, transport
@@ -138,6 +140,58 @@ def propose_graduation(ctx: CurateContext, store: ProposalStore, *, key: str, ad
     return proposal
 
 
+def curator_alarms(ctx: CurateContext, compiled: Optional[Any], *, today: str, now: float,
+                   ledger: Optional[reputation.ReputationLedger] = None) -> List[health.HealthItem]:
+    """R10b: the curator-audience alarms from this node's own facts — the queue
+    (depth and lane ages against the SLA), the private ledger (drift), the
+    reader's first-seen trail (report velocity), the share retries and the
+    counted list's expiries. Never shown to operators."""
+    from . import queue as queue_mod
+    from .context import verified_identifiers
+    lane_depth: Dict[int, int] = {}
+    lane_over: Dict[int, int] = {}
+    if compiled is not None:
+        view = queue_mod.delta_view(compiled.community, verified_identifiers(compiled))
+        for item in view.new:
+            lane_depth[item.lane.value] = lane_depth.get(item.lane.value, 0) + 1
+            first_seen = float((compiled.community.get(item.identifier) or {}).get("firstSeen") or now)
+            if now - first_seen > health.LANE_SLA_DAYS.get(item.lane.value, 14) * 86_400:
+                lane_over[item.lane.value] = lane_over.get(item.lane.value, 0) + 1
+    book = ledger or reputation.ReputationLedger()
+    established = [k for k in book.keys() if book.standing(k).band is reputation.ReputationBand.ESTABLISHED]
+    below = sum(1 for k in established if book.reputation(k, today) < reputation.REPUTATION_FLOOR)
+    today_count, mean, sigma = _report_velocity(now)
+    expiring = sum(1 for entry in ctx.view.counted.values()
+                   if 0 <= _days_until(entry.expires, today) <= 30)
+    inputs = health.CuratorInputs(lane_depth=lane_depth, lane_over_sla=lane_over, established_below_floor=below,
+                                  established_total=len(established), reports_today=today_count, velocity_mean=mean,
+                                  velocity_sigma=sigma, shares_given_up=community.share_retry_stats().given_up,
+                                  expiring_keys=expiring)
+    return health.curator_health(inputs)
+
+
+def _days_until(day: str, today: str) -> int:
+    try:
+        return (date.fromisoformat(day) - date.fromisoformat(today)).days
+    except ValueError:
+        return 10**6
+
+
+def _report_velocity(now: float, days: int = 14) -> Tuple[int, float, float]:
+    """(statements first seen today, mean per day, σ) over the last *days* days,
+    from the reader's first-seen trail (``community_first_seen.json``)."""
+    first_seen, _ = community.first_seen_trail()
+    buckets = [0] * days
+    for seen_at in first_seen.values():
+        age = int((now - float(seen_at)) // 86_400)
+        if 0 <= age < days:
+            buckets[age] += 1
+    history = buckets[1:]
+    mean = sum(history) / len(history) if history else 0.0
+    sigma = (sum((x - mean) ** 2 for x in history) / len(history)) ** 0.5 if history else 0.0
+    return buckets[0], mean, sigma
+
+
 def _stored(store: ProposalStore, kind: str, identifier: str, envelope: signing.SignedEnvelope, graph: str,
             checks: Mapping[str, str]) -> Proposal:
     proposal = Proposal.new(kind, identifier, envelope, graph, checks=checks).transition(ProposalState.PROPOSED)
@@ -152,9 +206,30 @@ def send(ctx: CurateContext, proposal: Proposal, peer: str) -> Dict[str, object]
 # -- approve (second key) ----------------------------------------------------------
 
 
+def propose_kill_list(ctx: CurateContext, store: ProposalStore, *, entries: List[Dict[str, str]]) -> Proposal:
+    """R14: first signature on a kill list (the next version); wide or popular
+    kills still need the root to co-sign at approval (`approve --root`)."""
+    _require_manifest(ctx)
+    parsed = [killlist.KillEntry.from_json(item) for item in entries]
+    if not parsed or any(e is None for e in parsed):
+        raise VerbError("every kill-list entry needs registry (skill|mcp), identifier, action (disable|warn) and a closed reason")
+    version = next_sequence(ctx, store, "kill-list")
+    kill_list = killlist.KillList(version=version, day=datetime.now(timezone.utc).date().isoformat(),
+                                  entries=tuple(e for e in parsed if e is not None))
+    key = keys.curator_key_store().load_or_create()
+    try:
+        envelope = killlist.sign_kill_list(kill_list, key, ctx.manifest, ctx.verified_graph)
+    except ValueError as exc:
+        raise VerbError(str(exc)) from exc
+    return _stored(store, killlist.KILL_LIST_STATEMENT, "kill-list", envelope, ctx.verified_graph,
+                   {signing.public_key_hex(key): f"{len(kill_list.entries)} entries, {len(kill_list.disables)} disables"})
+
+
 def approve(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, evidence: str,
-            typed_code: Optional[str], yes: bool) -> Tuple[Proposal, str]:
-    """Second signature + consent + publish. Returns (proposal, what happened)."""
+            typed_code: Optional[str], yes: bool, root: bool = False) -> Tuple[Proposal, str]:
+    """Second signature + consent + publish. Returns (proposal, what happened).
+    *root* (SANDBOX, kill lists): also add the root key's signature — the third
+    signature a wide or popular kill needs (R14)."""
     _require_manifest(ctx)
     proposal = store.get(proposal_id)
     if proposal is None or proposal.state is not ProposalState.PROPOSED:
@@ -169,6 +244,8 @@ def approve(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, evide
             raise VerbError("a promotion needs your own item-1 evidence (--evidence advisory:<id> …); each key checks the truth itself")
         _validated_promotion(envelope)   # KI-195: never cosign a payload you did not check yourself
     cosigned = signing.cosign(envelope, my_key)
+    if root and proposal.kind == killlist.KILL_LIST_STATEMENT:
+        cosigned = signing.cosign(cosigned, keys.root_key_store().load_or_create())
     proposal = proposal.with_envelope(cosigned, {signing.public_key_hex(my_key): evidence or "n/a"})
     proposal = proposal.transition(ProposalState.APPROVED)
     store.save(proposal)
@@ -215,6 +292,8 @@ def _has_quorum(ctx: CurateContext, proposal: Proposal, envelope: signing.Signed
         return True   # root-signed; verified by readers against the pinned roots
     if ctx.manifest is None:
         return False
+    if proposal.kind == killlist.KILL_LIST_STATEMENT:
+        return ctx.manifest.has_quorum(envelope, statement_type=killlist.KILL_LIST_STATEMENT, graph=proposal.graph)
     if proposal.kind == CuratorStatement.PROMOTION.value:
         signers = signing.verified_signers(envelope, statement_type=envelope.statement_type,
                                            environment=ctx.manifest.environment, graph=proposal.graph,
@@ -232,6 +311,10 @@ def _write(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedEnvel
         quads = promotion.verified_rule_quads(dict(envelope.payload), envelope)
         name = promotion.asset_name(proposal.identifier)
         node_routes.publish_to_verified_memory(ctx.client, ctx.verified_graph, name, quads)
+        return name, ctx.verified_graph
+    if proposal.kind == killlist.KILL_LIST_STATEMENT:
+        name = f"kill-list-{envelope.sequence}"
+        node_routes.publish_to_verified_memory(ctx.client, ctx.verified_graph, name, killlist.kill_list_quads(envelope))
         return name, ctx.verified_graph
     if proposal.kind == MANIFEST_KIND:
         quads = community.key_manifest_quads(envelope)

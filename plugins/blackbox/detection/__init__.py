@@ -21,7 +21,8 @@ Usage::
 from __future__ import annotations
 
 from . import osv, reviewer
-from .action_parsing import FETCH_TOOL_PREFIXES, SENSITIVE_PATH_CATEGORIES, file_access_arg, parse_dependency_installs, parse_downloads, parse_shell_reads
+from .action_parsing import (FETCH_TOOL_PREFIXES, SENSITIVE_PATH_CATEGORIES, file_access_arg, parse_dependency_installs,
+                             parse_downloads, parse_shell_reads, skill_install_arg)
 from .content_scanners import SKILL_DANGER_SHAPES
 from .osv import DEPENDENCY_ECOSYSTEMS, advisory_kind
 from .reviewer_setup import cmd_setup_llm
@@ -51,6 +52,7 @@ __all__ = [
     "SHELL_TOOLS",
     "SKILL_DANGER_SHAPES",
     "Finding",
+    "skill_install_arg",
     "cmd_setup_llm",
     "command_from_args",
     "detect_all",

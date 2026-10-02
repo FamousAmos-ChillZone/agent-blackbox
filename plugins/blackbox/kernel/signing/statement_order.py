@@ -56,6 +56,7 @@ class CuratorStatement(Enum):
     DEFERRAL = "blackbox.deferral"               # corroborated but no independent evidence yet (advisory; §09: single-key)
     DEFERRAL_LAPSED = "blackbox.deferral-lapsed"  # a DEFERRED threat lapsed after 30 d (advisory)
     AWAY = "blackbox.away"                       # one curator key is away {key, from, until} (advisory)
+    HEARTBEAT = "blackbox.heartbeat"             # one curator key is alive {key} (advisory; R10b: silent >48 h alarms)
 
     @property
     def terminal(self) -> bool:
@@ -85,7 +86,7 @@ _RAISING = frozenset({CuratorStatement.PROMOTION, CuratorStatement.PAUSE, Curato
                       CuratorStatement.COUNTED_AUTHORS, CuratorStatement.BACKLOG})
 #: The only statements one curator key may make alone.
 _SINGLE_KEY = frozenset({CuratorStatement.IN_REVIEW, CuratorStatement.DEFERRAL, CuratorStatement.DEFERRAL_LAPSED,
-                         CuratorStatement.AWAY})
+                         CuratorStatement.AWAY, CuratorStatement.HEARTBEAT})
 
 
 @dataclass(frozen=True)

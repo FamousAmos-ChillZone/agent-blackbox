@@ -85,6 +85,12 @@ class FirstSeenStore:
         self._clock = clock
         self._lock = threading.Lock()
 
+    def snapshot(self) -> Tuple[Dict[str, float], Optional[float]]:
+        """Read-only: ({subject-hash: first-seen epoch}, baseline) — never writes
+        (``observe`` keeps only the subjects it is given, so it must not be used to peek)."""
+        with self._lock:
+            return self._load()
+
     def observe(self, subjects: Iterable[str]) -> Tuple[Dict[str, float], float]:
         """({subject: first-seen epoch}, baseline_until) for *subjects*.
 

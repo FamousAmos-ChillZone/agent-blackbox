@@ -26,7 +26,7 @@ import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import List, Optional, Protocol, Set
+from typing import Any, Iterable, List, Optional, Protocol, Set
 
 from . import keys
 from .queue import DeltaView, QueueItem
@@ -53,6 +53,8 @@ class IntakeEvent:
 class IntakeSink(Protocol):
     def notify(self, event: IntakeEvent) -> None: ...
 
+    def notify_alarm(self, item: Any) -> None: ...
+
 
 class WebhookSink:
     """POSTs each event as JSON to *url*. Fail-open: a failed delivery is logged, never raised."""
@@ -61,13 +63,54 @@ class WebhookSink:
         self._url = url
 
     def notify(self, event: IntakeEvent) -> None:
-        data = json.dumps(asdict(event)).encode("utf-8")
+        self._post(asdict(event), event.identifier)
+
+    def notify_alarm(self, item: Any) -> None:
+        """R10b: a curator-audience alarm ({audience, class, message, what_to_do})."""
+        self._post({"kind": "alarm", **item.as_dict()}, item.message)
+
+    def _post(self, body: dict, what: str) -> None:
+        data = json.dumps(body).encode("utf-8")
         request = urllib.request.Request(self._url, data=data, headers={"Content-Type": "application/json"}, method="POST")
         try:
             with urllib.request.urlopen(request, timeout=_WEBHOOK_TIMEOUT):
                 pass
         except (urllib.error.URLError, OSError, ValueError) as exc:
-            logger.warning("blackbox curate: intake webhook failed for %s: %s", event.identifier, exc)
+            logger.warning("blackbox curate: webhook failed for %s: %s", what, exc)
+
+
+class AlarmWatcher:
+    """R10b: delivers each curator alarm ONCE per message to the sink (same shape as the intake watcher)."""
+
+    def __init__(self, path: Optional[Path] = None) -> None:
+        self._path = path or (keys.curate_home() / "alarms_seen.json")
+        self._lock = threading.Lock()
+
+    def poll(self, items: Iterable[Any], sink: "IntakeSink") -> List[str]:
+        """Notify *sink* of every alarm message not delivered before; returns them."""
+        with self._lock:
+            seen = _load_seen(self._path)
+            fresh = [item for item in items if item.message not in seen]
+            for item in fresh:
+                sink.notify_alarm(item)
+            seen.update(item.message for item in fresh)
+            _save_seen(self._path, seen)
+        return [item.message for item in fresh]
+
+
+def _load_seen(path: Path) -> Set[str]:
+    try:
+        return set(str(x) for x in json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, ValueError, TypeError):
+        return set()
+
+
+def _save_seen(path: Path, seen: Set[str]) -> None:
+    kept = sorted(seen)[-_MAX_SEEN:]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
+    tmp.write_text(json.dumps(kept), encoding="utf-8")
+    os.replace(tmp, path)
 
 
 class IntakeWatcher:

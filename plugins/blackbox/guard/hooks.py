@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple
-from .. import audit, detection, ruleset
+from .. import audit, detection, killlist, ruleset
 from ..kernel import config as config_mod, constants
 from ..kernel.config import BlackboxConfig
 from . import background
@@ -69,6 +69,16 @@ def _dedupe_api_findings(findings: List[detection.Finding], detail: Dict[str, An
 # ---------------------------------------------------------------------------
 
 
+def _kill_list_findings(rs: Any, tool_name: str, args: Any) -> List[detection.Finding]:
+    """R14: the kill-list finding for this call, if any (fail-open: a bad cached list kills nothing)."""
+    try:
+        found = killlist.finding_for(killlist.KillList.from_cache(getattr(rs, "kill_list", None)), tool_name, args)
+    except Exception as exc:  # pragma: no cover - fail open
+        logger.debug("blackbox: kill-list check skipped: %s", exc)
+        return []
+    return [found] if found is not None else []
+
+
 def _blocking(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List[detection.Finding]:
     """The findings that block this call (empty unless block mode is on).
 
@@ -109,14 +119,10 @@ def on_pre_tool_call(
         _record_activity(tool_name, args)
         raw = detection.detect_all(tool_name, args, rs, discover=cfg.discover)
         raw += detection.detect_custom_fileaccess(tool_name, args, cfg.protected_paths)
+        raw += _kill_list_findings(rs, tool_name, args)   # R14: curator-signed DISABLE / WARN, last-good list
         findings = reporting._flag_worthy(cfg, raw)
-        detail = {
-            "tool_name": tool_name,
-            "session_id": session_id,
-            "task_id": task_id,
-            "tool_call_id": tool_call_id,
-            "args": audit.redact(args),
-        }
+        detail = {"tool_name": tool_name, "session_id": session_id, "task_id": task_id,
+                  "tool_call_id": tool_call_id, "args": audit.redact(args)}
         # Build the heavier conversation context only on a finding, so routine
         # tool calls stay lean in the audit log.
         if findings:

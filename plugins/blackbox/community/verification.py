@@ -26,9 +26,11 @@ Usage::
 
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta, timezone
+
 import logging
 from dataclasses import dataclass
-from typing import Any, Iterable, List, Mapping, Optional, Tuple
+from typing import Dict, Any, Iterable, List, Mapping, Optional, Tuple
 
 from ..kernel import constants, signing, threat_ids
 from ..kernel.dkg_client import extract_binding
@@ -85,9 +87,13 @@ class ReportVerifier:
     Stateless after construction; safe to share across threads.
     """
 
-    def __init__(self, environment: str, graph: str) -> None:
+    def __init__(self, environment: str, graph: str, today: Optional[str] = None) -> None:
         self._environment = environment
         self._graph = graph
+        self._today = today or _utc_today()
+        #: R10b: why rows were dropped — "env_mismatch" (signed for another network / graph:
+        #: a config mistake), "future_dated" (a modified client), "other" (unsigned / forged).
+        self.drops: Dict[str, int] = {"env_mismatch": 0, "future_dated": 0, "other": 0}
 
     def verify(self, row: Mapping[str, Any]) -> Optional[VerifiedReport]:
         """The verified report for *row*, or None when it must be dropped."""
@@ -95,8 +101,13 @@ class ReportVerifier:
         author = signing.verify(envelope, statement_type=REPORT_STATEMENT,
                                 environment=self._environment, graph=self._graph)
         if author is None or envelope is None:
+            mismatch = envelope is not None and (envelope.environment, envelope.graph) != (self._environment, self._graph)
+            self.drops["env_mismatch" if mismatch else "other"] += 1
             return None
         payload = envelope.payload
+        if payload.get("day", "") > _tomorrow(self._today):
+            self.drops["future_dated"] += 1
+            return None
         identifier = payload.get("identifier", "")
         reporter = payload.get("reporter", "")
         severity = payload.get("severity", "")
@@ -118,6 +129,18 @@ class ReportVerifier:
         return VerifiedReport(subject=payload["subject"], identifier=identifier, author=author,
                               reporter=reporter, severity=severity, fields=fields,
                               framework=payload.get("framework", ""))
+
+
+def _utc_today() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _tomorrow(today: str) -> str:
+    """Rows dated after tomorrow (UTC) are future-dated: a day of clock skew is allowed."""
+    try:
+        return (date.fromisoformat(today) + timedelta(days=1)).isoformat()
+    except ValueError:
+        return today
 
 
 def _agreed_evidence(row: Mapping[str, Any], payload: Mapping[str, str]) -> Optional[Tuple[Tuple[str, str], ...]]:

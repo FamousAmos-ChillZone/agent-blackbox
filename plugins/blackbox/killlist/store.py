@@ -1,0 +1,69 @@
+"""The last-good kill list on disk (R14) — what the hook enforces.
+
+The ruleset refresh writes here only after a list passed the signature
+check and the blast-radius gates; the hook reads here on every call.
+Anything that goes wrong on the way (an unreadable graph, a bad signature,
+a refused version, a clock problem) simply never writes, so the last good
+list stays in force. One lock, atomic tmp+rename, the plugin's store shape.
+
+Usage::
+
+    store = LastGoodStore()                       # $BLACKBOX_HOME/kill_list.json
+    store.current()                               # KillList or None
+    store.remember(decision, kill_list.day)       # after gates.admit accepted a version
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import secrets
+import threading
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+from ..kernel import constants
+from .gates import Decision
+from .statement import KillEntry, KillList
+
+logger = logging.getLogger(__name__)
+_STORE_FILE = "kill_list.json"
+
+
+class LastGoodStore:
+    def __init__(self, path: Optional[Path] = None) -> None:
+        self._path = path or (constants.blackbox_home() / _STORE_FILE)
+        self._lock = threading.Lock()
+
+    def current(self) -> Optional[KillList]:
+        with self._lock:
+            return self._load()
+
+    def remember(self, decision: Decision, day: str) -> None:
+        """Persist the entries a decision put in force (refused decisions are not written)."""
+        if decision.refused:
+            return
+        with self._lock:
+            self._save(KillList(version=decision.version, day=day, entries=decision.applied))
+
+    def _load(self) -> Optional[KillList]:
+        try:
+            data: Dict[str, Any] = json.loads(self._path.read_text(encoding="utf-8"))
+            entries = [KillEntry.from_json(item) for item in data.get("entries", []) if isinstance(item, dict)]
+            if any(e is None for e in entries):
+                return None
+            return KillList(version=int(data.get("version", 0)), day=str(data.get("day") or ""),
+                            entries=tuple(e for e in entries if e is not None))
+        except (OSError, ValueError, TypeError, AttributeError):
+            return None
+
+    def _save(self, kill_list: KillList) -> None:
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
+            tmp.write_text(json.dumps({"version": kill_list.version, "day": kill_list.day,
+                                       "entries": [e.as_json() for e in kill_list.entries]}), encoding="utf-8")
+            os.replace(tmp, self._path)
+        except OSError as exc:
+            logger.warning("blackbox: could not save the kill list (%s); the previous one stays in force", exc)

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import replace, dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from ..kernel import constants
@@ -23,6 +23,7 @@ from ..kernel.dkg_client import DkgClient, extract_binding
 from ..kernel import sparql_text
 from .statements import author_budget, curator_statements, curator_view, digests, disputes, retractions, tombstones
 from .report_signer import network_environment
+from ..kernel.signing import key_manifest
 from .verification import ReportVerifier, VerifiedReport, verify_report_rows
 
 logger = logging.getLogger(__name__)
@@ -211,6 +212,9 @@ class CommunityRead:
     heat: Mapping[str, digests.HeatEstimate] = field(default_factory=dict)
     held_back: int = 0
     pending_tombstones: int = 0
+    #: R10b: rows dropped because they were signed for another network / graph, or dated in the future.
+    env_mismatch: int = 0
+    future_dated: int = 0
     curator: curator_view.CuratorView = field(default_factory=curator_view.CuratorView)
 
     @property
@@ -265,8 +269,10 @@ def read_verified_reports(client: DkgClient, cfg: BlackboxConfig) -> CommunityRe
         if _empty_is_authorised(client, cfg.community_graph_id):
             return CommunityRead(ReadState.AUTHORISED_EMPTY)
         return _unavailable("empty read without proof of a synced subscription")
-    reports, _dropped = verify_report_rows(rows, ReportVerifier(environment, cfg.community_graph_id))
-    return _honour_statements(client, cfg, environment, reports)
+    verifier = ReportVerifier(environment, cfg.community_graph_id)
+    reports, _dropped = verify_report_rows(rows, verifier)
+    read = _honour_statements(client, cfg, environment, reports)
+    return replace(read, env_mismatch=verifier.drops["env_mismatch"], future_dated=verifier.drops["future_dated"])
 
 
 def _honour_statements(client: DkgClient, cfg: BlackboxConfig, environment: str,
@@ -323,12 +329,15 @@ def read_curator_view(client: DkgClient, cfg: BlackboxConfig, environment: str =
     if not environment or not roots:
         return curator_view.CuratorView()
     verified, memory = cfg.context_graph_id, constants.VIEW_VERIFIABLE_MEMORY
-    manifest = curator_view.newest_trusted_manifest(
-        page_rows(client, verified, memory, curator_view.key_manifests_sparql) or [], environment, verified, roots)
+    manifests = curator_view.trusted_manifests(page_rows(client, verified, memory, curator_view.key_manifests_sparql) or [],
+                                               environment, verified, roots)
+    manifest = key_manifest.newest(manifests)
+    conflict = curator_view.manifests_conflict(manifests)   # R10b SECURITY alarm
     if manifest is None:
-        return curator_view.CuratorView()
+        return curator_view.CuratorView(manifest_conflict=conflict)
     community_rows = (page_community_rows(client, cfg, curator_statements.curator_statements_sparql) or []
                       if cfg.community_graph_id else [])
     return curator_view.build_view(manifest, page_rows(client, verified, memory,
                                                        curator_statements.curator_statements_sparql) or [],
-                                   community_rows, verified_graph=verified, community_graph=cfg.community_graph_id)
+                                   community_rows, verified_graph=verified, community_graph=cfg.community_graph_id,
+                                   manifest_conflict=conflict)

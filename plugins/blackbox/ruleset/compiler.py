@@ -110,6 +110,11 @@ class Ruleset:
     #: probe against it instead of baselining blind, so reports that arrived
     #: while no process was beating are applied on the first beat.
     community_fingerprint: str = ""
+    #: R14: the curators' kill list in force (killlist.KillList.as_cache()); {} = none.
+    #: Written only after a list passed its signatures and gates — else last-good stays.
+    kill_list: Dict[str, Any] = field(default_factory=dict)
+    #: R14: why the newest kill list was refused ("" = none) — the SECURITY alarm reads it.
+    kill_list_refused: str = ""
     synced_at: float = 0.0
     context_graph_id: str = ""
     _graph_entries_cache: Dict[str, List[Dict[str, Any]]] = field(

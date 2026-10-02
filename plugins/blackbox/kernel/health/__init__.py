@@ -24,6 +24,9 @@ Usage::
 
 from __future__ import annotations
 
+from datetime import date, datetime, timezone
+
+from .. import constants
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, List, Mapping, Optional
@@ -77,10 +80,27 @@ class HealthInputs:
     held_back: int = 0
     pending_shares: int = 0
     shares_given_up: int = 0
+    #: R10b (plan §12): the full operator set.
+    curators_last_day: str = ""          # newest day any curator statement carries ("" = none)
+    today: str = ""                      # UTC day the inputs were gathered
+    heartbeat_missing_keys: int = 0      # curator keys with no heartbeat in HEARTBEAT_SILENCE_DAYS
+    manifest_conflict: bool = False      # two trusted manifests, one order, different content
+    min_reader_version: str = ""         # the manifest's floor; my_version is constants.__version__
+    my_version: str = ""
+    env_mismatch_rows: int = 0           # rows signed for another network / graph
+    future_dated_rows: int = 0           # rows dated after tomorrow
+    kill_list_version: int = 0           # the kill list in force (0 = none)
+    kill_list_refused: str = ""          # why the newest kill list was refused (last-good kept)
 
 
 #: A ruleset older than this many sync intervals is stale.
 STALE_INTERVALS = 2.0
+#: Curators silent this long → INFO (verified rules still enforce).
+CURATOR_SILENCE_DAYS = 14
+#: A curator key without a heartbeat this long → INFO (plan §09: >48 h).
+HEARTBEAT_SILENCE_DAYS = 2
+
+_CURATOR = "curator"
 
 _OPERATOR = "operator"
 
@@ -91,7 +111,48 @@ def operator_health(inputs: HealthInputs) -> List[HealthItem]:
     items += _node_and_ruleset(inputs)
     if inputs.community_configured:
         items += _community(inputs)
+        items += _trust(inputs)
     return sorted(items, key=lambda item: (item.klass is HealthClass.INFO, item.message))
+
+
+def _version_tuple(text: str) -> tuple:
+    return tuple(int(part) for part in text.split(".") if part.isdigit())
+
+
+def _days_between(earlier: str, later: str) -> int:
+    try:
+        return (date.fromisoformat(later) - date.fromisoformat(earlier)).days
+    except ValueError:
+        return 0
+
+
+def _trust(inputs: HealthInputs) -> List[HealthItem]:
+    """R10b: the states about the curators and the trust layer (plan §12)."""
+    items = []
+    if inputs.curator_trusted and inputs.curators_last_day and inputs.today \
+            and _days_between(inputs.curators_last_day, inputs.today) > CURATOR_SILENCE_DAYS:
+        items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"curators have not published since {inputs.curators_last_day}",
+                                "nothing to do — protection unchanged; verified rules still enforce"))
+    if inputs.heartbeat_missing_keys:
+        items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"curator heartbeat missing for {inputs.heartbeat_missing_keys} key(s)",
+                                "nothing to do — new promotions and appeals may pause; flags and blocks unaffected"))
+    if inputs.manifest_conflict:
+        items.append(HealthItem(_OPERATOR, HealthClass.SECURITY, "curator key manifest CONFLICT: two trusted manifests disagree",
+                                "the graph is frozen at the last trusted version; blocks still enforce — update Blackbox and tell the curators"))
+    if inputs.min_reader_version and _version_tuple(inputs.min_reader_version) > _version_tuple(inputs.my_version):
+        items.append(HealthItem(_OPERATOR, HealthClass.ACTION,
+                                f"the curators require Blackbox {inputs.min_reader_version}; this node runs {inputs.my_version}",
+                                "update Blackbox to read the curators' newer statements; current rules keep enforcing"))
+    if inputs.env_mismatch_rows:
+        items.append(HealthItem(_OPERATOR, HealthClass.ACTION, f"{inputs.env_mismatch_rows} community row(s) signed for another network or graph",
+                                "check the community graph id and the node URL in the Blackbox config"))
+    if inputs.future_dated_rows:
+        items.append(HealthItem(_OPERATOR, HealthClass.SECURITY, f"{inputs.future_dated_rows} future-dated community row(s) ignored",
+                                "nothing to do — a modified client is on the graph; its rows are ignored"))
+    if inputs.kill_list_refused:
+        items.append(HealthItem(_OPERATOR, HealthClass.SECURITY, f"the newest kill list was refused: {inputs.kill_list_refused}",
+                                f"nothing to do — the last-good kill list (v{inputs.kill_list_version}) stays in force; tell the curators"))
+    return items
 
 
 def _node_and_ruleset(inputs: HealthInputs) -> List[HealthItem]:
@@ -143,6 +204,61 @@ def _community(inputs: HealthInputs) -> List[HealthItem]:
     return items
 
 
+@dataclass(frozen=True)
+class CuratorInputs:
+    """R10b curator-audience facts (gathered on the curator node): ``lane_depth``
+    ({lane number: items}), ``lane_over_sla`` ({lane number: items older than
+    the lane's SLA}), ``established_below_floor`` / ``established_total``
+    (reputation drift), ``reports_today`` with ``velocity_mean`` and
+    ``velocity_sigma`` over the recent days, ``shares_given_up``, and
+    ``expiring_keys`` (counted authors whose listing ends within 30 days)."""
+
+    lane_depth: Mapping[int, int] = None  # type: ignore[assignment]
+    lane_over_sla: Mapping[int, int] = None  # type: ignore[assignment]
+    established_below_floor: int = 0
+    established_total: int = 0
+    reports_today: int = 0
+    velocity_mean: float = 0.0
+    velocity_sigma: float = 0.0
+    shares_given_up: int = 0
+    expiring_keys: int = 0
+
+
+#: Per-lane review SLA in days (plan §09 tiers: disputes/revocations and blockable-with-evidence first).
+LANE_SLA_DAYS = {1: 2, 2: 2, 3: 7, 4: 14, 5: 14}
+#: Reputation drift: this share of established reporters under the floor alarms.
+DRIFT_SHARE = 0.25
+
+
+def curator_health(inputs: CuratorInputs) -> List[HealthItem]:
+    """The curator-audience alarms (plan §12 'Curator-only'); delivered to the
+    curator webhook only, never to an operator surface."""
+    items: List[HealthItem] = []
+    over = {lane: n for lane, n in (inputs.lane_over_sla or {}).items() if n}
+    if over:
+        text = ", ".join(f"lane {lane}: {n}" for lane, n in sorted(over.items()))
+        items.append(HealthItem(_CURATOR, HealthClass.ACTION, f"queue items beyond their lane SLA ({text})",
+                                "review the oldest items first, or publish a BACKLOG notice for the lanes you cannot serve"))
+    depth = sum((inputs.lane_depth or {}).values())
+    if depth:
+        items.append(HealthItem(_CURATOR, HealthClass.INFO, f"queue depth {depth} across {len(inputs.lane_depth or {})} lane(s)", "nothing to do"))
+    if inputs.established_total and inputs.established_below_floor / inputs.established_total >= DRIFT_SHARE:
+        items.append(HealthItem(_CURATOR, HealthClass.ACTION,
+                                f"reputation drift: {inputs.established_below_floor} of {inputs.established_total} established reporters are under the floor",
+                                "review the graduation rule and the recent rejections (`curate graduate`)"))
+    if inputs.velocity_sigma > 0 and inputs.reports_today > inputs.velocity_mean + 3 * inputs.velocity_sigma:
+        items.append(HealthItem(_CURATOR, HealthClass.SECURITY,
+                                f"report velocity {inputs.reports_today} today is more than 3σ above the recent mean ({inputs.velocity_mean:.1f})",
+                                "look for a flood or a ring before counting anything; consider a PAUSE notice"))
+    if inputs.shares_given_up:
+        items.append(HealthItem(_CURATOR, HealthClass.ACTION, f"{inputs.shares_given_up} of this node's shares failed after retries",
+                                "check the node's subscription to the community graph"))
+    if inputs.expiring_keys:
+        items.append(HealthItem(_CURATOR, HealthClass.INFO, f"{inputs.expiring_keys} counted-author listing(s) expire within 30 days",
+                                "renew with `curate propose --nominate` before they lapse"))
+    return sorted(items, key=lambda item: (item.klass is HealthClass.INFO, item.message))
+
+
 def render_lines(items: List[HealthItem]) -> List[str]:
     """The CLI view: one line per item, class first, what-to-do after a dash."""
     if not items:
@@ -163,6 +279,7 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
     share-retry counts (``community.share_retry_stats()``)."""
     view = getattr(read, "curator", None)
     revoked = {ident: int(blocked_by_identifier.get(ident, 0)) for ident in (view.revoked if view is not None else ())}
+    kill_list = getattr(rs, "kill_list", None) or {}
     return HealthInputs(
         node_reachable=node_reachable,
         ruleset_age_s=(now - getattr(rs, "synced_at", 0)) if getattr(rs, "synced_at", 0) else None,
@@ -178,7 +295,30 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         held_back=int(getattr(read, "held_back", 0) or 0),
         pending_shares=int(pending_shares),
         shares_given_up=int(shares_given_up),
+        curators_last_day=(view.last_statement_day if view is not None else ""),
+        today=datetime.fromtimestamp(now, timezone.utc).date().isoformat(),
+        heartbeat_missing_keys=_heartbeat_missing(view, now),
+        manifest_conflict=bool(view is not None and view.manifest_conflict),
+        min_reader_version=(view.manifest.min_reader_version if view is not None and view.manifest is not None else ""),
+        my_version=constants.__version__,
+        env_mismatch_rows=int(getattr(read, "env_mismatch", 0) or 0),
+        future_dated_rows=int(getattr(read, "future_dated", 0) or 0),
+        kill_list_version=int(kill_list.get("version", 0) or 0) if isinstance(kill_list, dict) else 0,
+        kill_list_refused=str(getattr(rs, "kill_list_refused", "") or ""),
     )
+
+
+def _heartbeat_missing(view: Any, now: float) -> int:
+    """Curator keys in the trusted manifest with no heartbeat inside HEARTBEAT_SILENCE_DAYS."""
+    if view is None or view.manifest is None:
+        return 0
+    today = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
+    missing = 0
+    for key in view.manifest.curator_keys:
+        last = view.heartbeats.get(key, "")
+        if not last or _days_between(last, today) > HEARTBEAT_SILENCE_DAYS:
+            missing += 1
+    return missing
 
 
 def ruleset_age_text(age_s: Optional[float]) -> str:

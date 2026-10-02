@@ -35,7 +35,7 @@
     "detection/skill_detection.py::detect_skill": 69,
     "detection/detectors.py::discover_dependency_candidates": 52,
     "detection/reviewer_setup.py::cmd_setup_llm": 102,
-    "guard/hooks.py::on_pre_tool_call": 49,
+    "guard/hooks.py::on_pre_tool_call": 45,
     "kernel/config.py::load_blackbox_config": 150,
     "kernel/settings.py::_validate": 99,
     "ruleset/compiler.py::Ruleset.graph_entries": 47,

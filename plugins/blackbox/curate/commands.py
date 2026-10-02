@@ -14,6 +14,7 @@ cli.py, the composition root.
 from __future__ import annotations
 
 import argparse
+import json
 import time
 from typing import Any, Callable, Dict, Optional
 
@@ -49,6 +50,7 @@ def add_curate_parser(sub: "argparse._SubParsersAction", *, compiled_ruleset: Op
     a = verbs_.add_parser("approve", help="Second key: co-sign, consent, publish")
     a.add_argument("proposal_id")
     a.add_argument("--evidence", default="", help="your own item-1 evidence (promotions)")
+    a.add_argument("--root", action="store_true", help="SANDBOX: add the root signature (wide / popular kills, R14)")
     _add_consent(a)
     p = verbs_.add_parser("publish", help="Publish an APPROVED proposal (after consent)")
     p.add_argument("proposal_id")
@@ -77,6 +79,7 @@ def _add_propose(verbs_: Any) -> None:
     what.add_argument("--attest", nargs=2, metavar=("STAGE", "IDENTIFIER"),
                       help="stage attestation (R3-attest): reported | held | corroborated | deferred")
     what.add_argument("--pause", action="store_true", help="pause community ingest (needs --until)")
+    what.add_argument("--kill-list", dest="kill_list", metavar="FILE", help="R14: a JSON list of kill entries (next version)")
     p.add_argument("--severity", default="critical")
     p.add_argument("--evidence", default="", help="item 1: advisory:<id> | registry-action:<url> | reproduced:<sha256>")
     p.add_argument("--reason", default="", help="verdict reason / scope reason")
@@ -228,6 +231,9 @@ def _propose(args: argparse.Namespace) -> int:
         kind = CuratorStatement(f"blackbox.{args.verdict[0]}")
         fields = {"reason": args.reason} if args.reason else {}
         proposal = verbs.propose_statement(ctx, store, kind=kind, identifier=args.verdict[1], fields=fields, evidence=args.evidence)
+    elif args.kill_list:
+        with open(args.kill_list, encoding="utf-8") as handle:
+            proposal = verbs.propose_kill_list(ctx, store, entries=json.load(handle))
     elif args.attest:
         proposal = verbs.propose_statement(ctx, store, kind=CuratorStatement.ATTESTATION, identifier=args.attest[1],
                                            fields={"stage": args.attest[0]}, evidence=args.evidence)
@@ -269,7 +275,7 @@ def _inbox(args: argparse.Namespace) -> int:
 
 def _approve(args: argparse.Namespace) -> int:
     proposal, outcome = verbs.approve(_ctx(args), ProposalStore(), args.proposal_id, evidence=args.evidence,
-                                      typed_code=args.code, yes=args.yes)
+                                      typed_code=args.code, yes=args.yes, root=args.root)
     print(f"{proposal.id}: {outcome}")
     return 0 if proposal.state is ProposalState.PUBLISHED or "published" in outcome else 2
 
@@ -305,6 +311,7 @@ def _manifest(args: argparse.Namespace) -> int:
 def _watch(args: argparse.Namespace) -> int:
     ctx = _ctx(args)
     watcher = intake.IntakeWatcher()
+    alarms = intake.AlarmWatcher()
     sink = intake.WebhookSink(args.webhook)
     while True:
         compiled = args.compiled_ruleset(ctx.cfg) if args.compiled_ruleset else None
@@ -312,6 +319,9 @@ def _watch(args: argparse.Namespace) -> int:
             announced = watcher.poll(queue.delta_view(compiled.community, verified_identifiers(compiled)), sink)
             if announced:
                 print(f"announced {len(announced)} new threat(s): " + ", ".join(_term(a, 60) for a in announced[:10]))
+        delivered = alarms.poll(verbs.curator_alarms(ctx, compiled, today=_today(), now=time.time()), sink)   # R10b
+        if delivered:
+            print(f"delivered {len(delivered)} curator alarm(s)")
         if args.once:
             return 0
         time.sleep(max(5.0, args.interval))

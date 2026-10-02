@@ -62,6 +62,7 @@ from . import allowlist, reputation
 from .pulse import PULSE
 from .pulse import fingerprint as community_fingerprint
 from .statements.lifetimes import lifetime_days
+from .statements.author_budget import FirstSeenStore as _FirstSeenStore
 from .share_retry import retry_due_shares, share_retry_stats
 from .stages import Enforcement, Stage, StageResult, stage_for
 from .statements.curator_view import VERIFIED_GRAPH_KINDS, CuratorView, counted_dispute_weight
@@ -75,9 +76,17 @@ from .reader import (
     fetch_community_report_rows,
     CommunityRead,
     ReadState,
+    page_rows,
     read_curator_view,
     read_verified_reports,
 )
+from .statements.curator_view import trusted_roots as curator_trusted_roots
+
+
+def first_seen_trail():
+    """R10b: ({subject hash: first-seen epoch}, baseline) from the reader's budget trail — read-only."""
+    return _FirstSeenStore().snapshot()
+
 
 __all__ = [
     "COMMUNITY_PAUSE_SUBJECT",
@@ -117,12 +126,15 @@ __all__ = [
     "reputation",
     "allowlist",
     "lifetime_days",
+    "first_seen_trail",
     "PULSE",
     "community_fingerprint",
     "retry_due_shares",
     "share_retry_stats",
     "stage_for",
     "read_curator_view",
+    "page_rows",
+    "curator_trusted_roots",
     "record_verified_sighting",
     "read_verified_reports",
     "reports_signed_by",

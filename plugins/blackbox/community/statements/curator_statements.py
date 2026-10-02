@@ -123,6 +123,10 @@ def _backlog(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
     return dict(extras) if ok else None
 
 
+def _heartbeat(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
+    return dict(extras) if set(extras) == {"key"} and _KEY_HEX.fullmatch(extras["key"]) else None
+
+
 def _away(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
     ok = (set(extras) == {"key", "from", "until"} and _KEY_HEX.fullmatch(extras["key"])
           and _DAY.fullmatch(extras["from"]) and _DAY.fullmatch(extras["until"]))
@@ -156,6 +160,7 @@ _VALIDATORS: Dict[CuratorStatement, Callable[[Mapping[str, str]], Optional[Dict[
     CuratorStatement.PAUSE: _days("until"),
     CuratorStatement.BACKLOG: _backlog,
     CuratorStatement.AWAY: _away,
+    CuratorStatement.HEARTBEAT: _heartbeat,
     CuratorStatement.COUNTED_AUTHORS: _counted_author,
 }
 
@@ -163,7 +168,7 @@ _VALIDATORS: Dict[CuratorStatement, Callable[[Mapping[str, str]], Optional[Dict[
 def _identifier_ok(kind: CuratorStatement, identifier: str) -> bool:
     if kind is CuratorStatement.COUNTED_AUTHORS:   # "author:<reporter key>" — the signer, never a claimed address
         return identifier.startswith("author:") and bool(_KEY_HEX.fullmatch(identifier[len("author:"):]))
-    if kind in (CuratorStatement.BACKLOG, CuratorStatement.AWAY, CuratorStatement.PAUSE):
+    if kind in (CuratorStatement.BACKLOG, CuratorStatement.AWAY, CuratorStatement.PAUSE, CuratorStatement.HEARTBEAT):
         return identifier == "curator"
     try:
         return report_schema.validate_statement_identifier(identifier) == identifier

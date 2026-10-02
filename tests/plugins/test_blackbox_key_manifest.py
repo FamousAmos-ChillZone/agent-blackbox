@@ -157,7 +157,8 @@ def test_statement_types_know_whether_they_raise_or_end_enforcement():
                                                          kinds.COUNTED_AUTHORS, kinds.BACKLOG,
                                                          kinds.ATTESTATION}   # R3-attest: an attested stage can raise to flag
     assert {k for k in kinds if k.terminal} == {kinds.REVOCATION, kinds.REJECTION}
-    assert {k for k in kinds if not k.needs_quorum} == {kinds.IN_REVIEW, kinds.DEFERRAL, kinds.DEFERRAL_LAPSED, kinds.AWAY}
+    assert {k for k in kinds if not k.needs_quorum} == {kinds.IN_REVIEW, kinds.DEFERRAL, kinds.DEFERRAL_LAPSED, kinds.AWAY,
+                                                         kinds.HEARTBEAT}   # R10b: a key beats for itself
 
 
 # ------------------------------------------------------------------ legacy corpus

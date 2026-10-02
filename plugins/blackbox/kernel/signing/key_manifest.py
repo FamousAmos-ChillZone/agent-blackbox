@@ -80,6 +80,9 @@ class KeyManifest:
     threshold: int
     promotion_author: str
     legacy_assets_hash: str
+    #: R10b: the oldest plugin version that can read the curators' newer statements
+    #: ("" = no requirement); omitted from the payload when empty, so older manifests hash the same.
+    min_reader_version: str = ""
 
     def __post_init__(self) -> None:
         _validate(self)
@@ -101,6 +104,7 @@ class KeyManifest:
             "threshold": str(self.threshold),
             "promotionAuthor": self.promotion_author,
             "legacyAssetsHash": self.legacy_assets_hash,
+            **({"minReaderVersion": self.min_reader_version} if self.min_reader_version else {}),
         }
 
     def content_hash(self) -> str:
@@ -186,7 +190,7 @@ def _from_payload(payload: Mapping[str, str]) -> Optional[KeyManifest]:
             root_epoch=int(payload["rootEpoch"]), version=int(payload["version"]),
             curator_keys=tuple(k for k in payload["curatorKeys"].split(",") if k),
             threshold=int(payload["threshold"]), promotion_author=payload["promotionAuthor"],
-            legacy_assets_hash=payload["legacyAssetsHash"],
+            legacy_assets_hash=payload["legacyAssetsHash"], min_reader_version=str(payload.get("minReaderVersion") or ""),
         )
     except (KeyError, ValueError):
         return None

@@ -89,6 +89,11 @@ class CuratorView:
     backlog: Optional[CuratorRecord] = None
     away: Tuple[CuratorRecord, ...] = ()
     attestations: Mapping[str, CuratorRecord] = field(default_factory=dict)
+    #: R10b: newest heartbeat day per curator key; the newest day any curator statement carries;
+    #: True when two trusted manifests share an order with different content (SECURITY).
+    heartbeats: Mapping[str, str] = field(default_factory=dict)
+    last_statement_day: str = ""
+    manifest_conflict: bool = False
 
     def is_counted(self, author_key: str) -> bool:
         return author_key in self.counted
@@ -139,13 +144,30 @@ def newest_trusted_manifest(rows: Iterable[Mapping[str, Any]], environment: str,
     """The newest manifest (by root epoch, version) signed by one of *roots*."""
     if not roots:
         return None
+    return key_manifest.newest(trusted_manifests(rows, environment, graph, roots))
+
+
+def trusted_manifests(rows: Iterable[Mapping[str, Any]], environment: str, graph: str,
+                      roots: AbstractSet[str]) -> List[key_manifest.KeyManifest]:
+    """Every root-signed manifest in *rows* for this environment and graph."""
     manifests = []
     for row in rows:
         envelope = signing.from_text(extract_binding(row.get(curator_statements.SIGNED_STATEMENT_VAR)))
         manifest = key_manifest.verify_manifest(envelope, environment=environment, graph=graph, root_keys=roots)
         if manifest is not None:
             manifests.append(manifest)
-    return key_manifest.newest(manifests)
+    return manifests
+
+
+def manifests_conflict(manifests: Iterable[key_manifest.KeyManifest]) -> bool:
+    """R10b SECURITY: two trusted manifests with the same (root epoch, version)
+    but different content — someone published a second truth."""
+    seen: Dict[Tuple[int, int], str] = {}
+    for manifest in manifests:
+        digest = manifest.content_hash()
+        if seen.setdefault(manifest.order, digest) != digest:
+            return True
+    return False
 
 
 def _records(rows: Iterable[Mapping[str, Any]], manifest: key_manifest.KeyManifest, graph: str,
@@ -161,17 +183,28 @@ def _records(rows: Iterable[Mapping[str, Any]], manifest: key_manifest.KeyManife
 
 def build_view(manifest: Optional[key_manifest.KeyManifest], verified_rows: Iterable[Mapping[str, Any]],
                community_rows: Iterable[Mapping[str, Any]], *, verified_graph: str, community_graph: str,
-               today: Optional[str] = None) -> CuratorView:
+               today: Optional[str] = None, manifest_conflict: bool = False) -> CuratorView:
     """The view from a trusted *manifest* and both graphs' statement rows."""
     if manifest is None:
-        return CuratorView()
+        return CuratorView(manifest_conflict=manifest_conflict)
     records = (_records(verified_rows, manifest, verified_graph, True)
                + _records(community_rows, manifest, community_graph, False))
     return CuratorView(manifest=manifest, verdicts=_current_verdicts(records),
                        counted=_counted_authors(records, today or _today()),
                        backlog=_latest(r for r in records if r.kind is CuratorStatement.BACKLOG),
                        away=tuple(r for r in records if r.kind is CuratorStatement.AWAY),
-                       attestations=_current_attestations(records))
+                       attestations=_current_attestations(records),
+                       heartbeats=_heartbeats(records), last_statement_day=max((r.day for r in records), default=""),
+                       manifest_conflict=manifest_conflict)
+
+
+def _heartbeats(records: Iterable[CuratorRecord]) -> Dict[str, str]:
+    """Newest heartbeat day per curator key (only a key beating for ITSELF counts)."""
+    newest: Dict[str, str] = {}
+    for record in records:
+        if record.kind is CuratorStatement.HEARTBEAT and record.field("key") in record.signers:
+            newest[record.field("key")] = max(newest.get(record.field("key"), ""), record.day)
+    return newest
 
 
 def _current_verdicts(records: Iterable[CuratorRecord]) -> Dict[str, CuratorRecord]:
