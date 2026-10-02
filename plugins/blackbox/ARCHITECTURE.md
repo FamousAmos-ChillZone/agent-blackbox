@@ -26,7 +26,7 @@ way, and every package used only through its public entry (`__init__.py`).
 
 | Module | Owns | Entry | May depend on |
 |---|---|---|---|
-| `kernel` | constants + ontology IRIs, config and settings, the DKG HTTP client, threat identifiers, RDF terms, SPARQL escaping, YAML files, terminal-safe display, this node's identity, secret redaction | `kernel/__init__.py` (each kernel module is public) | — |
+| `kernel` | constants + ontology IRIs, config and settings, the DKG HTTP client, threat identifiers, RDF terms, SPARQL escaping, YAML files, terminal-safe display, this node's identity, secret redaction, signed statements (the `kernel/signing/` sub-package) and the reporter key | `kernel/__init__.py` (each kernel module is public; `kernel/signing` through its `__init__`) | — |
 | `attach` | finding Hermes homes and OpenClaw workspaces, copying the plugin in, enabling/disabling it; `blackbox attach` / `detach` | `attach/__init__.py` | `kernel` |
 | `detection` | the pure detectors, action parsing, content scanners, escalation shapes, OSV lookups, the LLM reviewer; `blackbox setup-llm` | `detection/__init__.py` | `kernel`, `attach` |
 | `audit` | local findings / activity logs, redaction, the private audit record, the outbound share ledger + cooldown + daily cap | `audit/__init__.py` | `kernel` |

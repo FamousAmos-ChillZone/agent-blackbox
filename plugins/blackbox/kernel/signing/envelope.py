@@ -20,7 +20,7 @@ address is the roster's job, not this module's.
 
 Usage::
 
-    from ..kernel import signing
+    from ..kernel import signing          # the package re-exports this module's API
     envelope = signing.sign(private_key, statement_type="blackbox.report",
                             environment="sim", graph=graph_id,
                             payload={"identifier": "ioc:domain:x.example"})
