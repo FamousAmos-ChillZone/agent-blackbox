@@ -868,7 +868,7 @@ def create_app(*, manage_blackbox: bool = False):
     from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 
     from .. import attach, audit, community, ruleset
-    from ..kernel import reporter_key, settings
+    from ..kernel import settings
     from ..sync import state as sync_state
     from ..kernel import constants
     from ..kernel.config import load_blackbox_config
@@ -1281,27 +1281,24 @@ def create_app(*, manage_blackbox: bool = False):
             threading.Thread(target=_run, name="blackbox-swr", daemon=True).start()
         return cur
 
-    def _verified_reports(cfg: Any) -> List[Any]:
-        """THE community read behind every dashboard statistic (R0d): verified reports,
-        counted by signer; stale-while-revalidate, so the node read never blocks a request."""
+    def _community_read(cfg: Any) -> Any:
+        """THE community read behind every dashboard statistic (R0d): the whole verified
+        CommunityRead (reports counted by signer; disputes, curator view, budget — R2), or
+        None before the first lands; stale-while-revalidate, so it never blocks a request."""
         def _load() -> Any:
             if not getattr(cfg, "community_graph_id", "") or not _node_reachable(cfg):
                 return None   # keep the cached value; retry next poll
             try:
                 read = community.read_verified_reports(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home), cfg)
-                return list(read.reports) if read.available else None  # unavailable: keep cached
+                return read if read.available else None  # unavailable: keep cached
             except Exception as exc:  # pragma: no cover - fail open
                 logger.debug("blackbox dashboard: community read failed: %s", exc)
                 return None
-        return _swr("community:verified", _load, []) or []
+        return _swr("community:verified", _load, None)
 
-    def _own_reporter_author() -> str:
-        """This node's signer key, or "" before it has ever signed a report."""
-        store = reporter_key.ReporterKeyStore()
-        try:
-            return store.public_key_hex() if store.path.exists() else ""
-        except reporter_key.ReporterKeyError:
-            return ""
+    def _verified_reports(cfg: Any) -> List[Any]:
+        read = _community_read(cfg)
+        return list(read.reports) if read is not None else []
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> Any:
@@ -1740,7 +1737,7 @@ def create_app(*, manage_blackbox: bool = False):
         # field. They feed the separate `community_agents` list — a remote
         # reporter is NOT an agent connected to this Blackbox.
         reports = _verified_reports(cfg)
-        own_author = _own_reporter_author()
+        own_author = community_routes.own_reporter_author()
         own_by_framework = Counter(r.framework.lower() for r in reports if own_author and r.author == own_author)
         for (fw, _addr), row in found.items():  # local agents' own (verified) report counts
             row["reports"] = max(row.get("reports", 0), own_by_framework.get(fw, 0))
@@ -2081,7 +2078,7 @@ def create_app(*, manage_blackbox: bool = False):
 
         return _swr("graph:" + tier, _load, {"tier": tier, "threats": []})
 
-    community_endpoints = community_routes.register_community_routes(app, verified_reports=_verified_reports)
+    community_endpoints = community_routes.register_community_routes(app, community_read=_community_read)
 
     # Predicate IRI -> friendly detail key, for the single-threat lookup.
     _DETAIL_FIELDS = {

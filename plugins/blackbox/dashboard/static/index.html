@@ -2775,6 +2775,34 @@
       </div>
     </section>
 
+    <!-- Community graph — statements (Refine R2): who / when / why -->
+    <section class="section" aria-label="Community graph statements">
+      <div class="section-head">
+        <div class="section-htext">
+          <h2>Community graph &mdash; statements</h2>
+          <div class="section-note">What reporters and the curator have said about community threats &mdash; who, when and why. Only statements this node could verify are shown. A dispute never changes what blocks. <span id="community-statements-note"></span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="table-scroll">
+          <table aria-label="Community statements">
+            <thead>
+              <tr>
+                <th>Statement</th>
+                <th>Threat</th>
+                <th>Who</th>
+                <th>When</th>
+                <th>Why</th>
+              </tr>
+            </thead>
+            <tbody id="community-statements-body">
+              <tr><td colspan="5"><div class="empty">Loading community statements&hellip;</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- Threat graph (tabbed) -->
     <section class="section" aria-label="Threat graph">
       <div class="section-head graph-head">
@@ -3725,6 +3753,50 @@
         '</div>' +
       '</div>';
     }).join("");
+  }
+
+  // Refine R2: every statement the reader honoured. Values arrive sanitized
+  // by the server (safe_text); esc() keeps this renderer safe on its own.
+  function renderCommunityStatements(data) {
+    var body = $("community-statements-body");
+    var note = $("community-statements-note");
+    if (!body) return;
+    function emptyRow(text) {
+      return '<tr><td colspan="5"><div class="empty">' + esc(text) + '</div></td></tr>';
+    }
+    if (!data || !data.configured) { body.innerHTML = emptyRow("No community graph is configured."); note.textContent = ""; return; }
+    if (!data.available) { body.innerHTML = emptyRow("The community graph could not be read yet."); return; }
+    var curator = data.curator || {};
+    var rows = [];
+    (data.disputes || []).forEach(function (d) {
+      rows.push(["dispute", d.identifier, d.who, d.when, d.why]);
+    });
+    (curator.verdicts || []).forEach(function (v) {
+      rows.push(["curator: " + v.verdict, v.identifier, v.keys + " curator key" + (v.keys === 1 ? "" : "s"), v.when, v.why || ""]);
+    });
+    (curator.counted_authors || []).forEach(function (a) {
+      rows.push(["counted author", a.address, a["class"] + (a.org ? " (" + a.org + ")" : ""), "until " + a.expires, ""]);
+    });
+    (curator.away || []).forEach(function (w) {
+      rows.push(["curator away", "", "key " + w.key + "\u2026", w.from + " \u2192 " + w.until, ""]);
+    });
+    if (curator.backlog) {
+      rows.push(["curator backlog", "lanes " + curator.backlog.lanes, "", "until " + curator.backlog.until, "SLA suspended"]);
+    }
+    var bits = [];
+    bits.push(curator.trusted ? "Curator keys trusted (manifest v" + curator.manifest.version + ", " +
+      curator.manifest.threshold + " of " + curator.manifest.keys + ")." : "No trusted curator keys on this network yet.");
+    if (data.held_back) bits.push(num(data.held_back) + " held back by the daily per-author budget.");
+    if (data.pending_tombstones) bits.push(num(data.pending_tombstones) + " retraction(s) waiting for a report not seen yet.");
+    note.textContent = "\u00b7 " + bits.join(" ");
+    if (!rows.length) { body.innerHTML = emptyRow("No statements yet."); return; }
+    body.innerHTML = rows.map(function (r) {
+      return "<tr>" + r.map(function (cell) { return "<td>" + esc(cell) + "</td>"; }).join("") + "</tr>";
+    }).join("");
+  }
+
+  function loadCommunityStatements() {
+    return getJSON("/api/community-statements").then(renderCommunityStatements, function () {});
   }
 
   function renderAttachTargets(targets, note) {
@@ -6468,6 +6540,7 @@
   // ---------- Poll loop ----------
   function poll() {
     loadAudit();   // full history refresh (independent of the fixed-index batch below)
+    loadCommunityStatements();   // Refine R2 (independent too)
     return Promise.allSettled([
       loadFindings(),
       getJSON("/api/graph-status"),
