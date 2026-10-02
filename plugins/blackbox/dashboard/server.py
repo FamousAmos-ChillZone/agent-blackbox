@@ -1959,18 +1959,6 @@ def create_app(*, manage_blackbox: bool = False):
         tier, view = _tier_view(tier)
         cfg = load_blackbox_config()
 
-        def _category(identifier: str) -> str:
-            ident = str(identifier or "")
-            prefix = ident.split(":", 1)[0].lower() if ":" in ident else ""
-            return {
-                "dep": "dependency",
-                "injection": "injection",
-                "escalation": "escalation",
-                "fileaccess": "fileaccess",
-                "skill": "skill",
-                "ioc": "ioc",
-            }.get(prefix, "other")
-
         # The ruleset merges complete public VM threats with community SWM rows
         # and retains a compatibility join for any legacy CurationProof assets.
         if tier in {"public", "community"}:

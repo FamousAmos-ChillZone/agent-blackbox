@@ -74,18 +74,9 @@ def _row_to_graph_entry(row: Dict[str, Any], source: str) -> Optional[Dict[str, 
     subject, _rdf_type, identifier = _row_identity(row)
     if not identifier:
         return None
-    prefix = identifier.split(":", 1)[0].lower()
-    category = {
-        "dep": "dependency",
-        "injection": "injection",
-        "escalation": "escalation",
-        "fileaccess": "fileaccess",
-        "skill": "skill",
-        "ioc": "ioc",
-    }.get(prefix, "other")
     return {
         "identifier": identifier,
-        "category": category,
+        "category": threat_ids.category_for(identifier),
         "severity": _row_severity(row),
         "name": (
             extract_binding(row.get("name"))

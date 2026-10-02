@@ -95,6 +95,26 @@ def dependency_identifier(ecosystem: str, name: str, version: str) -> str:
     return f"dep:{dependency_key(ecosystem, name, version)}"
 
 
+#: Identifier prefix → the category name the schema, the UI and the audit use.
+#: ONE table (it lived as two identical copies before — the Rule of Three).
+_CATEGORY_FOR_PREFIX = {
+    "dep": "dependency",
+    "injection": "injection",
+    "escalation": "escalation",
+    "fileaccess": "fileaccess",
+    "skill": "skill",
+    "ioc": "ioc",
+}
+
+
+def category_for(identifier: str) -> str:
+    """The category of a threat identifier from its prefix (``dep:…`` →
+    ``dependency``); ``other`` for anything unrecognised."""
+    text = str(identifier or "")
+    prefix = text.split(":", 1)[0].lower() if ":" in text else ""
+    return _CATEGORY_FOR_PREFIX.get(prefix, "other")
+
+
 def parse_dependency_identifier(identifier: str) -> Optional[Tuple[str, str, str]]:
     """``(ecosystem, name, version)`` of a ``dep:`` identifier, else None."""
     if not identifier.startswith("dep:") or "@" not in identifier:
