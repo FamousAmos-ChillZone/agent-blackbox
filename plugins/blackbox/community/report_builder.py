@@ -5,7 +5,7 @@ One subject per (reporter, threat) — ``urn:guardian:report:{reporter}:{hash}``
 prompt or command text; literals are capped by :mod:`..kernel.rdf_terms`.
 
 Usage: ``community.build_report_quads(identifier, severity=..., reporter_address=...)``
-· ``community.build_false_positive_quads(identifier, reporter_address=...)``.
+· ``community.build_false_positive_quads(identifier, reporter_address=..., reason=...)``.
 """
 
 from __future__ import annotations
@@ -128,6 +128,7 @@ def build_false_positive_quads(
     *,
     identifier: str,
     reporter_address: str,
+    reason: str,
     framework: str = "hermes",
     ts: Optional[datetime] = None,
     signer: Optional[ReportSigner] = None,
@@ -137,10 +138,13 @@ def build_false_positive_quads(
     Same per-(reporter, threat) subject discipline as reports — one dispute
     voice per reporter per threat, first write wins — under a ``:fp`` suffix
     so a reporter can hold both a report and a dispute without collision.
-    Carries only the identifier, reporter, framework and timestamp: a veto
-    needs no evidence payload (curators re-check the original reports).
-    Day-rounded and, with a *signer*, signed like a report (``blackbox.dispute``).
+    Carries the identifier, reporter, framework, timestamp and a closed
+    *reason* (``constants.FALSE_POSITIVE_REASONS``, required — Refine R1;
+    validated by :func:`.report_schema.validate_dispute`). No evidence
+    payload: curators re-check the original reports. Day-rounded and, with a
+    *signer*, signed like a report (``blackbox.dispute``).
     """
+    identifier, reason = report_schema.validate_dispute(identifier=identifier, reason=reason)
     subj = threat_ids.report_uri(identifier, reporter_address) + ":fp"
     day = _day(ts)
     reporter = reporter_address.strip().lower()   # report_uri above refused a blank one
@@ -150,9 +154,10 @@ def build_false_positive_quads(
         rdf_terms.make_quad(subj, constants.REPORTER_PRED, rdf_terms.literal(reporter)),
         rdf_terms.make_quad(subj, constants.FRAMEWORK_PRED, rdf_terms.literal(framework)),
         rdf_terms.make_quad(subj, constants.SCHEMA_DATE_MODIFIED_PRED, rdf_terms.datetime_literal(day)),
+        rdf_terms.make_quad(subj, constants.REPORT_REASON_PRED, rdf_terms.literal(reason)),
     ]
     if signer is not None:
         payload = {"subject": subj, "identifier": identifier, "reporter": reporter,
-                   "framework": framework, "day": day.date().isoformat()}
+                   "framework": framework, "day": day.date().isoformat(), "reason": reason}
         out.append(_signature_quad(subj, signer, DISPUTE_STATEMENT, payload))
     return out

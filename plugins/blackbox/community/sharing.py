@@ -24,7 +24,8 @@ logger = logging.getLogger(__name__)
 
 #: This runtime IS the Hermes host; the OpenClaw runtime has its own TS
 #: pipeline and stamps its own framework when its share path ships (KI-014).
-_FRAMEWORK = "hermes"
+#: The framework every report from this runtime names (automatic and manual).
+HOST_FRAMEWORK = "hermes"
 
 #: Sources that must never leave the machine in any form. Secret findings
 #: could carry the shape of a leak; custom rules and LLM opinions are the
@@ -111,7 +112,7 @@ def _schema_decision(finding: Dict[str, Any]) -> "tuple[bool, str]":
             identifier=str(finding.get("identifier") or ""),
             category=str(finding.get("category") or ""),
             severity=str(finding.get("severity") or "info"),
-            framework=_FRAMEWORK,
+            framework=HOST_FRAMEWORK,
             evidence={k: v for k, v in fields.items() if v is not None},
         )
     except report_schema.ReportValidationError as exc:
@@ -206,7 +207,7 @@ def _share_sighting(
             category=str(finding.get("category") or ""),
             severity=str(finding.get("severity") or "info"),
             reporter_address=reporter,
-            framework=_FRAMEWORK,
+            framework=HOST_FRAMEWORK,
             signer=signer,
             **{k: v for k, v in fields.items() if v is not None},
         )

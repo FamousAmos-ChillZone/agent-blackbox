@@ -59,16 +59,21 @@ class FakeClient:
         return True
 
 
+#: Namespace dest -> the flag an operator types, where they differ.
+_FLAG_FOR_DEST = {"version": "--package-version"}
+
+
 def _args(**kw):
-    base = dict(
-        status=False, type=None, false_positive=None, severity="high",
-        pattern=None, owasp=None, tool=None, arg_shape=None, ecosystem=None,
-        name=None, version=None, advisory_id=None, kind=None, category=None,
-        skill_name=None, skill_version=None, danger_shape=None,
-        ioc_type=None, value=None, description="", reason=None, context=None, registry=None,
-    )
-    base.update(kw)
-    return argparse.Namespace(**base)
+    """Parsed `blackbox report` args, built through the REAL parser (KI-114):
+    each keyword is the namespace dest, turned into the flag an operator types."""
+    argv = ["report"]
+    for dest, value in kw.items():
+        flag = _FLAG_FOR_DEST.get(dest, "--" + dest.replace("_", "-"))
+        if value is True:
+            argv.append(flag)
+        elif value is not None:
+            argv += [flag, str(value)]
+    return _parse(argv)
 
 
 @pytest.fixture
@@ -91,10 +96,10 @@ def wired(monkeypatch, bb_home):
     [
         (dict(type="dependency", name="pkg"), "--ecosystem"),
         (dict(type="dependency", ecosystem="npm", name="pkg"), "--package-version"),  # KI-066
-        (dict(type="injection"), "--pattern"),
-        (dict(type="escalation", tool="shell"), "--arg-shape"),
-        (dict(type="fileaccess", tool="read"), "--category"),
-        (dict(type="ioc", ioc_type="domain"), "--value"),
+        (dict(type="injection", context="in-user-prompt"), "--pattern"),
+        (dict(type="escalation", tool="terminal"), "--arg-shape"),
+        (dict(type="fileaccess", tool="read_file"), "--category"),
+        (dict(type="ioc", ioc_type="domain", context="fetched-by-tool"), "--value"),
     ],
 )
 def test_incomplete_args_rejected_and_nothing_submitted(wired, kwargs, missing, capsys):
@@ -106,10 +111,10 @@ def test_incomplete_args_rejected_and_nothing_submitted(wired, kwargs, missing, 
     assert wired.shares == []
 
 
-def test_skill_requires_version_or_shape(wired, capsys):
+def test_skill_requires_a_registry_version_or_a_local_artifact(wired, capsys):
     rc = report_command.cmd_report(_args(type="skill", skill_name="helper-pack"))
     assert rc == 2
-    assert "skill-version" in capsys.readouterr().out or True
+    assert "--registry" in capsys.readouterr().out
     assert wired.shares == []
 
 
@@ -209,7 +214,7 @@ def test_status_handles_empty_history(monkeypatch, bb_home, capsys):
 
 
 def test_false_positive_emits_dispute_quads(wired, capsys):
-    rc = report_command.cmd_report(_args(false_positive="dep:npm:innocent@2.0.0"))
+    rc = report_command.cmd_report(_args(false_positive="dep:npm:innocent@2.0.0", reason="wrong"))
     out = capsys.readouterr().out
     assert rc == 0
     assert len(wired.shares) == 1
@@ -247,7 +252,7 @@ def _parse(argv):
 
 def test_dependency_report_parses_with_package_version():
     args = _parse(["report", "--type", "dependency", "--ecosystem", "PyPI", "--name", "Evil_Pkg.Name",
-                   "--package-version", "1.0.3", "--kind", "malware"])
+                   "--package-version", "1.0.3", "--kind", "malware", "--reason", "typosquat"])
     finding, err = report_command._report_finding_from_args(args)
     assert err == ""
     assert finding["identifier"] == "dep:pypi:evil-pkg-name@1.0.3"
@@ -267,3 +272,60 @@ def test_report_has_no_version_flag_of_its_own():
     (prints the banner and exits), so the report command must not rely on it."""
     with pytest.raises(SystemExit):
         _parse(["report", "--type", "dependency", "--ecosystem", "npm", "--name", "evil", "--version", "1.0.0"])
+
+
+# ---------------------------------------------------------------------------
+# Refine R1c: no free text; closed choices; a dispute needs a reason
+# ---------------------------------------------------------------------------
+
+
+def test_the_description_flag_is_gone():
+    with pytest.raises(SystemExit):
+        _parse(["report", "--type", "ioc", "--description", "free text that would have leaked"])
+
+
+@pytest.mark.parametrize("argv", [
+    ["--type", "escalation", "--tool", "terminal", "--arg-shape", "made-up-shape"],
+    ["--type", "fileaccess", "--tool", "read_file", "--category", "my-diary"],
+    ["--type", "skill", "--artifact-hash", "a" * 64, "--danger-shape", "made-up"],
+    ["--type", "ioc", "--ioc-type", "domain", "--value", "x.example", "--context", "https://site.example"],
+    ["--type", "dependency", "--ecosystem", "go", "--name", "x", "--package-version", "1"],
+    ["--type", "dependency", "--kind", "vulnerability"],
+    ["--type", "injection", "--owasp", "LLM99"],
+    ["--type", "skill", "--registry", "local"],
+])
+def test_values_outside_the_closed_vocabularies_are_refused_by_the_parser(argv):
+    with pytest.raises(SystemExit):
+        _parse(["report", *argv])
+
+
+def test_a_bad_manual_report_is_refused_with_its_reason_not_a_traceback(wired, capsys):
+    rc = report_command.cmd_report(_args(type="dependency", ecosystem="npm", name="x", version="*",
+                                         kind="malware", reason="install-hook"))
+    out = capsys.readouterr().out
+    assert rc == 2 and "whole-package" in out and "Nothing was submitted" in out
+    assert wired.shares == []
+
+
+def test_a_local_skill_is_reported_by_hash_never_by_name(wired, capsys):
+    digest = "b" * 64
+    assert report_command.cmd_report(_args(type="skill", artifact_hash=digest, danger_shape="obfuscation")) == 0
+    _cg, _name, quads = wired.shares[0]
+    serialized = "\n".join(str(v) for quad in quads for v in dict(quad).values())
+    assert digest in serialized and constants.SKILL_NAME_PRED not in serialized
+    assert report_command.cmd_report(_args(type="skill", artifact_hash=digest, danger_shape="obfuscation",
+                                           skill_name="acme-internal")) == 2
+
+
+def test_a_dispute_without_a_reason_is_refused(wired, capsys):
+    rc = report_command.cmd_report(_args(false_positive="dep:npm:innocent@2.0.0"))
+    assert rc == 2 and "reason" in capsys.readouterr().out
+    assert wired.shares == []
+
+
+def test_a_dispute_carries_its_closed_reason(wired):
+    assert report_command.cmd_report(_args(false_positive="dep:npm:innocent@2.0.0", reason="internal-mirror")) == 0
+    _cg, _name, quads = wired.shares[0]
+    reasons = [q["object"] for q in quads if q["predicate"] == constants.REPORT_REASON_PRED]
+    assert reasons == ['"internal-mirror"']
+    assert report_command.cmd_report(_args(false_positive="dep:npm:other@1", reason="I just don't like it")) == 2

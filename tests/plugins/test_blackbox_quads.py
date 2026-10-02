@@ -172,4 +172,4 @@ def test_a_blank_reporter_is_refused_never_replaced_by_a_placeholder():
     with pytest.raises(ValueError):
         rb.build_report_quads(identifier="ioc:domain:x.example", category="ioc", severity="high", reporter_address="")
     with pytest.raises(ValueError):
-        rb.build_false_positive_quads(identifier="ioc:domain:x.example", reporter_address="")
+        rb.build_false_positive_quads(identifier="ioc:domain:x.example", reporter_address="", reason="wrong")

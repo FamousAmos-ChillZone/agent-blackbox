@@ -72,9 +72,10 @@ def test_unsigned_build_has_no_signature_quad():
 
 def test_dispute_is_signed_as_a_dispute():
     quads = report_builder.build_false_positive_quads(identifier="ioc:domain:x.example",
-                                                      reporter_address=REPORTER, signer=_signer())
+                                                      reporter_address=REPORTER, reason="fixed", signer=_signer())
     envelope = _envelope(quads)
     assert _verify(envelope, report_signer.DISPUTE_STATEMENT) is not None
+    assert envelope.payload["reason"] == "fixed"   # Refine R1: the closed reason is signed
     assert _verify(envelope, report_signer.REPORT_STATEMENT) is None   # a dispute can't pass as a report
 
 

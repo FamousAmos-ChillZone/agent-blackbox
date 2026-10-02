@@ -228,5 +228,16 @@ def validate_report(*, identifier: str, category: str, severity: str, framework:
                         evidence=tuple(sorted(out.items())))
 
 
+def validate_dispute(*, identifier: str, reason: str) -> Tuple[str, str]:
+    """(identifier, reason) for a false-positive dispute, or
+    :class:`ReportValidationError`. The reason is REQUIRED and closed
+    (``constants.FALSE_POSITIVE_REASONS``, plan §04); the disputed identifier is
+    a single short token, never free text."""
+    identifier = str(identifier or "").strip()
+    if not identifier or len(identifier) > MAX_IDENTIFIER_CHARS or _CONTROL.search(identifier) or " " in identifier:
+        _fail("the disputed identifier must be a short single token without control characters")
+    return identifier, _one_of("reason", reason, constants.FALSE_POSITIVE_REASONS)
+
+
 def _aware(ts: datetime) -> datetime:
     return ts if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc)

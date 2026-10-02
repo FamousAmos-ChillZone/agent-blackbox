@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import argparse
 import logging
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from .. import audit
-from . import graph_stats, report_builder, report_signer, sharing
+from .. import detection
+from . import graph_stats, report_builder, report_schema, report_signer, sharing
 from . import reader as graph_reader
 from ..kernel import constants, threat_ids
 
@@ -53,12 +54,12 @@ def print_community_status(cfg) -> None:
 #: would derive a malformed identifier (e.g. ``dep::pkg@``) that poisons
 #: corroboration counting — reject loudly, submit nothing.
 _REPORT_REQUIRED_ARGS: Dict[str, "tuple[str, ...]"] = {
-    "injection": ("pattern",),
+    "injection": ("pattern", "context"),
     "escalation": ("tool", "arg_shape"),
-    "dependency": ("ecosystem", "name", "version"),
+    "dependency": ("ecosystem", "name", "version", "kind", "reason"),
     "fileaccess": ("tool", "category"),
-    "skill": ("skill_name",),
-    "ioc": ("ioc_type", "value"),
+    "skill": (),   # either --registry/--skill-name/--skill-version or --artifact-hash/--danger-shape
+    "ioc": ("ioc_type", "value", "context"),
 }
 
 
@@ -99,15 +100,20 @@ def _fileaccess_args(args: argparse.Namespace) -> _ParsedReport:
 
 
 def _skill_args(args: argparse.Namespace) -> _ParsedReport:
-    if args.skill_version:
-        identifier = threat_ids.skill_version_identifier(args.skill_name, args.skill_version)
-    elif args.danger_shape:
-        identifier = threat_ids.skill_shape_identifier(args.skill_name, args.danger_shape)
-    else:
-        return "", {}, "--type skill requires --skill-version or --danger-shape"
-    fields = {"registry": args.registry, "skill_name": args.skill_name, "skill_version": args.skill_version,
-              "danger_shape": args.danger_shape}
-    return identifier, fields, ""
+    """A local skill by --artifact-hash + --danger-shape (never its name,
+    KI-159), or a known-bad registry skill by --registry/--skill-name/--skill-version."""
+    if args.artifact_hash or args.danger_shape:
+        if args.skill_name or args.skill_version or args.registry:
+            return "", {}, "a local skill is reported by --artifact-hash + --danger-shape, never by name"
+        if not (args.artifact_hash and args.danger_shape):
+            return "", {}, "--type skill (local) requires --artifact-hash and --danger-shape"
+        fields = {"artifact_hash": args.artifact_hash.strip().lower(), "danger_shape": args.danger_shape}
+        return threat_ids.skill_artifact_identifier(args.artifact_hash, args.danger_shape), fields, ""
+    if not (args.registry and args.skill_name and args.skill_version):
+        return "", {}, ("--type skill requires --registry, --skill-name and --skill-version "
+                        "(or, for a local skill, --artifact-hash and --danger-shape)")
+    fields = {"registry": args.registry, "skill_name": args.skill_name, "skill_version": args.skill_version}
+    return threat_ids.skill_version_identifier(args.skill_name, args.skill_version), fields, ""
 
 
 def _ioc_args(args: argparse.Namespace) -> _ParsedReport:
@@ -147,59 +153,71 @@ def _report_finding_from_args(args: argparse.Namespace) -> "tuple[Optional[dict]
     identifier, fields, err = _REPORT_FIELDS[rtype](args)
     if err:
         return None, err
+    fields = {k: v for k, v in fields.items() if v}
+    try:   # the same schema the builder enforces — a bad report fails HERE, with its reason (R1)
+        report_schema.validate_report(identifier=identifier, category=rtype, severity=args.severity,
+                                      framework=sharing.HOST_FRAMEWORK, evidence=fields)
+    except report_schema.ReportValidationError as exc:
+        return None, str(exc)
     return {
         "identifier": identifier,
         "category": rtype,
         "severity": args.severity,
         "source": "custom-manual",  # never auto-shared; explicit path only
-        "fields": {k: v for k, v in fields.items() if v},
+        "fields": fields,
     }, ""
 
 
-def add_report_parser(sub: "argparse._SubParsersAction") -> None:
-    """Register ``blackbox report`` and its flags on the CLI's sub-parsers.
+def _choices(values) -> List[str]:
+    return sorted(values)
 
-    Called once by ``cli.setup_cli``; the parsed namespace goes to
-    :func:`cmd_report`.
-    """
+
+#: Every `blackbox report` flag: (flags, argparse options). Data, not code, so
+#: the closed vocabularies are visible in one place (Refine R1: no free text
+#: leaves the machine; each choice list is the one the schema checks against).
+_REPORT_FLAGS: Tuple[Tuple[Tuple[str, ...], Dict[str, Any]], ...] = (
+    (("--type",), dict(choices=list(_REPORT_REQUIRED_ARGS))),
+    (("--status",), dict(action="store_true", help="Show what this node has contributed (ledger + graph)")),
+    (("--false-positive",), dict(dest="false_positive", metavar="IDENTIFIER",
+                                 help="Dispute a community threat (needs --reason)")),
+    (("--ioc-type",), dict(dest="ioc_type", choices=list(threat_ids.IOC_TYPES), help="ioc: indicator type")),
+    (("--value",), dict(help="ioc: the indicator value (domain/url/ip/hash/...)")),
+    (("--pattern",), dict(help="injection: the pattern — hashed here, never sent")),
+    (("--owasp",), dict(type=str.upper, choices=list(constants.OWASP_LLM_CATEGORIES),
+                        help="injection: OWASP LLM category")),
+    (("--tool",), dict(help="escalation/fileaccess: tool name")),
+    (("--arg-shape",), dict(dest="arg_shape", choices=_choices(detection.ESCALATION_SHAPES),
+                            help="escalation: argument shape")),
+    (("--ecosystem",), dict(type=str.lower, choices=_choices(detection.DEPENDENCY_ECOSYSTEMS),
+                            help="dependency: ecosystem")),
+    (("--name",), dict(help="dependency: package name")),
+    (("--package-version",), dict(dest="version", help="dependency: version, or * (KI-066: Hermes owns --version)")),
+    (("--advisory-id",), dict(dest="advisory_id", help="dependency: advisory id")),
+    (("--kind",), dict(choices=[constants.KIND_MALWARE],
+                       help="dependency: malware (vulnerabilities are never shared — decision 22)")),
+    (("--reason",), dict(help="dependency: " + ", ".join(constants.DEPENDENCY_REASONS) + ", or advisory:<id>; "
+                              "--false-positive: " + ", ".join(constants.FALSE_POSITIVE_REASONS))),
+    (("--context",), dict(choices=_choices({*constants.INJECTION_CONTEXTS, *constants.IOC_CONTEXTS}),
+                          help="injection/ioc: where it was seen")),
+    (("--category",), dict(choices=_choices(detection.SENSITIVE_PATH_CATEGORIES),
+                           help="fileaccess: sensitive-path category")),
+    (("--registry",), dict(choices=list(constants.SKILL_REGISTRIES), help="skill: a named skill's public registry")),
+    (("--skill-name",), dict(dest="skill_name", help="skill (from a registry): name")),
+    (("--skill-version",), dict(dest="skill_version", help="skill (from a registry): known-bad version")),
+    (("--artifact-hash",), dict(dest="artifact_hash", help="skill (local): sha256 of its code — never its name")),
+    (("--danger-shape",), dict(dest="danger_shape", choices=_choices(detection.SKILL_DANGER_SHAPES),
+                               help="skill (local): danger shape")),
+    (("--severity",), dict(default="high", choices=list(constants.SEVERITY_ORDER))),
+)
+
+
+def add_report_parser(sub: "argparse._SubParsersAction") -> None:
+    """Register ``blackbox report`` and its flags (:data:`_REPORT_FLAGS`) on
+    the CLI's sub-parsers. Called once by ``cli.setup_cli``; the parsed
+    namespace goes to :func:`cmd_report`."""
     report = sub.add_parser("report", help="Report a threat to the community graph / view your contributions")
-    report.add_argument(
-        "--type", required=False,
-        choices=["injection", "escalation", "dependency", "fileaccess", "skill", "ioc"],
-    )
-    report.add_argument(
-        "--status", action="store_true",
-        help="Show what this node has contributed (offline ledger + graph profile)",
-    )
-    report.add_argument(
-        "--false-positive", dest="false_positive", metavar="IDENTIFIER",
-        help="Dispute a community threat: submit a false-positive signal for IDENTIFIER",
-    )
-    report.add_argument("--ioc-type", dest="ioc_type", choices=list(threat_ids.IOC_TYPES),
-                        help="ioc: indicator type")
-    report.add_argument("--value", help="ioc: the indicator value (domain/url/ip/hash/...)")
-    report.add_argument("--pattern", help="injection: regex source")
-    report.add_argument("--owasp", help="injection: OWASP category (e.g. LLM01)")
-    report.add_argument("--tool", help="escalation/fileaccess: tool name")
-    report.add_argument("--arg-shape", dest="arg_shape", help="escalation: arg shape slug")
-    report.add_argument("--ecosystem", help="dependency: ecosystem (npm/pypi/...)")
-    report.add_argument("--name", help="dependency: package name (or threat display name)")
-    report.add_argument("--package-version", dest="version", help="dependency: package version (KI-066: Hermes owns --version)")
-    report.add_argument("--advisory-id", dest="advisory_id", help="dependency: advisory id")
-    report.add_argument("--reason", help="dependency: why it is malware (typosquat, install-hook, exfil, "
-                        "internal-mirror-collision, or advisory:<id>)")
-    report.add_argument("--context", help="injection/ioc: where it was seen (e.g. in-fetched-page, fetched-by-tool)")
-    report.add_argument("--registry", help="skill: the public registry a named skill comes from (e.g. clawhub)")
-    report.add_argument(
-        "--kind", choices=[constants.KIND_MALWARE, constants.KIND_VULNERABILITY],
-        help="dependency: malware (blocks) or vulnerability (flags only)",
-    )
-    report.add_argument("--category", help="fileaccess: sensitive-path category (e.g. ssh-private-key)")
-    report.add_argument("--skill-name", dest="skill_name", help="skill: skill name")
-    report.add_argument("--skill-version", dest="skill_version", help="skill: known-bad version")
-    report.add_argument("--danger-shape", dest="danger_shape", help="skill: danger shape slug (e.g. shell-exec)")
-    report.add_argument("--severity", default="high", choices=list(constants.SEVERITY_ORDER))
-    report.add_argument("--description", default="", help="Human-readable description")
+    for flags, options in _REPORT_FLAGS:
+        report.add_argument(*flags, **options)
     report.set_defaults(func=cmd_report)
 
 
@@ -227,7 +245,7 @@ def cmd_report(args: argparse.Namespace) -> int:
         return 1
     reporter, signer = resolved
     if args.false_positive:
-        return _submit_false_positive(client, cfg, args.false_positive, reporter, signer)
+        return _submit_false_positive(client, cfg, args.false_positive, args.reason, reporter, signer)
     finding, err = _report_finding_from_args(args)
     if finding is None:
         print(f"Invalid report: {err}")
@@ -247,7 +265,7 @@ def cmd_report(args: argparse.Namespace) -> int:
         category=finding["category"],
         severity=finding["severity"],
         reporter_address=reporter,
-        framework="hermes",
+        framework=sharing.HOST_FRAMEWORK,
         signer=signer,
         **finding["fields"],
     )
@@ -287,14 +305,18 @@ def _reporting_identity(client: DkgClient, graph: str) -> Optional[Tuple[str, re
     return reporter, signer
 
 
-def _submit_false_positive(client: DkgClient, cfg, identifier: str, reporter: str,
+def _submit_false_positive(client: DkgClient, cfg, identifier: str, reason: Optional[str], reporter: str,
                            signer: report_signer.ReportSigner) -> int:
-    """Dispute a community threat (lifecycle: DISPUTE — the Q8 veto writer)."""
-    identifier = identifier.strip()
-    if not identifier:
-        print("Provide the threat identifier to dispute.")
+    """Dispute a community threat (lifecycle: DISPUTE — the Q8 veto writer).
+    A closed --reason is required (Refine R1); nothing is sent without one."""
+    try:
+        identifier, reason = report_schema.validate_dispute(identifier=identifier, reason=reason or "")
+    except report_schema.ReportValidationError as exc:
+        print(f"Invalid dispute: {exc}")
+        print("Nothing was submitted.")
         return 2
-    q = report_builder.build_false_positive_quads(identifier=identifier, reporter_address=reporter, signer=signer)
+    q = report_builder.build_false_positive_quads(identifier=identifier, reporter_address=reporter,
+                                                  reason=reason, signer=signer)
     name = f"fp-{threat_ids.stable_hash(identifier + reporter, 16)}"
     subject = threat_ids.report_uri(identifier, reporter) + ":fp"
     outcome, detail = sharing.send_report(client, cfg.community_graph_id, name, q)
