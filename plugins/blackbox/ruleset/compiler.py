@@ -72,6 +72,14 @@ def verified_identifiers(community_rows: List[Dict[str, Any]], proofs: Dict[str,
     return ok
 
 
+def _copy_community_stats(entry: Dict[str, Any], rule: Dict[str, Any]) -> None:
+    """Copy a community rule's corroboration stats onto a graph entry (the UI's
+    reporter count and recency — this node's observations, KI-012)."""
+    entry["reporterCount"] = int(rule.get("reporterCount") or 0)
+    entry["firstSeen"] = rule.get("firstSeen")
+    entry["lastSeen"] = rule.get("lastSeen")
+
+
 @dataclass
 class Ruleset:
     """Compiled detection rules. See :mod:`detection` for how each is used."""
@@ -173,9 +181,7 @@ class Ruleset:
             # IOC — including ones reported by several distinct nodes.
             stats = self.community.get(identifier) if source == "community" else None
             if stats is not None:
-                entry["reporterCount"] = int(stats.get("reporterCount") or 0)
-                entry["firstSeen"] = stats.get("firstSeen")
-                entry["lastSeen"] = stats.get("lastSeen")
+                _copy_community_stats(entry, stats)
             entries.append(entry)
         if source == "community":
             # The community STORE holds every aggregated report (including
@@ -185,7 +191,7 @@ class Ruleset:
                 if identifier in seen:
                     continue
                 seen.add(identifier)
-                entries.append({
+                entry = {
                     "identifier": identifier,
                     "category": rule.get("category")
                     or (identifier.split(":", 1)[0] if ":" in identifier else "other"),
@@ -193,10 +199,9 @@ class Ruleset:
                     "name": rule.get("name") or identifier,
                     "subject": "",
                     "source": "community",
-                    "reporterCount": int(rule.get("reporterCount") or 0),
-                    "firstSeen": rule.get("firstSeen"),
-                    "lastSeen": rule.get("lastSeen"),
-                })
+                }
+                _copy_community_stats(entry, rule)
+                entries.append(entry)
         self._graph_entries_cache[source] = entries
         return entries
 
