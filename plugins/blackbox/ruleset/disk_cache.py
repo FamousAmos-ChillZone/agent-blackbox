@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from ..kernel import constants
 from . import compiler
+from . import safe_regex
 from . import row_adapters
 
 logger = logging.getLogger(__name__)
@@ -58,8 +59,8 @@ def _deserialize(data: Dict[str, Any]) -> compiler.Ruleset:
         if not src:
             continue
         try:
-            compiled = re.compile(src, re.IGNORECASE)
-        except re.error:
+            compiled = safe_regex.compile_bounded(src, re.IGNORECASE)   # G6: the same gate as the graph read
+        except safe_regex.UnsafePattern:
             continue
         if rule.get("source", "public") == "public":
             rs.injection.append({**rule, "pattern_src": src, "pattern": compiled})

@@ -12,6 +12,7 @@ import logging
 import re
 from typing import Any, Dict, Optional
 from ..kernel import constants
+from . import safe_regex
 from ..kernel import threat_ids
 from ..kernel.dkg_client import extract_binding
 
@@ -124,9 +125,9 @@ def _row_to_rule(row: Dict[str, Any], source: str = "public") -> Optional[tuple]
         if not pattern_src:
             return None
         try:
-            compiled = re.compile(pattern_src, re.IGNORECASE)
-        except re.error as exc:
-            logger.debug("blackbox: skipping bad injection pattern %s: %s", identifier, exc)
+            compiled = safe_regex.compile_bounded(pattern_src, re.IGNORECASE)   # G6: never a pattern that can hang the scan
+        except safe_regex.UnsafePattern as exc:
+            logger.warning("blackbox: skipping injection pattern %s: %s", identifier, exc)
             return None
         return ("injection", identifier, {
             **common,

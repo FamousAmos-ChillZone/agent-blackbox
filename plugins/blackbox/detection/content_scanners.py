@@ -193,7 +193,12 @@ def scan_skill_dangers(code: str, permissions: str) -> List[Dict[str, str]]:
 # threat is a cheap dict miss, not a false positive.
 _URL_RE = re.compile(r"https?://[^\s'\"<>|\\)}\]]+", re.IGNORECASE)
 _IPV4_RE = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b")
-_DOMAIN_RE = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}\b", re.IGNORECASE)
+# G6: at most 10 labels per candidate (a real IOC domain has a handful; an
+# unbounded label chain made this scan quadratic — FIX-0025) and RFC hostname
+# length limits in _host_suffixes.
+_DOMAIN_RE = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){1,10}[a-z]{2,24}\b", re.IGNORECASE)
+_MAX_HOST_CHARS = 253
+_MAX_HOST_LABELS = 16
 _SHA256_RE = re.compile(r"\b[a-fA-F0-9]{64}\b")
 _SHA1_RE = re.compile(r"\b[a-fA-F0-9]{40}\b")
 _MD5_RE = re.compile(r"\b[a-fA-F0-9]{32}\b")
@@ -212,8 +217,8 @@ def _host_suffixes(host: str) -> List[str]:
     the parent walk stops at two labels and every candidate is an O(1) lookup.
     """
     host = host.strip(".").lower()
-    if not host:
-        return []
+    if not host or len(host) > _MAX_HOST_CHARS or host.count(".") >= _MAX_HOST_LABELS:
+        return []   # not a hostname anyone resolves; never build its suffix chain (FIX-0025)
     out = [host]
     if host.startswith("www."):
         out.append(host[4:])
