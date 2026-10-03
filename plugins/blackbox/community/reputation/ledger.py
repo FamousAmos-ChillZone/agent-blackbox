@@ -2,7 +2,9 @@
 
 Never published. Each reporter is keyed by a pseudonym — HMAC of its key
 under a per-reporter random salt — and ERASURE deletes the salt, after which
-nothing in the file can be tied to the key again (crypto-shredding). Entries
+nothing in the file can be tied to the key again (crypto-shredding). The
+index that maps keys to salts is sealed (:mod:`.sealed_index`), so a copied
+index file identifies nobody. Entries
 inactive for :data:`RETENTION_DAYS` are dropped on load. One lock, atomic
 tmp+rename writes, the same shape as every other store in the plugin.
 
@@ -35,6 +37,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ...kernel import constants
+from . import sealed_index
 from .bands import ReporterStanding, ReputationBand
 from .scoring import Outcome, beta_reputation
 
@@ -51,18 +54,22 @@ def pseudonym(salt_hex: str, key: str) -> str:
 
 
 class ReputationLedger:
-    """``$BLACKBOX_HOME/curate/reputation.json`` (``{"entries": {pseudonym: entry}}``) + ``reputation_salts.json``
-    (``{key: salt}``, owner-only): the entries file alone links no key to any outcome.
+    """Three owner-only files in ``$BLACKBOX_HOME/curate``: ``reputation.json``
+    (``{"entries": {pseudonym: entry}}``), ``reputation_salts.json`` (the index
+    ``{key: salt}``, SEALED — no reporter key is readable in it, KI-257) and
+    ``reputation_index.key`` (the key that opens the index).
 
-    An entry holds the standing fields plus its outcome list. The salt map is
-    the only link from a key to its entry; erasing a key deletes its salt.
+    An entry holds the standing fields plus its outcome list. The index is
+    the only link from a key to its entry; erasing a key deletes its salt. The
+    entries file alone, or the index alone, identifies nobody.
     """
 
     def __init__(self, path: Optional[Path] = None) -> None:
         self._path = path or (constants.blackbox_home() / "curate" / _LEDGER_FILE)
         #: Round 4: the salt map (key → salt) lives in its own owner-only file, so the
-        #: entries file alone links no key to any outcome.
+        #: entries file alone links no key to any outcome. C11: that file is sealed.
         self._salts_path = self._path.with_name(self._path.stem + "_salts.json")
+        self._index_key_path = self._path.with_name(self._path.stem + "_index.key")
         self._lock = threading.Lock()
 
     # -- reads ---------------------------------------------------------------
@@ -182,26 +189,74 @@ class ReputationLedger:
             publishers = {str(k): int(v) for k, v in dict(data.get("publishers") or {}).items()}
         except (OSError, ValueError, AttributeError, TypeError):
             pass   # missing or unreadable: an empty ledger
-        try:
-            salts = {str(k): str(v) for k, v in json.loads(self._salts_path.read_text(encoding="utf-8")).items()}
-        except (OSError, ValueError, AttributeError):
-            salts = {}
+        salts = self._load_salts()
         cutoff = (date.today() - timedelta(days=RETENTION_DAYS)).isoformat()
         live = {p: e for p, e in entries.items() if e.get("last_day", "") >= cutoff or not e.get("outcomes")}
         live_salts = {key: salt for key, salt in salts.items() if pseudonym(salt, key) in live or not entries}
         return {"salts": live_salts, "entries": live, "publishers": publishers}
 
+    def _load_salts(self) -> Dict[str, str]:
+        """The index (reporter key -> salt). A sealed index that cannot be
+        opened is an EMPTY index: its entries are unreachable, as after an
+        erasure. An index written before sealing (a clear map) is read once
+        and sealed at once, so reporter keys do not stay readable on disk."""
+        try:
+            text = self._salts_path.read_text(encoding="utf-8")
+        except OSError:
+            return {}
+        if sealed_index.is_sealed(text):
+            opened = sealed_index.open_sealed(text, self._index_key())
+            if opened is None:
+                logger.warning("blackbox: the reputation ledger's index cannot be opened (its key file is missing or "
+                               "does not match); its entries are unreachable")
+            return _well_formed(opened or {})
+        try:
+            legacy = _well_formed({str(k): str(v) for k, v in json.loads(text).items()})
+        except (ValueError, AttributeError):
+            return {}
+        if legacy:
+            self._write(self._salts_path, self._sealed(legacy))
+        return legacy
+
+    def _index_key(self) -> Optional[bytes]:
+        try:
+            return sealed_index.load_or_create_key(self._index_key_path)
+        except OSError as exc:
+            logger.warning("blackbox: the reputation ledger's index key could not be created (%s)", exc)
+            return None
+
+    def _sealed(self, salts: Dict[str, str]) -> str:
+        key = self._index_key()
+        if key is None:   # never fall back to a clear index: an unsaved ledger is safer than a readable one
+            raise OSError("the ledger index key is unreadable")
+        return sealed_index.seal(salts, key)
+
+    @staticmethod
+    def _write(path: Path, text: str) -> None:
+        tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
+        tmp.write_text(text, encoding="utf-8")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+
     def _save(self, data: Dict[str, Any]) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            for path, payload in ((self._path, {"entries": data["entries"], "publishers": data.get("publishers", {})}),
-                                  (self._salts_path, data["salts"])):
-                tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-                tmp.write_text(json.dumps(payload), encoding="utf-8")
-                os.chmod(tmp, 0o600)
-                os.replace(tmp, path)
+            index = self._sealed(data["salts"])
+            self._write(self._path, json.dumps({"entries": data["entries"], "publishers": data.get("publishers", {})}))
+            self._write(self._salts_path, index)
         except OSError as exc:
             logger.warning("blackbox: could not save the reputation ledger (%s)", exc)
+
+
+_HEX = frozenset("0123456789abcdef")
+
+
+def _well_formed(salts: Dict[str, str]) -> Dict[str, str]:
+    """Only the index rows whose salt can be used (non-empty, even-length lower-case hex). A row with a
+    damaged salt could never reach its entry anyway; it is dropped instead of crashing the ledger. Keys
+    are not judged here: whatever key the ledger was given is the key it must find again."""
+    return {key: salt for key, salt in salts.items()
+            if key and salt and len(salt) % 2 == 0 and set(salt) <= _HEX}
 
 
 def _new_entry(first_seen_day: str) -> Dict[str, Any]:

@@ -168,7 +168,9 @@ def test_salts_are_in_their_own_file_and_pruned_with_expired_entries(tmp_path):
     assert "salts" not in entries and "a" * 64 not in json.dumps(entries)
     assert ledger.keys() == ["a" * 64]                                                       # b's entry is expired
     ledger.record("a" * 64, reputation.Outcome("2026-09-02", True))                        # the next write persists the pruning
-    salts = json.loads((tmp_path / "reputation_salts.json").read_text(encoding="utf-8"))
+    from plugins.blackbox.community.reputation import sealed_index
+    salts = sealed_index.open_sealed((tmp_path / "reputation_salts.json").read_text(encoding="utf-8"),
+                                     sealed_index.load_or_create_key(tmp_path / "reputation_index.key"))
     assert set(salts) == {"a" * 64}                                                          # b's salt died with its entry
 
 

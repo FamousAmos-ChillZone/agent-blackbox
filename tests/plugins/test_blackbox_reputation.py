@@ -16,6 +16,7 @@ import json
 import pytest
 
 from plugins.blackbox.community import reputation as rep
+from plugins.blackbox.community.reputation import sealed_index
 from plugins.blackbox.community import stages
 from plugins.blackbox.community.statements import curator_view as cv
 from plugins.blackbox.curate import verbs
@@ -153,8 +154,10 @@ def test_the_ledger_is_salted_and_erasure_crypto_shreds_the_entry(tmp_path):
     assert (standing.confirmed, standing.rejected, standing.novel_credits, standing.first_seen_day) == (1, 1, 1, "2026-09-01")
     assert 0.4 < ledger.reputation(KEY, TODAY) < 0.6
     raw = json.loads((tmp_path / "reputation.json").read_text(encoding="utf-8"))
-    salts = json.loads((tmp_path / "reputation_salts.json").read_text(encoding="utf-8"))
+    index = (tmp_path / "reputation_salts.json").read_text(encoding="utf-8")
+    salts = sealed_index.open_sealed(index, sealed_index.load_or_create_key(tmp_path / "reputation_index.key"))
     assert list(salts) == [KEY] and KEY not in json.dumps(raw["entries"])               # entries carry only the pseudonym; salts apart
+    assert KEY not in index                                                              # and the index is sealed (KI-257)
     assert ledger.erase(KEY) and not ledger.erase(KEY)
     assert ledger.standing(KEY) == rep.ReporterStanding(key=KEY) and ledger.keys() == []
     assert json.loads((tmp_path / "reputation.json").read_text(encoding="utf-8"))["entries"] == {}
