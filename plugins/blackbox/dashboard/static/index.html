@@ -3465,8 +3465,15 @@
     invalidateGraphTier(tier);
   }
 
-  function resetGraphOnRulesetRefresh(tier, previousVersion) {
-    var currentVersion = rulesetVersion(lastStatus);
+  function communityVersion(status) {
+    // Content fingerprint of the community tier (server: Ruleset.community_fingerprint).
+    // It moves on every pulse that changes the tier; last_sync does NOT (FIX-0038).
+    if (!status) return null;
+    var value = status.community_version;
+    return value == null ? null : String(value);
+  }
+
+  function resetGraphOnVersionChange(tier, previousVersion, currentVersion) {
     if (previousVersion == null || currentVersion == null) return false;
     if (String(previousVersion) === String(currentVersion)) return false;
     resetGraphTierData(tier);
@@ -6585,15 +6592,19 @@
     var previousPublicTotal = graphTotalForTier("public");
     var previousCommunityTotal = graphTotalForTier("community");
     var previousRulesetVersion = rulesetVersion(lastStatus);
+    var previousCommunityVersion = communityVersion(lastStatus);
     lastStatus = data;
     resetEmptyGraphOnFirstVerifiedThreats("public", previousPublicTotal);
-    resetGraphOnRulesetRefresh("public", previousRulesetVersion);
-    // The community tier is LIVE: a newly compiled ruleset can carry new
-    // reports (or new reporters on a known threat). Without these resets the
-    // page kept the community list it first loaded — "No reports yet" under a
-    // tab count of 4 — until a full browser reload.
+    resetGraphOnVersionChange("public", previousRulesetVersion, rulesetVersion(data));
+    // The community tier is LIVE: a pulse can land new reports (or new reporters
+    // on a known threat) without any VM sync, so last_sync never moves on a node
+    // with no verified-graph subscription. Key the reload on the tier's own
+    // version as well, or the page keeps the list it first loaded until a full
+    // browser reload (bench finding 2026-10-02, FIX-0038).
     resetEmptyGraphOnFirstVerifiedThreats("community", previousCommunityTotal);
-    resetGraphOnRulesetRefresh("community", previousRulesetVersion);
+    if (!resetGraphOnVersionChange("community", previousCommunityVersion, communityVersion(data))) {
+      resetGraphOnVersionChange("community", previousRulesetVersion, rulesetVersion(data));
+    }
     updateTierNote();
     var curated = data.curated_threats != null ? data.curated_threats
                 : data.curated != null ? data.curated

@@ -519,7 +519,10 @@ def test_dashboard_reloads_live_community_tier_when_ruleset_changes():
         render_status.index("lastStatus = data;")
     )
     assert 'resetEmptyGraphOnFirstVerifiedThreats("community", previousCommunityTotal);' in render_status
-    assert 'resetGraphOnRulesetRefresh("community", previousRulesetVersion);' in render_status
+    # FIX-0038: the community tier is keyed on its OWN version first (a pulse moves it,
+    # last_sync does not), with the ruleset version as the fallback key.
+    assert 'resetGraphOnVersionChange("community", previousCommunityVersion, communityVersion(data))' in render_status
+    assert 'resetGraphOnVersionChange("community", previousRulesetVersion, rulesetVersion(data))' in render_status
 
 
 @pytest.mark.skip(reason="dashboard never joins private graphs")

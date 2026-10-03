@@ -43,6 +43,7 @@ def _community_ruleset() -> Ruleset:
         },
     }
     rs.synced_at = 1234.5
+    rs.community_fingerprint = "fp-community-v1"
     return rs
 
 
@@ -184,3 +185,36 @@ def test_graph_tier_community_categories_are_canonical_and_carry_the_stage(clien
     evil = by_id["ioc:domain:evil.example"]
     assert (evil["stage"], evil["enforcement"], evil["disputed"]) == ("corroborated", "flag", "no")
     assert evil["stageReason"].startswith("corroborated by")
+
+
+# ---------------------------------------------------------------------------
+# FIX-0038: the Community tab reloads on the tier's OWN version
+# ---------------------------------------------------------------------------
+
+
+def test_graph_status_carries_the_community_tier_version(client):
+    """A pulse changes the community tier without moving last_sync; the page
+    needs a version that moves with the tier (the content fingerprint)."""
+    status = client.get("/api/graph-status").json()
+    assert status["community_version"] == "fp-community-v1"
+    assert status["last_sync"] == 1234.5
+
+
+def test_graph_status_community_version_is_null_before_any_tier(monkeypatch, tmp_path):
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
+    monkeypatch.setattr(rs_mod, "peek", lambda cfg: Ruleset())
+    with TestClient(server.create_app(), base_url="http://127.0.0.1") as c:
+        assert c.get("/api/graph-status").json()["community_version"] is None
+
+
+def test_dashboard_page_keys_community_reload_on_the_tier_version():
+    """Server key and page key must move together (the earlier fix, 58b963c119,
+    keyed the Community reload on last_sync only and went blind on a node that
+    never syncs the verified graph)."""
+    from pathlib import Path
+
+    from plugins.blackbox import dashboard as dashboard_pkg
+
+    page = (Path(dashboard_pkg.__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
+    assert "status.community_version" in page
+    assert 'resetGraphOnVersionChange("community", previousCommunityVersion' in page

@@ -32,6 +32,7 @@ from ..sync import state as sync_state
 from ..sync import read_durable_progress
 from . import community_routes
 from . import sync_timing
+from .sync_labels import _community_progress, _sync_label
 from .safe_payloads import graph_tier_item, safe_identifier, safe_text
 
 logger = logging.getLogger(__name__)
@@ -863,6 +864,7 @@ def _profile_activity_state(
     return states
 
 
+
 def create_app(*, manage_blackbox: bool = False):
     """Build and return the FastAPI application."""
     from fastapi import Body, FastAPI, Query
@@ -1544,14 +1546,6 @@ def create_app(*, manage_blackbox: bool = False):
                 ),
             )
         )
-        if not getattr(cfg, "community_graph_id", ""):
-            community_state = "not-configured"
-        elif getattr(rs, "community_paused", False):
-            community_state = "paused"
-        elif community:
-            community_state = "ready"
-        else:
-            community_state = "empty"
         with _join_lock:
             connection = dict(_connection_states.get(cfg.context_graph_id) or {})
         if connection.get("state") in {"pending-approval", "pending-encryption-profile", "joining"}:
@@ -1576,21 +1570,6 @@ def create_app(*, manage_blackbox: bool = False):
             if public_state == "empty":
                 public_state = "syncing"
 
-        def _sync_label(tier: str, state: str) -> str:
-            suffix = {
-                "ready": "synced",
-                "syncing": "syncing",
-                "unreachable": "offline",
-                "empty": "empty",
-                "incomplete": "incomplete",
-                "pending-approval": "curator approval pending",
-                "pending-encryption-profile": "waiting for workspace encryption profile",
-                "joining": "joining private graph",
-                "not-configured": "not configured",
-                "paused": "paused by curators",
-                "sync-envelope-error": "peer sync handshake malformed",
-            }.get(state, state)
-            return f"{tier} {suffix}"
         return {
             "mode": cfg.mode,
             "context_graph_id": cfg.context_graph_id,
@@ -1600,6 +1579,8 @@ def create_app(*, manage_blackbox: bool = False):
             "node_reachable": g["node_reachable"],
             "sync_interval": cfg.sync_interval,
             "last_sync": rs.synced_at or None,
+            # moves on a pulse (not a VM sync): the page reloads the Community tab on it (FIX-0038)
+            "community_version": getattr(rs, "community_fingerprint", "") or None,
             "ruleset": counts,
             "curated": public,
             "community": community,
@@ -1612,16 +1593,7 @@ def create_app(*, manage_blackbox: bool = False):
                     "state": public_state,
                     "label": _sync_label("VM", public_state),
                 },
-                "community": {
-                    "count": int(community or 0),
-                    "state": community_state,
-                    "label": {
-                        "not-configured": "Community graph not configured",
-                        "paused": "Community ingest paused by curators",
-                        "ready": f"Community graph live · {int(community or 0)} corroborated threats",
-                        "empty": "Community graph connected · no reports yet",
-                    }.get(community_state, community_state),
-                },
+                "community": _community_progress(cfg, rs, community),
                 "catchup": {
                     "status": catchup_state or "idle",
                     "started_at": (
