@@ -245,6 +245,21 @@ def read_verified_reports(client: DkgClient, cfg: BlackboxConfig) -> CommunityRe
     return replace(read, env_mismatch=verifier.drops["env_mismatch"], future_dated=verifier.drops["future_dated"])
 
 
+def _trust_interest(reports: List[VerifiedReport], *statement_lists: Any) -> List[str]:
+    """The identifiers worth asking the curators about, most important first:
+    every signer of a statement this node holds (``author:<key>`` — is it a
+    counted author?), then every reported threat, the most reported first
+    (has it a verdict or an attested stage?). The trust read asks for these
+    by exact lookup instead of scanning the graph (Community Curation C3)."""
+    authors = dict.fromkeys(f"author:{item.author}" for items in (reports, *statement_lists) for item in items)
+    reported: Dict[str, int] = {}
+    for report in reports:
+        reported[report.identifier] = reported.get(report.identifier, 0) + 1
+    disputed = dict.fromkeys(getattr(item, "identifier", "") for items in statement_lists for item in items)
+    threats = sorted(reported, key=lambda identifier: -reported[identifier])
+    return [*authors, *threats, *(identifier for identifier in disputed if identifier and identifier not in reported)]
+
+
 def _honour_statements(client: DkgClient, cfg: BlackboxConfig, environment: str,
                        reports: List[VerifiedReport]) -> CommunityRead:
     """Honour every reporter statement BEFORE anything is counted (Refine R2).
@@ -269,7 +284,8 @@ def _honour_statements(client: DkgClient, cfg: BlackboxConfig, environment: str,
     statements = [author_budget.Statement(item.author, item.subject)
                   for item in (*reports, *found_retractions, *found_disputes, *found_digests)]
     budget = author_budget.AuthorBudget(author_budget.FirstSeenStore()).admit(statements)
-    curator = read_curator_view(client, cfg, environment)
+    curator = read_curator_view(client, cfg, environment,
+                                interest=_trust_interest(reports, found_retractions, found_disputes, found_digests))
     if curator.unavailable:   # KI-228: a failed curator page freezes the last stages, like a failed report page
         return _unavailable("a page of key manifests or curator statements failed or was malformed")
     # A threat the curator rejected or revoked stops counting here (terminal verdicts, R2).
