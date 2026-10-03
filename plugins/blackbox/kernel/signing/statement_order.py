@@ -89,6 +89,18 @@ _SINGLE_KEY = frozenset({CuratorStatement.IN_REVIEW, CuratorStatement.DEFERRAL, 
                          CuratorStatement.AWAY, CuratorStatement.HEARTBEAT})
 
 
+def restriction(kind: CuratorStatement) -> int:
+    """How strongly a verdict holds enforcement DOWN — the order used whenever
+    two current statements about one threat must be ranked without a sequence
+    number to decide (a tie, or two authorities): terminal (3) > deferral (2)
+    > a notice such as in-review or deferral-lapsed (1) > confirmation (0)."""
+    if kind.terminal:
+        return 3
+    if kind is CuratorStatement.DEFERRAL:
+        return 2
+    return 0 if kind is CuratorStatement.CONFIRMATION else 1
+
+
 @dataclass(frozen=True)
 class OrderedStatement:
     """One verified curator statement about a threat: ``threat`` (identifier),
@@ -100,9 +112,11 @@ class OrderedStatement:
     sequence: int
 
     @property
-    def rank(self) -> Tuple[int, bool]:
-        """Sort key: higher sequence first; at a tie, terminal beats non-terminal."""
-        return self.sequence, self.kind.terminal
+    def rank(self) -> Tuple[int, int]:
+        """Sort key: higher sequence first; at a tie the statement that enforces
+        LESS wins (terminal, then deferral, then a notice, then confirmation),
+        so the outcome never depends on which row was read first."""
+        return self.sequence, restriction(self.kind)
 
 
 def current_by_type(statements: Iterable[OrderedStatement]) -> Dict[Tuple[str, CuratorStatement], OrderedStatement]:

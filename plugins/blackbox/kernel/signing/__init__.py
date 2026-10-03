@@ -28,7 +28,7 @@ from .envelope import (
     verify,
 )
 
-from . import key_manifest, statement_order, trust_anchors
+from . import authority, key_manifest, statement_order, trust_anchors
 
 __all__ = [
     "ENVELOPE_VERSION",
@@ -36,6 +36,7 @@ __all__ = [
     "MAX_SIGNATURES",
     "Signature",
     "SignedEnvelope",
+    "authority",
     "cosign",
     "key_manifest",
     "statement_order",

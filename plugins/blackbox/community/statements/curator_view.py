@@ -33,6 +33,7 @@ from datetime import date, datetime, timezone
 from typing import Any, AbstractSet, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
 from ...kernel.signing import key_manifest, statement_order
+from ...kernel.signing.authority import Authority, allowed_kinds
 from ...kernel.signing.statement_order import CuratorStatement
 from . import curator_statements
 from .curator_statements import CuratorRecord
@@ -41,9 +42,9 @@ logger = logging.getLogger(__name__)
 from .disputes import VerifiedDispute
 
 
-#: Statement types that count only from the verified graph (plan §06).
-VERIFIED_GRAPH_KINDS = frozenset({CuratorStatement.PROMOTION, CuratorStatement.REVOCATION,
-                                  CuratorStatement.PAUSE, CuratorStatement.COUNTED_AUTHORS})
+#: Statement types the VERIFIED authority publishes in the verified graph (plan §06);
+#: the table itself is ``kernel.signing.authority``.
+VERIFIED_GRAPH_KINDS = allowed_kinds(Authority.VERIFIED, in_verified_graph=True)
 #: Statement types that decide a threat's verdict.
 _VERDICT_KINDS = frozenset({CuratorStatement.CONFIRMATION, CuratorStatement.REJECTION, CuratorStatement.REVOCATION,
                             CuratorStatement.IN_REVIEW, CuratorStatement.DEFERRAL, CuratorStatement.DEFERRAL_LAPSED})
@@ -73,6 +74,14 @@ class CuratorView:
     ``attestations`` — the current (highest-sequence) stage attestation per
     threat (R3-attest); readers prefer it over their local stage unless a
     terminal verdict dominates.
+
+    Community Curation: one view is built PER AUTHORITY (``authority``), each
+    from its own manifest and in its own sequence order. Readers act on the
+    combination (``community.trust.combine``), whose ``manifest`` is still
+    the VERIFIED authority's (the kill list and verified rules depend on it)
+    and whose ``community`` field holds the community authority's own view.
+    ``delisted`` — reporter keys whose latest entry says "not listed" and has
+    not expired: a delisting by either authority removes the reporter.
     """
 
     manifest: Optional[key_manifest.KeyManifest] = None
@@ -99,6 +108,11 @@ class CuratorView:
     #: legitimately empty). Readers must then keep their last good stages — an empty view
     #: here would silently de-list every counted author and drop every threat to MONITOR.
     unavailable: bool = False
+    #: Community Curation: which authority this view speaks for; the reporter keys it
+    #: explicitly delisted; and, on a combined view, the community authority's own view.
+    authority: Authority = Authority.VERIFIED
+    delisted: FrozenSet[str] = frozenset()
+    community: Optional["CuratorView"] = None
 
     def is_counted(self, author_key: str) -> bool:
         return author_key in self.counted
@@ -125,15 +139,16 @@ class CuratorView:
 
 
 def _records(rows: Iterable[Mapping[str, Any]], manifest: key_manifest.KeyManifest, graph: str,
-             verified_graph: bool, *, root_keys: AbstractSet[str] = frozenset(),
+             allowed: AbstractSet[CuratorStatement], *, root_keys: AbstractSet[str] = frozenset(),
              curators_silent: bool = False) -> List[CuratorRecord]:
-    """Verified records from one graph, keeping only types that may live there."""
+    """Verified records from one graph, keeping only the kinds this authority
+    may publish there (*allowed*, from ``kernel.signing.authority``)."""
     records = []
     root_alone = 0
-    for row in rows:
+    for row in rows if allowed else ():
         record = curator_statements.parse_statement(row, manifest, graph=graph, root_keys=root_keys,
                                                     curators_silent=curators_silent)
-        if record is None or (record.kind in VERIFIED_GRAPH_KINDS) != verified_graph:
+        if record is None or record.kind not in allowed:
             continue
         if len(record.signers) < (manifest.threshold if record.kind.needs_quorum else 1):   # accepted root-alone
             root_alone += 1
@@ -178,19 +193,26 @@ def _frozen_out(records: Iterable[CuratorRecord], state: str, since: str) -> Lis
 def build_view(manifest: Optional[key_manifest.KeyManifest], verified_rows: Iterable[Mapping[str, Any]],
                community_rows: Iterable[Mapping[str, Any]], *, verified_graph: str, community_graph: str,
                today: Optional[str] = None, manifest_conflict: bool = False,
-               root_keys: AbstractSet[str] = frozenset(), community_readable: bool = False) -> CuratorView:
-    """The view from a trusted *manifest* and both graphs' statement rows."""
+               root_keys: AbstractSet[str] = frozenset(), community_readable: bool = False,
+               authority: Authority = Authority.VERIFIED) -> CuratorView:
+    """ONE authority's view from its trusted *manifest* and both graphs'
+    statement rows. Each graph contributes only the kinds *authority* may
+    publish there, so a community-authority view never contains a promotion
+    or a revocation, whatever its keys signed."""
     if manifest is None:
-        return CuratorView(manifest_conflict=manifest_conflict)
+        return CuratorView(manifest_conflict=manifest_conflict, authority=authority)
     day = today or _today()
     state, state_day = key_manifest.manifest_clock(manifest, day)
-    first_pass = _records(community_rows, manifest, community_graph, False)
+    in_verified = allowed_kinds(authority, in_verified_graph=True)
+    in_community = allowed_kinds(authority, in_verified_graph=False)
+    first_pass = _records(community_rows, manifest, community_graph, in_community)
     silent = _curators_silent(first_pass, day, community_readable)
-    records = _frozen_out(_records(verified_rows, manifest, verified_graph, True, root_keys=root_keys, curators_silent=silent)
-                          + _records(community_rows, manifest, community_graph, False, root_keys=root_keys,
+    records = _frozen_out(_records(verified_rows, manifest, verified_graph, in_verified, root_keys=root_keys, curators_silent=silent)
+                          + _records(community_rows, manifest, community_graph, in_community, root_keys=root_keys,
                                      curators_silent=silent), state, state_day)
+    counted, delisted = _counted_authors(records, day)
     return CuratorView(manifest=manifest, verdicts=_current_verdicts(records),
-                       counted=_counted_authors(records, today or _today()),
+                       counted=counted, delisted=delisted, authority=authority,
                        backlog=_latest(r for r in records if r.kind is CuratorStatement.BACKLOG),
                        away=tuple(r for r in records if r.kind is CuratorStatement.AWAY),
                        attestations=_current_attestations(records),
@@ -218,33 +240,65 @@ def _current_verdicts(records: Iterable[CuratorRecord]) -> Dict[str, CuratorReco
     return {threat: by_order[ordered] for threat, ordered in current.items()}
 
 
+#: How much a stage enforces in the community tier — lower enforces less. Used
+#: wherever two attestations must be ordered without a sequence to decide.
+STAGE_ENFORCEMENT_RANK: Mapping[str, int] = {"held": 0, "deferred": 0, "reported": 1, "corroborated": 2}
+
+
+def _attestation_order(record: CuratorRecord) -> Tuple[int, int]:
+    """Sort key: higher sequence first; at a tie the stage that enforces LESS
+    wins, so the outcome never depends on which row was read first (KI-245)."""
+    return record.sequence, -STAGE_ENFORCEMENT_RANK.get(record.field("stage"), 0)
+
+
 def _current_attestations(records: Iterable[CuratorRecord]) -> Dict[str, CuratorRecord]:
     """The highest-sequence attestation per threat: a replayed older one loses."""
     current: Dict[str, CuratorRecord] = {}
     for record in records:
         if record.kind is CuratorStatement.ATTESTATION:
             held = current.get(record.identifier)
-            if held is None or record.sequence > held.sequence:
+            if held is None or _attestation_order(record) > _attestation_order(held):
                 current[record.identifier] = record
     return current
 
 
-def _counted_authors(records: Iterable[CuratorRecord], today: str) -> Dict[str, CountedAuthor]:
-    """The latest entry per author key (by sequence); listed and unexpired only."""
+def _listing_order(record: CuratorRecord) -> Tuple[int, bool]:
+    """Sort key: higher sequence first; at a tie a DELISTING wins, whichever
+    row was read first (KI-245 — a delisting must never lose to a listing)."""
+    return record.sequence, record.field("listed") == "no"
+
+
+def _delisting_in_force(record: CuratorRecord, today: str) -> bool:
+    """A delisting holds for as long as the longest listing it could be
+    overriding (``LISTING_MAX_DAYS`` from its signed day) — bounded, so a
+    reporter is never denylisted forever by one old statement."""
+    try:
+        age = (date.fromisoformat(today) - date.fromisoformat(record.day)).days
+    except ValueError:
+        return True   # an unreadable day never ends a reduction early
+    return age <= curator_statements.LISTING_MAX_DAYS
+
+
+def _counted_authors(records: Iterable[CuratorRecord], today: str) -> Tuple[Dict[str, CountedAuthor], FrozenSet[str]]:
+    """(counted, delisted) from the latest entry per author key: *counted* —
+    listed and unexpired; *delisted* — keys whose latest entry says "not
+    listed" and is still in force (it also removes the other authority's listing)."""
     latest: Dict[str, CuratorRecord] = {}
     for record in records:
         if record.kind is CuratorStatement.COUNTED_AUTHORS:
             held = latest.get(record.identifier)
-            if held is None or record.sequence > held.sequence:
+            if held is None or _listing_order(record) > _listing_order(held):
                 latest[record.identifier] = record
-    counted = {}
+    counted, delisted = {}, set()
     for identifier, record in latest.items():
+        key = identifier[len("author:"):]
         if record.field("listed") == "yes" and record.field("expires") >= today:
-            key = identifier[len("author:"):]
             counted[key] = CountedAuthor(key=key, address=record.field("address"),
                                          author_class=record.field("class"), org=record.field("org"),
                                          expires=record.field("expires"))
-    return counted
+        elif record.field("listed") == "no" and _delisting_in_force(record, today):
+            delisted.add(key)
+    return counted, frozenset(delisted)
 
 
 def _active_pause_until(records: Iterable[CuratorRecord]) -> str:
