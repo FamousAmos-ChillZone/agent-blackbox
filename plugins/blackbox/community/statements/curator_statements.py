@@ -272,6 +272,23 @@ def statement_quads(envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
     ]
 
 
+def row_for_signed(text: str) -> Optional[Dict[str, str]]:
+    """The graph row a signed curator statement is published as, rebuilt from
+    its TEXT alone (an export bundle holds texts, not rows) — None unless the
+    text is a statement in the exact canonical form :func:`statement_quads`
+    writes. Still UNVERIFIED: pass it to :func:`parse_statement`."""
+    envelope = signing.from_text(text) if isinstance(text, str) and signing.is_canonical(text) else None
+    if envelope is None:
+        return None
+    try:
+        kind = CuratorStatement(envelope.statement_type)
+    except ValueError:
+        return None
+    identifier = str(envelope.payload.get("identifier", ""))
+    return {"r": statement_subject(kind, identifier, envelope.sequence), "identifier": identifier,
+            SIGNED_STATEMENT_VAR: text}
+
+
 def manifest_quads(envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
     """The graph quads for a root-signed key manifest (published in the
     verified graph): subject ``urn:guardian:key-manifest:<root epoch>:<version>``,

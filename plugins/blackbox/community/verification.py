@@ -73,6 +73,8 @@ class VerifiedReport:
     ``fields`` — evidence as (reader variable, signed value) pairs, sorted.
     ``day`` — the signed UTC day of the report (who reported a threat first,
     and since when a reporter has been reporting, are read from it).
+    ``signed`` — the signed statement itself, as text: what is handed on when
+    the report must be checked again by someone else (the export bundle).
     """
 
     subject: str
@@ -83,6 +85,7 @@ class VerifiedReport:
     fields: Tuple[Tuple[str, str], ...] = ()
     framework: str = ""      # the signed framework label (display only)
     day: str = ""
+    signed: str = ""
 
 
 class ReportVerifier:
@@ -136,7 +139,18 @@ class ReportVerifier:
             return None
         return VerifiedReport(subject=payload["subject"], identifier=identifier, author=author,
                               reporter=reporter, severity=severity, fields=fields,
-                              framework=payload.get("framework", ""), day=str(payload.get("day", "")))
+                              framework=payload.get("framework", ""), day=str(payload.get("day", "")),
+                              signed=extract_binding(row.get(SIGNED_STATEMENT_VAR)))
+
+    def verify_signed(self, text: str) -> Optional[VerifiedReport]:
+        """The verified report for one signed report TEXT on its own — an
+        export bundle holds the text, not a graph row. The row is rebuilt from
+        what the signature covers, then checked exactly like a row that was read."""
+        envelope = signing.from_text(text)
+        payload = envelope.payload if envelope is not None else {}
+        return self.verify({"r": payload.get("subject", ""), "identifier": payload.get("identifier", ""),
+                            "reporter": payload.get("reporter", ""), "severity": payload.get("severity", ""),
+                            SIGNED_STATEMENT_VAR: text})
 
 
 def _utc_today() -> str:

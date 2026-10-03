@@ -59,6 +59,12 @@ COMMUNITY_VIEWS: Tuple[SavedView, ...] = (
     SavedView("keep-alive-copies", "Guardian · keep-alive copies per report",
               "Reports with more than one asset copy on the graph (epoch keep-alive, R5): the subject and how many copies readers fold.",
               _G + "SELECT ?r (COUNT(DISTINCT ?g) AS ?copies) WHERE { GRAPH ?g { ?r a g:ThreatReport } } GROUP BY ?r HAVING (COUNT(DISTINCT ?g) > 1) ORDER BY DESC(?copies) LIMIT 500"),
+    SavedView("confirmed-pool", "Guardian · confirmed pool (candidates)",
+              "Confirmations the community curators published, with the signed statement that carries the evidence they checked. "
+              "Anyone can write rows here: `blackbox curate pool` verifies the signatures and lists what really stands.",
+              _G + "SELECT ?identifier ?r ?signedStatement WHERE { ?r a g:CuratorStatement ; g:identifier ?identifier ; "
+                   "g:signedStatement ?signedStatement . FILTER(STRSTARTS(STR(?r), \"urn:guardian:curator:confirmation:\")) } "
+                   "ORDER BY ?identifier LIMIT 500"),
     SavedView("curator-statements", "Guardian · curator statements",
               "Curator verdicts and notices in the community graph (meaning is in the signed envelope).",
               _G + "SELECT ?r ?identifier WHERE { ?r a g:CuratorStatement ; g:identifier ?identifier } ORDER BY ?r LIMIT 500"),

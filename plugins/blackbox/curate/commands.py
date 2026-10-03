@@ -6,7 +6,8 @@ sandbox) · ``manifest`` (sandbox: stage a root-signed key manifest) · ``queue`
 checklist preview) · ``propose`` (promotion / verdict / nomination / pause,
 first key) · ``inbox`` (receive proposals) · ``approve`` (second key: co-sign,
 consent, publish) · ``publish`` · ``reject`` · ``list`` · ``watch`` (intake ->
-webhook) · ``views`` / ``view`` (saved node-UI queries). Each verb is one
+webhook) · ``views`` / ``view`` (saved node-UI queries) · ``pool`` / ``export`` /
+``verify-bundle`` (the confirmed pool and its hand-off bundle, :mod:`.handoff`). Each verb is one
 Command function; read verbs need no keys. The argument parser is
 :mod:`.parser`; the compiled ruleset is injected by cli.py, the composition root.
 """
@@ -23,7 +24,7 @@ from ..detection import osv
 from ..kernel import display_safety, node_routes, signing
 from ..kernel.signing.authority import Authority
 from ..kernel.signing.statement_order import CuratorStatement
-from . import dossier, intake, keys, node_ui_views, publishing, queue, transport, verbs
+from . import dossier, handoff, intake, keys, node_ui_views, publishing, queue, transport, verbs
 from .ladder import outcomes
 from .upkeep import heartbeat, published
 from .context import CurateContext, build_context, verified_identifiers
@@ -49,7 +50,7 @@ def cmd_curate(args: argparse.Namespace) -> int:
 
 def _usage(args: argparse.Namespace) -> int:
     print("usage: blackbox curate [--authority verified|community] {keys,manifest,queue,show,propose,inbox,approve,"
-          "publish,reject,list,heartbeat,upkeep,watch,views,view,outcome,graduate}")
+          "publish,reject,list,heartbeat,upkeep,pool,export,verify-bundle,watch,views,view,outcome,graduate}")
     return 2
 
 
@@ -108,7 +109,9 @@ def _show(args: argparse.Namespace) -> int:
     verdict = ctx.view.verdict(args.identifier)
     built = (dossier.DossierBuilder(args.identifier).community(rule).advisories(osv.lookup)
              .allowlist(community.allowlist.check(args.identifier, rule))
-             .curator(verdict.value if verdict else None, weight).heat(read.heat.get(args.identifier))
+             .curator(verdict.value if verdict else None, weight)
+             .community_confirmation(handoff.confirmation_for(ctx, args.identifier, getattr(args, "bundle", "")))
+             .heat(read.heat.get(args.identifier))
              .history(ProposalStore().for_identifier(args.identifier)).build())
     for line in dossier.render(built):
         print(_term(line, 220))
@@ -116,6 +119,18 @@ def _show(args: argparse.Namespace) -> int:
     for item in dossier.checklist(args.identifier, kind=kind, evidence="", reason=""):
         print(f"  checklist {item.item}. {item.title}: {'ok' if item.ok else 'NOT YET'} — {item.note}")
     return 0
+
+
+def _pool(args: argparse.Namespace) -> int:
+    return handoff.print_pool(_ctx(args))
+
+
+def _export(args: argparse.Namespace) -> int:
+    return handoff.export(_ctx(args), args.out)
+
+
+def _verify_bundle(args: argparse.Namespace) -> int:
+    return handoff.verify_file(args.file, root=args.root, network=args.network, graph=args.graph)   # offline: no context
 
 
 def _list(args: argparse.Namespace) -> int:
@@ -340,6 +355,6 @@ def _metrics(args: argparse.Namespace) -> int:
 _VERBS: Dict[str, Callable[[argparse.Namespace], int]] = {
     "keys": _keys, "manifest": _manifest, "queue": _queue, "show": _show, "propose": _propose, "inbox": _inbox,
     "approve": _approve, "publish": _publish, "reject": _reject, "list": _list, "watch": _watch, "views": _views,
-    "heartbeat": _heartbeat, "upkeep": _upkeep,
+    "heartbeat": _heartbeat, "upkeep": _upkeep, "pool": _pool, "export": _export, "verify-bundle": _verify_bundle,
     "view": _view, "outcome": _outcome, "graduate": _graduate, "metrics": _metrics,
 }

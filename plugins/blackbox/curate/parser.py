@@ -40,6 +40,8 @@ def add_curate_parser(sub: "argparse._SubParsersAction", *, compiled_ruleset: Op
     verbs_.add_parser("queue", help="The delta view: NEW threats by lane; already-verified closed as duplicates")
     s = verbs_.add_parser("show", help="The evidence dossier and checklist preview for one threat")
     s.add_argument("identifier")
+    s.add_argument("--bundle", default="", metavar="FILE",
+                   help="also show the community confirmation and its evidence from this export bundle (verified first)")
     _add_propose(verbs_)
     verbs_.add_parser("inbox", help="Receive proposals sent by the other curator")
     a = verbs_.add_parser("approve", help="Second key: co-sign, consent, publish")
@@ -56,6 +58,7 @@ def add_curate_parser(sub: "argparse._SubParsersAction", *, compiled_ruleset: Op
     h = verbs_.add_parser("heartbeat", help="Publish this curator key's heartbeat (one key; daily)")
     _add_consent(h)
     verbs_.add_parser("upkeep", help="Re-publish this node's current statements before shared memory forgets them")
+    _add_handoff(verbs_)
     w = verbs_.add_parser("watch", help="Intake: announce NEW threats to a webhook")
     w.add_argument("--webhook", required=True)
     w.add_argument("--interval", type=float, default=60.0)
@@ -90,6 +93,18 @@ def _add_propose(verbs_: Any) -> None:
     p.add_argument("--until", default="")
     p.add_argument("--delist", action="store_true", help="nomination: remove (the denylist)")
     p.add_argument("--to", default="", metavar="PEER", help="send to this curator peer (name or peer id)")
+
+
+def _add_handoff(verbs_: Any) -> None:
+    """The confirmed pool and its hand-off bundle (``pool``, ``export``, ``verify-bundle``)."""
+    verbs_.add_parser("pool", help="The confirmed pool: threats the community curators confirmed, with their evidence")
+    e = verbs_.add_parser("export", help="Write the confirmed pool as one bundle file the verified graph's owner can check offline")
+    e.add_argument("--out", required=True, metavar="FILE")
+    b = verbs_.add_parser("verify-bundle", help="Check an export bundle OFFLINE from the community root key")
+    b.add_argument("file")
+    b.add_argument("--root", default="", metavar="HEX", help="the community root key (default: the one pinned for the graph)")
+    b.add_argument("--network", default="", metavar="ID", help="the network id the bundle must be for (default: this node's)")
+    b.add_argument("--graph", default="", metavar="ID", help="the community graph the bundle must be for (default: this node's)")
 
 
 def _add_reputation(verbs_: Any) -> None:

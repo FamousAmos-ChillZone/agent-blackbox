@@ -238,6 +238,13 @@ def _newest_manifests(rows: Iterable[Mapping[str, str]]) -> List[Row]:
     return [row for _, row in ordered[:MAX_STORED_MANIFESTS]]
 
 
+def held_manifest_texts(graph: str) -> Tuple[str, ...]:
+    """The signed key manifests this node holds for *graph*, as texts (each was
+    verified against the pinned root when it was stored) — the chain an export
+    bundle carries so a receiver can check everything from the root down."""
+    return tuple(sorted(row["signedStatement"] for row in TrustStore().load(graph).manifests if row.get("signedStatement")))
+
+
 def manifest_orders(rows: Iterable[Mapping[str, str]]) -> List[Tuple[int, int]]:
     """The (root epoch, version) of each stored manifest row — what the next lookup probes beyond."""
     orders = []

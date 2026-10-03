@@ -34,6 +34,8 @@ Public surface:
   the share gate refuses without it.
 * :mod:`allowlist` — the allowlist / warninglist verdict and canaries (R9): byte-exact
   names hold, look-alikes support the report.
+* :mod:`pool` — the confirmed pool (threats with a standing, evidenced community confirmation) and the
+  export bundle its receiver checks offline from the community root (Community Curation C8).
 * :mod:`reputation` — automated graduation, novelty, partners, collusion and the
   curator-private ledger (R4); readers see its decisions only through the counted-author list.
 * :func:`publish_due_copies` — keep-alive (R5): this node re-publishes an
@@ -64,7 +66,7 @@ from .digest import publish_due_digests, record_verified_sighting
 from . import keep_alive
 from .keep_alive import publish_due_copies
 from .statements.curator_view import COMMUNITY_LISTING_MAX_DAYS
-from . import allowlist, consent, reputation, shadow
+from . import allowlist, consent, pool, reputation, shadow
 from .pulse import PULSE
 from .pulse import fingerprint as community_fingerprint
 from .statements.lifetimes import lifetime_days
@@ -136,6 +138,7 @@ __all__ = [
     "keep_alive",
     "COMMUNITY_LISTING_MAX_DAYS",
     "reputation",
+    "pool",
     "allowlist",
     "consent",
     "shadow",
