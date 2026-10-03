@@ -68,7 +68,6 @@ MAX_ENVELOPE_CHARS = 4096
 MAX_SIGNATURES = 4
 _PUBLIC_KEY_HEX_CHARS = 64
 _SIGNATURE_HEX_CHARS = 128
-_LOWER_HEX = frozenset("0123456789abcdef")
 
 
 @dataclass(frozen=True)
@@ -143,17 +142,24 @@ def content_id(envelope: SignedEnvelope) -> str:
     return hashlib.sha256(_signed_message(envelope)).hexdigest()
 
 
+def canonical_text(envelope: SignedEnvelope) -> str:
+    """*envelope* written the ONE canonical way: compact sorted JSON, its
+    signatures in lower-case hex, one per signer (the first given), sorted by
+    signer. A copy that differs from a statement only in how it is written
+    comes back as the statement's original text. The result is as UNVERIFIED
+    as any text — verify it before relying on it."""
+    first: Dict[str, Signature] = {}
+    for signature in envelope.signatures:
+        first.setdefault(signature.signer.lower(), Signature(signature.signer.lower(), signature.value.lower()))
+    return replace(envelope, signatures=tuple(first[signer] for signer in sorted(first))).to_text()
+
+
 def is_canonical(text: str) -> bool:
-    """True when *text* is exactly the ONE form :meth:`SignedEnvelope.to_text`
-    writes for a statement: compact sorted JSON, lower-case hex, signatures
-    sorted by signer, no signer twice. Parsing accepts more than that; a file
-    in which every byte must matter (an export bundle) accepts only this."""
+    """True when *text* is exactly its own canonical form. Parsing accepts
+    more than that; a file in which every byte must matter (an export bundle)
+    accepts only this."""
     envelope = from_text(text)
-    if envelope is None or envelope.to_text() != text:
-        return False
-    signers = [signature.signer for signature in envelope.signatures]
-    return signers == sorted(set(signers)) and all(
-        set(signature.signer) <= _LOWER_HEX and set(signature.value) <= _LOWER_HEX for signature in envelope.signatures)
+    return envelope is not None and canonical_text(envelope) == text
 
 
 def public_key_hex(private_key: Ed25519PrivateKey) -> str:

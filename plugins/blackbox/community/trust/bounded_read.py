@@ -34,7 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
-from ...kernel import constants, sparql_text
+from ...kernel import constants, signing, sparql_text
 from ...kernel.dkg_client import extract_binding
 
 #: The identifier every curator notice (pause, backlog, away, heartbeat) carries.
@@ -70,15 +70,21 @@ class Lookup:
 
 
 def _plain(row: Mapping[str, Any]) -> Dict[str, str]:
-    """A node row as plain strings: subject, shown identifier, signed statement."""
+    """A node row as plain strings: subject, shown identifier, and the signed
+    statement written the canonical way — so a copy of a statement that
+    differs only in how it is written (spacing, key order, an ignored key,
+    upper-case hex) IS that statement from here on (KI-266)."""
+    text = extract_binding(row.get("signedStatement"))
+    envelope = signing.from_text(text)
     return {"r": extract_binding(row.get("r")), "identifier": extract_binding(row.get("identifier")),
-            "signedStatement": extract_binding(row.get("signedStatement"))}
+            "signedStatement": signing.canonical_text(envelope) if envelope is not None else text}
 
 
 def fold(rows: Iterable[Mapping[str, Any]]) -> List[Dict[str, str]]:
     """*rows* as plain rows with exact duplicates removed. A keep-alive copy of
     a statement is the same subject and the same signed text under a new asset
-    name, so it folds to one (first occurrence wins the position)."""
+    name, and a rewritten copy has the same canonical text, so both fold to
+    one (first occurrence wins the position)."""
     seen = set()
     out: List[Dict[str, str]] = []
     for row in rows:

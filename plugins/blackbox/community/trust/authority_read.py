@@ -211,8 +211,9 @@ def _verifiable(statements: Iterable[Row], verified: _Resolved, community: _Reso
     manifest for a kind that authority may publish in the community graph. A
     root-alone reduction counts as verifiable here; whether it is HONOURED is
     decided on every read, by the curators' silence. ONE row is kept per
-    signed statement — the smallest of the texts that verified — however many
-    rewritten copies of it the graph holds (KI-266)."""
+    signed statement however many copies of it the graph holds (KI-266): of the
+    copies that verified, the one with the fewest signatures (anyone can add a
+    signature of their own to a genuine statement), then the smallest text."""
     kept: Dict[str, Row] = {}
     community_keys: Set[str] = set()
     for row in statements:
@@ -223,12 +224,18 @@ def _verifiable(statements: Iterable[Row], verified: _Resolved, community: _Reso
                                                         curators_silent=True)
             if record is not None and record.kind in allowed_kinds(resolved.authority, in_verified_graph=False):
                 key = trust_store.statement_key(row)
-                if key not in kept or str(row["signedStatement"]) < str(kept[key]["signedStatement"]):
+                if key not in kept or _copy_rank(row) < _copy_rank(kept[key]):
                     kept[key] = row
                 if resolved.authority is Authority.COMMUNITY:
                     community_keys.add(key)
                 break
     return list(kept.values()), community_keys
+
+
+def _copy_rank(row: Row) -> Tuple[int, str]:
+    """Which of several verified copies of one statement is kept — lower wins."""
+    text = str(row.get("signedStatement", ""))
+    return text.count('"signer":'), text
 
 
 def known_curator_statements(client: DkgClient, cfg: BlackboxConfig, identifiers: Iterable[str], *,

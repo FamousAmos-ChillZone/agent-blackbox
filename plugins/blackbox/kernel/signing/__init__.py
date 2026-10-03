@@ -8,7 +8,7 @@ and ``signing.sign(...)`` / ``signing.verify(...)``:
   :func:`verify` (one signer), :func:`verified_signers` (several),
   :func:`from_text`, :func:`public_key_hex`, :class:`SignedEnvelope`;
   :func:`content_id` (what was signed — the identity readers key on) and
-  :func:`is_canonical` (the one text a statement is written as).
+  :func:`canonical_text` / :func:`is_canonical` (the one text a statement is written as).
 * :mod:`.key_manifest` — the curator key manifest (Refine R7a): which keys may
   sign for an environment, the threshold, the pinned promotion author, the
   legacy-corpus pin. Imported as ``signing.key_manifest``.
@@ -22,6 +22,7 @@ from .envelope import (
     MAX_SIGNATURES,
     Signature,
     SignedEnvelope,
+    canonical_text,
     content_id,
     cosign,
     from_text,
@@ -41,6 +42,7 @@ __all__ = [
     "Signature",
     "SignedEnvelope",
     "authority",
+    "canonical_text",
     "content_id",
     "cosign",
     "is_canonical",

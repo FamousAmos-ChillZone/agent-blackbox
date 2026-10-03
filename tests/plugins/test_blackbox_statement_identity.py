@@ -133,7 +133,32 @@ def test_the_trust_store_keeps_one_row_per_signed_statement(community):
     assert len({row["signedStatement"] for row in copies}) == 60
     read_curator_view(Store(community=[community.manifest_row(), *copies, replayed]), CFG, interest=[THREAT])
     stored = TrustStore().load(GRAPH).statements
-    assert len(stored) == 1 and stored[0]["signedStatement"] == min(row["signedStatement"] for row in [replayed, *copies])
+    assert len(stored) == 1 and stored[0]["signedStatement"] == replayed["signedStatement"]      # as the curators wrote it
+
+
+def test_every_formatting_only_copy_reads_back_as_the_original_text(community):
+    row = community.row(Kind.CONFIRMATION, THREAT, CITED, signers=3)
+    for what, text in rewritten(row["signedStatement"]).items():
+        canonical = signing.canonical_text(signing.from_text(text))
+        assert signing.is_canonical(canonical), what
+        assert (canonical == row["signedStatement"]) == (what != "one of three signatures left out"), what
+
+
+def test_a_signature_an_outsider_added_to_a_genuine_statement_is_not_what_the_reader_keeps(community):
+    """Anyone can sign the same bytes with a key of their own and publish the result: it
+    verifies (the two curator signatures are still there). The reader keeps the copy with
+    the fewest signatures, whatever order the copies are read in."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    genuine = community.row(Kind.CONFIRMATION, THREAT, CITED)
+    padded = []
+    for _ in range(6):
+        outsider = Ed25519PrivateKey.generate()                    # gitleaks:allow — a throwaway test key
+        padded.append({**genuine, "signedStatement": signing.cosign(signing.from_text(genuine["signedStatement"]), outsider).to_text()})
+    for rows in ([*padded, genuine], [genuine, *padded]):
+        TrustStore().forget()
+        view = read_curator_view(Store(community=[community.manifest_row(), *rows]), CFG, interest=[THREAT])
+        assert view.verdict(THREAT) is Kind.CONFIRMATION and view.community.held_raising == 0
+        assert [row["signedStatement"] for row in TrustStore().load(GRAPH).statements] == [genuine["signedStatement"]]
 
 
 def test_a_copy_with_a_broken_signature_cannot_stand_in_for_the_genuine_statement(community):
