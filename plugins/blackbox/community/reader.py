@@ -17,7 +17,7 @@ import logging
 import time
 from dataclasses import replace, dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, extract_binding
@@ -212,7 +212,7 @@ def _empty_is_authorised(client: DkgClient, graph: str) -> bool:
     return False
 
 
-def read_verified_reports(client: DkgClient, cfg: BlackboxConfig) -> CommunityRead:
+def read_verified_reports(client: DkgClient, cfg: BlackboxConfig, *, held: Iterable[str] = ()) -> CommunityRead:
     """THE community read (R0c/R0d, tri-state R0): every report in the
     community graph whose signature verifies for this node's network and graph.
 
@@ -223,6 +223,10 @@ def read_verified_reports(client: DkgClient, cfg: BlackboxConfig) -> CommunityRe
     graph reads empty but the node cannot confirm it is subscribed and
     synced. No community graph configured = AUTHORISED_EMPTY. Reports their
     own signer retracted are left out (:mod:`.retractions`).
+
+    *held* — threats the caller still holds from an earlier read. The curators
+    are asked about them too, so a threat whose reports are gone is still seen
+    if it was rejected or revoked meanwhile (KI-275).
     """
     if not cfg.community_graph_id:
         return CommunityRead(ReadState.AUTHORISED_EMPTY)
@@ -237,12 +241,24 @@ def read_verified_reports(client: DkgClient, cfg: BlackboxConfig) -> CommunityRe
         return _unavailable("the node reports no network id, so nothing can be verified")
     if not rows:
         if _empty_is_authorised(client, cfg.community_graph_id):
-            return CommunityRead(ReadState.AUTHORISED_EMPTY)
+            return CommunityRead(ReadState.AUTHORISED_EMPTY, curator=_held_verdicts(client, cfg, environment, held))
         return _unavailable("empty read without proof of a synced subscription")
     verifier = ReportVerifier(environment, cfg.community_graph_id)
     reports, _dropped = verify_report_rows(rows, verifier)
-    read = _honour_statements(client, cfg, environment, reports)
+    read = _honour_statements(client, cfg, environment, reports, held)
     return replace(read, env_mismatch=verifier.drops["env_mismatch"], future_dated=verifier.drops["future_dated"])
+
+
+def _held_verdicts(client: DkgClient, cfg: BlackboxConfig, environment: str, held: Iterable[str]) -> curator_view.CuratorView:
+    """What the curators said about threats the caller still holds, for a read
+    with no reports (KI-275: a threat may have vanished because it was
+    rejected). Nothing held, or the curators' statements unreadable: an empty
+    view — which withdraws nothing."""
+    wanted = list(held)
+    if not wanted:
+        return curator_view.CuratorView()
+    view = read_curator_view(client, cfg, environment, interest=wanted)
+    return curator_view.CuratorView() if view.unavailable else view
 
 
 def _trust_interest(reports: List[VerifiedReport], *statement_lists: Any) -> List[str]:
@@ -261,7 +277,7 @@ def _trust_interest(reports: List[VerifiedReport], *statement_lists: Any) -> Lis
 
 
 def _honour_statements(client: DkgClient, cfg: BlackboxConfig, environment: str,
-                       reports: List[VerifiedReport]) -> CommunityRead:
+                       reports: List[VerifiedReport], held: Iterable[str] = ()) -> CommunityRead:
     """Honour every reporter statement BEFORE anything is counted (Refine R2).
 
     Reads and verifies retractions and disputes, applies ONE per-author
@@ -285,7 +301,7 @@ def _honour_statements(client: DkgClient, cfg: BlackboxConfig, environment: str,
                   for item in (*reports, *found_retractions, *found_disputes, *found_digests)]
     budget = author_budget.AuthorBudget(author_budget.FirstSeenStore()).admit(statements)
     curator = read_curator_view(client, cfg, environment,
-                                interest=_trust_interest(reports, found_retractions, found_disputes, found_digests))
+                                interest=[*_trust_interest(reports, found_retractions, found_disputes, found_digests), *held])
     if curator.unavailable:   # KI-228: a failed curator page freezes the last stages, like a failed report page
         return _unavailable("a page of key manifests or curator statements failed or was malformed")
     # A threat the curator rejected or revoked stops counting here (terminal verdicts, R2).

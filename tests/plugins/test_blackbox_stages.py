@@ -180,7 +180,7 @@ def test_the_tier_stores_stage_reason_and_source_and_materializes_only_flag_leve
     reports = [VerifiedReport("s1", "ioc:domain:listed.example", listed, "0x1cb7a2e9afbed1e81860f3dd4e4e3b795be5b95a", "high", (("iocType", "domain"),)),
                VerifiedReport("s2", "ioc:domain:unlisted.example", unlisted, "0x6b865327cda5d374298777f79af02ba0b90512d5", "high", (("iocType", "domain"),))]
     view = _view(partners=[(listed, "acme")])
-    monkeypatch.setattr(community_tier.community, "read_verified_reports", lambda c, cfg: _read(reports, view))
+    monkeypatch.setattr(community_tier.community, "read_verified_reports", lambda c, cfg, **kw: _read(reports, view))
     monkeypatch.setattr(community_tier.community, "community_pause_active", lambda c, cfg: False)
     monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda c, cfg: None)
     rs = compiler.Ruleset()
@@ -206,7 +206,7 @@ def test_an_unavailable_read_freezes_the_last_stages():
 def test_verified_rules_never_expire_or_gain_a_stage(monkeypatch):
     """Stages are a COMMUNITY concept: the verified tier is untouched however old."""
     monkeypatch.setattr(community_tier.community, "read_verified_reports",
-                        lambda c, cfg: _read([], cv.CuratorView()))
+                        lambda c, cfg, **kw: _read([], cv.CuratorView()))
     monkeypatch.setattr(community_tier.community, "community_pause_active", lambda c, cfg: False)
     monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda c, cfg: None)
     rs = compiler.Ruleset()
@@ -264,7 +264,7 @@ def test_terminal_verdicts_expiry_and_disputes_still_dominate_an_attestation():
 
 def test_the_unsigned_pause_flag_is_honoured_only_while_no_manifest_exists(monkeypatch):
     """Pre-manifest era: the legacy `enabled` triple on the verified graph still pauses ingest."""
-    monkeypatch.setattr(community_tier.community, "read_verified_reports", lambda c, cfg: _read([], cv.CuratorView()))
+    monkeypatch.setattr(community_tier.community, "read_verified_reports", lambda c, cfg, **kw: _read([], cv.CuratorView()))
     monkeypatch.setattr(community_tier.community, "community_pause_active", lambda c, cfg: True)
     monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda c, cfg: None)
     rs = compiler.Ruleset()
@@ -282,7 +282,7 @@ def test_the_unsigned_pause_flag_is_ignored_once_a_trusted_manifest_exists(monke
                               curator_keys=("a" * 64, "c" * 64), threshold=2,
                               promotion_author="0x" + "1" * 40, legacy_assets_hash="0" * 64)
     view = dataclasses.replace(_view(partners=[("c" * 64, "acme")]), manifest=manifest)
-    monkeypatch.setattr(community_tier.community, "read_verified_reports", lambda c, cfg: _read([], view))
+    monkeypatch.setattr(community_tier.community, "read_verified_reports", lambda c, cfg, **kw: _read([], view))
     monkeypatch.setattr(community_tier.community, "community_pause_active", lambda c, cfg: True)
     monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda c, cfg: None)
     rs = compiler.Ruleset()

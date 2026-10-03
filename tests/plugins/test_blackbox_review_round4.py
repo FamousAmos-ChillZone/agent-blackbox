@@ -192,7 +192,7 @@ def test_a_listing_longer_than_twelve_months_is_refused_and_a_signed_pause_is_en
     monkeypatch.setattr(community_tier.community, "curator_today", lambda: TODAY)
     from plugins.blackbox.community import CommunityRead, ReadState
     monkeypatch.setattr(community_tier.community, "read_verified_reports",
-                        lambda client, cfg: CommunityRead(ReadState.ROWS, reports=(), curator=view))
+                        lambda client, cfg, **kw: CommunityRead(ReadState.ROWS, reports=(), curator=view))
     rs = compiler.Ruleset()
     community_tier.apply_community_tier(rs, FakeClient(), BlackboxConfig(community_graph_id=GRAPH), None)
     assert rs.community_paused is True and rs.community == {}
