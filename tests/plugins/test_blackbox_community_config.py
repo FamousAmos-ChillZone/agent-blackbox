@@ -62,6 +62,8 @@ def test_shipped_default_is_empty_until_production_graph_exists(clean_env):
     dev graph. Until the production graph id lands here, the default MUST be
     empty — which keeps community_enabled False by construction."""
     assert constants.DEFAULT_COMMUNITY_GRAPH_ID == ""
+    # KI-216: the owner peer id ships as a PAIR with the graph id — both empty or both set
+    assert bool(constants.DEFAULT_COMMUNITY_GRAPH_PEER_ID) == bool(constants.DEFAULT_COMMUNITY_GRAPH_ID)
 
 
 # ---------------------------------------------------------------------------

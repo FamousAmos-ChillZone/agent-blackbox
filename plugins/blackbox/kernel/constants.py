@@ -271,6 +271,17 @@ COMMUNITY_GRAPH_ENABLED = True
 #: production id lands here in the launch PR and the flip is one line.
 DEFAULT_COMMUNITY_GRAPH_ID = ""
 
+#: Peer id of the node that OWNS the community graph (its read authority). An
+#: unregistered public graph has no on-chain pointer, so a fresh node cannot
+#: find the graph until it is connected to this peer (KI-216: eight subscribes
+#: failed "read authority unavailable" on a new mainnet node; six seconds after
+#: a DHT connect to the owner the same subscribe succeeded and 221 quads
+#: replayed). Ships as a PAIR with ``DEFAULT_COMMUNITY_GRAPH_ID`` — empty with
+#: it, filled in the same launch PR. It is a TRUST ANCHOR: whoever names this
+#: peer decides whose graph the node reads, so it comes only from the shipped
+#: default, the installer, or the operator's own config — never from the network.
+DEFAULT_COMMUNITY_GRAPH_PEER_ID = ""
+
 #: Default daily cap on outbound community reports per node. Bounds a runaway
 #: or compromised agent's graph footprint even before the per-threat 6-hour
 #: cooldown is considered. Refine R1 (plan §07): 20/day, client-side hygiene

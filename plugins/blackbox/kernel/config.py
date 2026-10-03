@@ -122,7 +122,7 @@ class BlackboxConfig:
     #: Curator peer id for a JOIN request — empty by default and meant to stay so:
     #: the community graph is PUBLIC, trust is enforced at READ time (decision 9
     #: as amended 2026-10-02). Set only for a deliberately gated sandbox graph.
-    community_graph_peer_id: str = ""
+    community_graph_peer_id: str = constants.DEFAULT_COMMUNITY_GRAPH_PEER_ID
     #: Seconds between community-pulse probes (R16); 0 disables the pulse.
     community_poll_interval: int = 20
     #: Days per keep-alive epoch (R5): this node re-publishes a copy of each of
@@ -365,7 +365,7 @@ def load_blackbox_config() -> BlackboxConfig:
         community_graph_id=str(_env_or(entry, env="BLACKBOX_COMMUNITY_GRAPH_ID", key="community_graph_id",
                                         default=constants.DEFAULT_COMMUNITY_GRAPH_ID)).strip(),
         community_graph_peer_id=str(_env_or(entry, env="BLACKBOX_COMMUNITY_GRAPH_PEER_ID", key="community_graph_peer_id",
-                                             default="")).strip(),
+                                             default=constants.DEFAULT_COMMUNITY_GRAPH_PEER_ID)).strip(),
         community_poll_interval=_as_int(_env_or(entry, env="BLACKBOX_COMMUNITY_POLL_INTERVAL",
                                                 key="community_poll_interval", default=20), 20),
         community_keepalive_epoch_days=_as_float(_env_or(entry, env="BLACKBOX_COMMUNITY_KEEPALIVE_EPOCH_DAYS",

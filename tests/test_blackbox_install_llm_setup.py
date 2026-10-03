@@ -80,6 +80,7 @@ def _run_unix_blackbox_config_writer(
     dkg_url: str,
     dkg_home: Path,
     dkg_bin: Path,
+    community: tuple[str, str] = (),
 ) -> dict:
     subprocess.run(
         [
@@ -93,6 +94,7 @@ def _run_unix_blackbox_config_writer(
             dkg_url,
             str(dkg_home),
             str(dkg_bin),
+            *community,   # optional: (community graph id, owner peer id) — KI-216
         ],
         check=True,
         capture_output=True,
@@ -1784,3 +1786,40 @@ def test_windows_dkg_npm_failure_is_fatal_to_dkg_setup() -> None:
     assert install_body.index(failure_guard) < install_body.index(
         "New-Item -ItemType Directory -Force -Path $DkgHome"
     )
+
+
+def test_unix_installer_writes_the_community_graph_and_its_owner_peer_as_a_pair(
+    tmp_path: Path,
+) -> None:
+    """KI-216: a fresh node cannot find an unregistered public graph until it is
+    connected to the graph owner, so the installer writes the owner's peer id
+    next to the graph id (both from env), and an explicit value always wins."""
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "plugins:\n  entries:\n    blackbox:\n      community_graph_peer_id: stale-peer\n",
+        encoding="utf-8",
+    )
+    configured = _run_unix_blackbox_config_writer(
+        config_path,
+        dkg_url="http://127.0.0.1:9320",
+        dkg_home=tmp_path / ".dkg",
+        dkg_bin=tmp_path / "dkg" / "node_modules" / ".bin" / "dkg",
+        community=("0xowner/community-graph", "12D3KooWowner"),
+    )
+    blackbox = configured["plugins"]["entries"]["blackbox"]
+    assert blackbox["community_graph_id"] == "0xowner/community-graph"
+    assert blackbox["community_graph_peer_id"] == "12D3KooWowner"
+
+
+def test_unix_installer_leaves_community_keys_alone_when_no_pair_is_given(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    configured = _run_unix_blackbox_config_writer(
+        config_path,
+        dkg_url="http://127.0.0.1:9320",
+        dkg_home=tmp_path / ".dkg",
+        dkg_bin=tmp_path / "dkg" / "node_modules" / ".bin" / "dkg",
+    )
+    blackbox = configured["plugins"]["entries"]["blackbox"]
+    assert "community_graph_id" not in blackbox and "community_graph_peer_id" not in blackbox
