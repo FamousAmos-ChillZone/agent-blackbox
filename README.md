@@ -28,7 +28,7 @@ _This README documents the mainline as of 2026-10-03 (commit `de670b5081`, the C
 
 **Contents:** [How it works](#how-it-works) · [Install](#install) · [Commands](#commands) ·
 [What it catches](#what-it-catches) · [The three tiers of intelligence](#the-three-tiers-of-intelligence) ·
-[The community graph](#the-community-graph) · [Architecture](#architecture) · [Hosts](#hosts) ·
+[The community graph](#the-community-graph) · [Architecture](#architecture) · [File structure](#file-structure) · [Hosts](#hosts) ·
 [Dashboard](#dashboard) · [Configuration](#configuration) · [Privacy and your rights](#privacy-and-your-rights) ·
 [About Umanitek](#about-umanitek) · [Legal](#legal) · [License](#license)
 
@@ -428,6 +428,447 @@ installation.
 The map is `plugins/blackbox/ARCHITECTURE.md`. Three guards in the test suite keep it true: the map
 matches the disk, imports point one way (modules to kernel, never the reverse), and file and function
 sizes may only shrink.
+
+---
+
+## File structure
+
+This repository is a fork of the Hermes agent. Blackbox is a small, clearly bounded part of it.
+
+### Repository map
+
+```text
+agent-blackbox/
+│
+│  ◆ = Agent Blackbox (the product)        ○ = inherited Hermes host runtime
+│
+├── ◆ plugins/blackbox/                 the product: Python plugin, 155 files, 27,096 lines
+├── ◆ integrations/openclaw/            the OpenClaw bridge: TypeScript, 16 source files, 4,938 lines
+├── ◆ scripts/blackbox-install.sh       what `curl blackbox.umanitek.ai | bash` runs
+├── ◆ scripts/blackbox-install.ps1      the same installer for Windows
+├── ◆ scripts/blackbox-*                node store launcher, runtime fingerprint, curator helpers
+├── ◆ scripts/sync_blackbox_plugin.py   refresh the installed plugin copy after editing the source
+├── ◆ tests/plugins/test_blackbox_*.py  66 test files
+├── ◆ tests/test_blackbox_*.py          3 test files: installer and dashboard chat
+├── ◆ tests/parity/                     fixtures that hold Python and TypeScript to the same output
+├── ◆ docs/  legal/                     README images, terms of service, privacy policy
+├── ◆ README.md  .gitleaksignore        this file, reviewed secret-scan exceptions
+│
+├── ○ hermes_cli/  agent/  gateway/     the Hermes agent: CLI, agent loop, messaging gateway
+├── ○ tools/  skills/  providers/       what the agent can do and which models it talks to
+├── ○ plugins/<everything else>/        other Hermes plugins, untouched
+├── ○ ui-tui/  web/  apps/  website/    Hermes front ends
+└── ○ tests/  pyproject.toml  uv.lock   Hermes test suite and pinned dependencies
+```
+
+Blackbox plugs into Hermes through one seam: `plugins/blackbox/__init__.py` registers five hooks and
+the `blackbox` command. The host runtime does not import the plugin.
+
+### Inside the plugin: the layout
+
+```text
+plugins/blackbox/
+├── __init__.py          registers the five hooks and the CLI
+├── cli.py               the `blackbox` command: parsing and `status`
+├── ARCHITECTURE.md      the map the structure tests enforce
+│
+├── guard/               ① WATCH     the hooks: every action passes here first
+├── detection/           ② CHECK     name the action, match it against the ruleset
+├── ruleset/             ②           the compiled lookups detection reads
+├── audit/               ③ RECORD    local logs, share ledger
+├── community/           ④ SHARE     build, sign, send, read, verify, stage
+│   ├── report_cli/                  `blackbox report` and its verbs
+│   ├── statements/                  retractions, disputes, curator statements, budgets, lifetimes
+│   ├── keep_alive/                  re-publish your own reports before they expire
+│   ├── reputation/                  bands, scoring, partners, collusion detection
+│   ├── allowlist/                   allowlist, warninglist, canaries
+│   └── shadow/                      measure-only mode
+│
+├── sync/                the local DKG node and the verified-graph catch-up
+├── dashboard/           the loopback web UI
+├── attach/              find and wire every local agent
+├── overrides/           `blackbox rules`: the local release valve
+├── killlist/            curator-signed kill list for skills and MCP servers
+├── curate/              curator-node tooling
+├── chat/                `blackbox chat`
+│
+├── kernel/              shared by all, depends on nothing
+│   ├── signing/                     the one signed envelope, the curator key manifest
+│   ├── health/                      operator alarms
+│   └── public_suffix/               vendored Public Suffix List
+│
+└── docs/                reporter terms, impact assessment, controller map
+```
+
+### Inside the plugin: module sizes
+
+155 Python files, 27,096 lines, as of commit `de670b5081`.
+
+| Module | Files | Lines | Share of the code |
+|---|---:|---:|---|
+| `community/` | 48 | 6,773 | `████████████████████` |
+| `kernel/` | 21 | 4,045 | `████████████` |
+| `dashboard/` | 8 | 2,758 | `████████` |
+| `ruleset/` | 15 | 2,516 | `███████` |
+| `detection/` | 12 | 2,329 | `███████` |
+| `curate/` | 14 | 2,208 | `███████` |
+| `sync/` | 5 | 2,082 | `██████` |
+| `attach/` | 8 | 1,238 | `████` |
+| `audit/` | 7 | 1,185 | `███` |
+| `guard/` | 5 | 770 | `██` |
+| `killlist/` | 5 | 489 | `█` |
+| `chat/` | 2 | 287 | `█` |
+| `overrides/` | 3 | 184 | `█` |
+
+### Every file, by module
+
+Click a module to open its file list.
+
+<details>
+<summary><b><code>guard/</code></b> · 5 files · 770 lines · The hooks. Every tool call and model request passes here first.</summary>
+
+| File | What it does |
+|---|---|
+| `__init__.py` | Guard: the CHECK hot path: intercept every action the agent is about to take |
+| `background.py` | Background work the hooks start but never wait for |
+| `hooks.py` | The five Hermes hook entry points: every tool call and model request passes here |
+| `reporting.py` | What happens to findings once detection fires: filter, record, share |
+| `session_context.py` | Bounded per-session conversation memory used as finding context |
+
+</details>
+
+<details>
+<summary><b><code>detection/</code></b> · 12 files · 2,329 lines · Is this action a threat? Pure functions, no I/O on the hot path.</summary>
+
+| File | What it does |
+|---|---|
+| `__init__.py` | Detection: the CHECK hot path: is this tool call / model request a threat? |
+| `action_parsing.py` | Action parsing: what a tool call DOES, extracted from its arguments |
+| `content_scanners.py` | Content scanners: what is IN the text an agent is about to act on |
+| `detectors.py` | Pure, testable matchers over the compiled `Ruleset` |
+| `finding.py` | The detection result type, shared by every detector |
+| `injection_detection.py` | Prompt-injection detection: graph patterns, built-in heuristics, and the text a tool call is scanned as |
+| `ioc_detection.py` | Indicator-of-compromise detection: known-bad domains, URLs, IPs, hashes, wallets and contracts named in a tool call's arguments, and where each was met |
+| `osv.py` | Client-side OSV vulnerability lookup for dependency auto-discovery |
+| `reviewer.py` | Optional LLM reviewer for prompt-injection (opt-in, fail-open) |
+| `reviewer_setup.py` | `blackbox setup-llm`: configure the opt-in LLM second-opinion reviewer |
+| `shell_shapes.py` | Escalation shapes: turn a shell tool call into a stable arg-shape signature |
+| `skill_detection.py` | Skill detection: known-bad skill versions from the graph, and dangerous code or over-broad permissions in a skill being installed or modified |
+
+</details>
+
+<details>
+<summary><b><code>ruleset/</code></b> · 15 files · 2,516 lines · Compiles graph rows into O(1) lookups and keeps them fresh.</summary>
+
+| File | What it does |
+|---|---|
+| `__init__.py` | Ruleset: the locally compiled threat ruleset detection matches against |
+| `anchors.py` | Legacy proof anchors: backward compatibility for proof-era VM data |
+| `community_tier.py` | The community tier of a ruleset: merging community reports in, and making the matchable ones O(1)-lookup rules |
+| `compiler.py` | The compiled ruleset and how rows become one |
+| `curator_tier.py` | The curator overlay on the verified ruleset: revocations |
+| `disk_cache.py` | The on-disk ruleset cache (`ruleset.json`) and its lock-file path |
+| `errors.py` | Ruleset refresh outcomes that callers branch on |
+| `fetching.py` | Paged reads of the verified graph from the local DKG node |
+| `graph_queries.py` | SPARQL builders for reading the VERIFIED threat graph |
+| `locks.py` | Cross-process refresh locking (fcntl on POSIX, msvcrt on Windows) |
+| `memory_cache.py` | The process's in-memory ruleset generation, kept in step with the disk cache |
+| `pulse_beat.py` | The community pulse beat: between full refreshes, retry refused shares and re-apply the community tier when the community graph changed |
+| `refresh_cycle.py` | Refreshing the compiled ruleset: fetch to compile to merge community tier to cache |
+| `row_adapters.py` | Row adapters: one verified-graph result row to one rule / graph entry |
+| `safe_regex.py` | Compile a scanning regex only if it cannot blow up (ReDoS hardening) |
+
+</details>
+
+<details>
+<summary><b><code>community/</code></b> · 48 files · 6,773 lines · Everything about the community graph: write, sign, read, verify, stage.</summary>
+
+| File | What it does |
+|---|---|
+| `__init__.py` | Community: the shared community threat graph |
+| `aggregation.py` | Aggregating verified community reports into community rules |
+| `consent.py` | The sharing consent record |
+| `digest.py` | The seen-again counter: a weekly sighting digest per reporter |
+| `graph_stats.py` | Graph-wide statistics over the community graph: the dashboard's read model |
+| `membership.py` | Community-graph membership: dial the owner, subscribe, join at most once |
+| `pulse.py` | The community pulse: did the community graph change between full refreshes? |
+| `reader.py` | Reading the community graph: fetch, verify, and the three-state read |
+| `report_builder.py` | Report quads: a finding to the privacy-safe statements shared to the community graph |
+| `report_schema.py` | Validated community report records: an unvalidated report cannot be built |
+| `report_signer.py` | Signing community statements: proof of who sent a report or dispute |
+| `share_retry.py` | Retrying refused community shares, so a new node's first reports are not lost |
+| `sharing.py` | The share path: which findings may leave the machine, and sending them |
+| `stages.py` | Local stages for community threats, from the counted-author list |
+| `verification.py` | Verifying community reports: the only door from a raw row to a counted report |
+| `allowlist/__init__.py` | Allowlist, warninglist and canaries |
+| `allowlist/canaries.py` | Canaries: planted identifiers that only a scraper or a liar would report |
+| `allowlist/tables.py` | The allowlist and warninglist tables, immutable after load |
+| `allowlist/verdicts.py` | The allowlist verdict on one threat identifier, including the inverted look-alike rule |
+| `keep_alive/__init__.py` | Keep-alive: each author keeps its own live reports on the network |
+| `keep_alive/epochs.py` | Epoch naming for keep-alive copies (pure) |
+| `keep_alive/publisher.py` | The keep-alive publish step and the two hooks that feed it |
+| `keep_alive/store.py` | The live-reports memory: what this node must keep alive on the network |
+| `report_cli/__init__.py` | The reporter's command line: `blackbox report` and its verbs |
+| `report_cli/report_command.py` | `blackbox report`: file, dispute and review this node's community reports |
+| `report_cli/report_rights.py` | The operator's rights over this node's reporter identity |
+| `report_cli/report_tracking.py` | Lifecycle TRACK for a reporter: what happened to each report, and its standing |
+| `report_cli/statement_verbs.py` | `blackbox report --false-positive` and `--retract`, and the send-and-record step every manual statement shares |
+| `report_cli/submission_gate.py` | The gates a manual `blackbox report` passes before anything is sent |
+| `reputation/__init__.py` | Reputation: automated graduation, hardened novelty, partners, collusion |
+| `reputation/bands.py` | Reputation bands and a reporter's standing |
+| `reputation/collusion.py` | Cluster collapse and the collusion DETECTOR |
+| `reputation/graduation.py` | Automated graduation and demotion to counted-author statements |
+| `reputation/ledger.py` | The curator-PRIVATE reputation ledger |
+| `reputation/novelty.py` | Hardened novelty credit |
+| `reputation/partners.py` | PARTNER organisations: grants, partner reputation, suspension, sponsorship |
+| `reputation/scoring.py` | Beta reputation with forgetting, graduation and demotion rules |
+| `shadow/__init__.py` | Shadow phase: stages computed and logged on the real network, only MONITOR enforced |
+| `shadow/metrics.py` | Shadow-phase metrics: measured, never guessed |
+| `statements/__init__.py` | Statements about reports and threats, and how readers honour them |
+| `statements/author_budget.py` | One per-author budget over ALL community statements, enforced by readers |
+| `statements/curator_statements.py` | Curator statements on the wire: build, sign, and parse |
+| `statements/curator_view.py` | What the curator has said, as this node can verify it |
+| `statements/digests.py` | Reading sighting digests and estimating heat |
+| `statements/disputes.py` | Disputes (false-positive statements) and how readers count them |
+| `statements/lifetimes.py` | How long a community statement lives, per threat type |
+| `statements/retractions.py` | Retractions: a reporter withdrawing its own report |
+| `statements/tombstones.py` | Pending tombstones: withdrawals whose target this reader has not seen |
+
+</details>
+
+<details>
+<summary><b><code>sync/</code></b> · 5 files · 2,082 lines · Runs the local DKG node and catches up the verified graph.</summary>
+
+| File | What it does |
+|---|---|
+| `__init__.py` | Sync: keeping this node's copy of the verified threat graph current |
+| `command.py` | `blackbox sync`: bring this node's copy of the verified graph up to date |
+| `managed_node.py` | The managed local DKG node: its sync settings, process and restarts |
+| `progress.py` | Read durable-sync progress emitted by the managed DKG daemon |
+| `state.py` | Cross-process status for the authoritative Blackbox graph transfer |
+
+</details>
+
+<details>
+<summary><b><code>audit/</code></b> · 7 files · 1,185 lines · What Blackbox saw, kept locally and redacted.</summary>
+
+| File | What it does |
+|---|---|
+| `__init__.py` | Audit: the RECORD flow: what Blackbox saw, kept locally and redacted |
+| `activity.py` | The merged local activity timeline the dashboard shows |
+| `findings.py` | Recording and reading findings (what Blackbox flagged or blocked) |
+| `log_store.py` | The local JSONL log files under `$BLACKBOX_HOME` and their size cap |
+| `private_ka.py` | The private working-memory audit record kept in the local DKG node |
+| `redaction.py` | Redaction for anything written to the local audit logs |
+| `share_ledger.py` | Outbound-report bookkeeping: the share ledger, per-threat cooldown, daily cap |
+
+</details>
+
+<details>
+<summary><b><code>dashboard/</code></b> · 8 files · 2,758 lines · The loopback web UI and its API.</summary>
+
+| File | What it does |
+|---|---|
+| `__init__.py` | Dashboard: the local web UI (FastAPI, loopback-only, 127.0.0.1:9700) |
+| `command.py` | `blackbox dashboard`: start the local dashboard (replacing a stale one on the port) |
+| `community_routes.py` | The dashboard's community endpoints: statistics, the reports board, statements |
+| `node_probe.py` | One probe of the DKG node for `GET /api/graph-status` (cached by the route's SWR wrapper) |
+| `safe_payloads.py` | Making community- and graph-derived values safe to serve (the dashboard's one sanitizer) |
+| `server.py` | Standalone Blackbox dashboard: a tiny FastAPI app bound to loopback |
+| `sync_labels.py` | Sync-state presentation for `GET /api/graph-status` (the `sync_progress` labels) |
+| `sync_timing.py` | When the dashboard's ruleset worker runs its first refresh |
+| `static/index.html` | The whole dashboard UI: one page, no build step |
+| `static/vendor/` | Vendored force-graph library for the threat-graph view |
+| `assets/` | Logo, icon and the two bundled fonts |
+
+</details>
+
+<details>
+<summary><b><code>attach/</code></b> · 8 files · 1,238 lines · Finds every local agent and wires protection into it.</summary>
+
+| File | What it does |
+|---|---|
+| `__init__.py` | Attach: wire Blackbox protection into every agent on this machine |
+| `command.py` | `blackbox attach` and `blackbox detach`, and the report rows they print |
+| `hermes_homes.py` | Protecting Hermes agents: discover homes, enable/disable Blackbox in each |
+| `openclaw_bridge.py` | Protecting OpenClaw workspaces through the bundled JS bridge plugin |
+| `openclaw_discovery.py` | Finding OpenClaw workspaces and reading their config and version |
+| `openclaw_json5.py` | A minimal JSON5 to JSON converter for OpenClaw's config files |
+| `plugin_copy.py` | Copying the plugin into an agent home, and finding where it came from |
+| `sweep.py` | Attach / detach everything this machine has, in one call |
+
+</details>
+
+<details>
+<summary><b><code>overrides/</code></b> · 3 files · 184 lines · The operator's local release valve.</summary>
+
+| File | What it does |
+|---|---|
+| `__init__.py` | Local overrides: the operator's release valve, reduction-only |
+| `cli.py` | `blackbox rules`: the operator's local release valve |
+| `store.py` | Local overrides: `blackbox rules unblock` |
+
+</details>
+
+<details>
+<summary><b><code>killlist/</code></b> · 5 files · 489 lines · Curator-signed disable or warn for installed skills and MCP servers.</summary>
+
+| File | What it does |
+|---|---|
+| `__init__.py` | Kill list: curator-signed DISABLE / WARN for installed skills and MCP servers |
+| `check.py` | Matching a tool call against the kill list, in the hook: microseconds, offline |
+| `gates.py` | Blast-radius gates and the last-good rule (pure) |
+| `statement.py` | The kill list on the wire: build, sign, parse |
+| `store.py` | The last-good kill list on disk: what the hook enforces |
+
+</details>
+
+<details>
+<summary><b><code>curate/</code></b> · 14 files · 2,208 lines · The curator node's tooling.</summary>
+
+| File | What it does |
+|---|---|
+| `__init__.py` | `curate`: the curator node's tooling |
+| `catalog_import.py` | Threat-catalog import helpers, curator side; currently unused |
+| `commands.py` | `blackbox curate`: the curator's CLI |
+| `consent.py` | Consent for outward curator writes, made mechanical |
+| `context.py` | What every `blackbox curate` verb needs resolved once |
+| `dossier.py` | The evidence dossier and the promotion checklist |
+| `intake.py` | Intake: the curator node watches the community tier and notifies |
+| `keys.py` | The curator's keys and private working directory |
+| `node_ui_views.py` | Saved queries for the DKG node's own UI: the curator's read side |
+| `promotion.py` | Promotion: a threat enters the verified tier |
+| `proposal.py` | Curator proposals and their two-key lifecycle |
+| `queue.py` | The curator's queue: the delta view and its lanes |
+| `transport.py` | Proposals travel between curator nodes by private point-to-point message |
+| `verbs.py` | The curator's write verbs: propose, approve, publish, nominate, manifest |
+
+</details>
+
+<details>
+<summary><b><code>chat/</code></b> · 2 files · 287 lines · The Blackbox operator chat.</summary>
+
+| File | What it does |
+|---|---|
+| `__init__.py` | Chat: `blackbox chat`: a Hermes session preconfigured as the Blackbox assistant |
+| `command.py` | `blackbox chat`: a Hermes chat session preconfigured as the Blackbox assistant |
+
+</details>
+
+<details>
+<summary><b><code>kernel/</code></b> · 21 files · 4,045 lines · Shared infrastructure owned by no feature. Depends on nothing.</summary>
+
+| File | What it does |
+|---|---|
+| `__init__.py` | Kernel: shared infrastructure owned by no feature |
+| `config.py` | Blackbox configuration loading |
+| `constants.py` | Static constants for the Agent Blackbox plugin |
+| `display_safety.py` | Safe display of untrusted text: ONE implementation for CLI, dashboard and logs |
+| `dkg_client.py` | Stdlib HTTP client for the local DKG v10 node |
+| `dkg_version.py` | DKG runtime compatibility required by Blackbox recovery |
+| `identity.py` | This node's reporting identity: the agent address it speaks for |
+| `node_routes.py` | Node routes the curator uses that the hot path never does |
+| `rdf_terms.py` | N-Triples terms and quads, with the DKG's literal-size limits enforced |
+| `redaction.py` | Redaction: THE one implementation that scrubs secret values out of text |
+| `reporter_key.py` | This node's reporter key: the private key that signs its community reports |
+| `settings.py` | Read/write the user-tunable Blackbox detection policy |
+| `sparql_text.py` | SPARQL helpers shared by every reader of the graph |
+| `threat_ids.py` | Deterministic threat identifiers and URIs: the shared naming vocabulary |
+| `yaml_files.py` | YAML config files (Hermes `config.yaml` and friends), read and written safely |
+| `health/__init__.py` | Operator health: one alarm type for `blackbox status` and the dashboard |
+| `public_suffix/__init__.py` | The Public Suffix List: registrable domains and shared-hosting suffixes |
+| `signing/__init__.py` | Signing: the one envelope every signed Blackbox statement uses |
+| `signing/envelope.py` | Signed statements: the one envelope every signed Blackbox statement uses |
+| `signing/key_manifest.py` | The curator key manifest: which keys may sign what, per environment |
+| `signing/statement_order.py` | Curator statement types and which statement about a threat is current |
+| `public_suffix/public_suffix_list.dat` | The vendored Public Suffix List data |
+
+</details>
+
+<details>
+<summary><b>plugin root</b> · wiring only</summary>
+
+| File | What it does |
+|---|---|
+| `__init__.py` | Plugin entry: registers the five hooks and the `blackbox` command |
+| `cli.py` | The `blackbox` command: argument parsing and dispatch only |
+| `plugin.yaml` | The plugin manifest Hermes reads |
+| `ARCHITECTURE.md` | The map the structure tests enforce |
+| `README.md` | Plugin-level reference: every option and command |
+| `docs/REPORTER_TERMS.md` | The reporter terms your consent is bound to |
+| `docs/DPIA.md` | The data-protection impact assessment |
+| `docs/CONTROLLER_MAP.md` | Who controls which data, and where it lives |
+
+</details>
+
+### The OpenClaw bridge
+
+<details>
+<summary><b><code>integrations/openclaw/</code></b> · 16 source files · 4,938 lines · the TypeScript mirror of the hot path and the share path</summary>
+
+| File | What it does | Mirrors |
+|---|---|---|
+| `src/index.ts` | The OpenClaw plugin entry: hooks, flag or block, sharing | `guard/` |
+| `src/detection.ts` | Ruleset-driven matcher, a faithful port of the Python detectors | `detection/` |
+| `src/ruleset.ts` | Graph-synced rule cache | `ruleset/` |
+| `src/quads.ts` | Identifier and report builders | `kernel/threat_ids.py`, `community/report_builder.py` |
+| `src/reportSchema.ts` | The closed report schema | `community/report_schema.py` |
+| `src/reportEvidence.ts` | Turns a detection into the closed fields a report may carry | `guard/hooks.py` |
+| `src/signing.ts` | The signed envelope | `kernel/signing/envelope.py` |
+| `src/reporterKey.ts` | Reads the reporter key | `kernel/reporter_key.py` |
+| `src/consent.ts` | Reads the sharing consent record | `community/consent.py` |
+| `src/membership.ts` | Dial the owner, subscribe | `community/membership.py` |
+| `src/redact.ts` | Secret redaction | `kernel/redaction.py` |
+| `src/dkgClient.ts` | Client for the local DKG node | `kernel/dkg_client.py` |
+| `src/config.ts` | Config resolution | `kernel/config.py` |
+| `src/audit.ts` | Local findings log | `audit/` |
+| `src/osv.ts` | OSV dependency lookup | `detection/osv.py` |
+| `src/hookTypes.ts` | Hook types derived from the public OpenClaw plugin API | |
+| `test/parity.mjs` and friends | Cross-runtime parity: identifiers, redaction, signing, report quads | `tests/parity/` |
+
+</details>
+
+### What Blackbox writes on your machine
+
+Everything lives in `$BLACKBOX_HOME`, by default `~/.hermes/blackbox/`. The folder is one of the
+default protected paths, so an agent reaching into it is flagged, and blocked in block mode.
+
+| File | Holds | Written by |
+|---|---|---|
+| `ruleset.json` | the compiled threat ruleset detection reads | `ruleset/` |
+| `findings.jsonl`, `audit.jsonl` | what was flagged or blocked; every checked action, redacted | `audit/` |
+| `file_access.jsonl`, `dependencies.jsonl` | sensitive-file reads and package installs seen | `audit/` |
+| `reporter_key.pem` | the private key that signs your community statements | `kernel/reporter_key.py` |
+| `sharing_consent.json` | your consent record, bound to the terms text | `community/consent.py` |
+| `reports_log.jsonl`, `report_rate.json` | the share ledger, cooldowns and the daily cap | `audit/share_ledger.py` |
+| `live_reports.json` | reports this node keeps alive on the network | `community/keep_alive/` |
+| `share_retry.json` | refused shares waiting for a retry | `community/share_retry.py` |
+| `sighting_tally.json` | this week's seen-again counts | `community/digest.py` |
+| `community_first_seen.json` | when this node first saw each community statement, for the per-author daily budget | `community/statements/` |
+| `shadow_metrics.jsonl` | what would have flagged, in shadow mode | `community/shadow/` |
+| `overrides.json` | your local unblock decisions | `overrides/` |
+| `kill_list.json` | the last good curator kill list | `killlist/` |
+| `allowlist.json` | your own additions to the allowlist, optional | you |
+
+### Where to look
+
+| I want to change... | Open |
+|---|---|
+| what counts as a threat | `detection/detectors.py`, `detection/content_scanners.py` |
+| how an action is named | `kernel/threat_ids.py` |
+| when an action is blocked instead of flagged | `guard/hooks.py`, `kernel/config.py` |
+| what may leave the machine | `community/sharing.py` |
+| what a report contains | `community/report_schema.py`, `community/report_builder.py` |
+| stages, thresholds, the partner rule | `community/stages.py` |
+| how long a community statement lives | `community/statements/lifetimes.py` |
+| how a node finds the community graph | `community/membership.py` |
+| a default, a config key, a closed vocabulary | `kernel/config.py`, `kernel/constants.py` |
+| a dashboard panel | `dashboard/static/index.html`, `dashboard/server.py`, `dashboard/community_routes.py` |
+| a `blackbox` command | `cli.py`, then the module's `command.py` |
+| an operator alarm | `kernel/health/__init__.py` |
+| secret redaction | `kernel/redaction.py` |
+| the installer | `scripts/blackbox-install.sh`, `scripts/blackbox-install.ps1` |
+| where a module is allowed to import from | `plugins/blackbox/ARCHITECTURE.md`, `tests/plugins/test_blackbox_architecture.py` |
 
 ---
 
