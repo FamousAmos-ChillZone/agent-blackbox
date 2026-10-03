@@ -1299,12 +1299,25 @@ for k, v in defaults.items():
     if k not in blackbox:
         blackbox[k] = v
         added.append(k)
-# Migrate stale pre-release sharing settings too. The feature is closed at
-# runtime, so leaving an old opt-in in config is misleading even if inert.
-for k, v in {"report": False, "daily_report_limit": 20}.items():
-    if blackbox.get(k) != v:
-        blackbox[k] = v
-        added.append(k)
+# KI-184: an opt-in backed by a sharing-consent record (R13) survives every
+# re-run and upgrade; only a pre-release opt-in (no consent record in force) is
+# migrated off. The product's own consent code decides; if it cannot be
+# imported the answer is "no consent" (fail closed = sharing off).
+repo_dir = sys.argv[7] if len(sys.argv) > 7 else ""
+def _consent_in_force(checkout):
+    try:
+        if checkout:
+            sys.path.insert(0, checkout)
+        from plugins.blackbox.community import consent
+        return bool(consent.in_force())
+    except Exception:
+        return False
+if blackbox.get("report") is True and not _consent_in_force(repo_dir):
+    blackbox["report"] = False
+    added.append("report")
+if blackbox.get("daily_report_limit") in (0, "0"):   # the pre-R1 "no cap"; the plugin refuses it
+    blackbox["daily_report_limit"] = 20
+    added.append("daily_report_limit")
 with open(cfg_path, "w") as f:
     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 print("  configured: " + ", ".join(added) if added else "  already configured - no changes")
@@ -1312,7 +1325,7 @@ print("  configured: " + ", ".join(added) if added else "  already configured - 
     $configFile = Join-Path $env:TEMP "blackbox_configure.py"
     Set-Content -Path $configFile -Value $configWriter -Encoding UTF8
     try {
-        & $VenvPython $configFile "$HermesHome\config.yaml" $DkgDaemonUrl $DkgHome $DkgBin $ContextGraphId $GraphPeerId
+        & $VenvPython $configFile "$HermesHome\config.yaml" $DkgDaemonUrl $DkgHome $DkgBin $ContextGraphId $GraphPeerId $RepoDir
         if ($LASTEXITCODE -ne 0) { throw "config update exit $LASTEXITCODE" }
         Write-Ok "Config defaults written (audit mode - blocking is opt-in)"
     } catch {

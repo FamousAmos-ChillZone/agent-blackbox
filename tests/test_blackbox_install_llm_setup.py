@@ -81,6 +81,8 @@ def _run_unix_blackbox_config_writer(
     dkg_home: Path,
     dkg_bin: Path,
     community: tuple[str, str] = (),
+    repo_dir: str = "",
+    env: dict | None = None,
 ) -> dict:
     subprocess.run(
         [
@@ -95,10 +97,12 @@ def _run_unix_blackbox_config_writer(
             str(dkg_home),
             str(dkg_bin),
             *community,   # optional: (community graph id, owner peer id) — KI-216
+            *([repo_dir] if repo_dir else []),   # optional: the checkout, for the consent check — KI-184
         ],
         check=True,
         capture_output=True,
         text=True,
+        env={**os.environ, **(env or {})},
     )
     import yaml
 
@@ -438,14 +442,20 @@ def test_unix_installer_migrates_stale_community_sharing_opt_in(
     blackbox = configured["plugins"]["entries"]["blackbox"]
 
     assert blackbox["report"] is False
-    assert blackbox["daily_report_limit"] == 20   # the plugin default; 0 meant "no cap" (Refine R1)
+    # KI-184: an operator-chosen cap is kept (the plugin clamps it at runtime);
+    # only the invalid pre-R1 value 0 ("no cap") is repaired to the default.
+    assert blackbox["daily_report_limit"] == 9999
 
 
 def test_windows_installer_migrates_stale_community_sharing_opt_in() -> None:
     writer = INSTALL_PS1.read_text(encoding="utf-8")
 
-    assert 'for k, v in {"report": False, "daily_report_limit": 20}.items()' in writer
-    assert "if blackbox.get(k) != v:" in writer
+    # KI-184: the forced migration is gone on Windows too — sharing stays on for a
+    # consenting node (the product's consent code decides), only 0 is repaired.
+    assert 'for k, v in {"report": False, "daily_report_limit": 20}.items()' not in writer
+    assert 'if blackbox.get("report") is True and not _consent_in_force(repo_dir):' in writer
+    assert 'if blackbox.get("daily_report_limit") in (0, "0")' in writer
+    assert "$GraphPeerId $RepoDir" in writer
 
 
 def test_hermes_setup_defaults_to_reuse_without_prompting() -> None:
@@ -1823,3 +1833,50 @@ def test_unix_installer_leaves_community_keys_alone_when_no_pair_is_given(
     )
     blackbox = configured["plugins"]["entries"]["blackbox"]
     assert "community_graph_id" not in blackbox and "community_graph_peer_id" not in blackbox
+
+
+def test_unix_installer_keeps_sharing_on_when_a_consent_record_is_in_force(tmp_path: Path) -> None:
+    """KI-184: a re-run or upgrade must not switch a consenting node's sharing off.
+    The installer asks the product's own consent code (one implementation)."""
+    import json
+
+    from plugins.blackbox.community import consent
+
+    home = tmp_path / "bbhome"
+    home.mkdir()
+    (home / "sharing_consent.json").write_text(json.dumps({
+        "terms_hash": consent.terms_hash(consent.terms_text()),
+        "terms_version": "1.0", "accepted_at": "2026-10-03T00:00:00Z", "withdrawn_at": "",
+    }), encoding="utf-8")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "plugins:\n  entries:\n    blackbox:\n      report: true\n      daily_report_limit: 500\n",
+        encoding="utf-8",
+    )
+    configured = _run_unix_blackbox_config_writer(
+        config_path,
+        dkg_url="http://127.0.0.1:9320",
+        dkg_home=tmp_path / ".dkg",
+        dkg_bin=tmp_path / "dkg" / "node_modules" / ".bin" / "dkg",
+        repo_dir=str(Path(__file__).resolve().parents[1]),
+        env={"BLACKBOX_HOME": str(home)},
+    )
+    blackbox = configured["plugins"]["entries"]["blackbox"]
+    assert blackbox["report"] is True
+    assert blackbox["daily_report_limit"] == 500   # an operator-chosen cap is kept
+
+
+def test_unix_installer_still_migrates_an_opt_in_without_consent_off(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("plugins:\n  entries:\n    blackbox:\n      report: true\n      daily_report_limit: 0\n", encoding="utf-8")
+    configured = _run_unix_blackbox_config_writer(
+        config_path,
+        dkg_url="http://127.0.0.1:9320",
+        dkg_home=tmp_path / ".dkg",
+        dkg_bin=tmp_path / "dkg" / "node_modules" / ".bin" / "dkg",
+        repo_dir=str(Path(__file__).resolve().parents[1]),
+        env={"BLACKBOX_HOME": str(tmp_path / "empty-home")},
+    )
+    blackbox = configured["plugins"]["entries"]["blackbox"]
+    assert blackbox["report"] is False
+    assert blackbox["daily_report_limit"] == 20   # the invalid pre-R1 "no cap" is repaired

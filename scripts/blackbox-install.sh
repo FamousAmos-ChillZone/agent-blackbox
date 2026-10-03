@@ -1533,11 +1533,11 @@ enable_and_configure() {
     fi
 
     step "Writing plugins.entries.blackbox defaults to $HERMES_HOME/config.yaml ..."
-    if "$VENV_DIR/bin/python" - "$HERMES_HOME/config.yaml" "$DKG_NETWORK" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_GRAPH_PEER_ID" "$BLACKBOX_DKG_DAEMON_URL" "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_BIN" "$BLACKBOX_COMMUNITY_GRAPH_ID" "$BLACKBOX_COMMUNITY_GRAPH_PEER_ID" <<'PYEOF'
+    if "$VENV_DIR/bin/python" - "$HERMES_HOME/config.yaml" "$DKG_NETWORK" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_GRAPH_PEER_ID" "$BLACKBOX_DKG_DAEMON_URL" "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_BIN" "$BLACKBOX_COMMUNITY_GRAPH_ID" "$BLACKBOX_COMMUNITY_GRAPH_PEER_ID" "$REPO_DIR" <<'PYEOF'
 import sys, os
 cfg_path, network, context_graph_id, graph_peer_id, dkg_url, dkg_home, dkg_bin = sys.argv[1:8]
-# Optional pair (older callers pass seven arguments): the community graph + its owner peer id.
-community_graph_id, community_graph_peer_id = (sys.argv[8:10] + ["", ""])[:2]
+# Optional (older callers pass seven arguments): the community graph + its owner peer id, and the checkout.
+community_graph_id, community_graph_peer_id, repo_dir = (sys.argv[8:11] + ["", "", ""])[:3]
 try:
     import yaml
 except Exception:
@@ -1634,12 +1634,27 @@ for k, v in defaults.items():
     if k not in blackbox:
         blackbox[k] = v
         added.append(k)
-# Migrate stale pre-release sharing settings too. The feature is closed at
-# runtime, so leaving an old opt-in in config is misleading even if inert.
-for k, v in {"report": False, "daily_report_limit": 20}.items():
-    if blackbox.get(k) != v:
-        blackbox[k] = v
-        added.append(k)
+# KI-184: an opt-in backed by a sharing-consent record (R13) SURVIVES every
+# re-run and upgrade. Only a pre-release opt-in — `report: true` with no consent
+# record in force — is migrated off, because sharing without consent is invalid
+# anyway. The product's own consent code decides (one implementation); if it
+# cannot be imported the answer is "no consent" (fail closed = sharing off).
+def _consent_in_force(checkout):
+    try:
+        if checkout:
+            sys.path.insert(0, checkout)
+        from plugins.blackbox.community import consent
+        return bool(consent.in_force())
+    except Exception:
+        return False
+if blackbox.get("report") is True and not _consent_in_force(repo_dir):
+    blackbox["report"] = False
+    added.append("report")
+# `daily_report_limit: 0` was the pre-R1 "no cap" and the plugin refuses it;
+# any other operator-chosen cap is kept.
+if blackbox.get("daily_report_limit") in (0, "0"):
+    blackbox["daily_report_limit"] = 20
+    added.append("daily_report_limit")
 with open(cfg_path, "w") as f:
     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 if added:
