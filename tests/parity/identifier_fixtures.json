@@ -134,7 +134,7 @@
     {
       "identifier": "escalation:shell:remote-script-pipe",
       "reporter": "",
-      "reportUri": "urn:guardian:report:anonymous:e9bb7427fbd038b5"
+      "reportUri": ""
     }
   ],
   "argShapes": [

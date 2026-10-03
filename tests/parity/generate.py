@@ -87,10 +87,10 @@ for ident, addr in [
     try:
         uri = threat_ids.report_uri(ident, addr)
     except ValueError:
-        # LES-003 / Refine R0: Python refuses a blank reporter. The fixture keeps the
-        # row because the OpenClaw bridge still writes "anonymous" until KI-182 lands;
-        # the Python parity test asserts the refusal, the TS one the legacy string.
-        uri = "urn:guardian:report:anonymous:" + threat_ids.stable_hash(ident, 16)
+        # LES-003 / Refine R0: a blank reporter is REFUSED — in Python and, since the
+        # KI-182 port, in the OpenClaw bridge too. The row stays so both parity tests
+        # assert the refusal; "" means "no URI, refused".
+        uri = ""
     report_uris.append({"identifier": ident, "reporter": addr, "reportUri": uri})
 
 arg_shapes = []

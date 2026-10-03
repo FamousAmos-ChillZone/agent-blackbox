@@ -41,6 +41,7 @@ import {
 import { __resetRegistrationGuardForTests, register } from "../src/index.ts";
 import { RulesetCache, skillNameFromTitle } from "../src/ruleset.ts";
 import { DkgClient } from "../src/dkgClient.ts";
+import { evidenceFor } from "../src/reportEvidence.ts";
 import { normalizeIocValue as normalizeIocValueParity } from "../src/quads.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -133,6 +134,13 @@ function eq(a, b) {
   let ok = true;
   const mismatches = [];
   for (const c of fixture.reportUris) {
+    if (!c.reporter.trim()) {
+      // LES-003 (Refine R0, KI-182 port): a blank reporter is REFUSED in both runtimes — no "anonymous".
+      let threw = false;
+      try { reportUri(c.identifier, c.reporter); } catch { threw = true; }
+      if (!threw) { ok = false; mismatches.push(`  ${c.identifier} / "" was accepted; both runtimes must refuse a blank reporter`); }
+      continue;
+    }
     const got = reportUri(c.identifier, c.reporter);
     if (got !== c.reportUri) {
       ok = false;
@@ -562,16 +570,18 @@ report("dependencyParses", ok, mismatches.join("\n"));
   let transportOk = false;
   try {
     if (findingA) {
+      // Refine R1 (KI-182 port): evidence comes from the hook (here: user text → in-user-prompt),
+      // never from the text; the pattern is dropped on the way. A real agent address is required.
       const quads = buildReportQuads({
         identifier: findingA.identifier,
         category: findingA.category,
         severity: findingA.severity,
-        reporter: "0xprivacytest",
+        reporter: "0x" + "ab".repeat(20),
         framework: "openclaw",
-        candidate: findingA.fields,
+        evidence: evidenceFor(findingA, "message_received"),
       });
       const client = new DkgClient({ url: "http://blackbox.test", token: "test-token" });
-      await client.shareKnowledgeAsset("privacy-test", "report-privacy-test", quads);
+      await client.shareReport("privacy-test", "report-privacy-test", quads);
       transportOk = true;
     }
   } finally {

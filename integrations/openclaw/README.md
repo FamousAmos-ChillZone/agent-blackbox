@@ -210,7 +210,7 @@ Ruleset cache is stored under the OpenClaw state dir
 
 ## Requirements
 
-- OpenClaw ≥ 2026.6.11. Earlier releases do not expose the stable Plugin SDK
+- OpenClaw ≥ 2026.6.11; built and parity-tested against 2026.9.8 (2026-10-03). Hook event types are derived from the public `OpenClawPluginApi` (`src/hookTypes.ts`), so SDK-internal reshuffles cannot break the typecheck. Re-verify against the newest release with `npm run check:sdk` (installs the SDK ~370 MB into node_modules, nothing saved to package.json). Earlier releases do not expose the stable Plugin SDK
   hooks Blackbox uses.
 - Node ≥ 22.19 (OpenClaw runtime). Zero runtime dependencies — uses global
   `fetch`, `node:crypto`, and `node:fs`.

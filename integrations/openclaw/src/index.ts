@@ -32,7 +32,7 @@ import type {
   PluginHookMessageReceivedEvent,
   PluginHookSessionEndEvent,
   PluginHookSessionStartEvent,
-} from "openclaw/plugin-sdk/types";
+} from "./hookTypes.js";
 import {
   Finding,
   Ruleset,
