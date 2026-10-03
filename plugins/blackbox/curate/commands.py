@@ -273,7 +273,7 @@ def _manifest(args: argparse.Namespace) -> int:
         raise verbs.VerbError("a verified-authority manifest needs --promotion-author (the pinned publisher of verified rows)")
     proposal = verbs.manifest_proposal(ctx, ProposalStore(), curator_keys=args.curator_keys, threshold=args.threshold,
                                        promotion_author=args.promotion_author, root_epoch=args.root_epoch,
-                                       version=args.version, legacy_uals=[], issued_day=args.issued_day)
+                                       version=args.manifest_version, legacy_uals=[], issued_day=args.issued_day)
     root = signing.public_key_hex(keys.root_key_store(ctx.authority).load_or_create())
     print(f"{ctx.authority.value} manifest for {proposal.graph} staged as {proposal.id} (root {root[:16]}…); "
           f"run `blackbox curate publish {proposal.id} --yes`")

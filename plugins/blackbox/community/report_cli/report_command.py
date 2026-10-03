@@ -58,7 +58,7 @@ def print_community_status(cfg) -> None:
 _REPORT_REQUIRED_ARGS: Dict[str, "tuple[str, ...]"] = {
     "injection": ("pattern", "context"),
     "escalation": ("tool", "arg_shape"),
-    "dependency": ("ecosystem", "name", "version", "kind", "reason"),
+    "dependency": ("ecosystem", "name", "package_version", "kind", "reason"),
     "fileaccess": ("tool", "category"),
     "skill": (),   # either --registry/--skill-name/--skill-version or --artifact-hash/--danger-shape
     "ioc": ("ioc_type", "value", "context"),
@@ -67,7 +67,9 @@ _REPORT_REQUIRED_ARGS: Dict[str, "tuple[str, ...]"] = {
 
 #: Argument dest -> the flag an operator types (KI-066: the package version is
 #: --package-version; Hermes's own top-level --version swallows `--version`).
-_FLAG_NAMES = {"version": "package-version"}
+#: The DEST must not be "version" either: Hermes prints its banner whenever the
+#: parsed arguments carry a truthy ``version`` (KI-276).
+_FLAG_NAMES = {"package_version": "package-version"}
 
 
 #: (identifier, fields, error) for one report type's parsed args.
@@ -88,12 +90,12 @@ def _dependency_args(args: argparse.Namespace) -> _ParsedReport:
     fields = {
         "ecosystem": args.ecosystem.strip().lower(),
         "package_name": threat_ids.canonical_package_name(args.ecosystem, args.name),
-        "package_version": args.version,
+        "package_version": args.package_version,
         "advisory_id": args.advisory_id,
         "kind": args.kind,
         "reason": args.reason,
     }
-    return threat_ids.dependency_identifier(args.ecosystem, args.name, args.version), fields, ""
+    return threat_ids.dependency_identifier(args.ecosystem, args.name, args.package_version), fields, ""
 
 
 def _fileaccess_args(args: argparse.Namespace) -> _ParsedReport:
@@ -211,7 +213,7 @@ _REPORT_FLAGS: Tuple[Tuple[Tuple[str, ...], Dict[str, Any]], ...] = (
     (("--ecosystem",), dict(type=str.lower, choices=_choices(detection.DEPENDENCY_ECOSYSTEMS),
                             help="dependency: ecosystem")),
     (("--name",), dict(help="dependency: package name")),
-    (("--package-version",), dict(dest="version", help="dependency: version, or * (KI-066: Hermes owns --version)")),
+    (("--package-version",), dict(dest="package_version", help="dependency: version, or * (KI-066/KI-276: Hermes owns --version and the name version)")),
     (("--advisory-id",), dict(dest="advisory_id", help="dependency: advisory id")),
     (("--kind",), dict(choices=[constants.KIND_MALWARE],
                        help="dependency: malware (vulnerabilities are never shared — decision 22)")),

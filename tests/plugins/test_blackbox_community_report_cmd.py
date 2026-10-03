@@ -125,7 +125,7 @@ def test_skill_requires_a_registry_version_or_a_local_artifact(wired, capsys):
 
 def test_manual_report_lands_via_shared_pipeline(wired, capsys):
     rc = report_command.cmd_report(
-        _args(type="dependency", ecosystem="npm", name="Evil-Pkg", version="1.4.2", kind="malware",
+        _args(type="dependency", ecosystem="npm", name="Evil-Pkg", package_version="1.4.2", kind="malware",
               reason="install-hook")
     )
     out = capsys.readouterr().out
@@ -300,7 +300,7 @@ def test_values_outside_the_closed_vocabularies_are_refused_by_the_parser(argv):
 
 
 def test_a_bad_manual_report_is_refused_with_its_reason_not_a_traceback(wired, capsys):
-    rc = report_command.cmd_report(_args(type="dependency", ecosystem="npm", name="x", version="*",
+    rc = report_command.cmd_report(_args(type="dependency", ecosystem="npm", name="x", package_version="*",
                                          kind="malware", reason="install-hook"))
     out = capsys.readouterr().out
     assert rc == 2 and "whole-package" in out and "Nothing was submitted" in out

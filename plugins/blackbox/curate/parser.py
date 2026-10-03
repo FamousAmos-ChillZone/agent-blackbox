@@ -74,7 +74,8 @@ def _add_keys(verbs_: Any) -> None:
     m.add_argument("--issued-day", dest="issued_day", default="", metavar="YYYY-MM-DD",
                    help="date the manifest (60-day validity, 72 h time-lock); omit for no clock")
     m.add_argument("--root-epoch", dest="root_epoch", type=int, default=1)
-    m.add_argument("--version", type=int, default=1)
+    m.add_argument("--manifest-version", dest="manifest_version", type=int, default=1,
+                   help="the manifest's version number (never --version: Hermes owns that name, KI-276)")
 
 
 def _add_propose(verbs_: Any) -> None:
