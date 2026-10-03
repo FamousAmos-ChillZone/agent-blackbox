@@ -23,7 +23,7 @@ import re
 
 import pytest
 from _community_rows import GRAPH, NETWORK, Reporter, signed_row
-from test_blackbox_authority import CFG, THREAT, TODAY, VM_GRAPH, Side
+from test_blackbox_authority import CFG, CITED, Side, THREAT, TODAY, VM_GRAPH
 from test_blackbox_curator_view import _entry
 
 from plugins.blackbox.community import read_curator_view, read_verified_reports
@@ -282,7 +282,7 @@ def test_only_the_newest_statement_per_identifier_is_kept(community):
 
 def test_statements_signed_long_ago_are_pruned():
     side = Side(GRAPH)
-    row = side.row(Kind.CONFIRMATION, THREAT, {})                          # signed 2026-10-02
+    row = side.row(Kind.CONFIRMATION, THREAT, CITED)                          # signed 2026-10-02
     assert trust_store.current_statements([row], "2027-10-01")             # 364 days: kept
     assert trust_store.current_statements([row], "2028-06-01") == []       # past MAX_STATEMENT_AGE_DAYS
 

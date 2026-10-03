@@ -99,6 +99,26 @@ def _no_extras(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
     return {} if not extras else None
 
 
+#: What a curator checked before confirming (Community Curation, plan §08): a
+#: public advisory id, a registry's own action (its URL), or the sha256 of an
+#: artifact the curator reproduced. A CLOSED format — nothing else is an
+#: evidence reference, and a URL may hold URL characters only.
+EVIDENCE_REFERENCE = re.compile(
+    r"(advisory:[A-Za-z0-9._-]{3,64}"
+    r"|registry-action:https?://[A-Za-z0-9._~:/?#@!$&()*+,;=%-]{5,200}"
+    r"|reproduced:[0-9a-f]{64})")
+
+
+def _confirmation(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
+    """No extras, or exactly one signed evidence reference. The COMMUNITY
+    authority's confirmations count only with one (``curator_view``); the
+    verified authority's stay as shipped, so every reader version accepts them."""
+    if not extras:
+        return {}
+    ok = set(extras) == {"evidence"} and bool(EVIDENCE_REFERENCE.fullmatch(extras["evidence"]))
+    return dict(extras) if ok else None
+
+
 def _days(*names: str) -> Callable[[Mapping[str, str]], Optional[Dict[str, str]]]:
     def check(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
         ok = set(extras) == set(names) and all(_DAY.fullmatch(extras[n]) for n in names)
@@ -178,7 +198,7 @@ def _counted_author(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
 _VALIDATORS: Dict[CuratorStatement, Callable[[Mapping[str, str]], Optional[Dict[str, str]]]] = {
     CuratorStatement.REVOCATION: _reason_from(constants.REVOCATION_REASONS),
     CuratorStatement.REJECTION: _reason_from(constants.REJECTION_REASONS),
-    CuratorStatement.CONFIRMATION: _no_extras,
+    CuratorStatement.CONFIRMATION: _confirmation,
     CuratorStatement.ATTESTATION: _attested_stage,
     CuratorStatement.IN_REVIEW: _no_extras,
     CuratorStatement.DEFERRAL: _no_extras,

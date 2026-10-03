@@ -23,7 +23,8 @@ Public surface:
 * :func:`read_verified_reports` — THE community read: fetch + verify (R0c/R0d).
 * The curator's view and statements (Refine R2/R6): :func:`read_curator_view` ->
   :class:`CuratorView`; :func:`sign_curator_statement`, :func:`curator_statement_quads`,
-  :func:`key_manifest_quads`, :data:`VERIFIED_GRAPH_KINDS` (which kinds live in the verified graph).
+  :func:`key_manifest_quads`, :data:`VERIFIED_GRAPH_KINDS` (which kinds live in the verified graph),
+  :data:`EVIDENCE_REFERENCE` (the closed format of the evidence a confirmation cites).
 * :func:`stage_for` (+ :class:`Stage`, :class:`Enforcement`, :class:`StageResult`) —
   a community threat's local stage from the counted-author list (R3).
 * :func:`record_verified_sighting` / :func:`publish_due_digests` — the
@@ -71,6 +72,7 @@ from .statements.author_budget import FirstSeenStore as _FirstSeenStore
 from .share_retry import retry_due_shares, share_retry_stats
 from .stages import Enforcement, Stage, StageResult, stage_for
 from .statements.curator_view import VERIFIED_GRAPH_KINDS, CuratorView, counted_dispute_weight
+from .statements.curator_statements import EVIDENCE_REFERENCE
 from .statements.curator_statements import manifest_quads as key_manifest_quads
 from .statements.curator_statements import sign_statement as sign_curator_statement
 from .statements.curator_statements import statement_quads as curator_statement_quads
@@ -96,6 +98,7 @@ def first_seen_trail():
 
 __all__ = [
     "ALREADY_SEALED_REPLY",
+    "EVIDENCE_REFERENCE",
     "COMMUNITY_PAUSE_SUBJECT",
     "NEVER_SHARED_SOURCES",
     "CommunitySharePolicy",

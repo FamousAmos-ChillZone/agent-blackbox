@@ -36,6 +36,8 @@ VM_GRAPH = "0x37b1Fdfd/agent-blackbox-vm"
 CFG = BlackboxConfig(report=True, community_graph_id=GRAPH, context_graph_id=VM_GRAPH)
 THREAT = "ioc:domain:evil.example"
 TODAY = date(2026, 10, 2).isoformat()   # the day the helper rows are signed
+#: What a community confirmation must carry: the signed reference to the evidence its curators checked.
+CITED = {"evidence": "advisory:MAL-2026-0001"}
 
 
 @pytest.fixture(autouse=True)
@@ -219,7 +221,7 @@ def test_the_community_authority_lists_a_reporter_from_the_community_graph(commu
 
 def test_the_community_authority_confirms_rejects_and_pauses(community_trusted, community):
     node = Graphs(community=[community.manifest_row(),
-                             community.row(Kind.CONFIRMATION, THREAT, {}),
+                             community.row(Kind.CONFIRMATION, THREAT, CITED),
                              community.row(Kind.REJECTION, "dep:npm:left-pad@1.0.0", {"reason": "benign"}),
                              community.row(Kind.PAUSE, "curator", {"until": "2026-10-05"})])
     view = read_curator_view(node, CFG)
@@ -249,7 +251,7 @@ def test_a_community_confirmation_never_displaces_a_verified_revocation(both_tru
     """KI-243: each authority counts in its own sequence — a higher community number wins nothing."""
     node = _both(verified, community,
                  verified_rows=[verified.row(Kind.REVOCATION, THREAT, {"reason": "false-positive"}, sequence=1)],
-                 community_rows=[community.row(Kind.CONFIRMATION, THREAT, {}, sequence=99)])
+                 community_rows=[community.row(Kind.CONFIRMATION, THREAT, CITED, sequence=99)])
     view = read_curator_view(node, CFG)
     assert view.verdict(THREAT) is Kind.REVOCATION and THREAT in view.revoked
 
@@ -258,7 +260,7 @@ def test_a_rejection_from_either_authority_beats_the_other_authoritys_confirmati
     other = "ioc:domain:other.example"
     node = _both(verified, community, community_rows=[
         verified.row(Kind.REJECTION, THREAT, {"reason": "benign"}, graph=GRAPH, sequence=1),
-        community.row(Kind.CONFIRMATION, THREAT, {}, sequence=7),
+        community.row(Kind.CONFIRMATION, THREAT, CITED, sequence=7),
         verified.row(Kind.CONFIRMATION, other, {}, graph=GRAPH, sequence=7),
         community.row(Kind.REJECTION, other, {"reason": "benign"}, sequence=1)])
     view = read_curator_view(node, CFG)
@@ -269,11 +271,11 @@ def test_a_notice_does_not_cancel_the_other_authoritys_confirmation_but_a_live_d
     deferred, lapsed = "ioc:domain:deferred.example", "ioc:domain:lapsed.example"
     node = _both(verified, community, community_rows=[
         verified.row(Kind.IN_REVIEW, THREAT, {}, graph=GRAPH, signers=1),
-        community.row(Kind.CONFIRMATION, THREAT, {}),
+        community.row(Kind.CONFIRMATION, THREAT, CITED),
         verified.row(Kind.DEFERRAL, deferred, {}, graph=GRAPH, signers=1),
-        community.row(Kind.CONFIRMATION, deferred, {}),
+        community.row(Kind.CONFIRMATION, deferred, CITED),
         verified.row(Kind.DEFERRAL, lapsed, {}, graph=GRAPH, signers=1),
-        community.row(Kind.CONFIRMATION, lapsed, {})])
+        community.row(Kind.CONFIRMATION, lapsed, CITED)])
     view = read_curator_view(node, CFG)
     assert view.verdict(THREAT) is Kind.CONFIRMATION
     assert view.verdict(deferred) is Kind.DEFERRAL

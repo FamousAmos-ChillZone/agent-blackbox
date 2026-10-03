@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 from _community_rows import GRAPH, Reporter
-from test_blackbox_authority import CFG, TODAY, Side
+from test_blackbox_authority import CFG, CITED, Side, TODAY
 from test_blackbox_trust_store import Store, _listing
 
 from plugins.blackbox.community import read_curator_view
@@ -53,7 +53,7 @@ def _baselined(community):
 def test_a_burst_of_confirmations_is_admitted_at_the_daily_rate_and_none_is_dropped(monkeypatch, community):
     _baselined(community)
     threats = _threats(raising_budget.CONFIRMATIONS_PER_DAY + 1)
-    rows = [community.row(Kind.CONFIRMATION, threat, {}, sequence=i + 1) for i, threat in enumerate(threats)]
+    rows = [community.row(Kind.CONFIRMATION, threat, CITED, sequence=i + 1) for i, threat in enumerate(threats)]
     node = Store(community=[community.manifest_row(), *rows])
     view = read_curator_view(node, CFG, interest=threats)
     confirmed = [t for t in threats if view.verdict(t) is Kind.CONFIRMATION]
@@ -87,7 +87,7 @@ def test_listings_are_capped_and_delistings_are_not(community):
 
 def test_a_nodes_first_read_is_a_baseline_and_admits_everything(community):
     threats = _threats(raising_budget.CONFIRMATIONS_PER_DAY + 50)
-    rows = [community.row(Kind.CONFIRMATION, threat, {}) for threat in threats]
+    rows = [community.row(Kind.CONFIRMATION, threat, CITED) for threat in threats]
     view = read_curator_view(Store(community=[community.manifest_row(), *rows]), CFG, interest=threats)
     assert all(view.verdict(threat) is Kind.CONFIRMATION for threat in threats) and view.community.held_raising == 0
 
@@ -95,7 +95,7 @@ def test_a_nodes_first_read_is_a_baseline_and_admits_everything(community):
 def test_a_held_confirmation_does_not_hold_back_a_rejection_of_the_same_threat(community):
     _baselined(community)
     threats = _threats(raising_budget.CONFIRMATIONS_PER_DAY + 1)
-    rows = [community.row(Kind.CONFIRMATION, threat, {}, sequence=1) for threat in threats]
+    rows = [community.row(Kind.CONFIRMATION, threat, CITED, sequence=1) for threat in threats]
     rows.append(community.row(Kind.REJECTION, threats[-1], {"reason": "benign"}, sequence=2))
     view = read_curator_view(Store(community=[community.manifest_row(), *rows]), CFG, interest=threats)
     assert view.rejected(threats[-1])
@@ -106,7 +106,7 @@ def test_a_held_confirmation_does_not_hold_back_a_rejection_of_the_same_threat(c
 
 def test_every_reader_drains_held_statements_in_the_same_order():
     side = Side(GRAPH)
-    rows = [side.row(Kind.CONFIRMATION, threat, {}, sequence=i + 1) for i, threat in enumerate(_threats(105))]
+    rows = [side.row(Kind.CONFIRMATION, threat, CITED, sequence=i + 1) for i, threat in enumerate(_threats(105))]
     forward = raising_budget.admit(rows, {}, first_read=False, today=TODAY)
     backward = raising_budget.admit(list(reversed(rows)), {}, first_read=False, today=TODAY)
     assert forward.held == backward.held == {statement_key(row) for row in rows[100:]}
@@ -117,7 +117,7 @@ def test_every_reader_drains_held_statements_in_the_same_order():
 def test_only_raising_statements_are_ever_bucketed():
     side = Side(GRAPH)
     alice = Reporter("0xa")
-    assert raising_budget.bucket(side.row(Kind.CONFIRMATION, "ioc:ip:10.0.0.1", {}))[0] == "confirm"
+    assert raising_budget.bucket(side.row(Kind.CONFIRMATION, "ioc:ip:10.0.0.1", CITED))[0] == "confirm"
     assert raising_budget.bucket(side.row(Kind.ATTESTATION, "ioc:ip:10.0.0.1", {"stage": "corroborated"}))[0] == "confirm"
     assert raising_budget.bucket(_listing(side, alice))[0] == "list"
     for row in (_listing(side, alice, listed="no"), side.row(Kind.REJECTION, "ioc:ip:10.0.0.1", {"reason": "benign"}),

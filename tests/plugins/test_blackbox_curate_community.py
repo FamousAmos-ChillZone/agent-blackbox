@@ -30,6 +30,7 @@ VM_GRAPH = "0x37b1Fdfd/agent-blackbox-vm"
 CFG = BlackboxConfig(report=True, community_graph_id=GRAPH, context_graph_id=VM_GRAPH)
 THREAT = "ioc:ip:203.0.113.7"
 ADDRESS = "0x" + "a" * 40
+EVIDENCE = "advisory:MAL-2026-0001"
 
 
 class Curators:
@@ -61,14 +62,15 @@ class Curators:
     def two_key(self, kind, identifier, fields, *, first=None, second=None):
         """Machine *first* proposes and sends; machine *second* receives, approves and publishes."""
         first, second = first or self.a, second or self.b
+        evidence = EVIDENCE if kind is Kind.CONFIRMATION else ""     # a community confirmation cites what was checked
         with first:
             proposal = verbs.propose_statement(self.ctx(first, interest=[identifier]), ProposalStore(), kind=kind,
-                                               identifier=identifier, fields=fields)
+                                               identifier=identifier, fields=fields, evidence=evidence)
             verbs.send(self.ctx(first), proposal, second.name)
         with second:
             for received in transport.receive_proposals(second.node, transport.InboxCursor()):
                 ProposalStore().save(received)
-            return verbs.approve(self.ctx(second, interest=[identifier]), ProposalStore(), proposal.id, evidence="",
+            return verbs.approve(self.ctx(second, interest=[identifier]), ProposalStore(), proposal.id, evidence=evidence,
                                  typed_code=None, yes=True)
 
 

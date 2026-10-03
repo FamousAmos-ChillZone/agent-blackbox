@@ -44,7 +44,7 @@ def add_curate_parser(sub: "argparse._SubParsersAction", *, compiled_ruleset: Op
     verbs_.add_parser("inbox", help="Receive proposals sent by the other curator")
     a = verbs_.add_parser("approve", help="Second key: co-sign, consent, publish")
     a.add_argument("proposal_id")
-    a.add_argument("--evidence", default="", help="your own item-1 evidence (promotions)")
+    a.add_argument("--evidence", default="", help="your own check of the evidence (promotions, community confirmations)")
     a.add_argument("--root", action="store_true", help="SANDBOX: add the root signature (wide / popular kills, R14)")
     _add_consent(a)
     p = verbs_.add_parser("publish", help="Publish an APPROVED proposal (after consent)")

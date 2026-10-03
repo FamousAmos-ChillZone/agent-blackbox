@@ -62,6 +62,7 @@ def propose_statement(ctx: CurateContext, store: ProposalStore, *, kind: Curator
     it — signed for the graph where the ACTING authority publishes that kind.
     Refused when that authority may not sign the kind at all."""
     _require_manifest(ctx)
+    fields = _with_confirmation_evidence(ctx, kind, fields, evidence)
     graph = ctx.graph_for(kind)
     if not graph:
         raise VerbError(f"the {ctx.authority.value} authority may not sign a {kind.value.split('.', 1)[1]} statement"
@@ -73,6 +74,21 @@ def propose_statement(ctx: CurateContext, store: ProposalStore, *, kind: Curator
     except ValueError as exc:
         raise VerbError(str(exc)) from exc
     return _stored(store, kind.value, identifier, envelope, graph, {signing.public_key_hex(key): evidence or "n/a"})
+
+
+_EVIDENCE_HELP = "advisory:<id> | registry-action:<url> | reproduced:<sha256>"
+
+
+def _with_confirmation_evidence(ctx: CurateContext, kind: CuratorStatement, fields: Mapping[str, str],
+                                evidence: str) -> Mapping[str, str]:
+    """A COMMUNITY confirmation signs the evidence its curators checked (plan
+    §08); without evidence the honest statement is a deferral, never a confirmation."""
+    if kind is not CuratorStatement.CONFIRMATION or ctx.authority is not Authority.COMMUNITY:
+        return fields
+    cited = evidence.strip()
+    if not community.EVIDENCE_REFERENCE.fullmatch(cited):
+        raise VerbError(f"a community confirmation needs --evidence {_EVIDENCE_HELP}; without evidence, propose a deferral")
+    return {**fields, "evidence": cited}
 
 
 def record_outcome(key: str, *, confirmed: bool, day: str, novel: bool = False, strike: bool = False,
@@ -229,6 +245,9 @@ def approve(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, evide
         if not evidence:
             raise VerbError("a promotion needs your own item-1 evidence (--evidence advisory:<id> …); each key checks the truth itself")
         _validated_promotion(envelope)   # KI-195: never cosign a payload you did not check yourself
+    if envelope.payload.get("evidence") and not community.EVIDENCE_REFERENCE.fullmatch(evidence.strip()):
+        raise VerbError(f"this confirmation cites evidence; co-sign it only after your own check of it "
+                        f"(--evidence {_EVIDENCE_HELP}) — each key checks the truth itself")
     try:
         cosigned = signing.cosign(envelope, my_key)
         if root and proposal.kind == killlist.KILL_LIST_STATEMENT:

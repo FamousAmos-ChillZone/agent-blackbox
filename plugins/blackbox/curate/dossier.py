@@ -21,17 +21,18 @@ Usage::
 
 from __future__ import annotations
 
-import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, List, Mapping, Optional, Tuple
 
+from .. import community
 from ..kernel import threat_ids
 from .queue import BLOCKABLE_PREFIXES
 
 #: Evidence a curator may cite for item 1: an advisory id, a registry action
-#: (URL), or a reproduction (sha256 of the artifact the curator ran).
-_EVIDENCE = re.compile(r"(advisory:[A-Za-z0-9._-]{3,64}|registry-action:https?://\S{5,200}|reproduced:[0-9a-f]{64})")
+#: (URL), or a reproduction (sha256 of the artifact the curator ran) — the same
+#: closed format a community confirmation signs.
+_EVIDENCE = community.EVIDENCE_REFERENCE
 #: The only reasons a whole-package (*) rule may carry (plan §09 checklist item 2).
 WHOLE_PACKAGE_REASONS = ("typosquat", "internal-mirror-collision", "registry-takeover")
 

@@ -214,6 +214,8 @@ def build_view(manifest: Optional[key_manifest.KeyManifest], verified_rows: Iter
     records = _frozen_out(_records(verified_rows, manifest, verified_graph, in_verified, root_keys=root_keys, curators_silent=silent)
                           + _records(community_rows, manifest, community_graph, in_community, root_keys=root_keys,
                                      curators_silent=silent), state, state_day)
+    if authority is Authority.COMMUNITY:
+        records = [r for r in records if _evidenced(r)]
     counted, delisted = _counted_authors(
         records, day, COMMUNITY_LISTING_MAX_DAYS if authority is Authority.COMMUNITY else None)
     return CuratorView(manifest=manifest, verdicts=_current_verdicts(records),
@@ -225,6 +227,13 @@ def build_view(manifest: Optional[key_manifest.KeyManifest], verified_rows: Iter
                        pause_until=_active_pause_until(records),
                        manifest_conflict=manifest_conflict, manifest_state=state, manifest_state_day=state_day,
                        manifest_expires_day=(state_day if state != "pending" else key_manifest.manifest_clock(manifest, state_day)[1]))
+
+
+def _evidenced(record: CuratorRecord) -> bool:
+    """A COMMUNITY confirmation counts only when it carries the signed
+    reference to the evidence its curators checked (plan §05: without one the
+    confirmed pool would be a list of opinions). Every other statement passes."""
+    return record.kind is not CuratorStatement.CONFIRMATION or bool(record.field("evidence"))
 
 
 def _heartbeats(records: Iterable[CuratorRecord]) -> Dict[str, str]:
