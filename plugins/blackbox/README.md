@@ -81,7 +81,7 @@ blackbox report --type ioc --ioc-type domain --value evil.example --context fetc
 blackbox report --status                # what happened to each report, and its community stage
 blackbox report --standing              # counted or probation, with a co-sighting estimate
 blackbox report --retract IDENTIFIER    # withdraw your own report
-blackbox report --false-positive IDENTIFIER --reason benign
+blackbox report --false-positive IDENTIFIER --reason tolerable
 blackbox report --export FILE           # your key backup + ledger (portable)
 blackbox report --erase-identity --confirm
 ```
