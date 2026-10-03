@@ -36,6 +36,8 @@ DEFAULT_PROTECTED_PATHS: Tuple[str, ...] = (
     "*.key",             # private key files
     "*.p12",             # PKCS#12 / PFX keystores
     "~/.aws/credentials",  # cloud credential store
+    "~/.hermes/blackbox/*",   # Blackbox's own state: overrides, allowlist, consent, ledgers (review round 4)
+    "~/.hermes/plugins/blackbox/*",   # the plugin code itself
 )
 
 
@@ -353,10 +355,8 @@ def load_blackbox_config() -> BlackboxConfig:
         dkg_bin=dkg_bin,
         sync_interval=max(3600, _as_int(_env_or(entry, env="BLACKBOX_SYNC_INTERVAL", key="sync_interval",
                                                 default=3600), 3600)),
-        # Community sharing switches (documented in README as `report` /
-        # `report_min_severity`). `report` defaults OFF pending the launch
-        # default-on/off decision; the daily cap defaults to a real bound so
-        # the safeguard exists the moment sharing turns on (KI-002).
+        # Community sharing switches (README: `report` / `report_min_severity`): `report` defaults OFF;
+        # the daily cap defaults to a real bound so the safeguard exists the moment sharing turns on (KI-002).
         report=_as_bool(_env_or(entry, env="BLACKBOX_REPORT", key="report", default=False), False),
         daily_report_limit=constants.effective_daily_report_limit(_as_int(
             _env_or(entry, env="BLACKBOX_DAILY_REPORT_LIMIT", key="daily_report_limit",

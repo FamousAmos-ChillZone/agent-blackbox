@@ -143,11 +143,15 @@ def test_after_seven_silent_days_the_root_alone_may_revoke_and_nothing_else(keys
     # the view computes the silence from heartbeats: a fresh heartbeat keeps the root out
     beat = _curator_row(Kind.HEARTBEAT, "curator", {"key": keys["hex"][0]}, keys["curators"][:1], manifest, graph=GRAPH, sequence=9)
     view = cv.build_view(manifest, [row], [beat], verified_graph=manifest.graph, community_graph=GRAPH, today="2026-10-02",
-                         root_keys={root_hex})
+                         root_keys={root_hex}, community_readable=True)
     assert THREAT not in view.revoked
-    silent = cv.build_view(manifest, [row], [], verified_graph=manifest.graph, community_graph=GRAPH, today="2026-10-02",
-                           root_keys={root_hex})
+    old_beat = _curator_row(Kind.HEARTBEAT, "curator", {"key": keys["hex"][0]}, keys["curators"][:1], manifest, graph=GRAPH, sequence=8)
+    silent = cv.build_view(manifest, [row], [old_beat], verified_graph=manifest.graph, community_graph=GRAPH, today="2026-12-01",
+                           root_keys={root_hex}, community_readable=True)       # heartbeats READ, newest 60 d old
     assert THREAT in silent.revoked
+    unreadable = cv.build_view(manifest, [row], [], verified_graph=manifest.graph, community_graph=GRAPH, today="2026-12-01",
+                               root_keys={root_hex}, community_readable=False)  # round 4: an unreadable graph is not silence
+    assert THREAT not in unreadable.revoked
 
 
 def _rows_of(envelope):

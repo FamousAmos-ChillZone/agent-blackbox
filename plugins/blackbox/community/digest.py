@@ -238,6 +238,9 @@ def publish_due_digests(client: DkgClient, cfg: BlackboxConfig, tally: Optional[
     were sent. Needs sharing ON (a digest leaves the machine like a report),
     an identity and a signer. Every attempt is ledgered (category
     ``digest``). Fail-open."""
+    from . import consent   # round 4: withdrawal must stop the weekly digest too
+    if not consent.in_force():
+        return 0
     if not cfg.community_enabled:
         return 0
     tally = tally or SightingTally()

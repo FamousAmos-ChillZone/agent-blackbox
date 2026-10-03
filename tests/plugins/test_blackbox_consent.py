@@ -125,7 +125,7 @@ def test_erasure_destroys_every_way_to_re_publish_and_export_carries_the_record(
 def test_the_documents_ship_with_the_plugin():
     for name in ("REPORTER_TERMS.md", "DPIA.md", "CONTROLLER_MAP.md"):
         text = (DOCS / name).read_text(encoding="utf-8")
-        assert text.startswith("#") and "Version: 1.0" in text
+        assert text.startswith("#") and "Version: " in text                          # every document is versioned
     terms = consent_module.terms_text()
     for command in ("--withdraw-consent", "--erase-identity", "--export", "--retract"):
         assert command in terms                                                               # the rights are real commands

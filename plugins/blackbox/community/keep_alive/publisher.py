@@ -81,8 +81,10 @@ def publish_due_copies(client: DkgClient, cfg: Any, store: Optional[LiveReportSt
     many were accepted. Does nothing while sharing is off or keep-alive is 0."""
     from .. import sharing   # the one send path (sharing imports this package at load time)
 
+    from .. import consent   # round 4: withdrawal must stop keep-alive copies too
+
     days = _epoch_days(cfg)
-    if days <= 0 or not getattr(cfg, "community_enabled", False):
+    if days <= 0 or not getattr(cfg, "community_enabled", False) or not consent.in_force():
         return 0
     when = time.time() if now is None else now
     epoch = current_epoch(when, days)

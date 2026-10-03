@@ -110,5 +110,6 @@ def demote_blocking(findings: Iterable[Any], unblocked: FrozenSet[str]) -> Tuple
     """Split would-block *findings* into (still blocking, demoted by a local override)."""
     blocking, demoted = [], []
     for finding in findings:
-        (demoted if getattr(finding, "identifier", "") in unblocked else blocking).append(finding)
+        verified_rule = getattr(finding, "source", "") == "public"   # round 4: never a kill, a custom rule or a secret
+        (demoted if verified_rule and getattr(finding, "identifier", "") in unblocked else blocking).append(finding)
     return blocking, demoted

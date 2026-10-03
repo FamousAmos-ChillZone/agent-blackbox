@@ -84,6 +84,7 @@ from .reader import (
     read_verified_reports,
 )
 from .statements.curator_view import trusted_roots as curator_trusted_roots
+from .statements.curator_view import today_utc as curator_today
 
 
 def first_seen_trail():
@@ -140,6 +141,7 @@ __all__ = [
     "read_curator_view",
     "page_rows",
     "curator_trusted_roots",
+    "curator_today",
     "record_verified_sighting",
     "read_verified_reports",
     "reports_signed_by",

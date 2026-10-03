@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment — Agent Blackbox community graph
 
-Version: 1.0 (draft for counsel review, 2026-10-02). Engineering assessment,
+Version: 1.1 (draft for counsel review, 2026-10-02; §2/§4 corrected after review round 4). Engineering assessment,
 not legal advice; the launching party still needs counsel for its market.
 
 ## 1. The processing
@@ -22,7 +22,7 @@ agents, so other agents are protected sooner.
 | Weekly sighting digest (verified threats met, coarse buckets) | frequency signal | every replica | as above |
 | Share ledger (what this node shared, outcomes) | the operator's own record, rights (export) | the operator's machine only | until erased by the operator |
 | Keep-alive memory (signed quads of accepted reports) | re-publishing copies before expiry | the operator's machine only | retired at the threat type's lifetime (47–460 d); erased with the identity |
-| Curator reputation ledger (outcomes per reporter) | graduation / demotion decisions | the curator node only, pseudonymised by a per-reporter random salt | inactive entries deleted after 24 months; erasure deletes the salt (crypto-shredding) |
+| Curator reputation ledger (outcomes per reporter) | graduation / demotion decisions | the curator node only, pseudonymised by a per-reporter random salt kept in a separate owner-only file | inactive entries deleted after 24 months together with their salts; erasure deletes the salt (crypto-shredding) |
 | Canaries (planted identifiers) | detecting bad-faith reporters | the curator node only | curator's discretion |
 | Local audit logs on an operator's machine | the operator's own visibility | the operator's machine, redacted at capture | the operator's log rotation |
 
@@ -53,7 +53,7 @@ never-shared source list; tested.
 | Reputation ledger profiling | Curator-private, salted pseudonyms, 24-month retention, erasure by salt deletion; decisions reach readers only as list entries |
 | Re-identification of a node from its address | The address is a wallet, pseudonymous by design; the terms warn; no mapping to persons is kept anywhere in the product |
 | Children's or special-category data | None is collected; the schema has no field for it |
-| Breach | Statements are public by design; the private surfaces (ledger, canaries, audit logs) are files on single machines with owner-only modes; a breach of the curator ledger exposes salted pseudonyms and outcomes only |
+| Breach | Statements are public by design; the private surfaces (ledger, canaries, audit logs) are files on single machines with owner-only modes. The ledger is two files: the entries (pseudonym → outcomes) and the salt map (reporter key → salt, owner-only, pruned with its entry); a breach of the entries file alone links no key to any outcome, a breach of both does — the salt map is the file to protect |
 
 ## 5. Rights operations
 

@@ -79,8 +79,11 @@ class KillEntry:
 
     @property
     def wide(self) -> bool:
-        """A name- or publisher-wide kill: no version AND no hash, or a publisher entry."""
-        return bool(self.publisher) or self.identifier == "*" or (not self.version and not self.artifact_hash)
+        """A name- or publisher-wide kill: no version AND no hash, a publisher entry — or ANY
+        MCP-server kill (review round 4: a tool-name prefix matches a whole server, and a short
+        prefix matches most tools; the root signs every one)."""
+        return (self.registry == "mcp" or bool(self.publisher) or self.identifier == "*"
+                or (not self.version and not self.artifact_hash))
 
     @property
     def key(self) -> str:
@@ -111,6 +114,8 @@ class KillEntry:
                 and (not self.artifact_hash or bool(_HASH.fullmatch(self.artifact_hash)))
                 and self.reason in constants.REVOCATION_REASONS + ("malware", "compromised", "impersonation")
                 and (not self.publisher or bool(_NAME.fullmatch(self.publisher)))
+                and (not self.tool_prefix or (len(self.tool_prefix) >= 3 and bool(_NAME.fullmatch(self.tool_prefix))))
+                and (self.registry != "mcp" or bool(self.tool_prefix))
                 and (self.identifier != "*" or bool(self.publisher)))
 
 

@@ -237,9 +237,9 @@ def retry_due_shares(client: DkgClient, cfg: Any, queue: Optional[ShareRetryQueu
     outcomes are ledgered) or gives it up with a ``failed-after-retries`` row.
     Fail-open at every step. Does nothing while community sharing is off.
     """
-    from . import sharing   # the drain uses the one send path; sharing queues through this module
+    from . import consent, sharing   # the drain uses the one send path; sharing queues through this module
 
-    if not getattr(cfg, "community_enabled", False):
+    if not getattr(cfg, "community_enabled", False) or not consent.in_force():   # round 4: consent gates retries
         return 0
     store = queue or default_queue()
     accepted = 0

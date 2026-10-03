@@ -56,7 +56,7 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
         # R0c/R0d: only reports whose signature verifies for THIS network and
         # graph are counted; the self-described reporter field never is.
         read = community.read_verified_reports(client, cfg)
-        if not read.available:
+        if _signed_pause(rs, read) or not read.available:   # a signed pause (round 4), or an unavailable read
             # Unavailable — a failed or malformed page, an unverifiable
             # network, or an unproven empty read: keep last-good (fail-open).
             # Never mistake "could not read" for "no threats" (KI-112).
@@ -74,6 +74,15 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
         materialize_community_rules(rs)
     except Exception as exc:  # pragma: no cover - fail open at the tier boundary
         logger.debug("blackbox: community tier skipped: %s", exc)
+
+
+def _signed_pause(rs: compiler.Ruleset, read: Any) -> bool:
+    """A 2-of-3 signed curator PAUSE in force today suppresses ingest (the legacy unsigned flag stays beside it, KI-213)."""
+    if not read.curator.pause_active(community.curator_today()):
+        return False
+    logger.warning("blackbox: community ingest PAUSED by a signed curator pause until %s", read.curator.pause_until)
+    rs.community_paused = True
+    return True
 
 
 def _graph_still_has_reports(client: DkgClient, cfg: BlackboxConfig) -> bool:

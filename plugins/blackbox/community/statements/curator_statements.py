@@ -125,6 +125,17 @@ def _pause(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
     return _days("until")(extras)
 
 
+#: A counted-author listing may run this long from its signed day.
+LISTING_MAX_DAYS = 366
+
+
+def _within_days(day: str, until: str, limit: int) -> bool:
+    try:
+        return (date.fromisoformat(until) - date.fromisoformat(day)).days <= limit
+    except ValueError:
+        return False
+
+
 def _pause_within_limit(day: str, until: str) -> bool:
     try:
         return (date.fromisoformat(until) - date.fromisoformat(day)).days <= PAUSE_MAX_DAYS
@@ -201,6 +212,8 @@ def _validated_payload(kind: CuratorStatement, payload: Mapping[str, str]) -> Op
     extras = _VALIDATORS[kind]({k: v for k, v in payload.items() if k not in ("identifier", "day")})
     if extras is not None and kind is CuratorStatement.PAUSE and not _pause_within_limit(day, extras["until"]):
         return None   # R7b: a pause lasts ≤ 7 days; a longer one is not a valid statement
+    if extras is not None and kind is CuratorStatement.COUNTED_AUTHORS and not _within_days(day, extras["expires"], LISTING_MAX_DAYS):
+        return None   # round 4: a listing lasts ≤ 12 months (DPIA §2), enforced by every reader
     return None if extras is None else (identifier, day, extras)
 
 

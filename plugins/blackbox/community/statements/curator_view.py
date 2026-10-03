@@ -101,6 +101,8 @@ class CuratorView:
     manifest_state_day: str = ""
     #: R7b: the day the trusted manifest expires ("" when undated) — the 30-day-ahead alarm.
     manifest_expires_day: str = ""
+    #: The newest signed PAUSE's `until` day ("" = none) — enforced by the community tier.
+    pause_until: str = ""
 
     def is_counted(self, author_key: str) -> bool:
         return author_key in self.counted
@@ -108,6 +110,10 @@ class CuratorView:
     def verdict(self, identifier: str) -> Optional[CuratorStatement]:
         record = self.verdicts.get(identifier)
         return record.kind if record else None
+
+    def pause_active(self, today: str) -> bool:
+        """A 2-of-3 signed pause (≤ 7 d) is in force today."""
+        return bool(self.pause_until) and today <= self.pause_until
 
     def attestation(self, identifier: str) -> Optional[CuratorRecord]:
         """The curator's current stage attestation for *identifier*, if any."""
@@ -166,6 +172,20 @@ def trusted_manifests(rows: Iterable[Mapping[str, Any]], environment: str, graph
     return manifests
 
 
+def effective_manifest(manifests: Iterable[key_manifest.KeyManifest], today: str) -> Optional[key_manifest.KeyManifest]:
+    """The manifest readers act on: never one inside its 72 h time-lock; an undated
+    manifest only when no dated one exists (an undated newer manifest cannot bypass
+    the lock); every manifest at an order two root-signed manifests disagree on is
+    skipped — the reader stays frozen at the previous version (review round 4)."""
+    rows = list(manifests)
+    seen: Dict[Tuple[int, int], set] = {}
+    for m in rows:
+        seen.setdefault(m.order, set()).add(m.content_hash())
+    candidates = [m for m in rows if len(seen[m.order]) == 1 and key_manifest.manifest_clock(m, today)[0] != "pending"]
+    dated = [m for m in candidates if m.issued_day]
+    return key_manifest.newest(dated or candidates)
+
+
 def manifests_conflict(manifests: Iterable[key_manifest.KeyManifest]) -> bool:
     """R10b SECURITY: two trusted manifests with the same (root epoch, version)
     but different content — someone published a second truth."""
@@ -182,11 +202,17 @@ def _records(rows: Iterable[Mapping[str, Any]], manifest: key_manifest.KeyManife
              curators_silent: bool = False) -> List[CuratorRecord]:
     """Verified records from one graph, keeping only types that may live there."""
     records = []
+    root_alone = 0
     for row in rows:
         record = curator_statements.parse_statement(row, manifest, graph=graph, root_keys=root_keys,
                                                     curators_silent=curators_silent)
-        if record is not None and (record.kind in VERIFIED_GRAPH_KINDS) == verified_graph:
-            records.append(record)
+        if record is None or (record.kind in VERIFIED_GRAPH_KINDS) != verified_graph:
+            continue
+        if len(record.signers) < (manifest.threshold if record.kind.needs_quorum else 1):   # accepted root-alone
+            root_alone += 1
+            if root_alone > ROOT_ALONE_PER_READ:
+                continue
+        records.append(record)
     return records
 
 
@@ -194,14 +220,24 @@ def _records(rows: Iterable[Mapping[str, Any]], manifest: key_manifest.KeyManife
 CURATOR_SILENCE_FOR_ROOT_DAYS = 7
 
 
-def _curators_silent(records: Iterable[CuratorRecord], today: str) -> bool:
+#: Root-alone reductions one read may honour (review round 4: never "disable all" through the root).
+ROOT_ALONE_PER_READ = 20
+
+
+def _curators_silent(records: Iterable[CuratorRecord], today: str, community_readable: bool) -> bool:
+    """True only when the community graph was READ, at least one heartbeat has ever
+    been seen, and the newest is older than the silence window. An unreadable or
+    unconfigured community graph is not silence (review round 4: a compromised root
+    plus an eclipsed node must not revoke the whole corpus)."""
+    if not community_readable:
+        return False
     newest = max((r.day for r in records if r.kind is CuratorStatement.HEARTBEAT), default="")
     if not newest:
-        return True
+        return False
     try:
         return (date.fromisoformat(today) - date.fromisoformat(newest)).days > CURATOR_SILENCE_FOR_ROOT_DAYS
     except ValueError:
-        return True
+        return False
 
 
 def _frozen_out(records: Iterable[CuratorRecord], state: str, since: str) -> List[CuratorRecord]:
@@ -215,14 +251,14 @@ def _frozen_out(records: Iterable[CuratorRecord], state: str, since: str) -> Lis
 def build_view(manifest: Optional[key_manifest.KeyManifest], verified_rows: Iterable[Mapping[str, Any]],
                community_rows: Iterable[Mapping[str, Any]], *, verified_graph: str, community_graph: str,
                today: Optional[str] = None, manifest_conflict: bool = False,
-               root_keys: AbstractSet[str] = frozenset()) -> CuratorView:
+               root_keys: AbstractSet[str] = frozenset(), community_readable: bool = False) -> CuratorView:
     """The view from a trusted *manifest* and both graphs' statement rows."""
     if manifest is None:
         return CuratorView(manifest_conflict=manifest_conflict)
     day = today or _today()
     state, state_day = key_manifest.manifest_clock(manifest, day)
     first_pass = _records(community_rows, manifest, community_graph, False)
-    silent = _curators_silent(first_pass, day)
+    silent = _curators_silent(first_pass, day, community_readable)
     records = _frozen_out(_records(verified_rows, manifest, verified_graph, True, root_keys=root_keys, curators_silent=silent)
                           + _records(community_rows, manifest, community_graph, False, root_keys=root_keys,
                                      curators_silent=silent), state, state_day)
@@ -232,6 +268,8 @@ def build_view(manifest: Optional[key_manifest.KeyManifest], verified_rows: Iter
                        away=tuple(r for r in records if r.kind is CuratorStatement.AWAY),
                        attestations=_current_attestations(records),
                        heartbeats=_heartbeats(records), last_statement_day=max((r.day for r in records), default=""),
+                       pause_until=(_latest(r for r in records if r.kind is CuratorStatement.PAUSE) or CuratorRecord(
+                           CuratorStatement.PAUSE, "curator", 0, "", (), frozenset())).field("until"),
                        manifest_conflict=manifest_conflict, manifest_state=state, manifest_state_day=state_day,
                        manifest_expires_day=(state_day if state != "pending" else key_manifest.manifest_clock(manifest, state_day)[1]))
 

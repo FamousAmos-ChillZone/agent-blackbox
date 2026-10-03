@@ -153,7 +153,8 @@ def test_the_ledger_is_salted_and_erasure_crypto_shreds_the_entry(tmp_path):
     assert (standing.confirmed, standing.rejected, standing.novel_credits, standing.first_seen_day) == (1, 1, 1, "2026-09-01")
     assert 0.4 < ledger.reputation(KEY, TODAY) < 0.6
     raw = json.loads((tmp_path / "reputation.json").read_text(encoding="utf-8"))
-    assert list(raw["salts"]) == [KEY] and KEY not in json.dumps(raw["entries"])        # entries carry only the pseudonym
+    salts = json.loads((tmp_path / "reputation_salts.json").read_text(encoding="utf-8"))
+    assert list(salts) == [KEY] and KEY not in json.dumps(raw["entries"])               # entries carry only the pseudonym; salts apart
     assert ledger.erase(KEY) and not ledger.erase(KEY)
     assert ledger.standing(KEY) == rep.ReporterStanding(key=KEY) and ledger.keys() == []
     assert json.loads((tmp_path / "reputation.json").read_text(encoding="utf-8"))["entries"] == {}

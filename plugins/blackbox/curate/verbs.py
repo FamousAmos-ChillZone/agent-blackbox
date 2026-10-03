@@ -243,9 +243,12 @@ def approve(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, evide
         if not evidence:
             raise VerbError("a promotion needs your own item-1 evidence (--evidence advisory:<id> …); each key checks the truth itself")
         _validated_promotion(envelope)   # KI-195: never cosign a payload you did not check yourself
-    cosigned = signing.cosign(envelope, my_key)
-    if root and proposal.kind == killlist.KILL_LIST_STATEMENT:
-        cosigned = signing.cosign(cosigned, keys.root_key_store().load_or_create())
+    try:
+        cosigned = signing.cosign(envelope, my_key)
+        if root and proposal.kind == killlist.KILL_LIST_STATEMENT:
+            cosigned = signing.cosign(cosigned, keys.root_key_store().load_or_create())
+    except ValueError as exc:   # round 4: a third signature can outgrow the 4 KB envelope
+        raise VerbError(f"cannot add this signature: {exc} — split the list into smaller versions") from exc
     proposal = proposal.with_envelope(cosigned, {signing.public_key_hex(my_key): evidence or "n/a"})
     proposal = proposal.transition(ProposalState.APPROVED)
     store.save(proposal)

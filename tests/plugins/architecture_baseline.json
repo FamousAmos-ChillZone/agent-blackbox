@@ -36,7 +36,7 @@
     "detection/detectors.py::discover_dependency_candidates": 52,
     "detection/reviewer_setup.py::cmd_setup_llm": 102,
     "guard/hooks.py::on_pre_tool_call": 45,
-    "kernel/config.py::load_blackbox_config": 143,
+    "kernel/config.py::load_blackbox_config": 141,
     "kernel/settings.py::_validate": 99,
     "ruleset/compiler.py::Ruleset.graph_entries": 47,
     "ruleset/compiler.py::build_from_rows": 75,

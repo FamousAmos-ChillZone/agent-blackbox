@@ -332,14 +332,14 @@ def read_curator_view(client: DkgClient, cfg: BlackboxConfig, environment: str =
     manifests = curator_view.trusted_manifests(page_rows(client, verified, memory, curator_view.key_manifests_sparql) or [],
                                                environment, verified, roots)
     today = curator_view.today_utc()
-    effective = [m for m in manifests if key_manifest.manifest_clock(m, today)[0] != "pending"]   # R7b 72 h time-lock
-    manifest = key_manifest.newest(effective)
+    manifest = curator_view.effective_manifest(manifests, today)   # R7b time-lock; round 4: dated beats undated, conflicts freeze
     conflict = curator_view.manifests_conflict(manifests)   # R10b SECURITY alarm
     if manifest is None:
         return curator_view.CuratorView(manifest_conflict=conflict)
-    community_rows = (page_community_rows(client, cfg, curator_statements.curator_statements_sparql) or []
-                      if cfg.community_graph_id else [])
+    community_page = page_community_rows(client, cfg, curator_statements.curator_statements_sparql) if cfg.community_graph_id else None
+    community_rows = community_page or []
     return curator_view.build_view(manifest, page_rows(client, verified, memory,
                                                        curator_statements.curator_statements_sparql) or [],
                                    community_rows, verified_graph=verified, community_graph=cfg.community_graph_id,
-                                   manifest_conflict=conflict, root_keys=roots)
+                                   manifest_conflict=conflict, root_keys=roots,
+                                   community_readable=community_page is not None)

@@ -69,6 +69,43 @@ plugins:
       mode: block
 ```
 
+## Community graph (sharing is opt-in)
+
+Nothing leaves your machine until you read the reporter terms and consent;
+withdrawing is one command and stops sharing on the next action.
+
+```bash
+blackbox report --consent               # read the terms, record consent (then set report: true)
+blackbox report --withdraw-consent      # sharing stops
+blackbox report --type ioc --ioc-type domain --value evil.example --context fetched-by-tool
+blackbox report --status                # what happened to each report, and its community stage
+blackbox report --standing              # counted or probation, with a co-sighting estimate
+blackbox report --retract IDENTIFIER    # withdraw your own report
+blackbox report --false-positive IDENTIFIER --reason benign
+blackbox report --export FILE           # your key backup + ledger (portable)
+blackbox report --erase-identity --confirm
+```
+
+A verified rule that blocks here can be demoted to FLAG on this machine only
+(audited, never shared; there is no way to raise enforcement locally):
+
+```bash
+blackbox rules unblock IDENTIFIER --reason "false positive in our CI"
+blackbox rules reblock IDENTIFIER
+blackbox rules list
+```
+
+Curators run `blackbox curate` (queue, dossier, two-key `propose` /
+`approve` / `publish`, `--attest`, `--kill-list`, `outcome`, `graduate`,
+`metrics`, `watch`). Community settings in `config.yaml`:
+`community_poll_interval` (seconds between pulse probes, 0 off),
+`community_keepalive_epoch_days` (re-publish cadence for your own reports,
+0 off) and `community_shadow` (compute and log stages, enforce only
+monitor). `$BLACKBOX_HOME/allowlist.json` extends the shipped allowlist and
+warninglist; `$BLACKBOX_HOME/public_suffix_list.dat` refreshes the vendored
+Public Suffix List. The reporter terms, DPIA and controller map ship in
+`plugins/blackbox/docs/`.
+
 ## How threat data works
 
 Blackbox currently uses one shared graph:

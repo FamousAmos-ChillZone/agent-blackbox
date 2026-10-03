@@ -46,7 +46,8 @@ def pseudonym(salt_hex: str, key: str) -> str:
 
 
 class ReputationLedger:
-    """``$BLACKBOX_HOME/curate/reputation.json``: ``{"salts": {key: salt}, "entries": {pseudonym: entry}}``.
+    """``$BLACKBOX_HOME/curate/reputation.json`` (``{"entries": {pseudonym: entry}}``) + ``reputation_salts.json``
+    (``{key: salt}``, owner-only): the entries file alone links no key to any outcome.
 
     An entry holds the standing fields plus its outcome list. The salt map is
     the only link from a key to its entry; erasing a key deletes its salt.
@@ -54,6 +55,9 @@ class ReputationLedger:
 
     def __init__(self, path: Optional[Path] = None) -> None:
         self._path = path or (constants.blackbox_home() / "curate" / _LEDGER_FILE)
+        #: Round 4: the salt map (key → salt) lives in its own owner-only file, so the
+        #: entries file alone links no key to any outcome.
+        self._salts_path = self._path.with_name(self._path.stem + "_salts.json")
         self._lock = threading.Lock()
 
     # -- reads ---------------------------------------------------------------
@@ -125,20 +129,26 @@ class ReputationLedger:
     def _load(self) -> Dict[str, Any]:
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
-            salts = {str(k): str(v) for k, v in data.get("salts", {}).items()}
             entries = {str(k): dict(v) for k, v in data.get("entries", {}).items() if isinstance(v, dict)}
         except (OSError, ValueError, AttributeError):
-            return {"salts": {}, "entries": {}}
+            entries = {}
+        try:
+            salts = {str(k): str(v) for k, v in json.loads(self._salts_path.read_text(encoding="utf-8")).items()}
+        except (OSError, ValueError, AttributeError):
+            salts = {}
         cutoff = (date.today() - timedelta(days=RETENTION_DAYS)).isoformat()
         live = {p: e for p, e in entries.items() if e.get("last_day", "") >= cutoff or not e.get("outcomes")}
-        return {"salts": salts, "entries": live}
+        live_salts = {key: salt for key, salt in salts.items() if pseudonym(salt, key) in live or not entries}
+        return {"salts": live_salts, "entries": live}
 
     def _save(self, data: Dict[str, Any]) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-            tmp.write_text(json.dumps(data), encoding="utf-8")
-            os.replace(tmp, self._path)
+            for path, payload in ((self._path, {"entries": data["entries"]}), (self._salts_path, data["salts"])):
+                tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
+                tmp.write_text(json.dumps(payload), encoding="utf-8")
+                os.chmod(tmp, 0o600)
+                os.replace(tmp, path)
         except OSError as exc:
             logger.warning("blackbox: could not save the reputation ledger (%s)", exc)
 
