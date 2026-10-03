@@ -30,6 +30,7 @@ from ...kernel import constants, node_routes, signing, sparql_text, threat_ids
 from ...kernel.signing import key_manifest
 from ...kernel.signing.statement_order import CuratorStatement
 from .. import consent, promotion
+from ..ladder import outcomes
 from ..upkeep import published
 from ..context import CurateContext
 from ..proposal import Proposal, ProposalState, ProposalStore
@@ -80,8 +81,28 @@ def publish(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, typed
     store.save(proposal.transition(ProposalState.PUBLISHED, note=f"published to {graph} as {name}"))
     if graph == ctx.community_graph:   # shared memory forgets: this node keeps its statement alive
         published.remember(ctx.cfg, graph=graph, name=name, quads=_asset(proposal, envelope)[1])
+    _credit_reporters(ctx, proposal)
     already = " (the node already held it)" if outcome is PublishOutcome.ALREADY_THERE else ""
     return proposal, f"published to {graph} as {name}{already}"
+
+
+#: Statements whose publication changes what reporters are credited with, or their band.
+_LADDER_KINDS = frozenset({CuratorStatement.CONFIRMATION.value, CuratorStatement.REJECTION.value,
+                           CuratorStatement.COUNTED_AUTHORS.value})
+
+
+def _credit_reporters(ctx: CurateContext, proposal: Proposal) -> None:
+    """A published verdict credits the threat's reporters, and a published
+    listing moves its reporter's band, in this node's private ledger — at
+    once, without anyone typing it (KI-252). Best effort: the ledger can
+    always be rebuilt from the public record, so a failure here never undoes
+    a publish."""
+    if proposal.kind not in _LADDER_KINDS:
+        return
+    try:
+        outcomes.credit_verdicts(ctx, also=[proposal.identifier])
+    except Exception as exc:
+        logger.warning("blackbox: could not credit reporters after publishing (%s); `curate graduate` re-syncs", exc)
 
 
 def _has_quorum(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedEnvelope) -> bool:

@@ -16,7 +16,6 @@ Numbering, the quorum check, consent and the write itself live in
 from __future__ import annotations
 
 import logging
-from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
@@ -105,7 +104,9 @@ def propose_graduation(ctx: CurateContext, store: ProposalStore, *, key: str, ad
                        cluster: str = "", ledger: Optional[reputation.ReputationLedger] = None) -> Proposal:
     """R4: turn a standing into the counted-author proposal it calls for
     (graduation lists, demotion delists, a collapse shares an org) — the same
-    2-of-3 flow as every nomination; readers never see the ledger."""
+    2-of-3 flow as every nomination; readers never see the ledger. The ledger's
+    band changes when the listing is PUBLISHED (``ladder.outcomes.sync_bands``),
+    never here: a proposal nobody co-signs changes nothing (KI-255)."""
     book = ledger or reputation.ReputationLedger()
     standing = book.standing(key.lower())
     fields = reputation.nomination_fields(standing, address=address, today=today,
@@ -114,15 +115,12 @@ def propose_graduation(ctx: CurateContext, store: ProposalStore, *, key: str, ad
     if fields is None:
         raise VerbError(f"nothing to propose for this reporter today (band {standing.band.value}, "
                         f"{standing.novel_credits} novel credit(s), {standing.strikes} strike(s))")
-    proposal = propose_statement(ctx, store, kind=CuratorStatement.COUNTED_AUTHORS, identifier=f"author:{key.lower()}",
-                                 fields=fields, evidence=f"reputation ledger {today}")
-    if fields["listed"] == "yes" and standing.band is reputation.ReputationBand.PROBATION:
-        book.set_standing(replace(standing, band=reputation.ReputationBand.ESTABLISHED, org=cluster))
-    elif fields["listed"] == "no":
-        demoted = reputation.demotion(standing, book.reputation(key.lower(), today), today)
-        if demoted is not None:
-            book.set_standing(demoted)
-    return proposal
+    identifier = f"author:{key.lower()}"
+    waiting = [p for p in store.open() if p.identifier == identifier]
+    if waiting:   # the band only moves on publish, so a second proposal would duplicate the first
+        raise VerbError(f"a proposal for this reporter is already waiting ({waiting[0].id}, {waiting[0].state.value})")
+    return propose_statement(ctx, store, kind=CuratorStatement.COUNTED_AUTHORS, identifier=identifier,
+                             fields=fields, evidence=f"reputation ledger {today}")
 
 
 def curator_alarms(ctx: CurateContext, compiled: Optional[Any], *, today: str, now: float,

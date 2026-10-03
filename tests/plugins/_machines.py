@@ -34,7 +34,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from _community_rows import NETWORK
+from _community_rows import GRAPH, NETWORK, signed_report_quads
 
 SWM = "shared-working-memory"
 VM = "verifiable-memory"
@@ -183,3 +183,14 @@ class Machine:
 
     def __exit__(self, *exc: Any) -> None:
         return None
+
+
+def share_report(node: Node, identifier: str, reporter: Any, *, graph: str = GRAPH, day: Optional[str] = None,
+                 **evidence: str) -> None:
+    """Put one signed report of *identifier* by *reporter* into *graph* through
+    *node*, dated *day* (``YYYY-MM-DD``; today when omitted) — built by the
+    product's own report writer."""
+    from datetime import datetime, timezone
+    ts = datetime.fromisoformat(day).replace(tzinfo=timezone.utc) if day else None
+    quads = signed_report_quads(identifier, reporter, graph=graph, ts=ts, **evidence)
+    node.share_knowledge_asset(graph, f"report-{abs(hash((identifier, reporter.address))):x}", quads)

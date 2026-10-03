@@ -13,6 +13,11 @@ Usage (curator machine)::
     standing = ledger.standing(key)                               # ReporterStanding
     ledger.reputation(key, today="2026-10-02")                    # Beta mean with forgetting
     ledger.erase(key)                                             # deletes the salt: the entry is unreadable forever
+
+A curator's published verdict is credited to each reporter of the threat
+exactly once (:meth:`ReputationLedger.record_once`), so the ledger can be
+REBUILT from the public record by any curator node, any number of times,
+and reach the same counts.
 """
 
 from __future__ import annotations
@@ -95,6 +100,48 @@ class ReputationLedger:
             self._save(data)
             return _standing_from(key, entry)
 
+    def record_once(self, key: str, outcome: Outcome, *, threat: str, novel: bool = False,
+                    first_seen_day: str = "", publisher: str = "") -> bool:
+        """Credit *outcome* for one THREAT at most once; True when the ledger changed.
+
+        Idempotent per (reporter, threat): repeating the same verdict changes
+        nothing, so a sync over the whole public record is safe to run on
+        every beat. A verdict that FLIPPED (a confirmation later rejected)
+        records the new outcome and takes back the novelty credit the first
+        one gave. The memory of what was credited survives a lockout, so a
+        demoted reporter is not re-credited for its old reports. *publisher*
+        — the upstream publisher a NOVEL credit is charged to (at most one
+        credit per publisher across all reporters)."""
+        confirmed = "confirmed" if outcome.confirmed else "rejected"
+        tag = hashlib.sha256(threat.encode("utf-8")).hexdigest()[:20]
+        with self._lock:
+            data = self._load()
+            salt = data["salts"].setdefault(key.lower(), secrets.token_hex(16))
+            entry = data["entries"].setdefault(pseudonym(salt, key), _new_entry(first_seen_day or outcome.day))
+            credited = entry.setdefault("credited", {})
+            previous = credited.get(tag)
+            if previous is not None and previous.get("v") == confirmed:
+                return False
+            if previous is not None and previous.get("novel"):
+                entry["novel_credits"] = max(0, int(entry.get("novel_credits") or 0) - 1)
+            grants_novel = bool(novel and outcome.confirmed)
+            entry["outcomes"].append({"day": outcome.day, "confirmed": outcome.confirmed})
+            entry[confirmed] += 1
+            entry["novel_credits"] += 1 if grants_novel else 0
+            entry["last_day"] = max(entry.get("last_day", ""), outcome.day)
+            if first_seen_day and first_seen_day < (entry.get("first_seen_day") or first_seen_day):
+                entry["first_seen_day"] = first_seen_day
+            credited[tag] = {"v": confirmed, "novel": grants_novel}
+            if grants_novel and publisher:
+                data["publishers"][publisher] = int(data["publishers"].get(publisher, 0)) + 1
+            self._save(data)
+            return True
+
+    def publisher_credits(self, publisher: str) -> int:
+        """How many novelty credits were already granted for *publisher* (any reporter)."""
+        with self._lock:
+            return int(self._load()["publishers"].get(publisher, 0))
+
     def set_standing(self, standing: ReporterStanding) -> None:
         """Store band / org / sponsor / lockout decisions (counters come from outcomes)."""
         with self._lock:
@@ -127,11 +174,14 @@ class ReputationLedger:
         return data["entries"].get(pseudonym(salt, key)) if salt else None
 
     def _load(self) -> Dict[str, Any]:
+        entries: Dict[str, Dict[str, Any]] = {}
+        publishers: Dict[str, int] = {}
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
             entries = {str(k): dict(v) for k, v in data.get("entries", {}).items() if isinstance(v, dict)}
-        except (OSError, ValueError, AttributeError):
-            entries = {}
+            publishers = {str(k): int(v) for k, v in dict(data.get("publishers") or {}).items()}
+        except (OSError, ValueError, AttributeError, TypeError):
+            pass   # missing or unreadable: an empty ledger
         try:
             salts = {str(k): str(v) for k, v in json.loads(self._salts_path.read_text(encoding="utf-8")).items()}
         except (OSError, ValueError, AttributeError):
@@ -139,12 +189,13 @@ class ReputationLedger:
         cutoff = (date.today() - timedelta(days=RETENTION_DAYS)).isoformat()
         live = {p: e for p, e in entries.items() if e.get("last_day", "") >= cutoff or not e.get("outcomes")}
         live_salts = {key: salt for key, salt in salts.items() if pseudonym(salt, key) in live or not entries}
-        return {"salts": live_salts, "entries": live}
+        return {"salts": live_salts, "entries": live, "publishers": publishers}
 
     def _save(self, data: Dict[str, Any]) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            for path, payload in ((self._path, {"entries": data["entries"]}), (self._salts_path, data["salts"])):
+            for path, payload in ((self._path, {"entries": data["entries"], "publishers": data.get("publishers", {})}),
+                                  (self._salts_path, data["salts"])):
                 tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
                 tmp.write_text(json.dumps(payload), encoding="utf-8")
                 os.chmod(tmp, 0o600)

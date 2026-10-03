@@ -70,6 +70,8 @@ class VerifiedReport:
     ``author`` — the signer's Ed25519 public key (hex): THE identity for
     counting. ``reporter`` — the self-described agent address (display only).
     ``fields`` — evidence as (reader variable, signed value) pairs, sorted.
+    ``day`` — the signed UTC day of the report (who reported a threat first,
+    and since when a reporter has been reporting, are read from it).
     """
 
     subject: str
@@ -79,6 +81,7 @@ class VerifiedReport:
     severity: str
     fields: Tuple[Tuple[str, str], ...] = ()
     framework: str = ""      # the signed framework label (display only)
+    day: str = ""
 
 
 class ReportVerifier:
@@ -128,7 +131,7 @@ class ReportVerifier:
             return None
         return VerifiedReport(subject=payload["subject"], identifier=identifier, author=author,
                               reporter=reporter, severity=severity, fields=fields,
-                              framework=payload.get("framework", ""))
+                              framework=payload.get("framework", ""), day=str(payload.get("day", "")))
 
 
 def _utc_today() -> str:

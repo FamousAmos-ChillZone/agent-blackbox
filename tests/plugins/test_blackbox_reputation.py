@@ -194,6 +194,6 @@ def test_the_curate_verbs_record_outcomes_and_propose_the_listing_without_publis
     assert proposal.kind == Kind.COUNTED_AUTHORS.value and proposal.identifier == f"author:{KEY}"
     assert proposal.parsed().payload["listed"] == "yes" and proposal.parsed().payload["class"] == "established"
     assert node.shared == [] and node.vm_published == []                                   # one key: nothing published yet
-    assert rep.ReputationLedger().standing(KEY).band is rep.ReputationBand.ESTABLISHED      # the ledger moved the band
-    with pytest.raises(verbs.VerbError, match="nothing to propose"):
+    assert rep.ReputationLedger().standing(KEY).band is rep.ReputationBand.PROBATION        # KI-255: a proposal moves nothing
+    with pytest.raises(verbs.VerbError, match="already waiting"):
         verbs.propose_graduation(_ctx(node, curators["manifest"]), ProposalStore(), key=KEY, address="0x" + "1" * 40, today=TODAY)

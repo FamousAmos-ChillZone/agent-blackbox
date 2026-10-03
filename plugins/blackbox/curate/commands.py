@@ -24,6 +24,7 @@ from ..kernel import display_safety, node_routes, signing
 from ..kernel.signing.authority import Authority
 from ..kernel.signing.statement_order import CuratorStatement
 from . import dossier, intake, keys, node_ui_views, publishing, queue, transport, verbs
+from .ladder import outcomes
 from .upkeep import heartbeat, published
 from .context import CurateContext, build_context, verified_identifiers
 from .proposal import ProposalState, ProposalStore
@@ -304,6 +305,10 @@ def _graduate(args: argparse.Namespace) -> int:
             result = verbs.send(_ctx(args), proposal, args.to)
             print(f"sent to {_term(args.to, 60)}: delivered={result.get('delivered')}")
         return 0
+    ctx = _ctx(args)
+    synced = outcomes.credit_verdicts(ctx)   # every curator node rebuilds its ledger from the public record
+    print(f"synced with the published verdicts: {synced.credited} new outcome(s), {synced.novel} novel"
+          if synced.available else "could not read the community graph: the ledger below may be behind")
     rows = verbs.graduation_candidates(today)
     if not rows:
         print("the reputation ledger is empty")
@@ -311,6 +316,9 @@ def _graduate(args: argparse.Namespace) -> int:
     for standing, score, action in rows:
         print(f"{standing.key[:16]}…  {standing.band.value:<11} rep {score:.2f}  confirmed {standing.confirmed} rejected "
               f"{standing.rejected} strikes {standing.strikes} novel {standing.novel_credits}  {action or '-'}")
+    for ring in outcomes.overlap_rings(ctx):
+        print("possible single operator (same threats, in turn): " + ", ".join(f"{key[:16]}…" for key in sorted(ring))
+              + "  -> list them under one --cluster so they count once")
     return 0
 
 
