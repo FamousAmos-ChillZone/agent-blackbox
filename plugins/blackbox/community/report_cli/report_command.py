@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from ... import audit
 from ... import detection
 from .. import consent, graph_stats, report_builder, report_schema, report_signer, sharing, share_retry
-from . import report_rights, report_tracking, statement_verbs
+from . import report_rights, report_tracking, statement_verbs, submission_gate
 from .. import reader as graph_reader
 from ...kernel import constants, threat_ids
 
@@ -261,19 +261,16 @@ def cmd_report(args: argparse.Namespace) -> int:
     cfg = load_blackbox_config()
     if args.status or getattr(args, "standing", False) or report_rights.wants_local_verb(args):   # local: nothing sent
         return _local_verb(cfg, args)
-    if not cfg.community_enabled:
-        print("Community sharing is dormant: no community graph is configured." if not cfg.community_graph_id
-              else "Community sharing is OFF (config key `report: false`).")
-        print("Nothing was submitted.")
-        return 2
-    if not _consented():   # R13: the same gate as automatic sharing
-        return 2
+    reduction = submission_gate.is_reduction(args)
+    refusal = submission_gate.refusal_for(cfg, reduction)
+    if refusal is not None:
+        return refusal
     client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
     resolved = _reporting_identity(client, cfg.community_graph_id)
     if resolved is None:
         return 1
     reporter, signer = resolved
-    if args.false_positive or args.retract:
+    if reduction:
         return statement_verbs.submit_statement(client, cfg, args, reporter, signer)
     finding, err = _report_finding_from_args(args)
     if finding is None:
@@ -310,15 +307,6 @@ def cmd_report(args: argparse.Namespace) -> int:
     print(f"  identifier: {display_safety.term_safe(identifier)}")
     print(f"  subject:    {display_safety.term_safe(subject)}")
     return 0
-
-
-def _consented() -> bool:
-    """R13: a manual report leaves only with a consent record for the current terms."""
-    if consent.in_force():
-        return True
-    print("No sharing consent is recorded for the current reporter terms. Read them and consent with")
-    print("`blackbox report --consent`; nothing was submitted.")
-    return False
 
 
 def _reporting_identity(client: DkgClient, graph: str) -> Optional[Tuple[str, report_signer.ReportSigner]]:

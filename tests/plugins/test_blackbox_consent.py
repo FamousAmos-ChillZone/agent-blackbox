@@ -112,11 +112,19 @@ def test_erasure_destroys_every_way_to_re_publish_and_export_carries_the_record(
                                           quads=[{"s": "a"}], epoch=keep_alive.Epoch(1))
     share_retry.queue_failed_share(graph=GRAPH, name="report-y", identifier="dep:npm:y@1", category="dependency", severity="high",
                                    subject="t", quads=[], error="refused")
+    from plugins.blackbox.community import digest
+    digest.SightingTally().record("ioc:domain:seen.example")                                 # KI-221: the tally is personal-data-adjacent
     export = report_rights.export_document(store)
     assert export["reporter_key_pem"].startswith("-----BEGIN") and len(export["statements"]) >= 1
+    # KI-224: the export carries every store erasure covers
+    assert export["consent"]["terms_version"] and export["consent"]["withdrawn_at"] == ""
+    assert len(export["keep_alive"]) == 1 and len(export["retry_queue"]) == 1
+    assert any("ioc:domain:seen.example" in counts for counts in export["sighting_tally"].values())
     assert report_rights.erase_identity(store, confirmed=False) == 2                          # needs --confirm
     assert report_rights.erase_identity(store, confirmed=True) == 0
     assert keep_alive.LiveReportStore().all() == [] and share_retry.default_queue().pending() == []
+    assert digest.SightingTally().weeks() == []                                               # KI-221: tally gone
+    assert "wallet address stays the same" in capsys.readouterr().out                         # KI-220: honest wording
     assert real_consent.current() is None and not real_consent.in_force()
     assert audit.read_share_ledger(limit=5) == []
     assert not store.exists() if hasattr(store, "exists") else True
@@ -138,3 +146,29 @@ def test_a_garbage_record_is_no_consent(real_consent, tmp_path):
     path.write_text("{nope", encoding="utf-8")
     assert real_consent.current() is None and not real_consent.in_force()
     json.loads(json.dumps({"ok": True}))
+
+
+def test_a_retraction_or_dispute_passes_without_consent_and_with_sharing_off(real_consent, monkeypatch):
+    """KI-222 / LES-016: reductions always get through — withdrawing consent must not
+    trap the operator's own statements. Reports still need consent."""
+    from types import SimpleNamespace
+
+    from plugins.blackbox.community.report_cli import report_command, statement_verbs
+
+    sent = []
+    monkeypatch.setattr(report_command, "load_blackbox_config", lambda: SimpleNamespace(
+        community_graph_id="0xowner/community-test", community_enabled=False, report=False,
+        dkg_url="http://127.0.0.1:9200", dkg_home="/tmp/x", daily_report_limit=20))
+    monkeypatch.setattr(report_command, "DkgClient", lambda **kw: object())
+    monkeypatch.setattr(report_command, "_reporting_identity", lambda client, graph: ("0x" + "a" * 40, object()))
+    monkeypatch.setattr(statement_verbs, "submit_statement",
+                        lambda client, cfg, args, reporter, signer: sent.append(args.retract or args.false_positive) or 0)
+    base = dict(status=False, standing=False, export=None, restore_key=None, erase_identity=False, consent=False,
+                withdraw_consent=False, false_positive=None, retract=None, type="ioc", ioc_type="domain",
+                value="x.example", context="fetched-by-tool", severity="high")
+    assert not real_consent.in_force()
+    assert report_command.cmd_report(argparse.Namespace(**{**base, "retract": "ioc:domain:x.example"})) == 0
+    assert report_command.cmd_report(argparse.Namespace(**{**base, "false_positive": "ioc:domain:x.example"})) == 0
+    assert sent == ["ioc:domain:x.example", "ioc:domain:x.example"]
+    # a REPORT without consent (and with sharing off) is still refused
+    assert report_command.cmd_report(argparse.Namespace(**base)) == 2 and len(sent) == 2
