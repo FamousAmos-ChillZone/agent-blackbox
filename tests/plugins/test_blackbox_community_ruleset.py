@@ -316,8 +316,10 @@ def test_empty_read_without_membership_proof_keeps_last_good():
 def test_empty_read_with_a_synced_subscription_is_authorised_empty():
     client = FakeClient(report_rows=[])
     client.graphs = [{"id": DEV_GRAPH, "subscribed": True, "synced": True}]
+    prior = _prior_with()
+    prior.community_empty_since = 1.0    # the emptiness is old news (KI-262: one empty read alone is not believed)
     rs = Ruleset()
-    _apply_community_tier(rs, client, CFG, _prior_with())
+    _apply_community_tier(rs, client, CFG, prior)
     assert rs.community == {}
     assert rs.community_paused is False
 

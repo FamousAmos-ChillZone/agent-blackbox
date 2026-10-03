@@ -3,6 +3,9 @@
 * :func:`sparql_string_literal` — THE escaper for any value interpolated into
   a query (never hand-escape at a call site).
 * ``MAX_ROWS`` — the hard ceiling on rows any paged read may collect.
+* :func:`query_rows` — ONE query whose answer can be believed: None when it
+  failed or came back empty after a timeout-length wait (a node answers a
+  timed-out query with an empty result, not an error — KI-262).
 * :func:`page_rows` — the cursor pager every statement read uses (bounded
   pages, hard row ceiling, None when any page fails).
 * :func:`extract_binding` / :func:`normalize_bindings` — reading the daemon's
@@ -13,6 +16,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, Callable, Dict, List, Optional
 
 
@@ -137,6 +141,38 @@ def rows_or_fallback(result: Any, on_error: Any) -> Any:
 STATEMENT_PAGE_SIZE = 5000
 STATEMENT_MAX_ROWS = 100_000
 
+#: A DKG node answers a query that TIMED OUT with an empty result and a normal
+#: success status, after about ten seconds (bench 2026-10-03, DKG 10.0.20:
+#: 10-20 s for every query shape while the store was busy; the same queries
+#: answered in under a second on a settled node). An empty answer that took at
+#: least this long is therefore a failed read, never proof that nothing is there.
+SLOW_EMPTY_SECONDS = 8.0
+
+_FAILED = object()
+
+
+def query_rows(client: Any, sparql: str, graph: str, view: str, *,
+               slow_empty_seconds: float = SLOW_EMPTY_SECONDS) -> Optional[List[Dict[str, Any]]]:
+    """Run ONE query against *graph* / *view* and return its rows — or None
+    when the read cannot be believed: the query failed, or it came back EMPTY
+    after at least *slow_empty_seconds* (the node's timeout signature, KI-262).
+
+    ``[]`` therefore means "the node answered promptly that there are no such
+    rows". Callers keep their last good state on None.
+
+    Usage::
+
+        rows = query_rows(client, sparql, graph, constants.VIEW_SHARED_WORKING_MEMORY)
+        if rows is None: ...keep last good...
+    """
+    started = time.monotonic()
+    rows = client.query(sparql, graph, view=view, on_error=_FAILED)
+    if rows is _FAILED:
+        return None
+    if not rows and time.monotonic() - started >= slow_empty_seconds:
+        return None
+    return rows
+
 
 def page_rows(client: Any, graph: str, view: str, sparql_after: Callable[[str], str], *,
               page_size: int = STATEMENT_PAGE_SIZE, max_rows: int = STATEMENT_MAX_ROWS) -> Optional[List[Dict[str, Any]]]:
@@ -144,19 +180,19 @@ def page_rows(client: Any, graph: str, view: str, sparql_after: Callable[[str], 
     builds one page's query (subjects after *cursor*, ordered, LIMITed).
 
     Same cursor discipline as the verified pager (monotonic subject cursor,
-    bounded pages, hard row ceiling). Returns None when ANY page fails or
-    comes back malformed, so the caller keeps last-good (fail-open); [] when
+    bounded pages, hard row ceiling). Returns None when ANY page fails, comes
+    back malformed, or comes back empty after a timeout-length wait
+    (:func:`query_rows`), so the caller keeps last-good (fail-open); [] when
     the node answered that the graph holds no such rows.
     """
     rows: List[Dict[str, Any]] = []
     after = ""
-    sentinel = object()
     while len(rows) < max_rows:
-        page = client.query(sparql_after(after), graph, view=view, on_error=sentinel)
-        if page is sentinel:
-            # A failed or malformed page — even after good ones — makes the
-            # whole read unavailable: a partial list must never pass as the
-            # graph's contents (R0 tri-state, KI-112).
+        page = query_rows(client, sparql_after(after), graph, view)
+        if page is None:
+            # A failed, malformed or timed-out page — even after good ones —
+            # makes the whole read unavailable: a partial list must never pass
+            # as the graph's contents (R0 tri-state, KI-112, KI-262).
             return None
         if not page:
             break

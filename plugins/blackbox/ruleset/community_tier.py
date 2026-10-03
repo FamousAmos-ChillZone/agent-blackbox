@@ -58,7 +58,7 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
             # Never mistake "could not read" for "no threats" (KI-112).
             _keep_last_good(rs, prior)
             return
-        if not read.reports and previous and _graph_still_has_reports(client, cfg):   # KI-210: a replay window
+        if _empty_read_not_believed(rs, prior, read, previous, client, cfg):
             _keep_last_good(rs, prior)
             return
         rules = community.aggregate_community_reports(read.reports, _first_seen_history(prior))
@@ -107,6 +107,34 @@ def _graph_still_has_reports(client: DkgClient, cfg: BlackboxConfig) -> bool:
         return True
     except Exception:  # pragma: no cover - fail open to the read
         return False
+
+
+#: KI-262: how long a "no reports" read must persist before this node believes it and
+#: clears a tier that still holds threats (a store busy with a flood answered empty for
+#: up to 18 minutes on the bench; the pulse re-reads every 20 s, so this is many reads).
+EMPTY_READ_WITNESS_SECONDS = 1800.0
+
+
+def _empty_read_not_believed(rs: compiler.Ruleset, prior: Optional[compiler.Ruleset], read: Any,
+                             previous: Dict[str, Dict[str, Any]], client: DkgClient, cfg: BlackboxConfig) -> bool:
+    """KI-210 / KI-262: a read with no reports while this node still holds some is not
+    believed at once — a replay window or a timed-out store looks exactly like an empty
+    graph. True = keep last-good: the graph still counts reports, or the emptiness has
+    not yet lasted ``EMPTY_READ_WITNESS_SECONDS``. A read WITH reports ends the spell."""
+    if read.reports:
+        rs.community_empty_since = 0.0
+        return False
+    if not previous:
+        return False
+    return _graph_still_has_reports(client, cfg) or not _empty_read_witnessed(rs, prior, time.time())
+
+
+def _empty_read_witnessed(rs: compiler.Ruleset, prior: Optional[compiler.Ruleset], now: float) -> bool:
+    """True once reads have come back empty for ``EMPTY_READ_WITNESS_SECONDS``.
+    The first empty read only starts the clock (carried on the ruleset)."""
+    since = float(getattr(prior, "community_empty_since", 0.0) or 0.0) or now
+    rs.community_empty_since = since
+    return now - since >= EMPTY_READ_WITNESS_SECONDS
 
 
 #: R5 reader persistence: a counted threat whose network copies expired stays

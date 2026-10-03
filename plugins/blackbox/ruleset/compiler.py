@@ -110,6 +110,10 @@ class Ruleset:
     #: probe against it instead of baselining blind, so reports that arrived
     #: while no process was beating are applied on the first beat.
     community_fingerprint: str = ""
+    #: KI-262: when this node's community read FIRST came back with no reports
+    #: while the tier still held some (epoch seconds; 0 = not in that state).
+    #: The tier is cleared only once that has lasted ``EMPTY_READ_WITNESS_SECONDS``.
+    community_empty_since: float = 0.0
     #: R14: the curators' kill list in force (killlist.KillList.as_cache()); {} = none.
     #: Written only after a list passed its signatures and gates — else last-good stays.
     kill_list: Dict[str, Any] = field(default_factory=dict)
