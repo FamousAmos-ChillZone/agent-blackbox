@@ -22,7 +22,7 @@ from .. import community
 from ..detection import osv
 from ..kernel import display_safety, node_routes, signing
 from ..kernel.signing.statement_order import CuratorStatement
-from . import dossier, intake, keys, node_ui_views, queue, transport, verbs
+from . import dossier, intake, keys, node_ui_views, publishing, queue, transport, verbs
 from .context import CurateContext, build_context, verified_identifiers
 from .proposal import ProposalState, ProposalStore
 
@@ -193,7 +193,7 @@ def _approve(args: argparse.Namespace) -> int:
 
 
 def _publish(args: argparse.Namespace) -> int:
-    proposal, outcome = verbs.publish(_ctx(args), ProposalStore(), args.proposal_id, typed_code=args.code, yes=args.yes)
+    proposal, outcome = publishing.publish(_ctx(args), ProposalStore(), args.proposal_id, typed_code=args.code, yes=args.yes)
     print(f"{proposal.id}: {outcome}")
     return 0 if outcome.startswith("published") else 2
 
