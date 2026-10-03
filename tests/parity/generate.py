@@ -45,6 +45,7 @@ def report_struct(**kw):
 
 identifiers = []
 for case in [
+    {"kind": "dependency", "in": {"ecosystem": "pypi", "name": "Foo_Bar.Baz", "version": "2.0"}},   # PEP 503 collapse (KI-182 port)
     {"kind": "dependency", "in": {"ecosystem": "npm", "name": "event-stream", "version": "3.3.6"}},
     {"kind": "dependency", "in": {"ecosystem": "NPM", "name": "Event-Stream", "version": "3.3.6"}},
     {"kind": "dependency", "in": {"ecosystem": "pypi", "name": "requests", "version": "2.31.0"}},

@@ -97,7 +97,11 @@ def test_dashboard_settings_sharing_defaults_off_and_requires_explicit_true():
     assert "out.report = data.report !== false;" not in html  # permissive form banned
 
 
-def test_openclaw_runtime_is_vm_only_and_reporting_cannot_be_reenabled():
+def test_openclaw_runtime_reads_vm_only_and_reporting_is_opt_in():
+    """The bridge READS only the verified graph (its enforcement tier never comes
+    from shared memory). Reporting is opt-in, defaults OFF, and 0 is never "no
+    cap" — the switch exists since the KI-182 port (FIX-0044) but needs a
+    community graph id AND a consent record before anything leaves."""
     ruleset_src = (OPENCLAW_DIR / "src" / "ruleset.ts").read_text(encoding="utf-8")
     config_src = (OPENCLAW_DIR / "src" / "config.ts").read_text(encoding="utf-8")
     client_src = (OPENCLAW_DIR / "src" / "dkgClient.ts").read_text(encoding="utf-8")
@@ -106,9 +110,10 @@ def test_openclaw_runtime_is_vm_only_and_reporting_cannot_be_reenabled():
     assert '["verifiable-memory", "public"]' in tiers
     assert "shared-working-memory" not in tiers
     assert 'view: DkgView = "verifiable-memory"' in client_src
-    assert "report: false" in config_src
-    assert "dailyReportLimit: 0" in config_src
-    assert "report: bool(env.BLACKBOX_REPORT)" not in config_src
+    assert "report: false," in config_src                      # the DEFAULT stays off
+    assert "dailyReportLimit: 0" not in config_src             # 0 was "no cap" (Refine R1)
+    assert "effectiveDailyReportLimit(" in config_src
+    assert 'communityGraphId: "",' in config_src               # dormant until a graph is named
     assert 'row.source !== "community"' in ruleset_src
 
 

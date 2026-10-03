@@ -173,20 +173,23 @@ def test_confusable_package_names_are_refused_not_canonicalised_into_a_real_one(
     _bad("dependency", f"dep:npm:{lookalike}@1.0", **_dep(package_name=lookalike, reason="typosquat")[1])
 
 
-def test_the_openclaw_bridge_share_path_stays_hard_wired_off_until_ki_182():
-    """R1's done-when is "a malformed, unsigned or oversized report cannot be
-    produced by ANY path". The OpenClaw bridge builds reports in TypeScript
-    without the R1 schema or the R0 signature, and it would send them to the
-    VERIFIED graph id (KI-182). Today it is inert because its resolved config
-    hard-codes `report: false` with no override. This guard fails the moment
-    anyone wires a report switch into the bridge before KI-182 ports the
-    schema, the signing and the community graph id."""
+def test_the_openclaw_bridge_share_path_is_the_r1_signed_community_path():
+    """KI-182 (FIX-0044): the bridge shares only R1-schema, SIGNED reports, to the
+    COMMUNITY graph, behind the same gates as Python. The switch may be wired
+    now; these structural checks keep every piece of the port in place."""
     from pathlib import Path
-    source = (Path(__file__).resolve().parents[2] / "integrations" / "openclaw" / "src" / "config.ts").read_text(
-        encoding="utf-8")
-    assert source.count("report: false,") == 2            # DEFAULTS + the resolved config
-    assert "BLACKBOX_REPORT\n" not in source and "env.BLACKBOX_REPORT)" not in source
-    assert "pluginConfig.report)" not in source and "pluginConfig.report ??" not in source
+    src = Path(__file__).resolve().parents[2] / "integrations" / "openclaw" / "src"
+    config = (src / "config.ts").read_text(encoding="utf-8")
+    index = (src / "index.ts").read_text(encoding="utf-8")
+    quads = (src / "quads.ts").read_text(encoding="utf-8")
+    assert "effectiveDailyReportLimit(" in config and "dailyReportLimit: 0" not in config   # 0 is never "no cap"
+    assert "communityGraphId" in config and "communityGraphPeerId" in config
+    assert "rt.client.shareReport(rt.cfg.communityGraphId" in index                      # never the verified graph
+    assert "rt.cfg.contextGraphId, name, quads" not in index
+    assert "sharingConsentInForce(rt.cfg.blackboxHome)" in index                          # R13 gate
+    assert "if (!signer) return;" in index                                               # a node that cannot sign does not share
+    assert "validateReport(" in quads and "BLACKBOX_SIGNED_STATEMENT_PRED" in quads       # R1 schema + R0b envelope
+    assert '"anonymous"' not in quads and 'rt.reporterAddress = "node"' not in index     # LES-003: no fallback identity
 
 
 # ------------------------------------------------------------------ KI-193: IPv6 is an IOC identifier

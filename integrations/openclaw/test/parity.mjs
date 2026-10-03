@@ -511,27 +511,10 @@ report("dependencyParses", ok, mismatches.join("\n"));
   const mismatches = [];
   for (const c of fixture.reportQuads) {
     const i = c.in;
-    const quads = buildReportQuads({
-      identifier: i.identifier,
-      category: i.category,
-      severity: i.severity,
-      reporter: i.reporter_address,
-      framework: i.framework,
-      candidate: {
-        pattern: i.pattern,
-        owaspCategory: i.owasp_category,
-        toolName: i.tool_name,
-        argShape: i.arg_shape,
-        packageName: i.package_name,
-        packageVersion: i.package_version,
-        packageEcosystem: i.ecosystem,
-        advisoryId: i.advisory_id,
-        fileCategory: i.file_category,
-        skillName: i.skill_name,
-        skillVersion: i.skill_version,
-        dangerShape: i.danger_shape,
-      },
-    });
+    // Refine R1 (KI-182 port): the fixture's `in` carries the Python builder keywords;
+    // everything but the core fields is R1 evidence.
+    const { identifier, category, severity, reporter_address, framework, ...evidence } = i;
+    const quads = buildReportQuads({ identifier, category, severity, reporter: reporter_address, framework, evidence });
     const got = sortQuads(quads);
     const want = sortQuads(c.quadsNoDate);
     if (!eq(got, want)) {

@@ -11,6 +11,8 @@
  *
  * Zero runtime deps: Node built-ins for sha256 and Java MUTF-8 byte accounting.
  */
+import { validateReport } from "./reportSchema.js";
+import { REPORT_STATEMENT, type ReportSigner } from "./signing.js";
 import { createHash } from "node:crypto";
 
 export type BlackboxSeverity = "info" | "low" | "medium" | "high" | "critical";
@@ -68,6 +70,13 @@ export const BLACKBOX_CATEGORY_PRED = `${BLACKBOX_ONTOLOGY}category`;
 export const BLACKBOX_SKILL_NAME_PRED = `${BLACKBOX_ONTOLOGY}skillName`;
 export const BLACKBOX_SKILL_VERSION_PRED = `${BLACKBOX_ONTOLOGY}skillVersion`;
 export const BLACKBOX_DANGER_SHAPE_PRED = `${BLACKBOX_ONTOLOGY}dangerShape`;
+export const BLACKBOX_INJECTION_CONTEXT_PRED = `${BLACKBOX_ONTOLOGY}injectionContext`;
+export const BLACKBOX_SKILL_ARTIFACT_HASH_PRED = `${BLACKBOX_ONTOLOGY}skillArtifactHash`;
+export const BLACKBOX_SKILL_REGISTRY_PRED = `${BLACKBOX_ONTOLOGY}skillRegistry`;
+export const BLACKBOX_IOC_TYPE_PRED = `${BLACKBOX_ONTOLOGY}iocType`;
+export const BLACKBOX_IOC_CONTEXT_PRED = `${BLACKBOX_ONTOLOGY}iocContext`;
+export const BLACKBOX_REPORT_REASON_PRED = `${BLACKBOX_ONTOLOGY}reportReason`;
+export const BLACKBOX_SIGNED_STATEMENT_PRED = `${BLACKBOX_ONTOLOGY}signedStatement`;
 // Append-only VM correction vocabulary. Corrections suppress an exact RDF
 // subject without mutating the original published knowledge asset.
 export const DEFENDER_CORRECTION_TYPE_IRI = "urn:defender:CorrectionSignal";
@@ -134,8 +143,15 @@ export function threatUri(identifier: string): string {
  *   `urn:guardian:report:{addrLower}:{sha256(identifier)[:16]}`
  * where the hash is over the RAW identifier bytes (Python parity).
  */
+export const EVM_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+/** Mirror of Python `is_agent_address`: the only reporter shape a statement may carry (KI-196). */
+export function isAgentAddress(value: unknown): boolean {
+  return EVM_ADDRESS_RE.test(String(value ?? "").trim());
+}
+
 export function reportUri(identifier: string, agentAddress: string): string {
-  const addr = (agentAddress || "anonymous").toLowerCase();
+  if (!isAgentAddress(agentAddress)) throw new Error("a report subject needs a resolved reporter address"); // LES-003 (R0)
+  const addr = agentAddress.trim().toLowerCase();
   return `urn:guardian:report:${addr}:${stableHash(identifier, 16)}`;
 }
 
@@ -144,8 +160,21 @@ export function reportUri(identifier: string, agentAddress: string): string {
 // ---------------------------------------------------------------------------
 
 /** `dep:{ecosystem}:{name}@{version}` — ecosystem + name lowercased/trimmed. */
+/** Mirror of Python `canonical_package_name`: lower-case everywhere; PyPI (PEP 503) also
+ *  collapses runs of `-_.` to one `-` — other ecosystems are separator-sensitive. */
+export function canonicalPackageName(ecosystem: string, name: string): string {
+  const canon = name.trim().toLowerCase();
+  return ecosystem.trim().toLowerCase() === "pypi" ? canon.replace(/[-_.]+/g, "-") : canon;
+}
+
 export function dependencyIdentifier(ecosystem: string, name: string, version: string): string {
-  return `dep:${ecosystem.trim().toLowerCase()}:${name.trim().toLowerCase()}@${version.trim()}`;
+  const eco = ecosystem.trim().toLowerCase();
+  return `dep:${eco}:${canonicalPackageName(eco, name)}@${version.trim()}`;
+}
+
+/** `skill:artifact:{sha256}:{shape}` — a local/unknown skill named by its code hash, never its name (KI-159). */
+export function skillArtifactIdentifier(artifactHash: string, dangerShape: string): string {
+  return `skill:artifact:${artifactHash.trim().toLowerCase()}:${dangerShape.trim().toLowerCase()}`;
 }
 
 /** `injection:{sha256(pattern)[:24]}` — hashes the RAW pattern bytes. */
@@ -250,6 +279,29 @@ export function normalizeIocValue(iocType: string, value: string): string {
 }
 
 /** `ioc:{type}:{normalized-value}` — shared by Hermes and OpenClaw. */
+const HOST_SHAPE = "(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.){1,16}[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?";
+const IPV4_SHAPE = "(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)";
+const IOC_VALUE_SHAPES: Record<string, RegExp> = {
+  domain: new RegExp(`^${HOST_SHAPE}$`),
+  url: new RegExp(`^https?://(?:${HOST_SHAPE}|${IPV4_SHAPE})(?::\\d{1,5})?(?:[/?#][^\\s<>"'\`\\\\^{}|\\[\\]]*)?$`),
+  ip: new RegExp(`^${IPV4_SHAPE}$`),
+  hash: /^[a-f0-9]{32,128}$/,
+  wallet: /^[A-Za-z0-9]{20,128}$/,
+  contract: /^[A-Za-z0-9]{20,128}$/,
+};
+export const MAX_IOC_VALUE_CHARS = 2048;
+
+/** Mirror of Python `ioc_value_is_well_formed`: whether a CANONICAL value has the shape its type
+ *  allows (§07 grammar). IPv6 is accepted only in its one canonical spelling (KI-193). */
+export function iocValueIsWellFormed(iocType: string, value: string): boolean {
+  const kind = (iocType || "").trim().toLowerCase();
+  const shape = IOC_VALUE_SHAPES[kind];
+  if (!shape || !value || value.length > MAX_IOC_VALUE_CHARS) return false;
+  if (kind === "ip" && value.includes(":")) return canonicalIp(value) === value && /^[0-9a-f:]+$/.test(value);
+  if (kind === "domain" && value.length > 253) return false;
+  return shape.test(value);
+}
+
 export function iocIdentifier(iocType: string, value: string): string {
   const type = (iocType || "").trim().toLowerCase();
   return `ioc:${type}:${normalizeIocValue(type, value)}`;
@@ -370,73 +422,75 @@ export interface ReportInput {
   identifier: string;
   category: "injection" | "escalation" | "dependency" | "fileaccess" | "skill" | "ioc";
   severity: BlackboxSeverity;
-  /** Reporter agent address (node default agent). Lowercased for the URI. */
+  /** Reporter agent address (0x + 40 hex) — refused otherwise (LES-003). Lower-cased for the URI. */
   reporter: string;
   framework: "hermes" | "openclaw";
+  /** Epoch ms; rounded to the UTC day (decision 25). */
   ts?: number;
-  /** Present only for new candidates so they can be reviewed independently. */
-  candidate?: {
-    pattern?: string;
-    toolName?: string;
-    argShape?: string;
-    packageName?: string;
-    packageVersion?: string;
-    packageEcosystem?: string;
-    advisoryId?: string;
-    owaspCategory?: string;
-    // fileaccess
-    fileCategory?: string;
-    // skill
-    skillName?: string;
-    skillVersion?: string;
-    dangerShape?: string;
-    iocType?: string;
-  };
+  /** R1 evidence, Python keyword names (`context`, `tool_name`, `package_name`, `ioc_type`, …). */
+  evidence?: Record<string, string | undefined | null>;
+  /** With a signer the report carries its signed envelope (R0b); without one it is unsigned and no reader counts it. */
+  signer?: ReportSigner;
+}
+
+/** The evidence a report may carry per category — ONE table mirroring Python `_EVIDENCE_FIELDS`
+ *  (keyword, predicate) in emission order. */
+const EVIDENCE_FIELDS: Record<string, ReadonlyArray<readonly [string, string]>> = {
+  injection: [["context", BLACKBOX_INJECTION_CONTEXT_PRED], ["owasp_category", BLACKBOX_OWASP_CATEGORY_PRED]],
+  escalation: [["tool_name", BLACKBOX_TOOL_NAME_PRED], ["arg_shape", BLACKBOX_ARG_SHAPE_PRED]],
+  dependency: [
+    ["package_name", BLACKBOX_PACKAGE_NAME_PRED], ["package_version", BLACKBOX_PACKAGE_VERSION_PRED],
+    ["ecosystem", BLACKBOX_PACKAGE_ECOSYSTEM_PRED], ["advisory_id", SCHEMA_IDENTIFIER],
+    ["kind", BLACKBOX_KIND_PRED], ["reason", BLACKBOX_REPORT_REASON_PRED],
+  ],
+  fileaccess: [["tool_name", BLACKBOX_TOOL_NAME_PRED], ["file_category", BLACKBOX_CATEGORY_PRED]],
+  skill: [
+    ["artifact_hash", BLACKBOX_SKILL_ARTIFACT_HASH_PRED], ["registry", BLACKBOX_SKILL_REGISTRY_PRED],
+    ["skill_name", BLACKBOX_SKILL_NAME_PRED], ["skill_version", BLACKBOX_SKILL_VERSION_PRED], ["danger_shape", BLACKBOX_DANGER_SHAPE_PRED],
+  ],
+  ioc: [["ioc_type", BLACKBOX_IOC_TYPE_PRED], ["ioc_context", BLACKBOX_IOC_CONTEXT_PRED]],
+};
+
+/** Midnight UTC of the report's day, as Python's `datetime_literal(_day(ts))` renders it: `YYYY-MM-DDT00:00:00Z`. */
+export function dayLiteral(ts?: number): { day: string; literal: string } {
+  const day = new Date(ts ?? Date.now()).toISOString().slice(0, 10);
+  return { day, literal: `${literal(`${day}T00:00:00Z`)}^^${XSD_DATETIME}` };
 }
 
 /**
- * Build the SWM sighting/report quads for one finding. Faithful port of Python
- * `build_report_quads`. Reports NEVER carry observed prompt/command text (privacy
- * split — that stays in the private WM audit). `g:reportsThreat` links to the
- * curated threat URI; for a NEW candidate the category-conditional threat fields
- * are carried inline so the report is independently reviewable.
+ * Build the community report for one finding — faithful port of Python
+ * `build_report_quads` (Refine R1 + R0b). Only from a VALIDATED record: a bad
+ * report throws `ReportValidationError` and is never built. Reports NEVER carry
+ * observed prompt/command text; the timestamp is the day only; with a signer
+ * the report carries a signed envelope over its fields.
  *
  * IRIs (the rdf:type object and reportsThreat object) are emitted BARE — Python
  * `iri()` returns the value with no angle brackets.
  */
 export function buildReportQuads(input: ReportInput): Quad[] {
-  const ts = input.ts;
-  const reporter = (input.reporter || "anonymous").toLowerCase();
-  const subj = reportUri(input.identifier, input.reporter);
-  const threat = threatUri(input.identifier);
+  const record = validateReport({ identifier: input.identifier, category: input.category, severity: input.severity,
+                                  framework: input.framework, evidence: input.evidence ?? {} });
+  const subj = reportUri(record.identifier, input.reporter);
+  const threat = threatUri(record.identifier);
+  const reporter = input.reporter.trim().toLowerCase();
+  const { day, literal: dayLit } = dayLiteral(input.ts);
+  const values = Object.fromEntries(record.evidence);
+  const fields = (EVIDENCE_FIELDS[record.category] ?? []).filter(([name]) => name in values).map(([name, pred]) => [name, pred, values[name]] as const);
   const out: Quad[] = [
     q(subj, RDF_TYPE, iri(BLACKBOX_REPORT_TYPE_IRI)),
     q(subj, BLACKBOX_REPORTS_THREAT_PRED, iri(threat)),
-    q(subj, BLACKBOX_IDENTIFIER_PRED, literal(input.identifier)),
+    q(subj, BLACKBOX_IDENTIFIER_PRED, literal(record.identifier)),
     q(subj, BLACKBOX_REPORTER_PRED, literal(reporter)),
-    q(subj, BLACKBOX_FRAMEWORK_PRED, literal(input.framework)),
-    q(subj, BLACKBOX_SEVERITY_PRED, literal(normalizeSeverity(input.severity))),
-    q(subj, SCHEMA_DATE_MODIFIED, datetimeLiteral(ts)),
+    q(subj, BLACKBOX_FRAMEWORK_PRED, literal(record.framework)),
+    q(subj, BLACKBOX_SEVERITY_PRED, literal(record.severity)),
+    q(subj, SCHEMA_DATE_MODIFIED, dayLit),
   ];
-  const c = input.candidate ?? {};
-  if (input.category === "injection" && c.pattern) {
-    out.push(q(subj, BLACKBOX_PATTERN_PRED, literal(c.pattern)));
-    if (c.owaspCategory) out.push(q(subj, BLACKBOX_OWASP_CATEGORY_PRED, literal(c.owaspCategory)));
-  } else if (input.category === "escalation") {
-    if (c.toolName) out.push(q(subj, BLACKBOX_TOOL_NAME_PRED, literal(c.toolName)));
-    if (c.argShape) out.push(q(subj, BLACKBOX_ARG_SHAPE_PRED, literal(c.argShape)));
-  } else if (input.category === "dependency") {
-    if (c.packageName) out.push(q(subj, BLACKBOX_PACKAGE_NAME_PRED, literal(c.packageName)));
-    if (c.packageVersion) out.push(q(subj, BLACKBOX_PACKAGE_VERSION_PRED, literal(c.packageVersion)));
-    if (c.packageEcosystem) out.push(q(subj, BLACKBOX_PACKAGE_ECOSYSTEM_PRED, literal(c.packageEcosystem)));
-    if (c.advisoryId) out.push(q(subj, SCHEMA_IDENTIFIER, literal(c.advisoryId)));
-  } else if (input.category === "fileaccess") {
-    if (c.toolName) out.push(q(subj, BLACKBOX_TOOL_NAME_PRED, literal(c.toolName)));
-    if (c.fileCategory) out.push(q(subj, BLACKBOX_CATEGORY_PRED, literal(c.fileCategory)));
-  } else if (input.category === "skill") {
-    if (c.skillName) out.push(q(subj, BLACKBOX_SKILL_NAME_PRED, literal(c.skillName)));
-    if (c.skillVersion) out.push(q(subj, BLACKBOX_SKILL_VERSION_PRED, literal(c.skillVersion)));
-    if (c.dangerShape) out.push(q(subj, BLACKBOX_DANGER_SHAPE_PRED, literal(c.dangerShape)));
+  for (const [, pred, value] of fields) out.push(q(subj, pred, literal(value)));
+  if (input.signer) {
+    const payload: Record<string, string> = { subject: subj, identifier: record.identifier, category: record.category,
+      severity: record.severity, reporter, framework: record.framework, day };
+    for (const [name, , value] of fields) payload[name] = value;
+    out.push(q(subj, BLACKBOX_SIGNED_STATEMENT_PRED, literal(input.signer.sign(REPORT_STATEMENT, payload))));
   }
   return out;
 }

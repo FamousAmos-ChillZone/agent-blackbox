@@ -21,6 +21,7 @@
  * shapes stay consistent. It returns the SINGLE top-priority shape (or null),
  * exactly like Python's `normalize_arg_shape`.
  */
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -167,6 +168,12 @@ export interface FindingFields {
   skillVersion?: string;
   dangerShape?: string;
   iocType?: string;
+  // Refine R1 report evidence (KI-182 port): the dependency's kind and malware reason, a named
+  // skill's public registry, and a local skill's code hash (reported by hash, never by name).
+  kind?: string;
+  reason?: string;
+  registry?: string;
+  artifactHash?: string;
 }
 
 export interface Finding {
@@ -429,7 +436,9 @@ const SHELL_SHAPE_RULES: ReadonlyArray<readonly [string, RegExp]> = [
 ];
 
 // Tool names whose payload is treated as a shell command string.
-const SHELL_TOOLS = new Set(["terminal", "shell", "bash", "run_command", "exec", "command"]);
+export const SHELL_TOOLS = new Set(["terminal", "shell", "bash", "run_command", "exec", "command"]);
+/** The escalation arg shapes a report may name (Python `shell_shapes.ESCALATION_SHAPES`). */
+export const ESCALATION_SHAPES: ReadonlySet<string> = new Set(SHELL_SHAPE_RULES.map(([shape]) => shape));
 const COMMAND_KEYS = ["command", "cmd", "shell", "script", "input"] as const;
 
 const MAX_SHAPE_SCAN = 8000;
@@ -653,6 +662,9 @@ export interface FileAccess {
  * Extract `{tool, path, mode}` for a file-access tool call, or `null`.
  * Port of Python `file_access_arg`.
  */
+/** The sensitive-path categories a report may name (Python `action_parsing.SENSITIVE_PATH_CATEGORIES`). */
+export const SENSITIVE_PATH_CATEGORIES: ReadonlySet<string> = new Set(SENSITIVE_PATH_RULES.map(([category]) => category));
+
 export function fileAccessArg(toolName: string, args: unknown): FileAccess | null {
   const tool = (toolName || "").trim().toLowerCase();
   const mode = FILE_ACCESS_TOOLS[tool];
@@ -775,6 +787,9 @@ const SKILL_PERMISSION_RULES: ReadonlyArray<readonly [string, BlackboxSeverity, 
 ];
 
 // Tools that install/modify a skill.
+/** The skill danger shapes a report may name (Python `content_scanners.SKILL_DANGER_SHAPES`). */
+export const SKILL_DANGER_SHAPES: ReadonlySet<string> = new Set([...SKILL_CODE_RULES, ...SKILL_PERMISSION_RULES].map(([shape]) => shape));
+
 const SKILL_TOOLS = new Set([
   "skill_manage",
   "skill_install",
@@ -969,7 +984,8 @@ export function detectSkill(toolName: string, args: unknown, ruleset: Ruleset): 
       evidence: `skill ${name}: ${shape}`,
       confirmed: false,
       source: "heuristic",
-      fields: { skillName: name, skillVersion: version, dangerShape: shape },
+      fields: { skillName: name, skillVersion: version, dangerShape: shape,
+                artifactHash: createHash("sha256").update(skill.code ?? "", "utf8").digest("hex") },
     });
   }
   return out;

@@ -75,6 +75,28 @@ export interface DkgClientOptions {
 
 export type DkgView = "working-memory" | "shared-working-memory" | "verifiable-memory";
 
+/** Mirror of Python `_is_already_finalized`: the asset already exists sealed on the node. */
+function isAlreadyFinalized(err: DkgError): boolean {
+  const msg = err.message.toLowerCase();
+  return msg.includes("already finalized") || msg.includes("already exists") || msg.includes("is not an active working memory draft");
+}
+
+function jobIdFromError(err: DkgError): string | undefined {
+  for (const key of ["existingJobId", "jobId", "id"]) {
+    const m = new RegExp(`"${key}"\\s*:\\s*"([^"]+)"`).exec(err.message);
+    if (m) return m[1];
+  }
+  return undefined;
+}
+
+function shareJobId(result: Record<string, unknown>): string | undefined {
+  const job = (result.job && typeof result.job === "object" ? result.job : result) as Record<string, unknown>;
+  for (const key of ["jobId", "id", "job_id", "shareJobId", "existingJobId"]) {
+    if (job[key]) return String(job[key]);
+  }
+  return undefined;
+}
+
 export class DkgClient {
   readonly url: string;
   private readonly token?: string;
@@ -115,6 +137,66 @@ export class DkgClient {
       throw new DkgError(`DKG ${method} ${path} failed: ${(err as Error).message}`);
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  /** The node's listing of context graphs (id, subscribed, accessPolicy, …). */
+  async contextGraphs(): Promise<Array<Record<string, unknown> & { id?: string; subscribed?: boolean }>> {
+    const resp = await this.request<unknown>("/api/context-graphs", undefined, "GET");
+    const list = Array.isArray(resp) ? resp : ((resp as Record<string, unknown>)?.contextGraphs ?? (resp as Record<string, unknown>)?.items ?? []);
+    return Array.isArray(list) ? (list as Array<Record<string, unknown> & { id?: string; subscribed?: boolean }>) : [];
+  }
+
+  /** The DKG network id the node runs on ("" when unknown) — the signing environment (Python `network_environment`). */
+  async networkId(): Promise<string> {
+    const status = (await this.status()) as Record<string, unknown> | null;
+    return String(status?.networkId ?? "");
+  }
+
+  /** Dial a peer by id (DHT-resolved) — how a newcomer reaches a graph's owner (FIX-0039). */
+  async connectPeer(peerId: string): Promise<unknown> {
+    return this.request("/api/connect", { peerId }, "POST", 15_000);
+  }
+
+  /** Subscribe the node to a context graph (idempotent on the daemon). */
+  async subscribeContextGraph(contextGraphId: string, includeSharedMemory = false): Promise<unknown> {
+    return this.request("/api/context-graph/subscribe", { contextGraphId, includeSharedMemory });
+  }
+
+  /**
+   * The explicit v10 share lifecycle Python `share_knowledge_asset` uses: write/seal the
+   * asset in WM (`alsoShareSwm:false`), then queue `/swm/share-async` and poll the job.
+   * An asset the node already holds sealed is shared as-is; a `{ idempotent: true }`
+   * result means "already on the network", which callers report as not-new (KI-104).
+   */
+  async shareReport(contextGraphId: string, name: string, quads: Quad[],
+                    opts: { timeoutMs?: number; pollMs?: number } = {}): Promise<Record<string, unknown>> {
+    try {
+      await this.request("/api/knowledge-assets", { contextGraphId, name, quads, alsoShareSwm: false });
+    } catch (err) {
+      if (!(err instanceof DkgError) || !isAlreadyFinalized(err)) throw err;
+    }
+    const enc = encodeURIComponent(name);
+    let queued: Record<string, unknown>;
+    try {
+      queued = await this.request<Record<string, unknown>>(`/api/knowledge-assets/${enc}/swm/share-async`, { contextGraphId, entities: "all" });
+    } catch (err) {
+      if (err instanceof DkgError && isAlreadyFinalized(err)) return { name, idempotent: true };
+      const existing = err instanceof DkgError ? jobIdFromError(err) : undefined;
+      if (!existing) throw err;
+      queued = { jobId: existing, state: "existing" };
+    }
+    const jobId = shareJobId(queued);
+    if (!jobId) return queued;
+    const deadline = Date.now() + (opts.timeoutMs ?? 600_000);
+    const poll = opts.pollMs ?? 5_000;
+    for (;;) {
+      const job = await this.request<Record<string, unknown>>(`/api/knowledge-assets/swm/share-jobs/${encodeURIComponent(jobId)}`, undefined, "GET");
+      const state = String(job.state ?? job.status ?? job.phase ?? "unknown").toLowerCase();
+      if (["succeeded", "success", "completed", "complete"].includes(state)) return job;
+      if (["failed", "error", "cancelled", "canceled"].includes(state)) throw new DkgError(`SWM share job ${jobId} failed: ${JSON.stringify(job).slice(0, 1000)}`);
+      if (Date.now() >= deadline) throw new DkgError(`SWM share job ${jobId} timed out (last state=${state})`);
+      await new Promise((r) => setTimeout(r, Math.max(1000, poll)));
     }
   }
 

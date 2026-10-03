@@ -4,6 +4,16 @@
     {
       "kind": "dependency",
       "in": {
+        "ecosystem": "pypi",
+        "name": "Foo_Bar.Baz",
+        "version": "2.0"
+      },
+      "identifier": "dep:pypi:foo-bar-baz@2.0",
+      "threatUri": "urn:guardian:threat:dep-pypi-foo-bar-baz-2.0"
+    },
+    {
+      "kind": "dependency",
+      "in": {
         "ecosystem": "npm",
         "name": "event-stream",
         "version": "3.3.6"
