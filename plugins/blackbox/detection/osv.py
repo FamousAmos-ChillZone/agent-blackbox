@@ -123,16 +123,22 @@ def lookup(ecosystem: str, name: str, version: str) -> Optional[Dict[str, str]]:
     with _cache_lock:
         if key in _cache:
             return _cache[key]
-    result: Optional[Dict[str, str]] = None
-    data = _query(osv_eco, name, version)
-    if isinstance(data, dict):
-        vulns = data.get("vulns")
-        if isinstance(vulns, list) and vulns:
-            records = [v for v in vulns if isinstance(v, dict)] or [{}]
-            # A malicious-package advisory outranks any vulnerability advisory.
-            first = next((v for v in records if advisory_kind(v.get("id")) == "malware"), records[0])
-            advisory_id = str(first.get("id") or "OSV")
-            result = {"advisory_id": advisory_id, "severity": _severity_of(first), "kind": advisory_kind(advisory_id)}
+    result = _finding(_query(osv_eco, name, version))
     with _cache_lock:
         _cache[key] = result
     return result
+
+
+def _finding(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
+    """``{advisory_id, severity, kind}`` from one OSV answer, or None when it
+    names no advisory (or is no answer at all)."""
+    if not isinstance(data, dict):
+        return None
+    vulns = data.get("vulns")
+    if not isinstance(vulns, list) or not vulns:
+        return None
+    records = [v for v in vulns if isinstance(v, dict)] or [{}]
+    # A malicious-package advisory outranks any vulnerability advisory.
+    first = next((v for v in records if advisory_kind(v.get("id")) == "malware"), records[0])
+    advisory_id = str(first.get("id") or "OSV")
+    return {"advisory_id": advisory_id, "severity": _severity_of(first), "kind": advisory_kind(advisory_id)}
