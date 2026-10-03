@@ -187,3 +187,31 @@ def test_the_openclaw_bridge_share_path_stays_hard_wired_off_until_ki_182():
     assert source.count("report: false,") == 2            # DEFAULTS + the resolved config
     assert "BLACKBOX_REPORT\n" not in source and "env.BLACKBOX_REPORT)" not in source
     assert "pluginConfig.report)" not in source and "pluginConfig.report ??" not in source
+
+
+# ------------------------------------------------------------------ KI-193: IPv6 is an IOC identifier
+
+
+def test_ipv6_canonicalises_to_the_compressed_lower_case_form():
+    from plugins.blackbox.kernel import threat_ids
+
+    for spelled in ("2001:DB8:0:0:0:0:0:1", "2001:db8::1", "[2001:db8::1]:8443", "2001:db8::1%eth0", "2001:0db8:0000::0001"):
+        assert threat_ids.normalize_ioc_value("ip", spelled) == "2001:db8::1", spelled
+    assert threat_ids.ioc_value_is_well_formed("ip", "2001:db8::1")
+    assert threat_ids.ioc_value_is_well_formed("ip", "::1")
+
+
+def test_ipv4_identifiers_do_not_move():
+    """Changing a canonical form changes graph identifiers — IPv4 stays byte-identical."""
+    from plugins.blackbox.kernel import threat_ids
+
+    assert threat_ids.normalize_ioc_value("ip", "203.0.113.7:8080") == "203.0.113.7"
+    assert threat_ids.normalize_ioc_value("ip", "203.0.113.7") == "203.0.113.7"
+
+
+def test_a_malformed_ipv6_is_refused_by_the_grammar_not_repaired():
+    from plugins.blackbox.kernel import threat_ids
+
+    for bad in ("2001:db8::zz", "2001:db8:::1", "[2001:db8::1"):
+        canonical = threat_ids.normalize_ioc_value("ip", bad)
+        assert not threat_ids.ioc_value_is_well_formed("ip", canonical), bad

@@ -12,6 +12,7 @@ Usage: ``threat_ids.dependency_identifier("npm", "left-pad", "1.3.0")`` ·
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import re
 from typing import Optional, Tuple
 
@@ -232,7 +233,7 @@ def normalize_ioc_value(ioc_type: str, value: str) -> str:
             raw = f"{parts[0].lower()}://{host}{rest}"
         return raw.rstrip("/")
     if t == "ip":
-        return raw.split(":", 1)[0]
+        return _canonical_ip(raw)
     if t == "hash":
         return raw.lower()
     if t in ("wallet", "contract"):
@@ -240,19 +241,47 @@ def normalize_ioc_value(ioc_type: str, value: str) -> str:
     return raw
 
 
+def _canonical_ip(raw: str) -> str:
+    """IPv4 ``a.b.c.d[:port]`` → ``a.b.c.d`` (unchanged since day one, so no
+    existing identifier moves). IPv6 (two or more colons) → RFC 5952 compressed
+    lower-case form via :mod:`ipaddress`, accepting ``[addr]:port`` and a zone
+    suffix; an unparseable value is returned verbatim so the grammar refuses
+    it rather than this function guessing (KI-193)."""
+    if raw.count(":") < 2:
+        return raw.split(":", 1)[0]
+    candidate = raw
+    if candidate.startswith("["):
+        if "]" not in candidate:
+            return raw   # an unclosed bracket is malformed, not something to repair
+        candidate = candidate[1:].split("]", 1)[0]
+    candidate = candidate.split("%", 1)[0]
+    try:
+        return ipaddress.IPv6Address(candidate).compressed
+    except ValueError:
+        return raw
+
+
+def _is_canonical_ipv6(value: str) -> bool:
+    """True only for the exact compressed lower-case spelling ipaddress emits."""
+    try:
+        return ipaddress.IPv6Address(value).compressed == value
+    except ValueError:
+        return False
+
+
 #: The shape a canonical IOC value must have, per type (§07: an allowlist
 #: grammar per field — ingest refuses anything else, never repairs it).
 #: Hosts: ASCII labels (Punycode after :func:`_idna_host`), ≤16 labels, a
 #: letter-led top label; URLs: http(s), a host or IPv4, optional port, a path
 #: free of whitespace and the characters that end a URL in HTML/shell;
-#: IPs: IPv4 (IPv6 is not an identifier yet, KI-193); hashes: 32–128 hex;
+#: IPs: IPv4, or IPv6 in RFC 5952 compressed form (KI-193); hashes: 32–128 hex;
 #: wallets/contracts: one alphanumeric token (EVM hex, base58, bech32).
 _HOST_SHAPE = r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){1,16}[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?"
 _IPV4_SHAPE = r"(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)"
 _IOC_VALUE_SHAPES = {
     "domain": re.compile(_HOST_SHAPE),
     "url": re.compile(rf"https?://(?:{_HOST_SHAPE}|{_IPV4_SHAPE})(?::\d{{1,5}})?(?:[/?#][^\s<>\"'`\\^{{}}|\[\]]*)?"),
-    "ip": re.compile(_IPV4_SHAPE),
+    "ip": re.compile(_IPV4_SHAPE),   # IPv6 is checked by ipaddress, not a regex (see ioc_value_is_well_formed)
     "hash": re.compile(r"[a-f0-9]{32,128}"),
     "wallet": re.compile(r"[A-Za-z0-9]{20,128}"),
     "contract": re.compile(r"[A-Za-z0-9]{20,128}"),
@@ -264,9 +293,12 @@ def ioc_value_is_well_formed(ioc_type: str, value: str) -> bool:
     """Whether a CANONICAL IOC value (see :func:`normalize_ioc_value`) has the
     shape its type allows. False for an unknown type or an over-long value.
     Hosts are bounded to 253 characters as DNS is."""
-    shape = _IOC_VALUE_SHAPES.get((ioc_type or "").strip().lower())
+    kind = (ioc_type or "").strip().lower()
+    shape = _IOC_VALUE_SHAPES.get(kind)
     if shape is None or not value or len(value) > MAX_IOC_VALUE_CHARS:
         return False
+    if kind == "ip" and ":" in value:
+        return _is_canonical_ipv6(value)   # KI-193: IPv6 in its one canonical spelling
     if ioc_type == "domain" and len(value) > 253:
         return False
     return shape.fullmatch(value) is not None

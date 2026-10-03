@@ -41,6 +41,7 @@ import {
 import { __resetRegistrationGuardForTests, register } from "../src/index.ts";
 import { RulesetCache, skillNameFromTitle } from "../src/ruleset.ts";
 import { DkgClient } from "../src/dkgClient.ts";
+import { normalizeIocValue as normalizeIocValueParity } from "../src/quads.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturePath = join(here, "../../../tests/parity/identifier_fixtures.json");
@@ -111,6 +112,20 @@ function eq(a, b) {
     }
   }
   report("identifiers", ok, mismatches.join("\n"));
+}
+
+// --- IOC value canonicalisation (KI-193: IPv6 joins IPv4) -------------------
+{
+  let ok = true;
+  const mismatches = [];
+  for (const c of fixture.iocValues || []) {
+    const got = normalizeIocValueParity(c.type, c.in);
+    if (got !== c.canonical) {
+      ok = false;
+      mismatches.push(`  ${c.type} ${JSON.stringify(c.in)} got=${got} want=${c.canonical}`);
+    }
+  }
+  report("iocValues", ok, mismatches.join("\n"));
 }
 
 // --- reportUris -------------------------------------------------------------

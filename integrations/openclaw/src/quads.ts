@@ -182,6 +182,50 @@ export function skillShapeIdentifierFor(name: string, dangerShape: string): stri
 }
 
 /** Canonicalize an IOC value exactly like Python `normalize_ioc_value`. */
+/** Mirror of Python `threat_ids._canonical_ip` (KI-193): IPv4 `a.b.c.d[:port]` → `a.b.c.d`;
+ *  IPv6 (two or more colons) → RFC 5952 compressed lower-case form, accepting `[addr]:port`
+ *  and a `%zone` suffix; an unparseable value is returned verbatim so the grammar refuses it. */
+export function canonicalIp(raw: string): string {
+  if ((raw.match(/:/g) || []).length < 2) return raw.split(":", 1)[0];
+  let candidate = raw;
+  if (candidate.startsWith("[")) candidate = candidate.slice(1).split("]", 1)[0];
+  candidate = candidate.split("%", 1)[0].toLowerCase();
+  if (!/^[0-9a-f:.]+$/.test(candidate) || candidate.includes(":::")) return raw;
+  const halves = candidate.split("::");
+  if (halves.length > 2) return raw;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const groups = [...head, ...tail];
+  // embedded IPv4 tail (::ffff:1.2.3.4) → two hex groups, as Python's ipaddress does
+  const last = groups[groups.length - 1];
+  if (last && last.includes(".")) {
+    const octets = last.split(".").map((o) => Number(o));
+    if (octets.length !== 4 || octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) return raw;
+    groups.splice(groups.length - 1, 1, ((octets[0] << 8) | octets[1]).toString(16), ((octets[2] << 8) | octets[3]).toString(16));
+    if (halves.length === 2 && halves[1]) tail.splice(tail.length - 1, 1, groups[groups.length - 2], groups[groups.length - 1]);
+  }
+  if (groups.some((g) => !/^[0-9a-f]{1,4}$/.test(g))) return raw;
+  const missing = 8 - groups.length;
+  if (halves.length === 2 ? missing < 1 : missing !== 0) return raw;
+  const headGroups = halves.length === 2 ? head : groups;
+  const full = halves.length === 2 ? [...headGroups, ...Array(missing).fill("0"), ...tail.map((g) => g)] : groups;
+  const words = full.map((g) => parseInt(g, 16));
+  // RFC 5952: shorten the longest run of zero words (length ≥ 2), leftmost on ties
+  let bestStart = -1, bestLen = 0;
+  for (let i = 0; i < words.length; ) {
+    if (words[i] !== 0) { i++; continue; }
+    let j = i;
+    while (j < words.length && words[j] === 0) j++;
+    if (j - i > bestLen) { bestStart = i; bestLen = j - i; }
+    i = j;
+  }
+  const hex = words.map((w) => w.toString(16));
+  if (bestLen < 2) return hex.join(":");
+  const left = hex.slice(0, bestStart).join(":");
+  const right = hex.slice(bestStart + bestLen).join(":");
+  return `${left}::${right}`;
+}
+
 export function normalizeIocValue(iocType: string, value: string): string {
   const type = (iocType || "").trim().toLowerCase();
   let raw = String(value || "").trim();
@@ -197,7 +241,7 @@ export function normalizeIocValue(iocType: string, value: string): string {
     }
     return raw.replace(/\/+$/, "");
   }
-  if (type === "ip") return raw.split(":", 1)[0];
+  if (type === "ip") return canonicalIp(raw);
   if (type === "hash") return raw.toLowerCase();
   if (type === "wallet" || type === "contract") {
     return /^0x[a-fA-F0-9]{40}$/.test(raw) ? raw.toLowerCase() : raw;

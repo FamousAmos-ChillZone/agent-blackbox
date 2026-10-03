@@ -83,7 +83,14 @@ for ident, addr in [
     ("injection:" + threat_ids.stable_hash("ignore all previous instructions", 24), "0xABCdef0000000000000000000000000000000001"),
     ("escalation:shell:remote-script-pipe", ""),
 ]:
-    report_uris.append({"identifier": ident, "reporter": addr, "reportUri": threat_ids.report_uri(ident, addr)})
+    try:
+        uri = threat_ids.report_uri(ident, addr)
+    except ValueError:
+        # LES-003 / Refine R0: Python refuses a blank reporter. The fixture keeps the
+        # row because the OpenClaw bridge still writes "anonymous" until KI-182 lands;
+        # the Python parity test asserts the refusal, the TS one the legacy string.
+        uri = "urn:guardian:report:anonymous:" + threat_ids.stable_hash(ident, 16)
+    report_uris.append({"identifier": ident, "reporter": addr, "reportUri": uri})
 
 arg_shapes = []
 for tool, args in [
@@ -124,6 +131,8 @@ report_quads = [{
         "package_name": "evil-pkg",
         "package_version": "6.6.6",
         "advisory_id": "OSV-2026-0001",
+        "kind": "malware",   # Refine R1 / decision 22: only malware leaves the machine
+        "reason": "advisory:OSV-2026-0001",
     },
     "quadsNoDate": report_struct(
         identifier="dep:npm:evil-pkg@6.6.6",
@@ -135,6 +144,8 @@ report_quads = [{
         package_name="evil-pkg",
         package_version="6.6.6",
         advisory_id="OSV-2026-0001",
+        kind="malware",
+        reason="advisory:OSV-2026-0001",
     ),
 }, {
     "in": {
@@ -156,27 +167,42 @@ report_quads = [{
         file_category="ssh-private-key",
     ),
 }, {
+    # Refine R1 (KI-159): a REGISTRY skill is reported by registry + name + version;
+    # a local skill only by artifact hash + danger shape. This case is the registry form.
     "in": {
-        "identifier": "skill:sneaky-skill:shell-exec",
+        "identifier": threat_ids.skill_version_identifier("sneaky-skill", "1.0.0"),
         "category": "skill",
         "severity": "high",
         "reporter_address": "0xABCdef0000000000000000000000000000000001",
         "framework": "hermes",
+        "registry": "clawhub",
         "skill_name": "sneaky-skill",
         "skill_version": "1.0.0",
-        "danger_shape": "shell-exec",
     },
     "quadsNoDate": report_struct(
-        identifier="skill:sneaky-skill:shell-exec",
+        identifier=threat_ids.skill_version_identifier("sneaky-skill", "1.0.0"),
         category="skill",
         severity="high",
         reporter_address="0xABCdef0000000000000000000000000000000001",
         framework="hermes",
+        registry="clawhub",
         skill_name="sneaky-skill",
         skill_version="1.0.0",
-        danger_shape="shell-exec",
     ),
 }]
+
+# IOC values: both runtimes must canonicalise identically or the same indicator
+# gets two identifiers (KI-193 added IPv6; IPv4 spellings must never move).
+ioc_values = [
+    {"type": t, "in": v, "canonical": threat_ids.normalize_ioc_value(t, v)}
+    for t, v in [
+        ("ip", "203.0.113.7:8080"), ("ip", "203.0.113.7"),
+        ("ip", "2001:DB8:0:0:0:0:0:1"), ("ip", "2001:db8::1"), ("ip", "[2001:db8::1]:8443"),
+        ("ip", "2001:db8::1%eth0"), ("ip", "::1"), ("ip", "::ffff:192.0.2.128"), ("ip", "fe80::1:0:0:0"),
+        ("ip", "2001:db8::zz"),
+        ("domain", "Evil.Example."), ("url", "HTTPS://Evil.Example/Path/"), ("hash", "ABCDEF" * 6),
+    ]
+]
 
 fixture = {
     "note": (
@@ -191,6 +217,7 @@ fixture = {
     "argShapes": arg_shapes,
     "dependencyParses": dep_parses,
     "reportQuads": report_quads,
+    "iocValues": ioc_values,
 }
 
 out = _REPO / "tests" / "parity" / "identifier_fixtures.json"

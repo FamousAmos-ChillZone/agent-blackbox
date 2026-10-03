@@ -116,3 +116,10 @@ def test_report_quads_parity():
         assert rows == case["quadsNoDate"], case["in"]
     assert compared >= 1
     assert refused <= {"dependency", "skill"}
+
+
+def test_ioc_value_parity():
+    """KI-193: IOC canonicalisation (incl. IPv6) is ground truth for both runtimes."""
+    threat_ids = load_blackbox("kernel.threat_ids")
+    for case in _fixture()["iocValues"]:
+        assert threat_ids.normalize_ioc_value(case["type"], case["in"]) == case["canonical"], case
