@@ -210,8 +210,10 @@ def _verifiable(statements: Iterable[Row], verified: _Resolved, community: _Reso
     authority signed). A row is kept when it verifies under either authority's
     manifest for a kind that authority may publish in the community graph. A
     root-alone reduction counts as verifiable here; whether it is HONOURED is
-    decided on every read, by the curators' silence."""
-    kept: List[Row] = []
+    decided on every read, by the curators' silence. ONE row is kept per
+    signed statement — the smallest of the texts that verified — however many
+    rewritten copies of it the graph holds (KI-266)."""
+    kept: Dict[str, Row] = {}
     community_keys: Set[str] = set()
     for row in statements:
         for resolved in (verified, community):
@@ -220,11 +222,13 @@ def _verifiable(statements: Iterable[Row], verified: _Resolved, community: _Reso
             record = curator_statements.parse_statement(row, resolved.manifest, graph=graph, root_keys=resolved.roots,
                                                         curators_silent=True)
             if record is not None and record.kind in allowed_kinds(resolved.authority, in_verified_graph=False):
-                kept.append(row)
+                key = trust_store.statement_key(row)
+                if key not in kept or str(row["signedStatement"]) < str(kept[key]["signedStatement"]):
+                    kept[key] = row
                 if resolved.authority is Authority.COMMUNITY:
-                    community_keys.add(trust_store.statement_key(row))
+                    community_keys.add(key)
                 break
-    return kept, community_keys
+    return list(kept.values()), community_keys
 
 
 def known_curator_statements(client: DkgClient, cfg: BlackboxConfig, identifiers: Iterable[str], *,

@@ -87,8 +87,14 @@ class StoredTrust:
 
 
 def statement_key(row: Mapping[str, str]) -> str:
-    """A short stable key for one signed statement row (subject + signed text)."""
-    return threat_ids.stable_hash(f"{row.get('r', '')}\n{row.get('signedStatement', '')}", 20)
+    """A short stable key for one signed statement: what was SIGNED, not how
+    the row is written (KI-266). One statement can be published as many
+    different texts that all verify, by anyone, with no key; they all have
+    this one key, so they take one place in the store and in the daily cap.
+    A row that is not a statement at all is keyed by its subject and text."""
+    text = str(row.get("signedStatement", ""))
+    envelope = signing.from_text(text)
+    return threat_ids.stable_hash(signing.content_id(envelope) if envelope is not None else f"{row.get('r', '')}\n{text}", 20)
 
 
 def _age_days(day: str, today: str) -> int:
