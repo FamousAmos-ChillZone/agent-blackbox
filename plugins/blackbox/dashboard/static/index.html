@@ -3322,7 +3322,7 @@
     // in this read-only dashboard. With no VM data, the error stays visible.
     var hasQueryableVm = Number(graphTotalForTier("public") || 0) > 0;
     var visible = activeTier === "public" && (
-      status === "running" || status === "waiting" ||
+      status === "running" || status === "waiting" || status === "not-subscribed" ||
       ((status === "failed" || status === "offline") && !hasQueryableVm)
     );
     panel.hidden = !visible;

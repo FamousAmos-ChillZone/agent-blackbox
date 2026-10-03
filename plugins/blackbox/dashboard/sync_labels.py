@@ -1,6 +1,6 @@
 """Sync-state presentation for ``GET /api/graph-status`` (the ``sync_progress`` labels).
 
-Two pure helpers, one per tier family, so the route body stays a wiring list:
+Three pure helpers, so the route body stays a wiring list:
 
 * ``_sync_label("VM", state)`` → ``"VM syncing"`` — the verified tier's label.
 * ``_community_progress(cfg, rs, count)`` → ``{"count", "state", "label"}`` — the community
@@ -21,6 +21,7 @@ _SYNC_LABEL_SUFFIX = {
     "pending-encryption-profile": "waiting for workspace encryption profile",
     "joining": "joining private graph",
     "not-configured": "not configured",
+    "not-subscribed": "not subscribed — run blackbox sync --wait",
     "paused": "paused by curators",
     "sync-envelope-error": "peer sync handshake malformed",
 }
@@ -49,3 +50,16 @@ def _community_progress(cfg: Any, rs: Any, community: int) -> Dict[str, Any]:
     label = _COMMUNITY_PROGRESS_LABEL.get(state, f"Community graph live · {int(community or 0)} corroborated threats")
     return {"count": int(community or 0), "state": state, "label": label}
 
+
+
+def not_subscribed_activity() -> Dict[str, Any]:
+    """Sync-panel payload for a node with NO verified-graph subscription — says so,
+    names the fix, and carries no clock (the pair showed '51 min elapsed' with nothing syncing)."""
+    return {
+        "status": "not-subscribed", "phase": "not-subscribed",
+        "label": "Verified graph not subscribed",
+        "detail": "This node is not subscribed to the verified threat graph — run `blackbox sync --wait` to join it. "
+                  "Community reports still flow.",
+        "started_at": None, "updated_at": None, "current": None, "expected": None,
+        "percent": None, "indeterminate": True,
+    }

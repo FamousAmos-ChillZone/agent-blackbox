@@ -828,3 +828,64 @@ def test_the_worker_refreshes_soon_when_nothing_was_ever_compiled():
     compiled.synced_at = 1.0
     assert sync_timing.initial_sync_delay(cfg, never, 5.0, 10.0) == 10.0
     assert sync_timing.initial_sync_delay(cfg, compiled, 5.0, 10.0) == 3600.0
+
+
+# ---------------------------------------------------------------------------
+# KI-215: a node that does not follow the verified graph says so, no clock
+# ---------------------------------------------------------------------------
+
+
+def test_not_subscribed_activity_has_no_clock_and_names_the_fix():
+    from plugins.blackbox.dashboard.sync_labels import not_subscribed_activity
+
+    activity = not_subscribed_activity()
+    assert activity["status"] == "not-subscribed"
+    assert activity["started_at"] is None and activity["percent"] is None
+    assert "blackbox sync --wait" in activity["detail"]
+
+
+def test_node_sync_probe_reports_subscription_from_the_listing(monkeypatch):
+    class _Client:
+        def __init__(self, **kw):
+            pass
+        def catchup_status(self, graph):
+            return {"status": "running"}
+        def context_graphs(self):
+            return [{"id": "0xowner/other", "subscribed": True}]
+    from plugins.blackbox.dashboard import node_probe
+
+    monkeypatch.setattr(node_probe, "DkgClient", _Client)
+    cfg = SimpleNamespace(dkg_url="http://127.0.0.1:9200", dkg_home="/tmp/x", context_graph_id="0xowner/vm")
+    probe = node_probe.node_sync_probe(cfg, reachable=True)
+    assert probe["subscribed"] is False and probe["catchup"] == {"status": "running"}
+
+
+def test_node_sync_probe_treats_an_unreadable_listing_as_unknown(monkeypatch):
+    class _Client:
+        def __init__(self, **kw):
+            pass
+        def catchup_status(self, graph):
+            return {}
+        def context_graphs(self):
+            raise RuntimeError("listing unavailable")
+    from plugins.blackbox.dashboard import node_probe
+
+    monkeypatch.setattr(node_probe, "DkgClient", _Client)
+    cfg = SimpleNamespace(dkg_url="http://127.0.0.1:9200", dkg_home="/tmp/x", context_graph_id="0xowner/vm")
+    assert node_probe.node_sync_probe(cfg, reachable=True)["subscribed"] is None
+
+
+def test_node_sync_probe_is_none_for_an_unreachable_node():
+    from plugins.blackbox.dashboard import node_probe
+
+    cfg = SimpleNamespace(dkg_url="http://127.0.0.1:9200", dkg_home="/tmp/x", context_graph_id="0xowner/vm")
+    assert node_probe.node_sync_probe(cfg, reachable=False) is None
+
+
+def test_dashboard_page_shows_the_not_subscribed_panel():
+    from pathlib import Path
+
+    from plugins.blackbox import dashboard as dashboard_pkg
+
+    page = (Path(dashboard_pkg.__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'status === "not-subscribed"' in page

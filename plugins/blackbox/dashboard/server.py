@@ -32,7 +32,8 @@ from ..sync import state as sync_state
 from ..sync import read_durable_progress
 from . import community_routes
 from . import sync_timing
-from .sync_labels import _community_progress, _sync_label
+from .node_probe import node_sync_probe
+from .sync_labels import _community_progress, _sync_label, not_subscribed_activity
 from .safe_payloads import graph_tier_item, safe_identifier, safe_text
 
 logger = logging.getLogger(__name__)
@@ -865,6 +866,7 @@ def _profile_activity_state(
 
 
 
+
 def create_app(*, manage_blackbox: bool = False):
     """Build and return the FastAPI application."""
     from fastapi import Body, FastAPI, Query
@@ -1476,24 +1478,10 @@ def create_app(*, manage_blackbox: bool = False):
         # Catch-up state must stay independent from the potentially expensive
         # SWM sightings COUNT. Otherwise a busy store can hide the live
         # queued/running state (and therefore the dashboard loader) for minutes.
-        def _node_sync() -> Any:
-            if not _node_reachable(cfg):
-                return None
-            client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-            try:
-                catchup = client.catchup_status(cfg.context_graph_id)
-            except Exception:
-                # No job is normal on an already-settled node.
-                catchup = {}
-            return {
-                "node_reachable": True,
-                "catchup": catchup,
-            }
-
         g = _swr(
             "graph-sync-status",
-            _node_sync,
-            {"node_reachable": False, "catchup": {}},
+            lambda: node_sync_probe(cfg, reachable=_node_reachable(cfg)),
+            {"node_reachable": False, "catchup": {}, "subscribed": True},
             ttl=4.0,
         )
         sightings = 0
@@ -1551,7 +1539,10 @@ def create_app(*, manage_blackbox: bool = False):
         if connection.get("state") in {"pending-approval", "pending-encryption-profile", "joining"}:
             if not public:
                 public_state = connection["state"]
-        activity = _sync_activity(
+        unsubscribed = bool(g["node_reachable"]) and g.get("subscribed") is False and not authoritative_running
+        if unsubscribed:   # KI-215: never count minutes on a graph this node does not follow
+            public_state = "not-subscribed"
+        activity = not_subscribed_activity() if unsubscribed else _sync_activity(
             public=public,
             community=community,
             node_reachable=bool(g["node_reachable"]),
