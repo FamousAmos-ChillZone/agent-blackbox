@@ -24,7 +24,7 @@ from ..detection import osv
 from ..kernel import display_safety, node_routes, signing
 from ..kernel.signing.authority import Authority
 from ..kernel.signing.statement_order import CuratorStatement
-from . import dossier, handoff, intake, keys, node_ui_views, publishing, queue, transport, verbs
+from . import dossier, handoff, intake, keys, node_ui_views, publishing, queue, service, transport, verbs
 from .ladder import outcomes
 from .upkeep import heartbeat, published
 from .context import CurateContext, build_context, verified_identifiers
@@ -50,7 +50,7 @@ def cmd_curate(args: argparse.Namespace) -> int:
 
 def _usage(args: argparse.Namespace) -> int:
     print("usage: blackbox curate [--authority verified|community] {keys,manifest,queue,show,propose,inbox,approve,"
-          "publish,reject,list,heartbeat,upkeep,pool,export,verify-bundle,watch,views,view,outcome,graduate}")
+          "publish,reject,list,heartbeat,upkeep,pool,export,verify-bundle,policy,watch,views,view,outcome,graduate}")
     return 2
 
 
@@ -131,6 +131,10 @@ def _export(args: argparse.Namespace) -> int:
 
 def _verify_bundle(args: argparse.Namespace) -> int:
     return handoff.verify_file(args.file, root=args.root, network=args.network, graph=args.graph)   # offline: no context
+
+
+def _policy(args: argparse.Namespace) -> int:
+    return service.policy_command(accept=args.accept, withdraw=args.withdraw, code=args.code)   # local: no context
 
 
 def _list(args: argparse.Namespace) -> int:
@@ -356,5 +360,6 @@ _VERBS: Dict[str, Callable[[argparse.Namespace], int]] = {
     "keys": _keys, "manifest": _manifest, "queue": _queue, "show": _show, "propose": _propose, "inbox": _inbox,
     "approve": _approve, "publish": _publish, "reject": _reject, "list": _list, "watch": _watch, "views": _views,
     "heartbeat": _heartbeat, "upkeep": _upkeep, "pool": _pool, "export": _export, "verify-bundle": _verify_bundle,
+    "policy": _policy,
     "view": _view, "outcome": _outcome, "graduate": _graduate, "metrics": _metrics,
 }

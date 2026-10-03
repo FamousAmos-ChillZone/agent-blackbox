@@ -26,17 +26,7 @@ def add_curate_parser(sub: "argparse._SubParsersAction", *, compiled_ruleset: Op
     curate.add_argument("--authority", choices=["verified", "community"], default=None,
                         help="which authority this machine acts for (default: the one whose manifest lists its key)")
     verbs_ = curate.add_subparsers(dest="verb")
-    k = verbs_.add_parser("keys", help="Show or create this machine's curator key (sandbox: --root too)")
-    k.add_argument("--root", action="store_true", help="SANDBOX: also create/show a local root key")
-    m = verbs_.add_parser("manifest", help="SANDBOX: stage a root-signed key manifest (then `publish`)")
-    m.add_argument("--curator-key", dest="curator_keys", action="append", required=True, metavar="HEX")
-    m.add_argument("--threshold", type=int, default=2)
-    m.add_argument("--promotion-author", dest="promotion_author", default="", metavar="ADDRESS",
-                   help="verified authority only: the pinned publisher of verified rows")
-    m.add_argument("--issued-day", dest="issued_day", default="", metavar="YYYY-MM-DD",
-                   help="date the manifest (60-day validity, 72 h time-lock); omit for no clock")
-    m.add_argument("--root-epoch", dest="root_epoch", type=int, default=1)
-    m.add_argument("--version", type=int, default=1)
+    _add_keys(verbs_)
     verbs_.add_parser("queue", help="The delta view: NEW threats by lane; already-verified closed as duplicates")
     s = verbs_.add_parser("show", help="The evidence dossier and checklist preview for one threat")
     s.add_argument("identifier")
@@ -59,6 +49,7 @@ def add_curate_parser(sub: "argparse._SubParsersAction", *, compiled_ruleset: Op
     _add_consent(h)
     verbs_.add_parser("upkeep", help="Re-publish this node's current statements before shared memory forgets them")
     _add_handoff(verbs_)
+    _add_service(verbs_)
     w = verbs_.add_parser("watch", help="Intake: announce NEW threats to a webhook")
     w.add_argument("--webhook", required=True)
     w.add_argument("--interval", type=float, default=60.0)
@@ -69,6 +60,21 @@ def add_curate_parser(sub: "argparse._SubParsersAction", *, compiled_ruleset: Op
     verbs_.add_parser("metrics", help="R15: the latest shadow-phase snapshot and the newcomer calibration gap")
     v = verbs_.add_parser("view", help="Run one saved view from the CLI")
     v.add_argument("slug", choices=[x.slug for x in (*node_ui_views.COMMUNITY_VIEWS, *node_ui_views.VERIFIED_VIEWS)])
+
+
+def _add_keys(verbs_: Any) -> None:
+    """This machine's keys and the sandbox manifest (``keys``, ``manifest``)."""
+    k = verbs_.add_parser("keys", help="Show or create this machine's curator key (sandbox: --root too)")
+    k.add_argument("--root", action="store_true", help="SANDBOX: also create/show a local root key")
+    m = verbs_.add_parser("manifest", help="SANDBOX: stage a root-signed key manifest (then `publish`)")
+    m.add_argument("--curator-key", dest="curator_keys", action="append", required=True, metavar="HEX")
+    m.add_argument("--threshold", type=int, default=2)
+    m.add_argument("--promotion-author", dest="promotion_author", default="", metavar="ADDRESS",
+                   help="verified authority only: the pinned publisher of verified rows")
+    m.add_argument("--issued-day", dest="issued_day", default="", metavar="YYYY-MM-DD",
+                   help="date the manifest (60-day validity, 72 h time-lock); omit for no clock")
+    m.add_argument("--root-epoch", dest="root_epoch", type=int, default=1)
+    m.add_argument("--version", type=int, default=1)
 
 
 def _add_propose(verbs_: Any) -> None:
@@ -105,6 +111,15 @@ def _add_handoff(verbs_: Any) -> None:
     b.add_argument("--root", default="", metavar="HEX", help="the community root key (default: the one pinned for the graph)")
     b.add_argument("--network", default="", metavar="ID", help="the network id the bundle must be for (default: this node's)")
     b.add_argument("--graph", default="", metavar="ID", help="the community graph the bundle must be for (default: this node's)")
+
+
+def _add_service(verbs_: Any) -> None:
+    """The curator service's verbs (``policy``)."""
+    o = verbs_.add_parser("policy", help="The automation policy: what the curator service may sign on its own; accept or withdraw it")
+    change = o.add_mutually_exclusive_group()
+    change.add_argument("--accept", action="store_true", help="accept the policy exactly as shown (needs --code)")
+    change.add_argument("--withdraw", action="store_true", help="withdraw the standing consent")
+    o.add_argument("--code", default=None, help="the 8-hex code shown under the policy text")
 
 
 def _add_reputation(verbs_: Any) -> None:
