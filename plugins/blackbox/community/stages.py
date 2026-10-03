@@ -15,7 +15,7 @@ however many keys it runs; each ESTABLISHED author is one — over a span of at
 least T reader-observed days. Enforcement levels (decision 15): MONITOR for
 REPORTED from unlisted authors, HELD, DEFERRED, REJECTED, REVOKED and EXPIRED;
 FLAG for REPORTED from counted authors and CORROBORATED — except a
-community-only CORROBORATED domain or wallet IOC flags only once a PARTNER
+community-only domain, URL, wallet or contract IOC flags only once a PARTNER
 cluster is in the set (a false flag there harms a third party). A dispute
 never changes enforcement by itself; decay needs counted dispute weight ≥ the
 corroborating weight.
@@ -91,8 +91,9 @@ IOC_THRESHOLD = Threshold(partner_only=2, mixed=(1, 2), established_only=5, days
 MALWARE_THRESHOLD = Threshold(partner_only=3, mixed=(2, 2), established_only=8, days=3)
 _IOC_CLASS = ("ioc:", "injection:")
 
-#: Community-only IOCs of these types flag only with a PARTNER cluster in the set.
-_THIRD_PARTY_IOC = ("ioc:domain:", "ioc:wallet:")
+#: Community-only IOCs of these types name someone else's property (a site, an
+#: address) and flag only with a PARTNER cluster in the set (plan §03, D-049).
+_THIRD_PARTY_IOC = ("ioc:domain:", "ioc:url:", "ioc:wallet:", "ioc:contract:")
 
 
 def threshold_for(identifier: str) -> Threshold:
@@ -247,7 +248,7 @@ def _by_corroboration(identifier: str, clusters: Clusters, threshold: Threshold,
             return StageResult(Stage.REPORTED, Enforcement.MONITOR, "reported by unlisted authors only")
         if _third_party_without_partner(identifier, clusters):   # KI-227: the partner rule holds at EVERY stage
             return StageResult(Stage.REPORTED, Enforcement.MONITOR,
-                               f"reported by {clusters.total} established cluster(s); a domain or wallet flags only with a partner cluster")
+                               f"reported by {clusters.total} established cluster(s); a domain, URL, wallet or contract flags only with a partner cluster")
         return StageResult(Stage.REPORTED, Enforcement.FLAG,
                            f"reported by {clusters.total} counted cluster(s); corroboration needs more")
     if span_days < threshold.days:
@@ -257,7 +258,7 @@ def _by_corroboration(identifier: str, clusters: Clusters, threshold: Threshold,
         return StageResult(Stage.DEFERRED, Enforcement.MONITOR, "corroborated; the curator deferred it (no evidence yet)")
     if _third_party_without_partner(identifier, clusters):
         return StageResult(Stage.CORROBORATED, Enforcement.MONITOR,
-                           "corroborated by established authors; a domain or wallet flags only with a partner cluster")
+                           "corroborated by established authors; a domain, URL, wallet or contract flags only with a partner cluster")
     lapsed = " (a curator deferral lapsed)" if verdict is CuratorStatement.DEFERRAL_LAPSED else ""
     return StageResult(Stage.CORROBORATED, Enforcement.FLAG,
                        f"corroborated by {clusters.partner} partner and {clusters.established} established cluster(s){lapsed}")

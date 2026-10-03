@@ -18,7 +18,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from plugins.blackbox.community import report_builder
 from plugins.blackbox.community.report_signer import ReportSigner
-from plugins.blackbox.kernel import signing
+from plugins.blackbox.kernel import constants, signing
 
 NETWORK = "test-network-id"
 GRAPH = "0x51E5dE758A45c8b64048E29918421F0bdD6D5d5C/agent-blackbox-community-dev"
@@ -73,6 +73,8 @@ def signed_row(identifier: str, reporter: Reporter, severity: str = "high", cate
     row = {"r": quads[0]["subject"]}
     for quad in quads:
         obj = quad["object"]
+        if quad["predicate"] == constants.SCHEMA_IDENTIFIER_PRED:
+            continue                                    # the advisory id: the reader's ?identifier is the threat's, never this
         if obj.startswith('"') and obj.endswith('"'):   # plain literals only (skip IRIs and typed dates)
             row[quad["predicate"].rsplit("/", 1)[-1]] = json.loads(obj)
     return row

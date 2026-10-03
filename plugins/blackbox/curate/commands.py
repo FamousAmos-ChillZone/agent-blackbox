@@ -256,12 +256,12 @@ def _manifest(args: argparse.Namespace) -> int:
 
 
 def _watch(args: argparse.Namespace) -> int:
-    ctx = _ctx(args)
     watcher = intake.IntakeWatcher()
     alarms = intake.AlarmWatcher()
     sink = intake.WebhookSink(args.webhook)
     while True:
-        compiled = args.compiled_ruleset(ctx.cfg) if args.compiled_ruleset else None
+        ctx = _ctx(args)   # KI-261: a fresh view every round (the curators' statements change between rounds)
+        compiled = ctx.compiled
         if compiled is not None:
             announced = watcher.poll(queue.delta_view(compiled.community, verified_identifiers(compiled)), sink)
             if announced:

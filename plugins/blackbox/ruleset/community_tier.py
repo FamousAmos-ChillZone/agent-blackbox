@@ -31,12 +31,13 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
 
     Populates ``rs.community`` (the corroboration/display store, keyed by
     identifier literal) and materializes MATCHABLE community rules into the
-    ``dependency``/``ioc`` O(1) lookup dicts only — identifier-equality
-    matching, never pattern execution (KI-004). Public rules always win a
-    key collision (merge precedence). Injection/escalation/fileaccess/skill
-    community reports stay display-and-corroboration only in v1: their
-    local detections derive the same deterministic identifiers, so
-    corroboration works without ever interpreting community content.
+    ``dependency``/``ioc`` O(1) lookup dicts and the ``skill`` rules —
+    identifier-equality matching, never pattern execution (KI-004). Public
+    rules always win a key collision (merge precedence).
+    Injection/escalation/fileaccess community reports stay
+    display-and-corroboration only: their local detections derive the same
+    deterministic identifiers, so corroboration works without ever
+    interpreting community content.
 
     *prior* is this node's previous ruleset generation (first-seen history and
     the last-good fallback); the refresh cycle passes it in.
@@ -175,6 +176,7 @@ def reapply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: Blackbo
     for table in (rs.dependency, rs.ioc):
         for key in [k for k, rule in table.items() if rule.get("source") == "community"]:
             del table[key]
+    rs.skill = [rule for rule in rs.skill if rule.get("source") != "community"]
     apply_community_tier(rs, client, cfg, rs)
     rs._graph_entries_cache.clear()
 
@@ -187,7 +189,10 @@ def _stage_fields(rule: community.CommunityRule, read: community.CommunityRead) 
     result = community.stage_for(rule.identifier, rule.authors, rule.first_seen, read.curator, dispute_weight,
                                  read.curator.verdict(rule.identifier), time.time(), dict(rule.fields),
                                  verdict_day=verdict_record.day if verdict_record is not None else "")
-    return result.as_fields()
+    # How many of its reporters are not on the trusted list: the curator's queue
+    # shows threats whose confirmation would credit a newcomer (the graduation lane).
+    unlisted = sum(1 for author in set(rule.authors) if not read.curator.is_counted(author))
+    return {**result.as_fields(), "unlistedReporters": str(unlisted)}
 
 
 def _first_seen_history(prior: Optional[compiler.Ruleset]) -> Dict[str, float]:
@@ -247,3 +252,21 @@ def materialize_community_rules(rs: compiler.Ruleset) -> None:
                 parts = identifier.split(":", 2)
                 fallback_type = parts[1] if len(parts) >= 3 else ""
                 rs.ioc[identifier] = {**rule, "iocType": str(rule.get("iocType") or fallback_type)}
+        elif identifier.startswith("skill:"):
+            _materialize_skill(rs, identifier, rule)
+
+
+def _materialize_skill(rs: compiler.Ruleset, identifier: str, rule: Dict[str, Any]) -> None:
+    """A FLAG-stage community skill report as a skill rule matched by EXACT
+    identifier: a registry skill by its name and version, a local one by its
+    code hash and danger shape (the same identifier every node derives from
+    the artifact). A skill report without a version is not materialized, and a
+    public rule for the same identifier wins."""
+    if any(existing.get("identifier") == identifier for existing in rs.skill):
+        return
+    if identifier.startswith("skill:artifact:"):
+        rs.skill.append({**rule, "skillName": "", "skillVersion": ""})   # matched by identifier in detection
+        return
+    name, _, version = identifier[len("skill:"):].rpartition("@")
+    if name and version:
+        rs.skill.append({**rule, "skillName": name, "skillVersion": version})

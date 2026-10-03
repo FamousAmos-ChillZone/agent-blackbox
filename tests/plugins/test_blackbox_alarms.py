@@ -113,7 +113,7 @@ def test_the_verifier_counts_why_rows_were_dropped():
     unsigned = dict(good)
     unsigned["signedStatement"] = "not an envelope"
     assert verifier.verify(unsigned) is None
-    assert verifier.drops == {"env_mismatch": 1, "future_dated": 0, "other": 1}
+    assert verifier.drops == {"env_mismatch": 1, "future_dated": 0, "schema": 0, "other": 1}
     # a reader whose "today" is far behind the row's signed day sees a future-dated row (clock skew > 1 day)
     behind = verification.ReportVerifier(NETWORK, GRAPH, today="2020-01-01")
     assert behind.verify(signed_row("ioc:domain:f.example", Reporter("0xf"))) is None and behind.drops["future_dated"] == 1

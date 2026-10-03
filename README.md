@@ -323,9 +323,9 @@ stateDiagram-v2
 | Stage | Enforcement | When |
 |---|---|---|
 | `REPORTED`, unlisted authors only | MONITOR | anyone can report; nothing changes until counted authors are behind it |
-| `REPORTED`, counted authors | FLAG | a domain or wallet indicator still needs a partner organisation behind it |
+| `REPORTED`, counted authors | FLAG | a domain, URL, wallet or contract indicator still needs a partner organisation behind it |
 | `HELD` | MONITOR | an allowlisted name, name-level noise on a popular package, or a whole-package (`@*`) report without a signed `typosquat` or `internal-mirror-collision` reason; a curator confirmation lifts it |
-| `CORROBORATED` | FLAG | the class count below is met over the observation window (domain and wallet: only with a partner) |
+| `CORROBORATED` | FLAG | the class count below is met over the observation window (domain, URL, wallet and contract: only with a partner) |
 | `DEFERRED` | MONITOR | corroborated, but the curator has no evidence yet; lapses 30 days after the curator's signed day |
 | `EXPIRED` | MONITOR | the per-type lifetime below has passed on the reader's own clock |
 | `REJECTED`, `REVOKED` | MONITOR | terminal curator verdicts |

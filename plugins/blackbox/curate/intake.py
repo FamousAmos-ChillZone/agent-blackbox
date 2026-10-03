@@ -51,9 +51,13 @@ class IntakeEvent:
 
 
 class IntakeSink(Protocol):
-    def notify(self, event: IntakeEvent) -> None: ...
+    """Where announcements go. Each method returns False when the notification
+    was NOT delivered (the watcher then tries again next round); True or None
+    counts as delivered."""
 
-    def notify_alarm(self, item: Any) -> None: ...
+    def notify(self, event: IntakeEvent) -> Optional[bool]: ...
+
+    def notify_alarm(self, item: Any) -> Optional[bool]: ...
 
 
 class WebhookSink:
@@ -62,21 +66,23 @@ class WebhookSink:
     def __init__(self, url: str) -> None:
         self._url = url
 
-    def notify(self, event: IntakeEvent) -> None:
-        self._post(asdict(event), event.identifier)
+    def notify(self, event: IntakeEvent) -> bool:
+        return self._post(asdict(event), event.identifier)
 
-    def notify_alarm(self, item: Any) -> None:
+    def notify_alarm(self, item: Any) -> bool:
         """R10b: a curator-audience alarm ({audience, class, message, what_to_do})."""
-        self._post({"kind": "alarm", **item.as_dict()}, item.message)
+        return self._post({"kind": "alarm", **item.as_dict()}, item.message)
 
-    def _post(self, body: dict, what: str) -> None:
+    def _post(self, body: dict, what: str) -> bool:
+        """True when the webhook accepted the POST (a failed delivery is logged and retried next round)."""
         data = json.dumps(body).encode("utf-8")
         request = urllib.request.Request(self._url, data=data, headers={"Content-Type": "application/json"}, method="POST")
         try:
             with urllib.request.urlopen(request, timeout=_WEBHOOK_TIMEOUT):
-                pass
+                return True
         except (urllib.error.URLError, OSError, ValueError) as exc:
             logger.warning("blackbox curate: webhook failed for %s: %s", what, exc)
+            return False
 
 
 class AlarmWatcher:
@@ -91,11 +97,10 @@ class AlarmWatcher:
         with self._lock:
             seen = _load_seen(self._path)
             fresh = [item for item in items if item.message not in seen]
-            for item in fresh:
-                sink.notify_alarm(item)
-            seen.update(item.message for item in fresh)
+            delivered = [item for item in fresh if sink.notify_alarm(item) is not False]
+            seen.update(item.message for item in delivered)   # an undelivered alarm is tried again next round
             _save_seen(self._path, seen)
-        return [item.message for item in fresh]
+        return [item.message for item in delivered]
 
 
 def _load_seen(path: Path) -> Set[str]:
@@ -125,11 +130,10 @@ class IntakeWatcher:
         with self._lock:
             seen = self._load()
             fresh = [item for item in view.new if item.identifier not in seen]
-            for item in fresh:
-                sink.notify(_event(item))
-            seen.update(item.identifier for item in fresh)
+            delivered = [item for item in fresh if sink.notify(_event(item)) is not False]
+            seen.update(item.identifier for item in delivered)   # KI-261: announced means DELIVERED
             self._save(seen)
-        return [item.identifier for item in fresh]
+        return [item.identifier for item in delivered]
 
     def _load(self) -> Set[str]:
         try:

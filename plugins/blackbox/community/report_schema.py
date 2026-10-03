@@ -53,6 +53,9 @@ MAX_IDENTIFIER_CHARS = 512
 MAX_VALUE_CHARS = 128
 #: A report dated further ahead than this is refused (sender clocks drift a little).
 MAX_CLOCK_SKEW = timedelta(minutes=10)
+#: The keys every signed report payload carries beside its evidence. Whatever
+#: else a signed payload holds is evidence, and is checked against the schema.
+REPORT_CORE_KEYS = frozenset({"subject", "identifier", "category", "severity", "reporter", "framework", "day"})
 
 _SAFE_TOKEN = re.compile(r"[A-Za-z0-9._@:/+~-]+")       # package names/versions, tool names, advisory ids
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
