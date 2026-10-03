@@ -1,6 +1,19 @@
 # Agent Blackbox — Reporter Terms (community graph)
 
-Version: 1.0 (draft for counsel review, 2026-10-02)
+Version: 1.1 (draft for counsel review, 2026-10-03)
+
+## What changed in version 1.1
+
+- The community graph now has its OWN curators (section 4): they keep a
+  trusted-reporter list in the community graph itself, confirm, reject or
+  defer community threats, and keep a private reputation ledger. Before, only
+  Umanitek's curator did this, and only in the verified graph.
+- A trusted-reporter listing lasts at most 90 days unless renewed; what it
+  publishes about you is listed in section 4.
+- Confirmed threats can be handed to the verified graph's owner as a bundle of
+  the signed statements already public in the community graph (section 4).
+- Erasure rotates your SIGNING key; your node's wallet address is not changed
+  by it (section 5).
 
 These terms apply to the OPERATOR of a machine running Agent Blackbox who
 turns on community sharing (`report: true`) and records consent. Sharing is
@@ -59,12 +72,30 @@ stops counting it, but the record of the statement stays on the network.
   keeps them for ITS OWN retention setting (30 days by default on current
   nodes; a replica may lengthen or disable expiry). Readers keep a counted
   threat locally for up to 90 days after its network copies expire.
-- Umanitek's curator node reads the community graph, may confirm, reject,
-  attest a stage for, or promote a threat into the verified graph, and keeps
-  a PRIVATE reputation ledger about reporters keyed by a per-reporter random
-  salt; nothing from that ledger is published. Erasure deletes the salt.
-- The counted-author list (which reporter addresses count, and in which
-  class) is published in the verified graph.
+- Two groups of curators read the community graph. The COMMUNITY curators
+  (named in the controller map) may list you as a trusted reporter, confirm,
+  reject or defer a community threat, and pause intake for up to 7 days;
+  their statements can only make a threat FLAG, never block. Umanitek's
+  curator (the VERIFIED graph's owner) may do the same and may also promote a
+  threat into the verified graph, revoke a verified rule, and publish the kill
+  list.
+- Each group of curators may keep a PRIVATE reputation ledger about reporters
+  on its own curator nodes: which of your reports were confirmed or rejected,
+  keyed by a per-reporter random salt. Nothing from it is published. The index
+  that links your key to its entry is encrypted. Erasure deletes the salt.
+- A trusted-reporter listing publishes, about you: your reporter key and
+  node address (already on your own reports), that you are listed, your class
+  (established or partner), an organisation name for partners, and an expiry
+  day. A community listing lasts at most 90 days unless renewed.
+- A community curator node may run a service that signs routine statements on
+  its own (a heartbeat, an acknowledgement that a report is in review, a
+  confirmation of a package that a public malicious-package advisory already
+  names, listings its own ledger calls for). Rejections and anything that
+  accuses a reporter of bad faith are always a person's decision.
+- Confirmed threats can be handed to the verified graph's owner as one file
+  holding the signed statements behind them, your signed reports included, so
+  the receiver can credit the original reporters. The file holds nothing that
+  is not already public in the community graph.
 
 ## 5. Your rights and the tools for them
 
@@ -74,11 +105,15 @@ stops counting it, but the record of the statement stays on the network.
   `blackbox report --false-positive`.
 - **Erasure of your identity:** `blackbox report --erase-identity --confirm`
   destroys the reporter key and every local share record, including the
-  keep-alive memory, so this node can never re-publish its old statements;
-  the curator deletes the ledger salt on request (crypto-shredding).
+  keep-alive memory, so this node can never re-publish its old statements.
+  Your next report is signed by a new key; your node's WALLET address, which
+  every statement also carries, is not changed by this command. Each group of
+  curators deletes its ledger salt on request (crypto-shredding) and stops
+  keeping your listing alive.
 - **Withdraw consent:** `blackbox report --withdraw-consent`.
-- Requests that need a human: privacy@umanitek.ai (joint controllers, see
-  the controller map).
+- Requests that need a human: the contact points in the controller map
+  (one for the community curators, one for Umanitek); either forwards a
+  request it cannot serve to the other.
 
 ## 6. Changes
 

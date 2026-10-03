@@ -93,7 +93,7 @@ class CommunitySharePolicy:
         if not self._cfg.community_enabled:
             return False, "community sharing disabled"
         if not consent.in_force():   # R13: opt-in, bound to the terms' content, withdrawable
-            return False, "no sharing consent recorded for the current reporter terms (`blackbox report --consent`)"
+            return False, consent.why_not()
         if finding.get("source") in NEVER_SHARED_SOURCES:
             return False, f"source {finding.get('source')} never leaves the machine"
         if is_vulnerability_finding(finding):

@@ -44,7 +44,7 @@ def home(monkeypatch, tmp_path):
 def test_consent_is_off_by_default_bound_to_the_terms_and_withdrawable(real_consent, monkeypatch):
     assert real_consent.current() is None and not real_consent.in_force()
     entry = real_consent.record()
-    assert entry is not None and entry.terms_version == "1.0" and entry.terms_hash == real_consent.terms_hash()
+    assert entry is not None and entry.terms_version == "1.1" and entry.terms_hash == real_consent.terms_hash()
     assert real_consent.in_force() and real_consent.current().withdrawn_at == ""
     original = real_consent.terms_text
     monkeypatch.setattr(real_consent, "terms_text", lambda: "Version: 2.0\nnew terms")       # the text changed
@@ -93,7 +93,7 @@ def test_the_dashboard_cannot_switch_sharing_on_without_consent(real_consent, mo
 def test_the_consent_verbs_record_and_withdraw(real_consent, capsys):
     assert report_rights.record_consent() == 0 and real_consent.in_force()
     out = capsys.readouterr().out
-    assert "Version: 1.0" in out and "Consent recorded" in out
+    assert "Version: 1.1" in out and "Consent recorded" in out
     assert report_rights.withdraw_consent() == 0 and not real_consent.in_force()
     assert report_rights.wants_local_verb(argparse.Namespace(consent=True))
     assert report_rights.wants_local_verb(argparse.Namespace(withdraw_consent=True))
@@ -137,7 +137,7 @@ def test_the_documents_ship_with_the_plugin():
     terms = consent_module.terms_text()
     for command in ("--withdraw-consent", "--erase-identity", "--export", "--retract"):
         assert command in terms                                                               # the rights are real commands
-    assert consent_module.terms_version() == "1.0"
+    assert consent_module.terms_version() == "1.1"
 
 
 def test_a_garbage_record_is_no_consent(real_consent, tmp_path):

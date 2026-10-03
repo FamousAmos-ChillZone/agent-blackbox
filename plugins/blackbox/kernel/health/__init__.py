@@ -96,6 +96,9 @@ class HealthInputs:
     manifest_state: str = ""             # R7b: "" | "pending" | "stale"
     manifest_state_day: str = ""         # the day it takes effect / expired
     manifest_expires_day: str = ""       # the 30-day-ahead key-expiry alarm
+    #: Community Curation C11: why sharing is stopped by consent ("" = in force or sharing off) — the
+    #: caller passes ``community.consent.why_not()`` only when `report: true`.
+    sharing_consent_problem: str = ""
     #: Community Curation: the same facts for the COMMUNITY authority (its own manifest and curators).
     community_authority: community_authority.CommunityAuthorityInputs = field(
         default_factory=community_authority.CommunityAuthorityInputs)
@@ -216,6 +219,9 @@ def _community(inputs: HealthInputs) -> List[HealthItem]:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO,
                                 f"{inputs.pending_shares} report(s) waiting for the network to accept this node's writes",
                                 "nothing to do — a newly subscribed node is refused for a few minutes; they are retried automatically"))
+    if inputs.sharing_consent_problem:
+        items.append(HealthItem(_OPERATOR, HealthClass.ACTION, f"community sharing is on but stopped: {inputs.sharing_consent_problem}",
+                                "read the reporter terms and consent with `blackbox report --consent`, or set `report: false`"))
     if inputs.shares_given_up:
         items.append(HealthItem(_OPERATOR, HealthClass.ACTION,
                                 f"{inputs.shares_given_up} report(s) could not be shared within 24 h",
@@ -291,7 +297,7 @@ def red(item: HealthItem) -> bool:
 
 
 def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked_by_identifier: Mapping[str, int],
-           now: float, *, pending_shares: int = 0, shares_given_up: int = 0) -> HealthInputs:
+           now: float, *, pending_shares: int = 0, shares_given_up: int = 0, sharing_consent_problem: str = "") -> HealthInputs:
     """Build :class:`HealthInputs` from a config, a compiled ruleset, node
     reachability, the last community read (or None), how many actions each
     threat blocked here (``audit.blocked_counts_by_identifier()``) and the
@@ -313,6 +319,7 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         revoked=revoked,
         held_back=int(getattr(read, "held_back", 0) or 0),
         pending_shares=int(pending_shares),
+        sharing_consent_problem=sharing_consent_problem if getattr(cfg, "community_enabled", False) else "",
         shares_given_up=int(shares_given_up),
         curators_last_day=(view.last_statement_day if view is not None else ""),
         today=datetime.fromtimestamp(now, timezone.utc).date().isoformat(),

@@ -39,7 +39,6 @@ def refusal_for(cfg: Any, reduction: bool) -> Optional[int]:
         print("Nothing was submitted.")
         return 2
     if not consent.in_force():   # R13: the same gate as automatic sharing
-        print("No sharing consent is recorded for the current reporter terms. Read them and consent with")
-        print("`blackbox report --consent`; nothing was submitted.")
+        print(f"Not submitted: {consent.why_not()}.")
         return 2
     return None
