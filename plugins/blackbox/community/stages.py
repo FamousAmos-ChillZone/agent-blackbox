@@ -31,6 +31,8 @@ Usage::
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Dict, Iterable, Mapping, Optional, Tuple
@@ -153,23 +155,26 @@ class StageResult:
         return fields
 
 
-def is_whole_package(identifier: str) -> bool:
-    """A name-level dependency report (``dep:…@*``): held, weight 0 (plan §06 warninglist)."""
-    return identifier.startswith("dep:") and identifier.endswith("@*")
+#: CLOCKS (§12): a curator DEFERRAL lapses this many days after its signed day — readers
+#: compute it themselves (KI-229); a DEFERRAL_LAPSED statement is confirmation, not the clock.
+DEFERRAL_LAPSE_DAYS = 30
 
 
 def stage_for(identifier: str, authors: Iterable[str], first_seen: float, view: CuratorView,
               dispute_weight: int, verdict: Optional[CuratorStatement], now: float,
-              fields: Optional[Mapping[str, str]] = None) -> StageResult:
+              fields: Optional[Mapping[str, str]] = None, verdict_day: str = "") -> StageResult:
     """The local stage of one community threat.
 
     *authors* — verified signer keys of its reports; *first_seen* — THIS
     node's first observation (epoch); *view* — the verified curator view;
     *dispute_weight* — how many counted authors dispute it; *verdict* — the
-    curator's current verdict for it, if any; *fields* — the report's closed
-    fields (R9 reads ``kind``).
+    curator's current verdict for it, if any, and *verdict_day* its signed day
+    (a DEFERRAL lapses ``DEFERRAL_LAPSE_DAYS`` after it); *fields* — the
+    report's closed fields (R9 reads ``kind``).
     """
     clusters = clusters_for(authors, view)
+    if verdict is CuratorStatement.DEFERRAL and _deferral_lapsed(verdict_day, now):
+        verdict = CuratorStatement.DEFERRAL_LAPSED
     result = _stage(identifier, first_seen, clusters, dispute_weight, verdict, now, allowlist.check(identifier, fields))
     attested = view.attestation(identifier)
     if attested is not None and result.stage not in _NOT_ATTESTABLE:
@@ -204,9 +209,12 @@ def _stage(identifier: str, first_seen: float, clusters: "Clusters", dispute_wei
     span_days = max(0.0, now - first_seen) / _DAY_SECONDS
     if span_days > lifetime_days(identifier):
         return StageResult(Stage.EXPIRED, Enforcement.MONITOR, f"community lifetime of {lifetime_days(identifier)} days passed")
-    if is_whole_package(identifier):
-        return StageResult(Stage.HELD, Enforcement.MONITOR, "whole-package report held: weight 0 until a curator checks it")
-    if listed.holds:   # R9: a byte-exact allowlisted name, or name-level / vulnerability noise on a popular package
+    if verdict is CuratorStatement.CONFIRMATION:   # KI-226: a curator CONFIRMATION lifts any hold
+        return StageResult(Stage.CORROBORATED, Enforcement.FLAG, "confirmed by the curator")
+    # R9: a byte-exact allowlisted name, or name-level / vulnerability noise on a WARNINGLISTED
+    # package, is held for a curator. A whole-package (`@*`) report on an unlisted name is NOT
+    # held (KI-226): the schema already restricts it to typosquat / internal-mirror-collision.
+    if listed.holds:
         return StageResult(Stage.HELD, Enforcement.MONITOR, f"held for a curator: {listed.reason}")
     result = _by_corroboration(identifier, clusters, threshold_for(identifier), span_days, verdict)
     if listed.confusable_of:   # R9 inverted look-alike rule: a homograph SUPPORTS the report
@@ -229,6 +237,9 @@ def _by_corroboration(identifier: str, clusters: Clusters, threshold: Threshold,
     if not threshold.met(clusters):
         if clusters.total == 0:
             return StageResult(Stage.REPORTED, Enforcement.MONITOR, "reported by unlisted authors only")
+        if _third_party_without_partner(identifier, clusters):   # KI-227: the partner rule holds at EVERY stage
+            return StageResult(Stage.REPORTED, Enforcement.MONITOR,
+                               f"reported by {clusters.total} established cluster(s); a domain or wallet flags only with a partner cluster")
         return StageResult(Stage.REPORTED, Enforcement.FLAG,
                            f"reported by {clusters.total} counted cluster(s); corroboration needs more")
     if span_days < threshold.days:
@@ -236,12 +247,31 @@ def _by_corroboration(identifier: str, clusters: Clusters, threshold: Threshold,
                            f"class count met; corroboration needs {threshold.days} observed days")
     if verdict is CuratorStatement.DEFERRAL:
         return StageResult(Stage.DEFERRED, Enforcement.MONITOR, "corroborated; the curator deferred it (no evidence yet)")
-    if identifier.startswith(_THIRD_PARTY_IOC) and clusters.partner == 0:
+    if _third_party_without_partner(identifier, clusters):
         return StageResult(Stage.CORROBORATED, Enforcement.MONITOR,
                            "corroborated by established authors; a domain or wallet flags only with a partner cluster")
     lapsed = " (a curator deferral lapsed)" if verdict is CuratorStatement.DEFERRAL_LAPSED else ""
     return StageResult(Stage.CORROBORATED, Enforcement.FLAG,
                        f"corroborated by {clusters.partner} partner and {clusters.established} established cluster(s){lapsed}")
+
+
+def _deferral_lapsed(verdict_day: str, now: float) -> bool:
+    """True when a DEFERRAL signed on *verdict_day* is older than DEFERRAL_LAPSE_DAYS (KI-229).
+    An undated or unparseable day never lapses (fail toward MONITOR)."""
+    try:
+        signed = datetime.fromisoformat(verdict_day).replace(tzinfo=timezone.utc).timestamp()
+    except (TypeError, ValueError):
+        return False
+    return (now - signed) / _DAY_SECONDS > DEFERRAL_LAPSE_DAYS
+
+
+def _third_party_without_partner(identifier: str, clusters: Clusters) -> bool:
+    """KI-227: a third-party indicator (domain, URL, wallet, contract) names someone else's
+    property, so it flags only with a PARTNER cluster behind it — at REPORTED as well as at
+    CORROBORATED. Before this rule, one established author's domain report flagged while
+    five established authors' corroborated report only monitored: more evidence, less
+    enforcement. Enforcement is now monotonic in evidence (plan D-049)."""
+    return identifier.startswith(_THIRD_PARTY_IOC) and clusters.partner == 0
 
 
 def _apply_disputes(result: StageResult, clusters: Clusters, dispute_weight: int) -> StageResult:

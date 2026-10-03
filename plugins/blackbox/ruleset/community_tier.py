@@ -155,8 +155,10 @@ def _stage_fields(rule: community.CommunityRule, read: community.CommunityRead) 
     """R3: the threat's local stage, from the same inputs every node has —
     its signers, the curator view, counted disputes and the current verdict."""
     dispute_weight = community.counted_dispute_weight(read.disputes, read.curator).get(rule.identifier, 0)
+    verdict_record = read.curator.verdicts.get(rule.identifier)
     result = community.stage_for(rule.identifier, rule.authors, rule.first_seen, read.curator, dispute_weight,
-                                 read.curator.verdict(rule.identifier), time.time(), dict(rule.fields))
+                                 read.curator.verdict(rule.identifier), time.time(), dict(rule.fields),
+                                 verdict_day=verdict_record.day if verdict_record is not None else "")
     return result.as_fields()
 
 

@@ -81,10 +81,35 @@ def test_a_partner_organisation_is_one_cluster_however_many_keys_it_runs():
 # ------------------------------------------------------------------ holds, verdicts, expiry, disputes
 
 
-def test_a_whole_package_report_is_held_at_weight_zero():
+def test_a_whole_package_report_is_held_only_when_the_name_is_warninglisted():
+    """KI-226 (§04/§06): a name-level report on a POPULAR package is held for a curator;
+    a whole-package report on an unlisted name (schema: typosquat / mirror-collision only)
+    follows the class-count rule like any other report."""
     keys = _keys("p", 3)
-    result = _stage("dep:npm:evil@*", keys, _view([(k, f"org{i}") for i, k in enumerate(keys)]))
-    assert (result.stage, result.enforcement) == (Stage.HELD, Enforcement.MONITOR)
+    view = _view([(k, f"org{i}") for i, k in enumerate(keys)])
+    held = _stage("dep:npm:lodash@*", keys, view)
+    assert (held.stage, held.enforcement) == (Stage.HELD, Enforcement.MONITOR)
+    unlisted = _stage("dep:npm:evil-typosquat-xyz@*", keys, view)
+    assert unlisted.stage is not Stage.HELD
+
+
+def test_a_curator_confirmation_lifts_a_held_report():
+    keys = _keys("p", 3)
+    view = _view([(k, f"org{i}") for i, k in enumerate(keys)])
+    result = _stage("dep:npm:lodash@*", keys, view, verdict=Kind.CONFIRMATION)
+    assert (result.stage, result.enforcement) == (Stage.CORROBORATED, Enforcement.FLAG)
+
+
+def test_third_party_indicators_never_flag_without_a_partner_at_any_stage():
+    """KI-227 / D-049: enforcement is monotonic in evidence — one established author's
+    domain report may not flag when five established authors' corroborated report monitors."""
+    established = _keys("e", 5)
+    view = _view(established=established)
+    one = _stage("ioc:domain:evil.example", established[:1], view)
+    five = _stage("ioc:domain:evil.example", established, view)
+    assert one.enforcement is Enforcement.MONITOR and five.enforcement is Enforcement.MONITOR
+    with_partner = _stage("ioc:domain:evil.example", established[:1] + ["p" * 64], _view(partners=[("p" * 64, "acme")], established=established))
+    assert with_partner.enforcement is Enforcement.FLAG
 
 
 def test_curator_verdicts_decide_the_stage():
@@ -260,3 +285,19 @@ def test_the_unsigned_pause_flag_is_ignored_once_a_trusted_manifest_exists(monke
     rs = compiler.Ruleset()
     community_tier.apply_community_tier(rs, _FrozenClient(), BlackboxConfig(community_graph_id=GRAPH))
     assert rs.community_paused is False
+
+
+def test_a_curator_deferral_lapses_after_thirty_days_on_the_reader(monkeypatch):
+    """KI-229 / CLOCKS: readers compute the DEFERRED lapse; a deferral older than 30 days
+    is treated as lapsed (corroborated again) without waiting for a curator statement."""
+    from datetime import datetime, timezone
+
+    keys = _keys("p", 3)
+    view = _view([(k, f"org{i}") for i, k in enumerate(keys)])
+    fresh = datetime.fromtimestamp(NOW - 5 * DAY, tz=timezone.utc).date().isoformat()
+    stale = datetime.fromtimestamp(NOW - 40 * DAY, tz=timezone.utc).date().isoformat()
+    deferred = stages.stage_for("dep:npm:x@1", keys, NOW - 10 * DAY, view, 0, Kind.DEFERRAL, NOW, verdict_day=fresh)
+    lapsed = stages.stage_for("dep:npm:x@1", keys, NOW - 10 * DAY, view, 0, Kind.DEFERRAL, NOW, verdict_day=stale)
+    undated = stages.stage_for("dep:npm:x@1", keys, NOW - 10 * DAY, view, 0, Kind.DEFERRAL, NOW)
+    assert deferred.stage is Stage.DEFERRED and undated.stage is Stage.DEFERRED
+    assert (lapsed.stage, lapsed.enforcement) == (Stage.CORROBORATED, Enforcement.FLAG) and "lapsed" in lapsed.reason

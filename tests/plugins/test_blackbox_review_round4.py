@@ -209,3 +209,17 @@ def test_a_cosign_that_outgrows_the_envelope_is_a_refusal(keys, monkeypatch, tmp
     store.save(proposal)
     with pytest.raises(verbs.VerbError, match="split the list"):
         verbs.approve(_ctx(FakeNode(), manifest), store, proposal.id, evidence="", typed_code=None, yes=True, root=True)
+
+
+def test_a_pause_cannot_be_chained_back_to_back_by_the_same_signers(keys):
+    """KI-229 / §09: the SAME pair renewing its own pause on or before its `until` is ignored;
+    a different signer set, or a pause after a gap, counts."""
+    manifest = _manifest(keys)
+    two, other = keys["curators"][:2], keys["curators"][1:3]
+    first = _curator_row(Kind.PAUSE, "curator", {"until": "2026-10-05"}, two, manifest, graph=manifest.graph, sequence=1)
+    renewal = _curator_row(Kind.PAUSE, "curator", {"until": "2026-10-09"}, two, manifest, graph=manifest.graph, sequence=2)
+    view = cv.build_view(manifest, [first, renewal], [], verified_graph=manifest.graph, community_graph=GRAPH, today=TODAY)
+    assert view.pause_until == "2026-10-05"                                # the chained renewal is ignored
+    by_others = _curator_row(Kind.PAUSE, "curator", {"until": "2026-10-09"}, other, manifest, graph=manifest.graph, sequence=3)
+    view = cv.build_view(manifest, [first, by_others], [], verified_graph=manifest.graph, community_graph=GRAPH, today=TODAY)
+    assert view.pause_until == "2026-10-09"                                # a different pair may pause
