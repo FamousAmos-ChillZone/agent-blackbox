@@ -38,7 +38,7 @@ way, and every package used only through its public entry (`__init__.py`).
 | `killlist` | the curators' kill list (Refine R14): the signed versioned statement, blast-radius gates (wide kills need the root; popular targets the root + a 24 h hold; ≤20 new disables per version), the last-good list on disk, and the hook-side match that refuses or warns — never uninstalls | `killlist/__init__.py` | `kernel`, `detection` |
 | `chat` | `blackbox chat` — the managed Blackbox assistant profile | `chat/__init__.py` | `kernel`, `attach` |
 | `dashboard` | the local web UI (FastAPI, loopback-only) and its static assets; `blackbox dashboard` | `dashboard/__init__.py` | `kernel`, `attach`, `audit`, `community`, `ruleset`, `sync` |
-| `curate` | the curator node's tooling (Refine R6): the delta-view queue and lanes, the evidence dossier + checklist, two-key proposals by private message, content-bound consent, promotion into the verified tier, intake webhook, saved node-UI views; `blackbox curate` | `curate/__init__.py` | `kernel`, `audit`, `community`, `detection` (OSV for the dossier), `killlist` |
+| `curate` | the curator node's tooling (Refine R6): the delta-view queue and lanes, the evidence dossier + checklist, two-key proposals by private message, content-bound consent, the acting authority (verified or community) every verb routes by, publishing with a read-back (the `curate/publishing/` sub-package: sequence numbers, quorum check, consent, the write, and published means readable), promotion into the verified tier, intake webhook, saved node-UI views; `blackbox curate` | `curate/__init__.py` | `kernel`, `audit`, `community`, `detection` (OSV for the dossier), `killlist` |
 
 ## Root (the composition layer — Hermes' plugin layout, kept thin)
 

@@ -5,7 +5,9 @@ needs consent BOUND TO ITS CONTENT: the CLI shows what will be published and
 the operator types the first 8 hex characters of the content hash. A ``--yes``
 flag is accepted only in the SANDBOX (no pinned curator root for the network);
 on a network with a pinned root it is refused. A shown code is single-use and
-expires 10 minutes after it was shown. Every decision lands in an append-only
+expires 10 minutes after it was shown; when the write it allowed did not
+succeed the consent is RELEASED, so the same content can be consented to again
+(KI-249: a failed write must not leave the operator unable to retry). Every decision lands in an append-only
 local ledger — never shared (plan §11: the consent ledger is local only).
 
 The hardware-key touch ("the key-B touch IS the consent") arrives with the
@@ -74,15 +76,25 @@ class ConsentLedger:
         self._append({"event": "consent" if verdict[0] else "refused", "code": code, "why": verdict[1]})
         return verdict
 
+    def release(self, content: str, why: str) -> None:
+        """The write *content*'s consent allowed did NOT succeed: the consent is
+        given back, so the operator can consent to the same content again."""
+        self._append({"event": "released", "code": confirmation_code(content), "why": why[:200]})
+
     def _fresh_and_unused(self, code: str) -> Tuple[bool, str]:
         shown_at: Optional[float] = None
+        spent = False
         for entry in self._entries():
             if entry.get("code") != code:
                 continue
             if entry.get("event") == "shown":
                 shown_at = float(entry.get("ts") or 0)
             elif entry.get("event") == "consent":
-                return False, "this code was already used (single-use)"
+                spent = True
+            elif entry.get("event") == "released":
+                spent = False
+        if spent:
+            return False, "this code was already used (single-use)"
         if shown_at is None:
             return False, "this code was never shown"
         if self._clock() - shown_at > CODE_TTL_SECONDS:

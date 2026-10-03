@@ -19,7 +19,7 @@ Curators' own tooling lives in ``curate/``; the statement formats live in
 from __future__ import annotations
 
 from . import manifests
-from .authority_read import read_curator_view
+from .authority_read import known_curator_statements, read_curator_view
 from .combine import combine
 
-__all__ = ["combine", "manifests", "read_curator_view"]
+__all__ = ["combine", "known_curator_statements", "manifests", "read_curator_view"]

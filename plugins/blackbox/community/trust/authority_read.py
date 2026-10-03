@@ -225,3 +225,25 @@ def _verifiable(statements: Iterable[Row], verified: _Resolved, community: _Reso
                     community_keys.add(trust_store.statement_key(row))
                 break
     return kept, community_keys
+
+
+def known_curator_statements(client: DkgClient, cfg: BlackboxConfig, identifiers: Iterable[str], *,
+                             verified_graph: bool = False) -> List[Tuple[str, Dict[str, str]]]:
+    """``(graph id, row)`` for every curator statement about *identifiers* this
+    node can find: its stored copies and an exact lookup in the community
+    graph, plus (with *verified_graph*) the verified graph's statements. Rows
+    are UNVERIFIED candidates — the caller checks signatures. Used by the
+    curators' tooling to continue sequence numbers where the last statement
+    left off, whichever kind it was and whichever machine published it."""
+    wanted = {identifier for identifier in identifiers if identifier}
+    found: List[Tuple[str, Dict[str, str]]] = []
+    graph = cfg.community_graph_id
+    if graph:
+        stored = trust_store.TrustStore().load(graph).statements
+        looked_up = bounded_read.lookup_statements(client, graph, sorted(wanted)).rows
+        found.extend((graph, row) for row in bounded_read.fold([*stored, *looked_up]) if row.get("identifier") in wanted)
+    if verified_graph:
+        rows = page_rows(client, cfg.context_graph_id, constants.VIEW_VERIFIABLE_MEMORY,
+                         curator_statements.curator_statements_sparql) or []
+        found.extend((cfg.context_graph_id, row) for row in bounded_read.fold(rows) if row.get("identifier") in wanted)
+    return found

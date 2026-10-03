@@ -185,6 +185,8 @@ class _VmNode(FakeNode):
         if "g:KillList" in sparql:
             served, self.rows = self.rows, []
             return served
+        if "VALUES ?r" in sparql:                                   # the read-back after a publish
+            return super().query(sparql, cg_id, view=view, on_error=on_error, **kw)
         return on_error if "g:KeyManifest" not in sparql else []
 
 

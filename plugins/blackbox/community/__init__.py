@@ -54,7 +54,7 @@ from __future__ import annotations
 from .report_builder import build_false_positive_quads, build_report_quads, build_retraction_quads
 from .membership import ensure_community_subscription
 from .report_cli import add_report_parser, cmd_report, print_community_status
-from .sharing import NEVER_SHARED_SOURCES, CommunitySharePolicy, spawn_community_share
+from .sharing import ALREADY_SEALED_REPLY, NEVER_SHARED_SOURCES, CommunitySharePolicy, spawn_community_share
 from .graph_stats import community_agents, contributing_agent_count, most_reported_threats, reports_signed_by
 from .verification import ReportVerifier, VerifiedReport, verify_report_rows
 from .report_signer import network_environment
@@ -81,7 +81,7 @@ from .reader import (
     ReadState,
     read_verified_reports,
 )
-from .trust import read_curator_view
+from .trust import known_curator_statements, read_curator_view
 from ..kernel.sparql_text import page_rows
 from ..kernel.signing.trust_anchors import trusted_roots as curator_trusted_roots
 from .statements.curator_view import today_utc as curator_today
@@ -93,6 +93,7 @@ def first_seen_trail():
 
 
 __all__ = [
+    "ALREADY_SEALED_REPLY",
     "COMMUNITY_PAUSE_SUBJECT",
     "NEVER_SHARED_SOURCES",
     "CommunitySharePolicy",
@@ -139,6 +140,7 @@ __all__ = [
     "share_retry_stats",
     "stage_for",
     "read_curator_view",
+    "known_curator_statements",
     "page_rows",
     "curator_trusted_roots",
     "curator_today",

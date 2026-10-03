@@ -21,6 +21,7 @@ from typing import Callable, Dict
 from .. import community
 from ..detection import osv
 from ..kernel import display_safety, node_routes, signing
+from ..kernel.signing.authority import Authority
 from ..kernel.signing.statement_order import CuratorStatement
 from . import dossier, intake, keys, node_ui_views, publishing, queue, transport, verbs
 from .context import CurateContext, build_context, verified_identifiers
@@ -50,7 +51,20 @@ def _usage(args: argparse.Namespace) -> int:
 
 
 def _ctx(args: argparse.Namespace) -> CurateContext:
-    return build_context(getattr(args, "compiled_ruleset", None))
+    """The context for this verb: the acting authority (``--authority`` or
+    worked out from this machine's key) and the identifiers the verb is about."""
+    return build_context(getattr(args, "compiled_ruleset", None), authority=getattr(args, "authority", None),
+                         interest=_interest(args))
+
+
+def _interest(args: argparse.Namespace) -> list:
+    """The identifiers this verb needs the curators' statements about."""
+    wanted = [getattr(args, "identifier", None), getattr(args, "promote", None)]
+    wanted += [pair[1] for pair in (getattr(args, "verdict", None), getattr(args, "attest", None)) if pair]
+    for key in (getattr(args, "nominate", None), getattr(args, "key", None)):
+        if key:
+            wanted.append(f"author:{str(key).lower()}")
+    return [identifier for identifier in wanted if identifier]
 
 
 # -- read verbs ------------------------------------------------------------------
@@ -59,8 +73,12 @@ def _ctx(args: argparse.Namespace) -> CurateContext:
 def _keys(args: argparse.Namespace) -> int:
     print(f"curator key: {keys.curator_key_store().public_key_hex()}")
     if args.root:
-        print(f"root key (SANDBOX ONLY): {keys.root_key_store().public_key_hex()}")
-        print("Set BLACKBOX_CURATOR_ROOT_KEYS to this root key on every sandbox node before publishing a manifest.")
+        ctx = _ctx(args)
+        if not ctx.sandbox:   # KI-256: a locally held root exists only in a development setup
+            raise verbs.VerbError("this network has a pinned root; the root key is offline and never created on this machine")
+        variable = "BLACKBOX_COMMUNITY_ROOT_KEYS" if ctx.authority is Authority.COMMUNITY else "BLACKBOX_CURATOR_ROOT_KEYS"
+        print(f"{ctx.authority.value} root key (SANDBOX ONLY): {keys.root_key_store(ctx.authority).public_key_hex()}")
+        print(f"Set {variable} to this root key on every sandbox node before publishing a manifest.")
     return 0
 
 
@@ -151,7 +169,7 @@ def _propose(args: argparse.Namespace) -> int:
                                            fields={"stage": args.attest[0]}, evidence=args.evidence)
     elif args.nominate:
         fields = {"listed": "no" if args.delist else "yes", "class": args.author_class, "org": args.org,
-                  "expires": args.expires, "address": args.address.lower()}
+                  "expires": args.expires or verbs.default_expiry(ctx), "address": args.address.lower()}
         proposal = verbs.propose_statement(ctx, store, kind=CuratorStatement.COUNTED_AUTHORS,
                                            identifier=f"author:{args.nominate.lower()}", fields=fields)
     else:
@@ -210,12 +228,13 @@ def _reject(args: argparse.Namespace) -> int:
 
 def _manifest(args: argparse.Namespace) -> int:
     ctx = _ctx(args)
-    if not ctx.sandbox:
-        raise verbs.VerbError("this network has a pinned curator root; manifests come from the offline root (R7b)")
+    if ctx.authority is Authority.VERIFIED and not args.promotion_author:
+        raise verbs.VerbError("a verified-authority manifest needs --promotion-author (the pinned publisher of verified rows)")
     proposal = verbs.manifest_proposal(ctx, ProposalStore(), curator_keys=args.curator_keys, threshold=args.threshold,
                                        promotion_author=args.promotion_author, root_epoch=args.root_epoch,
-                                       version=args.version, legacy_uals=[])
-    print(f"manifest staged as {proposal.id} (root {signing.public_key_hex(keys.root_key_store().load_or_create())[:16]}…); "
+                                       version=args.version, legacy_uals=[], issued_day=args.issued_day)
+    root = signing.public_key_hex(keys.root_key_store(ctx.authority).load_or_create())
+    print(f"{ctx.authority.value} manifest for {proposal.graph} staged as {proposal.id} (root {root[:16]}…); "
           f"run `blackbox curate publish {proposal.id} --yes`")
     return 0
 

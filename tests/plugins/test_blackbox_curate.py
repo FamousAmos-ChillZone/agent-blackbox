@@ -45,8 +45,13 @@ class FakeNode:
     def context_graphs(self):
         return []
 
-    def query(self, *a, **kw):
-        return kw.get("on_error")
+    def query(self, sparql, cg_id=None, view=None, on_error=None, **kw):
+        """Answers only the read-back after a publish: is this signed statement among what was written?"""
+        written = [quad for _, _, quads in (*self.vm_published, *self.shared) for quad in quads]
+        if "VALUES ?r" in sparql and any(f"<{quad['subject']}>" in sparql and quad["object"] in sparql
+                                         for quad in written if quad["predicate"].endswith("signedStatement")):
+            return [{"r": "readable"}]
+        return on_error
 
     def write_private_knowledge_asset(self, cg, name, quads):
         self.sealed.append((cg, name, quads))

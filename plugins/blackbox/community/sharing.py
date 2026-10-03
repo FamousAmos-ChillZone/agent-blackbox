@@ -140,7 +140,7 @@ class ShareOutcome(Enum):
 #: The daemon's reply when a report with this name already exists sealed and it
 #: refuses to rewrite it (DKG 10.0.20, captured on the R0P bench 2026-10-01).
 #: Matched narrowly against that exact text (LES-015).
-_ALREADY_SEALED_REPLY = "is not an active working memory draft"
+ALREADY_SEALED_REPLY = "is not an active working memory draft"
 
 
 def send_report(client: DkgClient, graph: str, name: str, quads: List[Dict[str, str]]) -> Tuple[ShareOutcome, str]:
@@ -156,7 +156,7 @@ def send_report(client: DkgClient, graph: str, name: str, quads: List[Dict[str, 
     try:
         result = client.share_knowledge_asset(graph, name, quads)
     except Exception as exc:  # the outermost send boundary: any failure is FAILED, never raised
-        if isinstance(exc, DkgError) and _ALREADY_SEALED_REPLY in str(exc).lower():
+        if isinstance(exc, DkgError) and ALREADY_SEALED_REPLY in str(exc).lower():
             return ShareOutcome.REJECTED_SAME_VERSION, "the node already holds this report sealed (not re-sent)"
         logger.debug("blackbox: report share failed: %s", exc)
         return ShareOutcome.FAILED, str(exc)

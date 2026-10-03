@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, AbstractSet, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
 from ...kernel.signing import key_manifest, statement_order
@@ -214,7 +214,8 @@ def build_view(manifest: Optional[key_manifest.KeyManifest], verified_rows: Iter
     records = _frozen_out(_records(verified_rows, manifest, verified_graph, in_verified, root_keys=root_keys, curators_silent=silent)
                           + _records(community_rows, manifest, community_graph, in_community, root_keys=root_keys,
                                      curators_silent=silent), state, state_day)
-    counted, delisted = _counted_authors(records, day)
+    counted, delisted = _counted_authors(
+        records, day, COMMUNITY_LISTING_MAX_DAYS if authority is Authority.COMMUNITY else None)
     return CuratorView(manifest=manifest, verdicts=_current_verdicts(records),
                        counted=counted, delisted=delisted, authority=authority,
                        backlog=_latest(r for r in records if r.kind is CuratorStatement.BACKLOG),
@@ -266,6 +267,25 @@ def _current_attestations(records: Iterable[CuratorRecord]) -> Dict[str, Curator
     return current
 
 
+#: A listing signed by the COMMUNITY authority counts for at most this many
+#: days from its signed day, whatever expiry it states (Community Curation
+#: decision 6: its curator keys are online, so a listing is short and renewed).
+COMMUNITY_LISTING_MAX_DAYS = 90
+
+
+def _effective_expiry(record: CuratorRecord, max_days: Optional[int]) -> str:
+    """The day a listing stops counting: its signed expiry, or *max_days*
+    after its signed day when that is earlier."""
+    stated = record.field("expires")
+    if max_days is None:
+        return stated
+    try:
+        capped = (date.fromisoformat(record.day) + timedelta(days=max_days)).isoformat()
+    except ValueError:
+        return stated
+    return min(stated, capped)
+
+
 def _listing_order(record: CuratorRecord) -> Tuple[int, bool]:
     """Sort key: higher sequence first; at a tie a DELISTING wins, whichever
     row was read first (KI-245 — a delisting must never lose to a listing)."""
@@ -283,10 +303,12 @@ def _delisting_in_force(record: CuratorRecord, today: str) -> bool:
     return age <= curator_statements.LISTING_MAX_DAYS
 
 
-def _counted_authors(records: Iterable[CuratorRecord], today: str) -> Tuple[Dict[str, CountedAuthor], FrozenSet[str]]:
+def _counted_authors(records: Iterable[CuratorRecord], today: str,
+                     max_days: Optional[int] = None) -> Tuple[Dict[str, CountedAuthor], FrozenSet[str]]:
     """(counted, delisted) from the latest entry per author key: *counted* —
-    listed and unexpired; *delisted* — keys whose latest entry says "not
-    listed" and is still in force (it also removes the other authority's listing)."""
+    listed and unexpired (a listing also ends *max_days* after its signed day
+    when given); *delisted* — keys whose latest entry says "not listed" and is
+    still in force (it also removes the other authority's listing)."""
     latest: Dict[str, CuratorRecord] = {}
     for record in records:
         if record.kind is CuratorStatement.COUNTED_AUTHORS:
@@ -296,10 +318,11 @@ def _counted_authors(records: Iterable[CuratorRecord], today: str) -> Tuple[Dict
     counted, delisted = {}, set()
     for identifier, record in latest.items():
         key = identifier[len("author:"):]
-        if record.field("listed") == "yes" and record.field("expires") >= today:
+        expires = _effective_expiry(record, max_days)
+        if record.field("listed") == "yes" and expires >= today:
             counted[key] = CountedAuthor(key=key, address=record.field("address"),
                                          author_class=record.field("class"), org=record.field("org"),
-                                         expires=record.field("expires"))
+                                         expires=expires)
         elif record.field("listed") == "no" and _delisting_in_force(record, today):
             delisted.add(key)
     return counted, frozenset(delisted)

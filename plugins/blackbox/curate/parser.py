@@ -23,13 +23,18 @@ def add_curate_parser(sub: "argparse._SubParsersAction", *, compiled_ruleset: Op
     """Register ``blackbox curate <verb>`` on the CLI's sub-parsers."""
     curate = sub.add_parser("curate", help="Curator tooling: queue, dossier, two-key proposals, publish")
     curate.set_defaults(func=cmd_curate, compiled_ruleset=compiled_ruleset, verb=None)
+    curate.add_argument("--authority", choices=["verified", "community"], default=None,
+                        help="which authority this machine acts for (default: the one whose manifest lists its key)")
     verbs_ = curate.add_subparsers(dest="verb")
     k = verbs_.add_parser("keys", help="Show or create this machine's curator key (sandbox: --root too)")
     k.add_argument("--root", action="store_true", help="SANDBOX: also create/show a local root key")
     m = verbs_.add_parser("manifest", help="SANDBOX: stage a root-signed key manifest (then `publish`)")
     m.add_argument("--curator-key", dest="curator_keys", action="append", required=True, metavar="HEX")
     m.add_argument("--threshold", type=int, default=2)
-    m.add_argument("--promotion-author", dest="promotion_author", required=True, metavar="ADDRESS")
+    m.add_argument("--promotion-author", dest="promotion_author", default="", metavar="ADDRESS",
+                   help="verified authority only: the pinned publisher of verified rows")
+    m.add_argument("--issued-day", dest="issued_day", default="", metavar="YYYY-MM-DD",
+                   help="date the manifest (60-day validity, 72 h time-lock); omit for no clock")
     m.add_argument("--root-epoch", dest="root_epoch", type=int, default=1)
     m.add_argument("--version", type=int, default=1)
     verbs_.add_parser("queue", help="The delta view: NEW threats by lane; already-verified closed as duplicates")
