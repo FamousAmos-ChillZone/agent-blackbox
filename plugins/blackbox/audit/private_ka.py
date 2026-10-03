@@ -8,20 +8,41 @@ from __future__ import annotations
 
 import logging
 import time
+from urllib.parse import urlsplit
 from typing import Any, Dict
 from ..kernel import constants
 from . import redaction
 
 logger = logging.getLogger(__name__)
 
+_LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
+
+
+def node_is_local(url: str) -> bool:
+    """Whether a DKG node URL points at THIS machine (KI-223). The private audit record
+    carries redacted command/prompt text; it may only ever be written to a node on the
+    same host — a remote ``dkg_url`` (a shared bench node, a cloud node) is not "local".
+    An empty or unparseable URL counts as local (the default is loopback)."""
+    try:
+        host = urlsplit(url).hostname or ""
+    except ValueError:
+        return True
+    return not host or host.lower() in _LOCAL_HOSTS
+
+
 def write_private_audit_ka(client: Any, cg_id: str, event: str, finding: Dict[str, Any]) -> None:
     """Write a private WM audit KA carrying the observed command/prompt.
 
     Privacy split: the redacted-but-local evidence lives in the node's private
-    working memory, never shared to SWM. Best-effort — failures are swallowed.
+    working memory, never shared to SWM, and ONLY when the node is on this
+    machine (KI-223: with a remote ``dkg_url`` the text would leave the host).
+    Best-effort — failures are swallowed.
     """
     from ..kernel import rdf_terms, threat_ids
 
+    if not node_is_local(str(getattr(client, "url", "") or "")):
+        logger.debug("blackbox: private audit record skipped — the DKG node is not on this machine")
+        return
     try:
         ident = str(finding.get("identifier") or "unknown")
         ts = rdf_terms.datetime_literal()

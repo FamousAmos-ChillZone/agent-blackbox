@@ -154,6 +154,21 @@ class SightingTally:
                 state["published"].append(week)
             self._save(state)
 
+    def weeks(self) -> List[str]:
+        """Every ISO week the tally currently holds counts for (export / inspection)."""
+        with self._lock:
+            return sorted(str(week) for week in (self._load().get("weeks") or {}))
+
+    def forget(self) -> bool:
+        """Erase the tally (KI-221): identity erasure must not let the next key republish the
+        old key's exact weekly entry set. True when a file was removed."""
+        with self._lock:
+            try:
+                self._path.unlink()
+                return True
+            except FileNotFoundError:
+                return False
+
     def _load(self) -> Dict[str, object]:
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))

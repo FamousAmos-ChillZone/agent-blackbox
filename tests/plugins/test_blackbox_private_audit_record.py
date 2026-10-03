@@ -45,3 +45,19 @@ def test_private_audit_record_subject_is_an_audit_urn():
 
     _cg, _name, quads = client.writes[0]
     assert all(q["subject"].startswith("urn:guardian:audit:") for q in quads)
+
+
+def test_private_audit_record_is_never_written_to_a_remote_node():
+    """KI-223: the record carries redacted command/prompt text; a remote dkg_url (a shared
+    bench node, a cloud node) would carry that text off this machine."""
+    remote = _RecordingClient()
+    remote.url = "http://203.0.113.9:9200"
+    audit.write_private_audit_ka(remote, "graph-1", "pre_tool_call",
+                                 {"identifier": "dep:npm:evil@1.0.0", "severity": "high", "evidence": "npm install evil"})
+    assert remote.writes == []
+    local = _RecordingClient()
+    local.url = "http://127.0.0.1:9320"
+    audit.write_private_audit_ka(local, "graph-1", "pre_tool_call",
+                                 {"identifier": "dep:npm:evil@1.0.0", "severity": "high", "evidence": "npm install evil"})
+    assert len(local.writes) == 1
+    assert audit.node_is_local("") and audit.node_is_local("http://localhost:9320") and not audit.node_is_local("http://node.example:9200")

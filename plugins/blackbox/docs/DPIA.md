@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment — Agent Blackbox community graph
 
-Version: 1.1 (draft for counsel review, 2026-10-02; §2/§4 corrected after review round 4). Engineering assessment,
+Version: 1.2 (draft for counsel review, 2026-10-03; §2/§5 corrected after review round 5 — KI-221/223/224, erasure semantics KI-220). Engineering assessment,
 not legal advice; the launching party still needs counsel for its market.
 
 ## 1. The processing
@@ -25,6 +25,8 @@ agents, so other agents are protected sooner.
 | Curator reputation ledger (outcomes per reporter) | graduation / demotion decisions | the curator node only, pseudonymised by a per-reporter random salt kept in a separate owner-only file | inactive entries deleted after 24 months together with their salts; erasure deletes the salt (crypto-shredding) |
 | Canaries (planted identifiers) | detecting bad-faith reporters | the curator node only | curator's discretion |
 | Local audit logs on an operator's machine | the operator's own visibility | the operator's machine, redacted at capture | the operator's log rotation |
+| Private audit record (identifier, severity, REDACTED evidence text ≤ 1200 chars, exact time) | the operator's own forensic trail | the operator's OWN DKG node's private working memory, never shared; written only when the node is on the same machine (a remote `dkg_url` disables it, KI-223) | the node's working-memory retention |
+| Weekly sighting tally (verified-threat identifiers met, per ISO week) | source of the weekly digest | the operator's machine only | 8 weeks; erased with the identity (KI-221) |
 
 Never processed: prompts, commands, paths, file/skill source, secrets, LLM
 outputs, vulnerability findings, the names of locally authored skills, the
@@ -59,9 +61,9 @@ never-shared source list; tested.
 
 | Right | Operation |
 | --- | --- |
-| Access / export | `blackbox report --export FILE` (key backup + ledger, machine-readable JSON) |
+| Access / export | `blackbox report --export FILE` (key backup, ledger, consent record, keep-alive memory, retry queue, sighting tally — machine-readable JSON, KI-224) |
 | Rectification | `--retract`, `--false-positive` |
-| Erasure | `--erase-identity --confirm` (key, ledger, keep-alive memory, retry queue, consent record); curator salt deletion on request |
+| Erasure | `--erase-identity --confirm` (signing key, ledger, keep-alive memory, retry queue, consent record, sighting tally); curator salt deletion on request. NOTE (KI-220): erasure rotates the SIGNING key; the reporter address in every statement is the node's wallet address, which this command does not change — a new reporter identity in full needs a new node wallet (decision pending) |
 | Restriction / objection | `--withdraw-consent`; `report: false` |
 | Portability | the export file restores the identity on another machine (`--restore-key`) |
 

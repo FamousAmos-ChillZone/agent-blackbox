@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from ... import audit
-from .. import consent, share_retry
+from .. import consent, digest, share_retry
 from .. import keep_alive as keep_alive_mod
 from ...kernel import display_safety, reporter_key, signing
 
@@ -91,6 +91,8 @@ def withdraw_consent() -> int:
 def export_document(store: reporter_key.ReporterKeyStore) -> Dict[str, Any]:
     """The export as a dict: format, time, signer name, key backup, ledger."""
     pem = store.export_pem().decode("ascii")
+    record = consent.current()
+    tally = digest.SightingTally()
     return {
         "format": EXPORT_FORMAT,
         "version": EXPORT_VERSION,
@@ -98,6 +100,12 @@ def export_document(store: reporter_key.ReporterKeyStore) -> Dict[str, Any]:
         "reporter_public_key": signing.public_key_hex(store.load_or_create()),
         "reporter_key_pem": pem,
         "statements": audit.read_share_ledger(limit=_EXPORT_LEDGER_ROWS),
+        # KI-224: the access right covers EVERY store erasure covers — not only the ledger.
+        "consent": None if record is None else {"terms_hash": record.terms_hash, "terms_version": record.terms_version,
+                                                 "accepted_at": record.accepted_at, "withdrawn_at": record.withdrawn_at},
+        "keep_alive": [entry.as_json() for entry in keep_alive_mod.LiveReportStore().all()],
+        "retry_queue": [share.as_json() for share in share_retry.default_queue().pending()],
+        "sighting_tally": {week: tally.counts(week) for week in tally.weeks()},
     }
 
 
@@ -165,6 +173,10 @@ def erase_identity(store: reporter_key.ReporterKeyStore, *, confirmed: bool) -> 
     records += int(keep_alive_mod.LiveReportStore().forget_all())
     records += int(share_retry.default_queue().clear())
     records += int(consent.erase())
+    records += int(digest.SightingTally().forget())   # KI-221: the tally would re-link the next key to this one
     print(f"Erased: reporter key {'removed' if had_key else '(none present)'}; {records} local share record file(s).")
-    print("Your next report starts a new reporter identity.")
+    # KI-220: say what erasure does — it rotates the SIGNING key. The reporter address in every
+    # statement is the node's wallet address, which this command does not change.
+    print("Your next report is signed by a new reporter key. The node's wallet address stays the same;")
+    print("statements already on the network keep carrying it.")
     return 0

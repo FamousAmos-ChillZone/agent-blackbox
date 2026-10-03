@@ -33,7 +33,7 @@ from .findings import (
     record_dependency,
     record_file_access,
 )
-from .private_ka import write_private_audit_ka
+from .private_ka import node_is_local, write_private_audit_ka
 from .redaction import redact, sanitize_text
 from .share_ledger import (
     allow_report,
@@ -68,4 +68,5 @@ __all__ = [
     "redact",
     "sanitize_text",
     "write_private_audit_ka",
+    "node_is_local",
 ]
