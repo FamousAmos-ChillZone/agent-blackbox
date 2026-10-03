@@ -28,7 +28,9 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 from .. import constants
-from . import community_authority
+# Imported under its own name: the HealthInputs field below is also called community_authority, and a class
+# body that reads a module through a name it is defining works only by evaluation order.
+from . import community_authority as community_alarms
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, List, Mapping, Optional
@@ -100,8 +102,8 @@ class HealthInputs:
     #: caller passes ``community.consent.why_not()`` only when `report: true`.
     sharing_consent_problem: str = ""
     #: Community Curation: the same facts for the COMMUNITY authority (its own manifest and curators).
-    community_authority: community_authority.CommunityAuthorityInputs = field(
-        default_factory=community_authority.CommunityAuthorityInputs)
+    community_authority: community_alarms.CommunityAuthorityInputs = field(
+        default_factory=community_alarms.CommunityAuthorityInputs)
 
 
 #: A ruleset older than this many sync intervals is stale.
@@ -124,7 +126,7 @@ def operator_health(inputs: HealthInputs) -> List[HealthItem]:
         items += _community(inputs)
         items += _trust(inputs)
         items += [HealthItem(_OPERATOR, HealthClass(klass), message, what_to_do)
-                  for klass, message, what_to_do in community_authority.alarms(inputs.community_authority)]
+                  for klass, message, what_to_do in community_alarms.alarms(inputs.community_authority)]
     return sorted(items, key=lambda item: (item.klass is HealthClass.INFO, item.message))
 
 
@@ -334,7 +336,7 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         manifest_state=(view.manifest_state if view is not None else ""),
         manifest_state_day=(view.manifest_state_day if view is not None else ""),
         manifest_expires_day=(view.manifest_expires_day if view is not None else ""),
-        community_authority=community_authority.gather(
+        community_authority=community_alarms.gather(
             getattr(view, "community", None), datetime.fromtimestamp(now, timezone.utc).date().isoformat()),
     )
 
