@@ -300,6 +300,8 @@ def _honour_statements(client: DkgClient, cfg: BlackboxConfig, environment: str,
                   for item in (*reports, *found_retractions, *found_disputes, *found_digests)]
     budget = author_budget.AuthorBudget(author_budget.FirstSeenStore()).admit(statements)
     curator = read_curator_view(client, cfg, environment)
+    if curator.unavailable:   # KI-228: a failed curator page freezes the last stages, like a failed report page
+        return _unavailable("a page of key manifests or curator statements failed or was malformed")
     # A threat the curator rejected or revoked stops counting here (terminal verdicts, R2).
     reports = [r for r in reports if r.subject in budget.admitted
                and not (curator.rejected(r.identifier) or r.identifier in curator.revoked)]
@@ -329,8 +331,10 @@ def read_curator_view(client: DkgClient, cfg: BlackboxConfig, environment: str =
     if not environment or not roots:
         return curator_view.CuratorView()
     verified, memory = cfg.context_graph_id, constants.VIEW_VERIFIABLE_MEMORY
-    manifests = curator_view.trusted_manifests(page_rows(client, verified, memory, curator_view.key_manifests_sparql) or [],
-                                               environment, verified, roots)
+    manifest_rows = page_rows(client, verified, memory, curator_view.key_manifests_sparql)
+    if manifest_rows is None:   # KI-228: a FAILED page is not an empty one
+        return curator_view.CuratorView(unavailable=True)
+    manifests = curator_view.trusted_manifests(manifest_rows, environment, verified, roots)
     today = curator_view.today_utc()
     manifest = curator_view.effective_manifest(manifests, today)   # R7b time-lock; round 4: dated beats undated, conflicts freeze
     conflict = curator_view.manifests_conflict(manifests)   # R10b SECURITY alarm
@@ -338,8 +342,10 @@ def read_curator_view(client: DkgClient, cfg: BlackboxConfig, environment: str =
         return curator_view.CuratorView(manifest_conflict=conflict)
     community_page = page_community_rows(client, cfg, curator_statements.curator_statements_sparql) if cfg.community_graph_id else None
     community_rows = community_page or []
-    return curator_view.build_view(manifest, page_rows(client, verified, memory,
-                                                       curator_statements.curator_statements_sparql) or [],
+    verified_rows = page_rows(client, verified, memory, curator_statements.curator_statements_sparql)
+    if verified_rows is None:   # KI-228: enforcement statements live here; a failed page must freeze, not erase
+        return curator_view.CuratorView(manifest=manifest, manifest_conflict=conflict, unavailable=True)
+    return curator_view.build_view(manifest, verified_rows,
                                    community_rows, verified_graph=verified, community_graph=cfg.community_graph_id,
                                    manifest_conflict=conflict, root_keys=roots,
                                    community_readable=community_page is not None)

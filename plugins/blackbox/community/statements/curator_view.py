@@ -32,6 +32,8 @@ Usage (from the reader)::
 
 from __future__ import annotations
 
+import logging
+
 import os
 import re
 from dataclasses import dataclass, field
@@ -44,6 +46,8 @@ from ...kernel.signing import key_manifest, statement_order
 from ...kernel.signing.statement_order import CuratorStatement
 from . import curator_statements
 from .curator_statements import CuratorRecord
+
+logger = logging.getLogger(__name__)
 from .disputes import VerifiedDispute
 
 _ROOT_ENV = "BLACKBOX_CURATOR_ROOT_KEYS"
@@ -103,6 +107,10 @@ class CuratorView:
     manifest_expires_day: str = ""
     #: The newest signed PAUSE's `until` day ("" = none) — enforced by the community tier.
     pause_until: str = ""
+    #: KI-228: True when a page of manifests or curator statements FAILED (not when it was
+    #: legitimately empty). Readers must then keep their last good stages — an empty view
+    #: here would silently de-list every counted author and drop every threat to MONITOR.
+    unavailable: bool = False
 
     def is_counted(self, author_key: str) -> bool:
         return author_key in self.counted
@@ -268,8 +276,7 @@ def build_view(manifest: Optional[key_manifest.KeyManifest], verified_rows: Iter
                        away=tuple(r for r in records if r.kind is CuratorStatement.AWAY),
                        attestations=_current_attestations(records),
                        heartbeats=_heartbeats(records), last_statement_day=max((r.day for r in records), default=""),
-                       pause_until=(_latest(r for r in records if r.kind is CuratorStatement.PAUSE) or CuratorRecord(
-                           CuratorStatement.PAUSE, "curator", 0, "", (), frozenset())).field("until"),
+                       pause_until=_active_pause_until(records),
                        manifest_conflict=manifest_conflict, manifest_state=state, manifest_state_day=state_day,
                        manifest_expires_day=(state_day if state != "pending" else key_manifest.manifest_clock(manifest, state_day)[1]))
 
@@ -319,6 +326,21 @@ def _counted_authors(records: Iterable[CuratorRecord], today: str) -> Dict[str, 
                                          author_class=record.field("class"), org=record.field("org"),
                                          expires=record.field("expires"))
     return counted
+
+
+def _active_pause_until(records: Iterable[CuratorRecord]) -> str:
+    """The `until` day of the pause in force, honouring §09 "not renewable back-to-back by
+    the same pair" (KI-229): walking pauses in sequence order, a pause signed by the SAME
+    signers as the pause it would extend, dated on or before that pause's `until`, is a
+    renewal and is ignored — two keys cannot chain 7-day pauses indefinitely. A pause by
+    a different signer set, or one that starts after the previous pause ended, counts."""
+    active: Optional[CuratorRecord] = None
+    for record in sorted((r for r in records if r.kind is CuratorStatement.PAUSE), key=lambda r: r.sequence):
+        if active is not None and record.signers == active.signers and record.day <= active.field("until"):
+            logger.info("blackbox: ignoring a back-to-back pause renewal by the same signers (statement #%d)", record.sequence)
+            continue
+        active = record
+    return active.field("until") if active is not None else ""
 
 
 def _latest(records: Iterable[CuratorRecord]) -> Optional[CuratorRecord]:

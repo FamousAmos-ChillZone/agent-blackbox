@@ -247,3 +247,43 @@ def test_one_curator_key_cannot_attest_and_the_payload_is_closed(trust, keys, ma
         cs.sign_statement(Kind.ATTESTATION, THREAT, sequence=1, fields={"stage": "rejected"}, key=one[0], manifest=manifest, graph=GRAPH)
     with pytest.raises(ValueError):
         cs.sign_statement(Kind.ATTESTATION, THREAT, sequence=1, fields={"stage": "held", "note": "x"}, key=one[0], manifest=manifest, graph=GRAPH)
+
+
+# ------------------------------------------------------------------ KI-228: a failed curator page freezes, never erases
+
+
+class _PageFailsNode(_Node):
+    """The verified graph answers with the caller's failure sentinel for *failing* queries."""
+
+    def __init__(self, *args, failing="g:KeyManifest", **kw):
+        super().__init__(*args, **kw)
+        self.failing = failing
+
+    def query(self, sparql, cg_id, view=None, on_error=None, **kw):
+        if cg_id == VM_GRAPH and self.failing in sparql:
+            return on_error
+        return super().query(sparql, cg_id, view=view, on_error=on_error, **kw)
+
+
+def test_a_failed_manifest_page_makes_the_curator_view_unavailable_not_empty(trust, keys, manifest):
+    node = _PageFailsNode([_manifest_row(manifest, keys["root"])], failing="g:KeyManifest")
+    view = read_curator_view(node, CFG)
+    assert view.unavailable is True and view.manifest is None
+
+
+def test_a_failed_curator_statement_page_makes_the_view_unavailable(trust, keys, manifest):
+    node = _PageFailsNode([_manifest_row(manifest, keys["root"])], failing="g:CuratorStatement")
+    view = read_curator_view(node, CFG)
+    assert view.unavailable is True and view.manifest is not None
+
+
+def test_a_failed_curator_page_freezes_the_community_read(trust, keys, manifest):
+    """Before KI-228 an empty view de-listed every counted author and recomputed every
+    community threat to MONITOR; now the whole read is UNAVAILABLE and readers keep last-good."""
+    from plugins.blackbox.community.reader import ReadState
+
+    node = _PageFailsNode([_manifest_row(manifest, keys["root"])], failing="g:KeyManifest",
+                          reports=[signed_row(THREAT, Reporter("0xr1"))])
+    read = read_verified_reports(node, CFG)
+    assert read.state is ReadState.UNAVAILABLE or not read.available
+    assert "curator" in (read.reason or "")
