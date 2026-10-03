@@ -4,12 +4,9 @@ Builds ONE :class:`CuratorView` from root-signed key manifests and curator
 statements read from both graphs:
 
 * TRUST — a key manifest counts only when signed by a ROOT this network
-  trusts (:func:`trusted_roots`). Roots are pinned per network in
-  ``constants.CURATOR_ROOT_KEYS``. Only a network with no pinned root (a
-  sandbox) may take roots from the ``BLACKBOX_CURATOR_ROOT_KEYS`` environment
-  variable. The root is deliberately NOT a config-file setting, so a config
-  edit can never move trust. No root = no manifest = no curator statement
-  counts.
+  trusts (``kernel.signing.trust_anchors``); which manifest a reader acts on
+  is ``community.trust.manifests``. No root = no manifest = no curator
+  statement counts.
 * PLACEMENT — enforcement-affecting statements (promotion, revocation, pause,
   the counted-author list) count only from the VERIFIED graph;
   advisory ones only from the COMMUNITY graph (plan §06). A statement signed
@@ -23,9 +20,7 @@ rows the reader fetched.
 
 Usage (from the reader)::
 
-    roots = curator_view.trusted_roots(environment)
-    manifest = curator_view.newest_trusted_manifest(manifest_rows, environment, vm_graph, roots)
-    view = curator_view.build_view(manifest, verified_rows, community_rows,
+    view = curator_view.build_view(manifest, verified_rows, community_rows,   # manifest: community.trust.manifests
                                    verified_graph=vm_graph, community_graph=community_graph)
     view.is_counted(author_key), view.rejected(identifier), view.revoked
 """
@@ -33,15 +28,10 @@ Usage (from the reader)::
 from __future__ import annotations
 
 import logging
-
-import os
-import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any, AbstractSet, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
-from ...kernel import constants, signing, sparql_text
-from ...kernel.dkg_client import extract_binding
 from ...kernel.signing import key_manifest, statement_order
 from ...kernel.signing.statement_order import CuratorStatement
 from . import curator_statements
@@ -50,8 +40,6 @@ from .curator_statements import CuratorRecord
 logger = logging.getLogger(__name__)
 from .disputes import VerifiedDispute
 
-_ROOT_ENV = "BLACKBOX_CURATOR_ROOT_KEYS"
-_KEY_HEX = re.compile(r"[0-9a-f]{64}")
 
 #: Statement types that count only from the verified graph (plan §06).
 VERIFIED_GRAPH_KINDS = frozenset({CuratorStatement.PROMOTION, CuratorStatement.REVOCATION,
@@ -134,75 +122,6 @@ class CuratorView:
     def revoked(self) -> FrozenSet[str]:
         """Threats whose current verdict is a revocation."""
         return frozenset(i for i, r in self.verdicts.items() if r.kind is CuratorStatement.REVOCATION)
-
-
-def trusted_roots(environment: str, env: Mapping[str, str] = os.environ) -> FrozenSet[str]:
-    """The curator root keys *environment* (a DKG network id) trusts: the
-    pinned ones, else (sandbox networks only) those in the environment
-    variable. Malformed keys are ignored."""
-    pinned = constants.CURATOR_ROOT_KEYS.get(environment)
-    if pinned:
-        return frozenset(k.lower() for k in pinned if _KEY_HEX.fullmatch(k.lower()))
-    raw = env.get(_ROOT_ENV, "")
-    return frozenset(k.strip().lower() for k in raw.split(",") if _KEY_HEX.fullmatch(k.strip().lower()))
-
-
-def key_manifests_sparql(after: str) -> str:
-    """One page of key-manifest rows after the subject cursor *after*."""
-    cursor = f"FILTER(STR(?r) > {sparql_text.sparql_string_literal(after)})" if after else ""
-    return f"""
-PREFIX g: <http://umanitek.ai/ontology/guardian/>
-SELECT ?r ?signedStatement WHERE {{
-  ?r a g:KeyManifest ;
-     g:signedStatement ?signedStatement .
-  {cursor}
-}} ORDER BY STR(?r) LIMIT 500
-"""
-
-
-def newest_trusted_manifest(rows: Iterable[Mapping[str, Any]], environment: str, graph: str,
-                            roots: AbstractSet[str]) -> Optional[key_manifest.KeyManifest]:
-    """The newest manifest (by root epoch, version) signed by one of *roots*."""
-    if not roots:
-        return None
-    return key_manifest.newest(trusted_manifests(rows, environment, graph, roots))
-
-
-def trusted_manifests(rows: Iterable[Mapping[str, Any]], environment: str, graph: str,
-                      roots: AbstractSet[str]) -> List[key_manifest.KeyManifest]:
-    """Every root-signed manifest in *rows* for this environment and graph."""
-    manifests = []
-    for row in rows:
-        envelope = signing.from_text(extract_binding(row.get(curator_statements.SIGNED_STATEMENT_VAR)))
-        manifest = key_manifest.verify_manifest(envelope, environment=environment, graph=graph, root_keys=roots)
-        if manifest is not None:
-            manifests.append(manifest)
-    return manifests
-
-
-def effective_manifest(manifests: Iterable[key_manifest.KeyManifest], today: str) -> Optional[key_manifest.KeyManifest]:
-    """The manifest readers act on: never one inside its 72 h time-lock; an undated
-    manifest only when no dated one exists (an undated newer manifest cannot bypass
-    the lock); every manifest at an order two root-signed manifests disagree on is
-    skipped — the reader stays frozen at the previous version (review round 4)."""
-    rows = list(manifests)
-    seen: Dict[Tuple[int, int], set] = {}
-    for m in rows:
-        seen.setdefault(m.order, set()).add(m.content_hash())
-    candidates = [m for m in rows if len(seen[m.order]) == 1 and key_manifest.manifest_clock(m, today)[0] != "pending"]
-    dated = [m for m in candidates if m.issued_day]
-    return key_manifest.newest(dated or candidates)
-
-
-def manifests_conflict(manifests: Iterable[key_manifest.KeyManifest]) -> bool:
-    """R10b SECURITY: two trusted manifests with the same (root epoch, version)
-    but different content — someone published a second truth."""
-    seen: Dict[Tuple[int, int], str] = {}
-    for manifest in manifests:
-        digest = manifest.content_hash()
-        if seen.setdefault(manifest.order, digest) != digest:
-            return True
-    return False
 
 
 def _records(rows: Iterable[Mapping[str, Any]], manifest: key_manifest.KeyManifest, graph: str,

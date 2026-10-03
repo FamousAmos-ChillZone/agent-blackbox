@@ -2,7 +2,8 @@
 
 Fetches ``g:ThreatReport`` rows from the community graph's shared memory,
 verifies them (:mod:`.verification`), honours retractions, and returns ONE
-tagged :class:`CommunityRead`. Also the curator pause flag
+tagged :class:`CommunityRead` (the curator's own statements are read by
+:mod:`.trust`). Also the curator pause flag
 (``COMMUNITY_PAUSE_SUBJECT``) and the report count. Aggregation into rules is
 :mod:`.aggregation`.
 
@@ -21,9 +22,10 @@ from ..kernel import constants
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, extract_binding
 from ..kernel import sparql_text
-from .statements import author_budget, curator_statements, curator_view, digests, disputes, retractions, tombstones
+from ..kernel.sparql_text import page_rows
+from .statements import author_budget, curator_view, digests, disputes, retractions, tombstones
 from .report_signer import network_environment
-from ..kernel.signing import key_manifest
+from .trust.authority_read import read_curator_view
 from .verification import ReportVerifier, VerifiedReport, verify_report_rows
 
 logger = logging.getLogger(__name__)
@@ -141,40 +143,8 @@ def fetch_community_report_rows(client: DkgClient, cfg: BlackboxConfig) -> Optio
 def page_community_rows(client: DkgClient, cfg: BlackboxConfig,
                         sparql_after: Callable[[str], str]) -> Optional[List[Dict[str, Any]]]:
     """Page a community-graph query (shared memory); see :func:`page_rows`."""
-    return page_rows(client, cfg.community_graph_id, constants.VIEW_SHARED_WORKING_MEMORY, sparql_after)
-
-
-def page_rows(client: DkgClient, graph: str, view: str,
-              sparql_after: Callable[[str], str]) -> Optional[List[Dict[str, Any]]]:
-    """Page every row a query returns from *graph* / *view*; ``sparql_after(cursor)``
-    builds one page's query (subjects after *cursor*, ordered, LIMITed).
-
-    Same cursor discipline as the verified pager (monotonic subject cursor,
-    bounded pages, hard row ceiling). Returns None when ANY page fails or
-    comes back malformed, so the caller keeps last-good (fail-open); [] when
-    the node answered that the graph holds no such rows.
-    """
-    rows: List[Dict[str, Any]] = []
-    after = ""
-    sentinel = object()
-    while len(rows) < _COMMUNITY_MAX_ROWS:
-        page = client.query(sparql_after(after), graph, view=view, on_error=sentinel)
-        if page is sentinel:
-            # A failed or malformed page — even after good ones — makes the
-            # whole read unavailable: a partial list must never pass as the
-            # graph's contents (R0 tri-state, KI-112).
-            return None
-        if not page:
-            break
-        rows.extend(page)
-        cursors = [extract_binding(r.get("r")) for r in page if extract_binding(r.get("r"))]
-        next_cursor = max(cursors) if cursors else ""
-        if not next_cursor or next_cursor <= after:
-            break  # non-monotonic cursor: stop rather than loop forever
-        after = next_cursor
-        if len(page) < _COMMUNITY_PAGE_SIZE:
-            break
-    return rows
+    return page_rows(client, cfg.community_graph_id, constants.VIEW_SHARED_WORKING_MEMORY, sparql_after,
+                     page_size=_COMMUNITY_PAGE_SIZE, max_rows=_COMMUNITY_MAX_ROWS)
 
 
 class ReadState(Enum):
@@ -317,35 +287,3 @@ def _honour_statements(client: DkgClient, cfg: BlackboxConfig, environment: str,
                          held_back=budget.held_back, pending_tombstones=pending, curator=curator)
 
 
-def read_curator_view(client: DkgClient, cfg: BlackboxConfig, environment: str = "") -> curator_view.CuratorView:
-    """What the curator has said, verified (Refine R2): an empty view unless
-    this network trusts a curator root and a root-signed key manifest is in
-    the verified graph. Fail-open: an unreadable page contributes nothing
-    (no curator statement can then raise enforcement)."""
-    try:
-        environment = environment or network_environment(client.status())
-    except Exception as exc:  # node unreachable: no curator view this time
-        logger.debug("blackbox: curator view skipped (%s)", exc)
-        return curator_view.CuratorView()
-    roots = curator_view.trusted_roots(environment)
-    if not environment or not roots:
-        return curator_view.CuratorView()
-    verified, memory = cfg.context_graph_id, constants.VIEW_VERIFIABLE_MEMORY
-    manifest_rows = page_rows(client, verified, memory, curator_view.key_manifests_sparql)
-    if manifest_rows is None:   # KI-228: a FAILED page is not an empty one
-        return curator_view.CuratorView(unavailable=True)
-    manifests = curator_view.trusted_manifests(manifest_rows, environment, verified, roots)
-    today = curator_view.today_utc()
-    manifest = curator_view.effective_manifest(manifests, today)   # R7b time-lock; round 4: dated beats undated, conflicts freeze
-    conflict = curator_view.manifests_conflict(manifests)   # R10b SECURITY alarm
-    if manifest is None:
-        return curator_view.CuratorView(manifest_conflict=conflict)
-    community_page = page_community_rows(client, cfg, curator_statements.curator_statements_sparql) if cfg.community_graph_id else None
-    community_rows = community_page or []
-    verified_rows = page_rows(client, verified, memory, curator_statements.curator_statements_sparql)
-    if verified_rows is None:   # KI-228: enforcement statements live here; a failed page must freeze, not erase
-        return curator_view.CuratorView(manifest=manifest, manifest_conflict=conflict, unavailable=True)
-    return curator_view.build_view(manifest, verified_rows,
-                                   community_rows, verified_graph=verified, community_graph=cfg.community_graph_id,
-                                   manifest_conflict=conflict, root_keys=roots,
-                                   community_readable=community_page is not None)

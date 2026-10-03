@@ -79,11 +79,11 @@ from .reader import (
     fetch_community_report_rows,
     CommunityRead,
     ReadState,
-    page_rows,
-    read_curator_view,
     read_verified_reports,
 )
-from .statements.curator_view import trusted_roots as curator_trusted_roots
+from .trust import read_curator_view
+from ..kernel.sparql_text import page_rows
+from ..kernel.signing.trust_anchors import trusted_roots as curator_trusted_roots
 from .statements.curator_view import today_utc as curator_today
 
 

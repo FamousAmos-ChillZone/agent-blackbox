@@ -3,6 +3,8 @@
 * :func:`sparql_string_literal` — THE escaper for any value interpolated into
   a query (never hand-escape at a call site).
 * ``MAX_ROWS`` — the hard ceiling on rows any paged read may collect.
+* :func:`page_rows` — the cursor pager every statement read uses (bounded
+  pages, hard row ceiling, None when any page fails).
 * :func:`extract_binding` / :func:`normalize_bindings` — reading the daemon's
   answers: one result cell to a plain string, any response shape to a row
   list. Re-exported by :mod:`.dkg_client` (``from ..kernel.dkg_client import
@@ -11,7 +13,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 # Safety ceiling so a misbehaving node can never spin the pager forever.
@@ -124,4 +126,46 @@ def rows_or_fallback(result: Any, on_error: Any) -> Any:
     rows = recognized_bindings(result)
     if rows is None:
         return [] if on_error is None else on_error
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Paged statement reads
+# ---------------------------------------------------------------------------
+
+#: Rows per page and the most rows one statement read collects (KI-100).
+STATEMENT_PAGE_SIZE = 5000
+STATEMENT_MAX_ROWS = 100_000
+
+
+def page_rows(client: Any, graph: str, view: str, sparql_after: Callable[[str], str], *,
+              page_size: int = STATEMENT_PAGE_SIZE, max_rows: int = STATEMENT_MAX_ROWS) -> Optional[List[Dict[str, Any]]]:
+    """Page every row a query returns from *graph* / *view*; ``sparql_after(cursor)``
+    builds one page's query (subjects after *cursor*, ordered, LIMITed).
+
+    Same cursor discipline as the verified pager (monotonic subject cursor,
+    bounded pages, hard row ceiling). Returns None when ANY page fails or
+    comes back malformed, so the caller keeps last-good (fail-open); [] when
+    the node answered that the graph holds no such rows.
+    """
+    rows: List[Dict[str, Any]] = []
+    after = ""
+    sentinel = object()
+    while len(rows) < max_rows:
+        page = client.query(sparql_after(after), graph, view=view, on_error=sentinel)
+        if page is sentinel:
+            # A failed or malformed page — even after good ones — makes the
+            # whole read unavailable: a partial list must never pass as the
+            # graph's contents (R0 tri-state, KI-112).
+            return None
+        if not page:
+            break
+        rows.extend(page)
+        cursors = [extract_binding(r.get("r")) for r in page if extract_binding(r.get("r"))]
+        next_cursor = max(cursors) if cursors else ""
+        if not next_cursor or next_cursor <= after:
+            break  # non-monotonic cursor: stop rather than loop forever
+        after = next_cursor
+        if len(page) < page_size:
+            break
     return rows

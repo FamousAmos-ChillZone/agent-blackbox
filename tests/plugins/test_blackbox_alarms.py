@@ -23,6 +23,7 @@ from _community_rows import GRAPH, NETWORK, Reporter, signed_row
 from plugins.blackbox.community import CommunityRead, ReadState, reputation, verification
 from plugins.blackbox.community.statements import curator_statements as cs
 from plugins.blackbox.community.statements import curator_view as cv
+from plugins.blackbox.community.trust import manifests as trust_manifests
 from plugins.blackbox.curate import intake, verbs
 from plugins.blackbox.kernel import health, signing
 from plugins.blackbox.kernel.signing import key_manifest as km
@@ -129,7 +130,7 @@ def test_the_view_carries_heartbeats_and_detects_a_manifest_conflict(monkeypatch
     assert view.heartbeats == {signing.public_key_hex(key_a): "2026-10-02"}           # a key beats only for itself
     assert view.last_statement_day == "2026-10-02"
     twin = km.KeyManifest(**{**manifest.__dict__, "promotion_author": "0x" + "2" * 40})
-    assert cv.manifests_conflict([manifest, twin]) and not cv.manifests_conflict([manifest, manifest])
+    assert trust_manifests.manifests_conflict([manifest, twin]) and not trust_manifests.manifests_conflict([manifest, manifest])
     assert cv.build_view(None, [], [], verified_graph=manifest.graph, community_graph=GRAPH, manifest_conflict=True).manifest_conflict
 
 

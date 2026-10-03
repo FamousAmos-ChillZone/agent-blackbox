@@ -28,7 +28,7 @@ from .envelope import (
     verify,
 )
 
-from . import key_manifest, statement_order
+from . import key_manifest, statement_order, trust_anchors
 
 __all__ = [
     "ENVELOPE_VERSION",
@@ -39,6 +39,7 @@ __all__ = [
     "cosign",
     "key_manifest",
     "statement_order",
+    "trust_anchors",
     "from_text",
     "public_key_hex",
     "sign",

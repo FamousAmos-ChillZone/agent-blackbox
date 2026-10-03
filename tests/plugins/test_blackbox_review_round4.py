@@ -27,6 +27,7 @@ from plugins.blackbox import killlist, overrides
 from plugins.blackbox.community import keep_alive, reputation, share_retry
 from plugins.blackbox.community.statements import curator_statements as cs
 from plugins.blackbox.community.statements import curator_view as cv
+from plugins.blackbox.community.trust import manifests as trust_manifests
 from plugins.blackbox.detection import Finding
 from plugins.blackbox.kernel import signing
 from plugins.blackbox.kernel.config import DEFAULT_PROTECTED_PATHS, BlackboxConfig
@@ -107,13 +108,13 @@ def _rows_of(envelope):
 def test_an_undated_manifest_never_beats_a_dated_one_and_a_conflict_freezes(keys):
     dated = _manifest(keys, version=1, issued_day="2026-09-01")
     undated_newer = _manifest(keys, version=2)
-    assert cv.effective_manifest([dated, undated_newer], TODAY) == dated
-    assert cv.effective_manifest([undated_newer], TODAY) == undated_newer                   # nothing dated: it serves
+    assert trust_manifests.effective_manifest([dated, undated_newer], TODAY) == dated
+    assert trust_manifests.effective_manifest([undated_newer], TODAY) == undated_newer                   # nothing dated: it serves
     pending = _manifest(keys, version=3, issued_day="2026-10-01")
-    assert cv.effective_manifest([dated, pending], TODAY) == dated
+    assert trust_manifests.effective_manifest([dated, pending], TODAY) == dated
     twin = km.KeyManifest(**{**pending.__dict__, "promotion_author": "0x" + "2" * 40})
-    assert cv.effective_manifest([dated, pending, twin], "2026-10-10") == dated            # conflicting order skipped
-    assert cv.manifests_conflict([pending, twin])
+    assert trust_manifests.effective_manifest([dated, pending, twin], "2026-10-10") == dated            # conflicting order skipped
+    assert trust_manifests.manifests_conflict([pending, twin])
 
 
 # ------------------------------------------------------------------ finding 4: withdrawal stops every beat
