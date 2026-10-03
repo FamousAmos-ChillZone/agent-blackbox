@@ -142,6 +142,15 @@ class LiveReportStore:
             self._save([])
             return len(live)
 
+    def forget_names(self, names: Iterable[str]) -> int:
+        """Stop keeping the entries with these base asset *names* alive; returns how many."""
+        gone = set(names)
+        with self._lock:
+            live = self._load()
+            kept = [r for r in live if r.name not in gone]
+            self._save(kept)
+            return len(live) - len(kept)
+
     def forget_identifier(self, identifier: str) -> int:
         """Stop keeping every report of *identifier* alive (a retraction); returns how many."""
         with self._lock:

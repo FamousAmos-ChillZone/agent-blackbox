@@ -30,6 +30,7 @@ from ...kernel import constants, node_routes, signing, sparql_text, threat_ids
 from ...kernel.signing import key_manifest
 from ...kernel.signing.statement_order import CuratorStatement
 from .. import consent, promotion
+from ..upkeep import published
 from ..context import CurateContext
 from ..proposal import Proposal, ProposalState, ProposalStore
 from .errors import VerbError
@@ -77,6 +78,8 @@ def publish(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, typed
     audit.record_share_outcome(identifier=proposal.identifier, category=f"curator:{proposal.kind.split('.', 1)[-1]}",
                                severity="info", subject=proposal.id, asset_name=name, ok=True, outcome="accepted")
     store.save(proposal.transition(ProposalState.PUBLISHED, note=f"published to {graph} as {name}"))
+    if graph == ctx.community_graph:   # shared memory forgets: this node keeps its statement alive
+        published.remember(ctx.cfg, graph=graph, name=name, quads=_asset(proposal, envelope)[1])
     already = " (the node already held it)" if outcome is PublishOutcome.ALREADY_THERE else ""
     return proposal, f"published to {graph} as {name}{already}"
 

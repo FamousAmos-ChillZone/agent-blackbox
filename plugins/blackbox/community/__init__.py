@@ -60,7 +60,9 @@ from .verification import ReportVerifier, VerifiedReport, verify_report_rows
 from .report_signer import network_environment
 from .aggregation import CommunityRule, aggregate_community_reports
 from .digest import publish_due_digests, record_verified_sighting
+from . import keep_alive
 from .keep_alive import publish_due_copies
+from .statements.curator_view import COMMUNITY_LISTING_MAX_DAYS
 from . import allowlist, consent, reputation, shadow
 from .pulse import PULSE
 from .pulse import fingerprint as community_fingerprint
@@ -128,6 +130,8 @@ __all__ = [
     "counted_dispute_weight",
     "publish_due_digests",
     "publish_due_copies",
+    "keep_alive",
+    "COMMUNITY_LISTING_MAX_DAYS",
     "reputation",
     "allowlist",
     "consent",

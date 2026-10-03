@@ -24,6 +24,7 @@ from ..kernel import display_safety, node_routes, signing
 from ..kernel.signing.authority import Authority
 from ..kernel.signing.statement_order import CuratorStatement
 from . import dossier, intake, keys, node_ui_views, publishing, queue, transport, verbs
+from .upkeep import heartbeat, published
 from .context import CurateContext, build_context, verified_identifiers
 from .proposal import ProposalState, ProposalStore
 
@@ -46,7 +47,8 @@ def cmd_curate(args: argparse.Namespace) -> int:
 
 
 def _usage(args: argparse.Namespace) -> int:
-    print("usage: blackbox curate {keys,manifest,queue,show,propose,inbox,approve,publish,reject,list,watch,views,view,outcome,graduate}")
+    print("usage: blackbox curate [--authority verified|community] {keys,manifest,queue,show,propose,inbox,approve,"
+          "publish,reject,list,heartbeat,upkeep,watch,views,view,outcome,graduate}")
     return 2
 
 
@@ -216,6 +218,19 @@ def _publish(args: argparse.Namespace) -> int:
     return 0 if outcome.startswith("published") else 2
 
 
+def _heartbeat(args: argparse.Namespace) -> int:
+    proposal, outcome = heartbeat.publish_heartbeat(_ctx(args), ProposalStore(), typed_code=args.code, yes=args.yes)
+    print(f"heartbeat {proposal.id}: {outcome}")
+    return 0 if outcome.startswith("published") else 2
+
+
+def _upkeep(args: argparse.Namespace) -> int:
+    ctx = _ctx(args)
+    sent = published.publish_due(ctx.client, ctx.cfg)
+    print(f"kept alive: {sent} statement(s) re-published this epoch; {len(published.store().all())} current statement(s) remembered")
+    return 0
+
+
 def _reject(args: argparse.Namespace) -> int:
     store = ProposalStore()
     proposal = store.get(args.proposal_id)
@@ -274,6 +289,9 @@ def _graduate(args: argparse.Namespace) -> int:
     today = _today()
     if args.erase:
         print("erased" if community.reputation.ReputationLedger().erase(args.erase) else "no ledger entry for that key")
+        ended = published.forget_identifier(f"author:{args.erase.lower()}")   # and its listing is no longer kept alive
+        if ended:
+            print(f"stopped keeping {ended} published statement(s) about that reporter alive")
         return 0
     if args.propose:
         if not args.address:
@@ -314,5 +332,6 @@ def _metrics(args: argparse.Namespace) -> int:
 _VERBS: Dict[str, Callable[[argparse.Namespace], int]] = {
     "keys": _keys, "manifest": _manifest, "queue": _queue, "show": _show, "propose": _propose, "inbox": _inbox,
     "approve": _approve, "publish": _publish, "reject": _reject, "list": _list, "watch": _watch, "views": _views,
+    "heartbeat": _heartbeat, "upkeep": _upkeep,
     "view": _view, "outcome": _outcome, "graduate": _graduate, "metrics": _metrics,
 }
