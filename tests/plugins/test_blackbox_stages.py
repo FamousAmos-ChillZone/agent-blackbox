@@ -229,3 +229,34 @@ def test_terminal_verdicts_expiry_and_disputes_still_dominate_an_attestation():
                   days=48).stage is Stage.EXPIRED                                    # the reader's own clock still expires
     decayed = _stage("dep:npm:x@1", keys, _attested("corroborated", partners=partners), dispute_weight=3)
     assert (decayed.stage, decayed.enforcement, decayed.disputed) == (Stage.CORROBORATED, Enforcement.MONITOR, True)
+
+
+# ------------------------------------------------------------------ KI-213: the unsigned pause flag dies with the first manifest
+
+
+def test_the_unsigned_pause_flag_is_honoured_only_while_no_manifest_exists(monkeypatch):
+    """Pre-manifest era: the legacy `enabled` triple on the verified graph still pauses ingest."""
+    monkeypatch.setattr(community_tier.community, "read_verified_reports", lambda c, cfg: _read([], cv.CuratorView()))
+    monkeypatch.setattr(community_tier.community, "community_pause_active", lambda c, cfg: True)
+    monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda c, cfg: None)
+    rs = compiler.Ruleset()
+    community_tier.apply_community_tier(rs, _FrozenClient(), BlackboxConfig(community_graph_id=GRAPH))
+    assert rs.community_paused is True
+
+
+def test_the_unsigned_pause_flag_is_ignored_once_a_trusted_manifest_exists(monkeypatch):
+    """KI-213: with a manifest on the network, only the 2-of-3 signed pause may pause."""
+    import dataclasses
+
+    from plugins.blackbox.kernel.signing import key_manifest as km
+
+    manifest = km.KeyManifest(environment="mainnet", graph=GRAPH, chain="base:8453", root_epoch=1, version=1,
+                              curator_keys=("a" * 64, "c" * 64), threshold=2,
+                              promotion_author="0x" + "1" * 40, legacy_assets_hash="0" * 64)
+    view = dataclasses.replace(_view(partners=[("c" * 64, "acme")]), manifest=manifest)
+    monkeypatch.setattr(community_tier.community, "read_verified_reports", lambda c, cfg: _read([], view))
+    monkeypatch.setattr(community_tier.community, "community_pause_active", lambda c, cfg: True)
+    monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda c, cfg: None)
+    rs = compiler.Ruleset()
+    community_tier.apply_community_tier(rs, _FrozenClient(), BlackboxConfig(community_graph_id=GRAPH))
+    assert rs.community_paused is False

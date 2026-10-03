@@ -45,10 +45,6 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
         return
     previous = dict(prior.community) if prior is not None else {}   # captured first: *prior* may be *rs* itself
     try:
-        if community.community_pause_active(client, cfg):
-            logger.warning("blackbox: community ingest PAUSED by curator flag")
-            rs.community_paused = True
-            return
         # KI-034: updated existing installs must join without a manual sync —
         # but only when the node says it is not subscribed, and at most once
         # per retry window (R0, KI-064/114; community/membership.py).
@@ -56,7 +52,7 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
         # R0c/R0d: only reports whose signature verifies for THIS network and
         # graph are counted; the self-described reporter field never is.
         read = community.read_verified_reports(client, cfg)
-        if _signed_pause(rs, read) or not read.available:   # a signed pause (round 4), or an unavailable read
+        if _signed_pause(rs, read) or _legacy_pause(rs, read, client, cfg) or not read.available:
             # Unavailable — a failed or malformed page, an unverifiable
             # network, or an unproven empty read: keep last-good (fail-open).
             # Never mistake "could not read" for "no threats" (KI-112).
@@ -74,6 +70,20 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
         materialize_community_rules(rs)
     except Exception as exc:  # pragma: no cover - fail open at the tier boundary
         logger.debug("blackbox: community tier skipped: %s", exc)
+
+
+def _legacy_pause(rs: compiler.Ruleset, read: Any, client: DkgClient, cfg: BlackboxConfig) -> bool:
+    """The pre-manifest UNSIGNED pause flag (KI-036) — honoured ONLY while this
+    network has no trusted key manifest. The moment a manifest exists, the
+    2-of-3 signed pause is the only pause (KI-213: an unsigned flag beside it
+    let anyone who writes the verified graph pause ingest indefinitely)."""
+    if getattr(read.curator, "manifest", None) is not None:
+        return False
+    if not community.community_pause_active(client, cfg):
+        return False
+    logger.warning("blackbox: community ingest PAUSED by the unsigned curator flag (pre-manifest era)")
+    rs.community_paused = True
+    return True
 
 
 def _signed_pause(rs: compiler.Ruleset, read: Any) -> bool:
