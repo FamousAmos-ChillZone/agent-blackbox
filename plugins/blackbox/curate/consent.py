@@ -76,6 +76,15 @@ class ConsentLedger:
         self._append({"event": "consent" if verdict[0] else "refused", "code": code, "why": verdict[1]})
         return verdict
 
+    def standing(self, content: str, why: str) -> Tuple[bool, str]:
+        """Record a write made under the operator's STANDING consent to the
+        automation policy (the curator service; plan §07) — no code is typed.
+        The caller has checked the policy and its acceptance; *why* is the
+        policy's reason and lands in the ledger with the content's code."""
+        verdict = (True, f"standing consent: {why[:200]}")
+        self._append({"event": "consent", "code": confirmation_code(content), "why": verdict[1]})
+        return verdict
+
     def release(self, content: str, why: str) -> None:
         """The write *content*'s consent allowed did NOT succeed: the consent is
         given back, so the operator can consent to the same content again."""

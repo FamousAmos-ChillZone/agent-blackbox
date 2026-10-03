@@ -30,7 +30,7 @@ CURATOR = "curator"
 
 
 def publish_heartbeat(ctx: CurateContext, store: ProposalStore, *, typed_code: Optional[str] = None,
-                      yes: bool = False) -> Tuple[Proposal, str]:
+                      yes: bool = False, standing: str = "") -> Tuple[Proposal, str]:
     """Sign and publish this machine's heartbeat for the acting authority.
     Refused when this machine's key is not one of that authority's curator keys."""
     key = keys.curator_key_store().load_or_create()
@@ -40,4 +40,4 @@ def publish_heartbeat(ctx: CurateContext, store: ProposalStore, *, typed_code: O
     proposal = verbs.propose_statement(ctx, store, kind=CuratorStatement.HEARTBEAT, identifier=CURATOR,
                                        fields={"key": key_hex})
     store.save(proposal.transition(ProposalState.APPROVED))   # a heartbeat needs one key: its own
-    return publishing.publish(ctx, store, proposal.id, typed_code=typed_code, yes=yes)
+    return publishing.publish(ctx, store, proposal.id, typed_code=typed_code, yes=yes, standing=standing)

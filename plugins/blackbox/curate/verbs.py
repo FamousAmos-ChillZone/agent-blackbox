@@ -226,10 +226,11 @@ def propose_kill_list(ctx: CurateContext, store: ProposalStore, *, entries: List
 
 
 def approve(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, evidence: str,
-            typed_code: Optional[str], yes: bool, root: bool = False) -> Tuple[Proposal, str]:
+            typed_code: Optional[str], yes: bool, root: bool = False, standing: str = "") -> Tuple[Proposal, str]:
     """Second signature + consent + publish. Returns (proposal, what happened).
     *root* (SANDBOX, kill lists): also add the root key's signature — the third
-    signature a wide or popular kill needs (R14)."""
+    signature a wide or popular kill needs (R14). *standing* — the curator
+    service's standing consent (see ``publishing.publish``)."""
     if root and not ctx.sandbox:   # KI-256: a locally held root exists only in a development setup
         raise VerbError("this network has a pinned root; the root signature comes from the offline root, never from this machine")
     _require_manifest(ctx)
@@ -257,7 +258,7 @@ def approve(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, evide
     proposal = proposal.with_envelope(cosigned, {signing.public_key_hex(my_key): evidence or "n/a"})
     proposal = proposal.transition(ProposalState.APPROVED)
     store.save(proposal)
-    return publish(ctx, store, proposal.id, typed_code=typed_code, yes=yes)
+    return publish(ctx, store, proposal.id, typed_code=typed_code, yes=yes, standing=standing)
 
 
 def _check_first_signer(ctx: CurateContext, envelope: signing.SignedEnvelope, proposal: Proposal, my_key: str) -> None:

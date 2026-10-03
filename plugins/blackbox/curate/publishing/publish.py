@@ -49,10 +49,14 @@ class PublishOutcome(Enum):
     UNCONFIRMED = "unconfirmed"      # the node accepted the write but it cannot be read back
 
 
-def publish(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, typed_code: Optional[str], yes: bool) -> Tuple[Proposal, str]:
+def publish(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, typed_code: Optional[str], yes: bool,
+            standing: str = "") -> Tuple[Proposal, str]:
     """Write an APPROVED proposal to its graph, behind content-bound consent.
     Returns (proposal, what happened); the text starts with "published" only
-    when the statement was read back from the graph."""
+    when the statement was read back from the graph. *standing* — set ONLY by
+    the curator service, after its policy allowed this statement and the
+    operator's standing consent was checked (``curate.service``): the policy's
+    reason, recorded in the consent ledger in place of a typed code."""
     proposal = store.get(proposal_id)
     if proposal is None or proposal.state is not ProposalState.APPROVED:
         raise VerbError("no APPROVED proposal with that id")
@@ -61,7 +65,8 @@ def publish(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, typed
         raise VerbError("the proposal does not carry enough curator signatures to publish")
     ledger = consent.ConsentLedger()
     code = ledger.show(proposal.envelope, summary(proposal))
-    ok, why = ledger.consent(proposal.envelope, typed=typed_code, sandbox=ctx.sandbox, yes=yes)
+    ok, why = (ledger.standing(proposal.envelope, standing) if standing
+               else ledger.consent(proposal.envelope, typed=typed_code, sandbox=ctx.sandbox, yes=yes))
     if not ok:
         return proposal, f"not published — {why}. Confirmation code: {code}"
     try:

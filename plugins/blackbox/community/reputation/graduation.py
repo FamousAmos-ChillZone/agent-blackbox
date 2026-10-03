@@ -37,6 +37,14 @@ def _delisting(address: str, today: str) -> Dict[str, str]:
     return {"listed": "no", "class": "established", "org": "", "expires": today, "address": address.lower()}
 
 
+def renewal_fields(standing: ReporterStanding, *, address: str, today: str,
+                   listing_days: int = LISTING_DAYS) -> Dict[str, str]:
+    """The counted-author payload that renews a plain ESTABLISHED listing in
+    good standing for another term (no organisation, no cluster — renewing a
+    partner or a collapsed group is a person's decision)."""
+    return _listing(standing, address, "established", "", today, listing_days)
+
+
 def nomination_fields(standing: ReporterStanding, *, address: str, today: str,
                       reputation: Optional[float] = None, cluster: str = "",
                       listing_days: int = LISTING_DAYS) -> Optional[Dict[str, str]]:

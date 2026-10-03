@@ -1,20 +1,30 @@
-"""``blackbox curate policy`` — read, accept or withdraw the automation policy (Community Curation C9).
+"""``blackbox curate policy`` and ``blackbox curate run`` (Community Curation C9).
 
-Accepting is a typed act, like every curator consent: the operator types the
-first 8 hex characters of the policy's hash, shown under the text. No node is
-contacted; the acceptance is a local file.
+``policy`` — read, accept or withdraw the automation policy. Accepting is a
+typed act, like every curator consent: the operator types the first 8 hex
+characters of the policy's hash, shown under the text. No node is contacted;
+the acceptance is a local file.
+
+``run`` — the curator service: one beat every few minutes (``--once`` for a
+single beat). It is its own process, started only on curator nodes.
 """
 
 from __future__ import annotations
 
 import time
-from typing import Optional
+from typing import Optional, Sequence
 
 from .. import keys
 from ..consent import CODE_CHARS
 from ..publishing import VerbError
+from ...kernel import display_safety
 from . import policy
+from .beat import Beat, ContextFactory
 from .policy_consent import PolicyConsent
+
+#: The shortest pause between two beats (a beat reads the whole community graph).
+MIN_INTERVAL_SECONDS = 60.0
+_term = display_safety.term_safe
 
 
 def policy_command(*, accept: bool, withdraw: bool, code: Optional[str]) -> int:
@@ -42,3 +52,19 @@ def policy_command(*, accept: bool, withdraw: bool, code: Optional[str]) -> int:
         print("NOT ACCEPTED: the service prepares proposals and waits for a person.")
     print(f"To accept this exact text: blackbox curate policy --accept --code {shown_code}")
     return 0
+
+
+def run_command(context: ContextFactory, *, peers: Sequence[str], interval: float, once: bool) -> int:
+    """Run the curator service: beat, say what happened, sleep, repeat. With
+    *once*, one beat; the exit code is 1 when a step of it failed."""
+    beat = Beat(context, peers=peers)
+    while True:
+        report = beat.run()
+        print(report.summary())
+        for item in report.human[:20]:
+            print(f"  for a person: {_term(item.subject, 90)} — {_term(item.why, 160)}")
+        for error in report.errors:
+            print(f"  error: {_term(error, 200)}")
+        if once:
+            return 1 if report.errors else 0
+        time.sleep(max(MIN_INTERVAL_SECONDS, interval))

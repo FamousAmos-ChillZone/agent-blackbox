@@ -114,7 +114,11 @@ def _add_handoff(verbs_: Any) -> None:
 
 
 def _add_service(verbs_: Any) -> None:
-    """The curator service's verbs (``policy``)."""
+    """The curator service's verbs (``policy``, ``run``)."""
+    r = verbs_.add_parser("run", help="The curator service: heartbeat, routine confirmations, the ladder, keep-alive; the rest waits for a person")
+    r.add_argument("--peer", action="append", metavar="PEER", help="another curator's node (name or peer id); repeat for each")
+    r.add_argument("--interval", type=float, default=300.0, help="seconds between beats (default 300, at least 60)")
+    r.add_argument("--once", action="store_true", help="one beat, then exit")
     o = verbs_.add_parser("policy", help="The automation policy: what the curator service may sign on its own; accept or withdraw it")
     change = o.add_mutually_exclusive_group()
     change.add_argument("--accept", action="store_true", help="accept the policy exactly as shown (needs --code)")
