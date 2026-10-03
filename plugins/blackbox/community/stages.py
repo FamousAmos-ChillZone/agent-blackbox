@@ -31,6 +31,8 @@ Usage::
 
 from __future__ import annotations
 
+from ..kernel import constants
+
 from datetime import datetime, timezone
 
 from dataclasses import dataclass, replace
@@ -175,7 +177,7 @@ def stage_for(identifier: str, authors: Iterable[str], first_seen: float, view: 
     clusters = clusters_for(authors, view)
     if verdict is CuratorStatement.DEFERRAL and _deferral_lapsed(verdict_day, now):
         verdict = CuratorStatement.DEFERRAL_LAPSED
-    result = _stage(identifier, first_seen, clusters, dispute_weight, verdict, now, allowlist.check(identifier, fields))
+    result = _stage(identifier, first_seen, clusters, dispute_weight, verdict, now, allowlist.check(identifier, fields), fields)
     attested = view.attestation(identifier)
     if attested is not None and result.stage not in _NOT_ATTESTABLE:
         # R3-attest: readers prefer the curator's attested stage. Terminal verdicts
@@ -202,7 +204,8 @@ def _attested(stage_value: str, sequence: int, clusters: Clusters) -> StageResul
 
 
 def _stage(identifier: str, first_seen: float, clusters: "Clusters", dispute_weight: int,
-           verdict: Optional[CuratorStatement], now: float, listed: allowlist.Verdict) -> StageResult:
+           verdict: Optional[CuratorStatement], now: float, listed: allowlist.Verdict,
+           fields: Optional[Mapping[str, str]] = None) -> StageResult:
     terminal = _terminal_stage(verdict)
     if terminal is not None:
         return terminal
@@ -212,10 +215,15 @@ def _stage(identifier: str, first_seen: float, clusters: "Clusters", dispute_wei
     if verdict is CuratorStatement.CONFIRMATION:   # KI-226: a curator CONFIRMATION lifts any hold
         return StageResult(Stage.CORROBORATED, Enforcement.FLAG, "confirmed by the curator")
     # R9: a byte-exact allowlisted name, or name-level / vulnerability noise on a WARNINGLISTED
-    # package, is held for a curator. A whole-package (`@*`) report on an unlisted name is NOT
-    # held (KI-226): the schema already restricts it to typosquat / internal-mirror-collision.
+    # package, is held for a curator.
     if listed.holds:
         return StageResult(Stage.HELD, Enforcement.MONITOR, f"held for a curator: {listed.reason}")
+    # KI-226 (§04): a whole-package (`@*`) report on an unlisted name follows the class-count rule
+    # ONLY when its SIGNED reason is one the spec allows for a whole package — readers never trust
+    # the writer's schema; a row without such a reason is overbroad and held (KI-136).
+    if _whole_package_without_scope_reason(identifier, fields):
+        return StageResult(Stage.HELD, Enforcement.MONITOR,
+                           "whole-package report without a typosquat / internal-mirror-collision reason: held for a curator")
     result = _by_corroboration(identifier, clusters, threshold_for(identifier), span_days, verdict)
     if listed.confusable_of:   # R9 inverted look-alike rule: a homograph SUPPORTS the report
         result = replace(result, reason=f"{result.reason}; {listed.reason}", confusable_of=listed.confusable_of)
@@ -253,6 +261,16 @@ def _by_corroboration(identifier: str, clusters: Clusters, threshold: Threshold,
     lapsed = " (a curator deferral lapsed)" if verdict is CuratorStatement.DEFERRAL_LAPSED else ""
     return StageResult(Stage.CORROBORATED, Enforcement.FLAG,
                        f"corroborated by {clusters.partner} partner and {clusters.established} established cluster(s){lapsed}")
+
+
+def _whole_package_without_scope_reason(identifier: str, fields: Optional[Mapping[str, str]]) -> bool:
+    """A ``dep:…@*`` report whose signed ``reason`` is not in ``WHOLE_PACKAGE_REASONS``."""
+    if not (identifier.startswith("dep:") and identifier.endswith("@*")):
+        return False
+    given = fields or {}
+    # the ruleset carries the reader VARIABLE name (reportReason); the CLI/tests the builder keyword (reason)
+    reason = str(given.get("reportReason") or given.get("reason") or "").strip().lower()
+    return reason not in constants.WHOLE_PACKAGE_REASONS
 
 
 def _deferral_lapsed(verdict_day: str, now: float) -> bool:

@@ -300,15 +300,20 @@ def test_self_dealt_malware_earns_nothing(trust, keys, manifest):
 
 
 def test_an_overbroad_whole_package_report_is_held(trust, keys, manifest):
-    """`dep:npm:evil-pkg@*` from three partner organisations: HELD at weight 0; promotion needs a human scope reason."""
+    """`dep:npm:evil-pkg@*` from three partner organisations. KI-226 (§04): with a SIGNED
+    whole-package reason (typosquat) it follows the class-count rule and may FLAG; a row whose
+    reason is not one the spec allows for `@*` (here an advisory reason) is overbroad and HELD
+    at weight 0. Promotion to blocking still needs a human scope reason (dossier) either way."""
     partners = _reporters("ff", 3)
     whole = "dep:npm:evil-pkg@*"
     verified = _verified_graph(keys, manifest)
     for i, partner in enumerate(partners):
         verified += _counted_rows([partner], keys, manifest, author_class="partner", org=f"org-{i}")
     rs = _compile(_Node(verified=verified, reports=[signed_row(whole, p) for p in partners]), _prior(whole, days_ago=10))
-    assert _stage(rs, whole) == ("held", "monitor", 3)
-    assert not _materialized(rs, whole)
+    assert _stage(rs, whole) == ("corroborated", "flag", 3)                  # signed reason: typosquat (the row default)
+    # The writer's schema refuses to BUILD an overbroad `@*` row (an advisory reason), so the
+    # reader's fail-closed hold for a row that arrives without a whole-package reason is proven
+    # at the unit level (test_blackbox_stages: `no_reason` → HELD). Promotion still needs a scope reason:
     assert not dossier.passes(dossier.checklist(whole, kind="malware", evidence="advisory:MAL-1", reason=""))
 
 
@@ -469,7 +474,9 @@ def test_a_queue_flood_reaches_no_lane_and_no_webhook(trust, keys, manifest, tmp
         rs = _compile(node, _prior(old, days_ago=20))
     assert any(f"capped at {MAX_REPORTS_PER_AUTHOR} per signer" in record.getMessage() for record in caplog.records)
     assert len([i for i in rs.community if i.startswith("ioc:domain:flood-")]) == MAX_REPORTS_PER_AUTHOR
-    assert _stage(rs, old) == ("reported", "flag", 1)                      # the older honest report survives
+    # The older honest report survives the flood (counted weight 1). It MONITORS, not flags:
+    # a third-party indicator (domain) flags only with a partner cluster, at every stage (D-049, FIX-0048).
+    assert _stage(rs, old) == ("reported", "monitor", 1)
     view = queue.delta_view(rs.community, set())
     assert [i.identifier for i in view.new] == [old] and len(view.unlisted_only) == MAX_REPORTS_PER_AUTHOR
     announced = []

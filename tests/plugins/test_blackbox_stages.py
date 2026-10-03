@@ -89,8 +89,11 @@ def test_a_whole_package_report_is_held_only_when_the_name_is_warninglisted():
     view = _view([(k, f"org{i}") for i, k in enumerate(keys)])
     held = _stage("dep:npm:lodash@*", keys, view)
     assert (held.stage, held.enforcement) == (Stage.HELD, Enforcement.MONITOR)
-    unlisted = _stage("dep:npm:evil-typosquat-xyz@*", keys, view)
+    unlisted = stages.stage_for("dep:npm:evil-typosquat-xyz@*", keys, NOW - 10 * DAY, view, 0, None, NOW,
+                                {"reason": "typosquat"})
     assert unlisted.stage is not Stage.HELD
+    no_reason = stages.stage_for("dep:npm:evil-typosquat-xyz@*", keys, NOW - 10 * DAY, view, 0, None, NOW, {"reason": "advisory:X"})
+    assert no_reason.stage is Stage.HELD                                           # readers never trust the writer's schema
 
 
 def test_a_curator_confirmation_lifts_a_held_report():
