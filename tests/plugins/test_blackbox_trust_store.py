@@ -294,7 +294,6 @@ def test_a_manifest_rotation_is_found_by_its_exact_subject_when_the_type_lookup_
     import dataclasses
 
     from plugins.blackbox.kernel import signing
-    from plugins.blackbox.kernel.signing import key_manifest as km
     from test_blackbox_curator_view import _manifest_row
     alice = Reporter("0xa")
     first = Store(community=[community.manifest_row()])
@@ -313,7 +312,7 @@ def test_a_manifest_rotation_is_found_by_its_exact_subject_when_the_type_lookup_
             return super().query(sparql, cg_id, view=view, on_error=on_error, **kw)
 
     view = _view(Flooded(community=[v2_row]), alice)
-    assert view.community.manifest.version == 2 and km.newest([view.community.manifest]).curator_keys == v2.curator_keys
+    assert view.community.manifest == v2                                  # the rotated manifest, whole: version and curators
 
 
 def test_the_next_manifest_subjects_follow_the_newest_known_one():

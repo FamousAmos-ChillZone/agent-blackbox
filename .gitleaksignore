@@ -15,3 +15,6 @@ e7d0fd58976017b9850b18c52eae9894480bbce6:tests/plugins/test_blackbox_ki178_redac
 e7d0fd58976017b9850b18c52eae9894480bbce6:tests/plugins/test_blackbox_ki178_redaction.py:generic-api-key:29
 e7d0fd58976017b9850b18c52eae9894480bbce6:tests/plugins/test_blackbox_ki178_redaction.py:private-key:15
 fe2fa1bb1b6bb07024a50f6412e5e09bbb609b25:tests/plugins/_community_rows.py:generic-api-key:28
+# 2026-10-03 reviewed false positive: a test assertion comparing two tuples of PUBLIC curator keys
+# (`….curator_keys == v2.curator_keys`); no secret. The line was reworded in the next commit.
+b5b0cdd2711429bc8e52b7cd1abfc10eedf845df:tests/plugins/test_blackbox_trust_store.py:generic-api-key:316
