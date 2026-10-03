@@ -117,6 +117,9 @@ class CuratorView:
     #: today under its daily cap (``community.trust.raising_budget``); they are
     #: admitted on the following days. Reductions are never held.
     held_raising: int = 0
+    #: True when the last lookup of trust statements was cut short (a batch failed
+    #: or reached its row limit): the view rests on what this node had stored.
+    lookup_incomplete: bool = False
 
     def is_counted(self, author_key: str) -> bool:
         return author_key in self.counted

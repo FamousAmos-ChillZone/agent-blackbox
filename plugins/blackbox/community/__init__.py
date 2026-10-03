@@ -25,6 +25,8 @@ Public surface:
   :class:`CuratorView`; :func:`sign_curator_statement`, :func:`curator_statement_quads`,
   :func:`key_manifest_quads`, :data:`VERIFIED_GRAPH_KINDS` (which kinds live in the verified graph),
   :data:`EVIDENCE_REFERENCE` (the closed format of the evidence a confirmation cites).
+* :func:`trust_panel` / :func:`trust_status_lines` — who curates, who is trusted, what is confirmed: one read
+  model for the dashboard's trust panel and `blackbox status` (Community Curation C10).
 * :func:`stage_for` (+ :class:`Stage`, :class:`Enforcement`, :class:`StageResult`) —
   a community threat's local stage from the counted-author list (R3).
 * :func:`record_verified_sighting` / :func:`publish_due_digests` — the
@@ -88,6 +90,8 @@ from .reader import (
     read_verified_reports,
 )
 from .trust import known_curator_statements, read_curator_view
+from .trust import status_lines as trust_status_lines
+from .trust import trust_panel
 from ..kernel.sparql_text import page_rows
 from ..kernel.signing.trust_anchors import trusted_roots as curator_trusted_roots
 from .statements.curator_view import today_utc as curator_today
@@ -151,6 +155,8 @@ __all__ = [
     "stage_for",
     "read_curator_view",
     "known_curator_statements",
+    "trust_panel",
+    "trust_status_lines",
     "page_rows",
     "curator_trusted_roots",
     "curator_today",

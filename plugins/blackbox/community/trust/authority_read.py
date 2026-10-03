@@ -95,7 +95,7 @@ def read_curator_view(client: DkgClient, cfg: BlackboxConfig, environment: str =
     graph = cfg.community_graph_id
     store = trust_store.TrustStore()
     stored = store.load(graph) if graph else trust_store.StoredTrust()
-    statements, readable = _community_statements(client, graph, stored, interest)
+    statements, readable, complete = _community_statements(client, graph, stored, interest)
     verified = _resolve_verified(client, cfg, environment, verified_roots, today)
     community = _resolve_community(client, cfg, environment, community_roots, stored, today)
     kept, community_keys = _verifiable(statements, verified, community, graph)
@@ -105,7 +105,8 @@ def read_curator_view(client: DkgClient, cfg: BlackboxConfig, environment: str =
         store.remember(graph, community.manifest_rows, kept, admitted=admission.admitted)
     verified_view = _view(verified, statements, readable, cfg, today)
     acted_on = [row for row in statements if trust_store.statement_key(row) not in admission.held]
-    community_view = replace(_view(community, acted_on, readable, cfg, today), held_raising=len(admission.held))
+    community_view = replace(_view(community, acted_on, readable, cfg, today), held_raising=len(admission.held),
+                             lookup_incomplete=not complete)
     if community_view.manifest is None and not community_view.unavailable and not community_view.manifest_conflict:
         return verified_view   # no community authority on this graph: exactly the verified view
     return combine(verified_view, community_view, today=today)
@@ -122,20 +123,21 @@ def _community_roots(cfg: BlackboxConfig) -> FrozenSet[str]:
 
 
 def _community_statements(client: DkgClient, graph: str, stored: trust_store.StoredTrust,
-                          interest: Iterable[str]) -> Tuple[List[Dict[str, str]], bool]:
-    """(candidate statement rows, readable): this node's stored statements plus
-    an exact lookup of *interest*. ``readable`` is False only when the lookup
-    could not be completed AND nothing is stored — the one case where this
-    node knows nothing about what the curators said in the community graph."""
+                          interest: Iterable[str]) -> Tuple[List[Dict[str, str]], bool, bool]:
+    """(candidate statement rows, readable, complete): this node's stored
+    statements plus an exact lookup of *interest*. ``readable`` is False only
+    when the lookup could not be completed AND nothing is stored — the one case
+    where this node knows nothing about what the curators said in the
+    community graph. ``complete`` is False whenever the lookup was cut short."""
     if not graph:
-        return [], False
+        return [], False, True
     wanted = [bounded_read.CURATOR_IDENTIFIER, *interest, *stored.identifiers]
     found = bounded_read.lookup_statements(client, graph, wanted)
     if not found.complete:
         logger.warning("blackbox: community trust lookup incomplete (%d batch(es) failed, %d reached the row limit) — "
                        "keeping the statements this node already verified", found.failed, found.limited)
     rows = bounded_read.fold([*stored.statements, *found.rows])
-    return rows, found.complete or bool(stored.statements)
+    return rows, found.complete or bool(stored.statements), found.complete
 
 
 def _resolve_verified(client: DkgClient, cfg: BlackboxConfig, environment: str, roots: FrozenSet[str],

@@ -12,7 +12,8 @@ unavailable (INFO), community ingest paused (INFO), no trusted curator keys
 (INFO), curator backlog (INFO), curator key away (INFO), revoked threat
 (INFO, + ACTION when it blocked here), statements held by the budget (INFO).
 Signing-key revocation, manifest conflicts, minReaderVersion and heartbeat
-arrive with reader policy (R7b).
+arrive with reader policy (R7b). The community authority's own alarms
+(Community Curation C10) are :mod:`.community_authority`.
 
 A kernel sub-package (the kernel folder is at its file limit).
 
@@ -27,7 +28,8 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 from .. import constants
-from dataclasses import dataclass
+from . import community_authority
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, List, Mapping, Optional
 
@@ -94,6 +96,9 @@ class HealthInputs:
     manifest_state: str = ""             # R7b: "" | "pending" | "stale"
     manifest_state_day: str = ""         # the day it takes effect / expired
     manifest_expires_day: str = ""       # the 30-day-ahead key-expiry alarm
+    #: Community Curation: the same facts for the COMMUNITY authority (its own manifest and curators).
+    community_authority: community_authority.CommunityAuthorityInputs = field(
+        default_factory=community_authority.CommunityAuthorityInputs)
 
 
 #: A ruleset older than this many sync intervals is stale.
@@ -115,6 +120,8 @@ def operator_health(inputs: HealthInputs) -> List[HealthItem]:
     if inputs.community_configured:
         items += _community(inputs)
         items += _trust(inputs)
+        items += [HealthItem(_OPERATOR, HealthClass(klass), message, what_to_do)
+                  for klass, message, what_to_do in community_authority.alarms(inputs.community_authority)]
     return sorted(items, key=lambda item: (item.klass is HealthClass.INFO, item.message))
 
 
@@ -188,7 +195,7 @@ def _community(inputs: HealthInputs) -> List[HealthItem]:
     if inputs.community_paused:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, "community ingest is paused by the curator",
                                 "nothing to do — verified rules still enforce"))
-    if not inputs.curator_trusted:
+    if not inputs.curator_trusted and not inputs.community_authority.trusted:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, "no trusted curator keys on this network yet",
                                 "nothing to do — community reports count no author until a key manifest is pinned; verified rules still enforce"))
     if inputs.backlog:
@@ -320,6 +327,8 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         manifest_state=(view.manifest_state if view is not None else ""),
         manifest_state_day=(view.manifest_state_day if view is not None else ""),
         manifest_expires_day=(view.manifest_expires_day if view is not None else ""),
+        community_authority=community_authority.gather(
+            getattr(view, "community", None), datetime.fromtimestamp(now, timezone.utc).date().isoformat()),
     )
 
 

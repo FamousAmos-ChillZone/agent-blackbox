@@ -165,11 +165,26 @@ bash blackbox-install.sh
 | `blackbox report --withdraw-consent` | sharing stops on the next action; retractions still work |
 | `blackbox report --type ioc --ioc-type domain --value evil.example --context fetched-by-tool --severity high` | file a report by hand (same gates, signer and ledger as automatic sharing) |
 | `blackbox report --status` | every report you shared: outcome, current stage and reason |
-| `blackbox report --standing` | whether you are a counted author yet, with a co-sighting estimate |
+| `blackbox report --standing` | whether you are a trusted reporter yet, your progress toward it (confirmed reports of 5, days of 14), and a co-sighting estimate |
 | `blackbox report --retract IDENTIFIER` | withdraw your own report; allowed even with consent withdrawn |
 | `blackbox report --false-positive IDENTIFIER --reason tolerable` | dispute a community threat (closed reasons: `internal-mirror`, `unreachable`, `tolerable`, `fixed`, `wrong`) |
 | `blackbox report --export FILE` | key backup, share ledger, consent record, keep-alive memory, retry queue, sighting tally |
 | `blackbox report --erase-identity --confirm` | erase the signing key and every local share record |
+
+### Curator nodes (only on machines that hold a curator key)
+
+| Command | What it does |
+|---|---|
+| `blackbox curate queue` | new community threats by lane; already-verified ones closed as duplicates |
+| `blackbox curate show IDENTIFIER [--bundle FILE]` | the evidence dossier and checklist; shows a community confirmation and the evidence it cites |
+| `blackbox curate propose --verdict confirmation IDENTIFIER --evidence advisory:MAL-… --to PEER` | first signature; a community confirmation must cite evidence |
+| `blackbox curate approve PROPOSAL --evidence …` | second signature after your own check, then publish (read back before it counts) |
+| `blackbox curate policy` | read the automation policy; `--accept --code …` or `--withdraw` |
+| `blackbox curate run --peer PEER` | the curator service: routine work on its own, everything else queued for a person |
+| `blackbox curate pool` | the confirmed pool as this node verifies it |
+| `blackbox curate export --out FILE` | the pool as one bundle of signed statements |
+| `blackbox curate verify-bundle FILE --root KEY --network ID` | check a bundle offline; no node is contacted |
+| `blackbox curate graduate` | who graduates or is demoted today, from the ledger rebuilt off the public record |
 
 ### Local release valve
 
@@ -303,6 +318,81 @@ schema is never built. Secret, LLM-reviewer and custom-rule findings never leave
 | The signature is bound to the network id and graph id | a statement signed on a test network cannot be replayed on mainnet |
 | One subject per reporter and threat | two reporters of one threat are two signers by construction |
 | Unsigned, foreign-network or future-dated rows are dropped | forged traffic shows up as a drop count, not as a threat |
+
+### Who is trusted: two authorities
+
+A report only moves enforcement when someone accountable stands behind it. Two separate authorities
+can do that. Each has its own root key, its own three curator keys (any two must sign), and its own
+place to publish. Neither can speak for the other.
+
+```mermaid
+flowchart LR
+    subgraph CG["Community graph (open: anyone writes)"]
+        R["Signed reports"] --> Q["Curator queue"]
+        CR["Community root key<br/>pinned per graph"] --> CM["Community key manifest<br/>3 curator keys, any 2 sign"]
+        CM --> TL["Trusted-reporter list"]
+        Q --> CF["Confirmation<br/>with signed evidence"]
+        CM --> CF
+        CF --> PL["Confirmed pool"]
+    end
+    subgraph VG["Verified graph (one publisher)"]
+        VR["Verified root key<br/>pinned per network"] --> VM["Verified key manifest"]
+        VM --> VRULE["Verified rules"]
+    end
+    TL --> FLAG["FLAG on every reader"]
+    PL --> FLAG
+    PL -. "export bundle, checked offline from one root key" .-> VM
+    VRULE --> BLOCK["BLOCK in block mode"]
+```
+
+| | Community authority | Verified authority |
+|---|---|---|
+| Root key is pinned | per community graph | per network |
+| Its statements live in | the community graph | the verified graph (notices in the community graph) |
+| List and delist trusted reporters | yes, for at most 90 days per listing | yes |
+| Confirm, reject or defer a community threat | yes; a confirmation must cite signed evidence | yes |
+| Pause community intake | yes, at most 7 days | yes |
+| Promote into the verified graph, revoke a verified rule, publish the kill list | never | yes |
+| Strongest effect on a reader | FLAG | BLOCK in block mode |
+
+**When both have spoken, the most restrictive word wins**
+
+| Question | Rule |
+|---|---|
+| Is this reporter trusted? | listed by either authority, unless either one delisted it |
+| What is the verdict on this threat? | a rejection or revocation beats a live deferral, which beats a confirmation; the verified authority wins a tie |
+| Is intake paused? | yes if either authority paused it |
+
+**The confirmed pool and the hand-off**
+
+A threat is in the confirmed pool while a community confirmation with a signed evidence reference
+stands for it. The evidence is one of three things: a public advisory id, a registry's own action,
+or the hash of an artifact a curator reproduced. `blackbox curate export` writes the pool as one
+file holding only signed statements. Whoever receives it checks the whole file offline with one
+command and the community root key; a damaged entry fails alone, by name.
+
+**What a reader does to stay safe in a graph anyone can write**
+
+| Protection | What it does |
+|---|---|
+| Lookups, never scans | trust statements are fetched by the identifiers the reader already holds; a flood cannot hide them |
+| Its own trust store | `community_trust.json` keeps every statement the node verified; an incomplete read changes nothing |
+| A daily cap on raising | at most 100 new confirmations and 20 new listings a day are acted on; rejections and delistings are never held |
+| Identity is what was signed | a statement rewritten as a different text is the same statement, so copies cannot use up the cap |
+| A second witness for "empty" | one empty read clears nothing; the tier clears only after 30 minutes of empty reads |
+
+**The curator service**
+
+Each curator node can run `blackbox curate run`. It signs only after its operator accepted the
+automation policy (`blackbox curate policy`), and only what the policy allows on facts that node
+established itself.
+
+| The service decides | A person decides |
+|---|---|
+| heartbeat, in-review acknowledgement, keep-alive | confirming a domain, URL, wallet, skill or injection pattern |
+| confirming a dependency when this node itself finds a malicious-package advisory for that exact version (two nodes, each with its own lookup) | rejecting a threat, recording a strike |
+| deferring a corroborated threat with no evidence yet, and lapsing the deferral after 30 days | granting partner status, collapsing several keys into one cluster |
+| listing, renewing or delisting a reporter when its own ledger calls for it | pausing intake, anything with a root key |
 
 ### Stages: what every reader computes from the same inputs
 
@@ -479,6 +569,8 @@ plugins/blackbox/
 ├── community/           ④ SHARE     build, sign, send, read, verify, stage
 │   ├── report_cli/                  `blackbox report` and its verbs
 │   ├── statements/                  retractions, disputes, curator statements, budgets, lifetimes
+│   ├── trust/                       whom a reader trusts: both authorities, lookups, its own trust store, the daily cap
+│   ├── pool/                        the confirmed pool and the bundle a receiver checks offline
 │   ├── keep_alive/                  re-publish your own reports before they expire
 │   ├── reputation/                  bands, scoring, partners, collusion detection
 │   ├── allowlist/                   allowlist, warninglist, canaries
@@ -490,10 +582,15 @@ plugins/blackbox/
 ├── overrides/           `blackbox rules`: the local release valve
 ├── killlist/            curator-signed kill list for skills and MCP servers
 ├── curate/              curator-node tooling
+│   ├── publishing/                  number it, check the quorum, consent, write, read it back
+│   ├── upkeep/                      keep published statements alive; the curator heartbeat
+│   ├── ladder/                      credit reporters from published verdicts; novelty facts
+│   ├── handoff/                     the confirmed pool on this node, export, verify-bundle
+│   └── service/                     the curator service: policy, standing consent, the beat
 ├── chat/                `blackbox chat`
 │
 ├── kernel/              shared by all, depends on nothing
-│   ├── signing/                     the one signed envelope, the curator key manifest
+│   ├── signing/                     the one signed envelope, key manifests, the two authorities, pinned roots
 │   ├── health/                      operator alarms
 │   └── public_suffix/               vendored Public Suffix List
 │
@@ -502,18 +599,18 @@ plugins/blackbox/
 
 ### Inside the plugin: module sizes
 
-155 Python files, 27,096 lines, as of commit `de670b5081`.
+193 Python files, 31,810 lines, measured on branch `feat/community-curation` on 2026-10-03.
 
 | Module | Files | Lines | Share of the code |
 |---|---:|---:|---|
-| `community/` | 48 | 6,773 | `████████████████████` |
-| `kernel/` | 21 | 4,045 | `████████████` |
-| `dashboard/` | 8 | 2,758 | `████████` |
-| `ruleset/` | 15 | 2,516 | `███████` |
-| `detection/` | 12 | 2,329 | `███████` |
-| `curate/` | 14 | 2,208 | `███████` |
-| `sync/` | 5 | 2,082 | `██████` |
-| `attach/` | 8 | 1,238 | `████` |
+| `community/` | 59 | 8,553 | `████████████████████` |
+| `curate/` | 37 | 4,549 | `███████████` |
+| `kernel/` | 24 | 4,469 | `██████████` |
+| `dashboard/` | 9 | 2,828 | `███████` |
+| `ruleset/` | 15 | 2,573 | `██████` |
+| `detection/` | 12 | 2,368 | `██████` |
+| `sync/` | 5 | 2,082 | `█████` |
+| `attach/` | 8 | 1,238 | `███` |
 | `audit/` | 7 | 1,185 | `███` |
 | `guard/` | 5 | 770 | `██` |
 | `killlist/` | 5 | 489 | `█` |
@@ -538,7 +635,7 @@ Click a module to open its file list.
 </details>
 
 <details>
-<summary><b><code>detection/</code></b> · 12 files · 2,329 lines · Is this action a threat? Pure functions, no I/O on the hot path.</summary>
+<summary><b><code>detection/</code></b> · 12 files · 2,368 lines · Is this action a threat? Pure functions, no I/O on the hot path.</summary>
 
 | File | What it does |
 |---|---|
@@ -558,7 +655,7 @@ Click a module to open its file list.
 </details>
 
 <details>
-<summary><b><code>ruleset/</code></b> · 15 files · 2,516 lines · Compiles graph rows into O(1) lookups and keeps them fresh.</summary>
+<summary><b><code>ruleset/</code></b> · 15 files · 2,573 lines · Compiles graph rows into O(1) lookups and keeps them fresh.</summary>
 
 | File | What it does |
 |---|---|
@@ -581,7 +678,7 @@ Click a module to open its file list.
 </details>
 
 <details>
-<summary><b><code>community/</code></b> · 48 files · 6,773 lines · Everything about the community graph: write, sign, read, verify, stage.</summary>
+<summary><b><code>community/</code></b> · 59 files · 8,553 lines · Everything about the community graph: write, sign, read, verify, stage.</summary>
 
 | File | What it does |
 |---|---|
@@ -608,6 +705,9 @@ Click a module to open its file list.
 | `keep_alive/epochs.py` | Epoch naming for keep-alive copies (pure) |
 | `keep_alive/publisher.py` | The keep-alive publish step and the two hooks that feed it |
 | `keep_alive/store.py` | The live-reports memory: what this node must keep alive on the network |
+| `pool/__init__.py` | Pool: the confirmed pool and how it is handed on |
+| `pool/bundle.py` | The export bundle: the confirmed pool as one file a stranger can check offline |
+| `pool/confirmed.py` | The confirmed pool: a view over signed statements |
 | `report_cli/__init__.py` | The reporter's command line: `blackbox report` and its verbs |
 | `report_cli/report_command.py` | `blackbox report`: file, dispute and review this node's community reports |
 | `report_cli/report_rights.py` | The operator's rights over this node's reporter identity |
@@ -633,6 +733,14 @@ Click a module to open its file list.
 | `statements/lifetimes.py` | How long a community statement lives, per threat type |
 | `statements/retractions.py` | Retractions: a reporter withdrawing its own report |
 | `statements/tombstones.py` | Pending tombstones: withdrawals whose target this reader has not seen |
+| `trust/__init__.py` | Trust: everything a reader does to know whom to trust |
+| `trust/authority_read.py` | Reading what the curators of both authorities have said, from the graphs |
+| `trust/bounded_read.py` | Looking trust statements up by identifier in a graph anyone can write |
+| `trust/combine.py` | Two authorities' views in, the one view readers act on out |
+| `trust/manifests.py` | Which key manifest a reader acts on: time-lock, conflicts |
+| `trust/panel.py` | The trust layer as one read model, for the dashboard and `blackbox status` |
+| `trust/raising_budget.py` | The reader's daily cap on what the community curators can raise |
+| `trust/trust_store.py` | The reader's own copy of the trust statements it verified |
 
 </details>
 
@@ -665,7 +773,7 @@ Click a module to open its file list.
 </details>
 
 <details>
-<summary><b><code>dashboard/</code></b> · 8 files · 2,758 lines · The loopback web UI and its API.</summary>
+<summary><b><code>dashboard/</code></b> · 9 files · 2,828 lines · The loopback web UI and its API.</summary>
 
 | File | What it does |
 |---|---|
@@ -677,9 +785,10 @@ Click a module to open its file list.
 | `server.py` | Standalone Blackbox dashboard: a tiny FastAPI app bound to loopback |
 | `sync_labels.py` | Sync-state presentation for `GET /api/graph-status` (the `sync_progress` labels) |
 | `sync_timing.py` | When the dashboard's ruleset worker runs its first refresh |
+| `trust_routes.py` | The trust panel endpoint: who curates, who is trusted, what is confirmed |
+| `assets/` | Logo, icon and the two bundled fonts |
 | `static/index.html` | The whole dashboard UI: one page, no build step |
 | `static/vendor/` | Vendored force-graph library for the threat-graph view |
-| `assets/` | Logo, icon and the two bundled fonts |
 
 </details>
 
@@ -724,7 +833,7 @@ Click a module to open its file list.
 </details>
 
 <details>
-<summary><b><code>curate/</code></b> · 14 files · 2,208 lines · The curator node's tooling.</summary>
+<summary><b><code>curate/</code></b> · 37 files · 4,549 lines · The curator node's tooling.</summary>
 
 | File | What it does |
 |---|---|
@@ -737,11 +846,34 @@ Click a module to open its file list.
 | `intake.py` | Intake: the curator node watches the community tier and notifies |
 | `keys.py` | The curator's keys and private working directory |
 | `node_ui_views.py` | Saved queries for the DKG node's own UI: the curator's read side |
+| `parser.py` | The `blackbox curate` argument parser: every verb and its options |
 | `promotion.py` | Promotion: a threat enters the verified tier |
 | `proposal.py` | Curator proposals and their two-key lifecycle |
 | `queue.py` | The curator's queue: the delta view and its lanes |
 | `transport.py` | Proposals travel between curator nodes by private point-to-point message |
 | `verbs.py` | The curator's write verbs: propose, approve, publish, nominate, manifest |
+| `handoff/__init__.py` | Hand-off: the valve between the confirmed pool and the verified graph's owner |
+| `handoff/commands.py` | `blackbox curate pool`, `export`, `verify-bundle`, and the dossier's confirmation line |
+| `handoff/live_pool.py` | The confirmed pool as this node sees it, ready to hand on |
+| `ladder/__init__.py` | Ladder: the reporter ladder runs itself |
+| `ladder/novelty_facts.py` | Gathering the facts the novelty rule judges |
+| `ladder/outcomes.py` | Crediting reporters from the public record |
+| `publishing/__init__.py` | Publishing: the last step of every curator verb |
+| `publishing/errors.py` | The error every curator verb raises when it refuses |
+| `publishing/publish.py` | Publishing an approved proposal: quorum check, consent, the write, the read-back |
+| `publishing/sequences.py` | Sequence numbers for curator statements |
+| `service/__init__.py` | Service: the curator node's own routine work |
+| `service/beat.py` | One beat of the curator service: the fixed order of steps |
+| `service/budget.py` | The service's own daily limit on what it signs |
+| `service/commands.py` | `blackbox curate policy` and `blackbox curate run` |
+| `service/evidence.py` | What this node establishes by itself before the service signs |
+| `service/inbox.py` | Which received proposals are a curator's, and which of its own are finished |
+| `service/policy.py` | The automation policy: what the service may sign on its own |
+| `service/policy_consent.py` | Standing consent to the automation policy, bound to its exact text |
+| `service/report.py` | What one beat did, and its working state |
+| `upkeep/__init__.py` | Upkeep: keeping an authority's word alive on the network |
+| `upkeep/heartbeat.py` | The curator heartbeat: this key is alive |
+| `upkeep/published.py` | What this curator node published and must keep alive |
 
 </details>
 
@@ -756,7 +888,7 @@ Click a module to open its file list.
 </details>
 
 <details>
-<summary><b><code>kernel/</code></b> · 21 files · 4,045 lines · Shared infrastructure owned by no feature. Depends on nothing.</summary>
+<summary><b><code>kernel/</code></b> · 24 files · 4,469 lines · Shared infrastructure owned by no feature. Depends on nothing.</summary>
 
 | File | What it does |
 |---|---|
@@ -776,12 +908,15 @@ Click a module to open its file list.
 | `threat_ids.py` | Deterministic threat identifiers and URIs: the shared naming vocabulary |
 | `yaml_files.py` | YAML config files (Hermes `config.yaml` and friends), read and written safely |
 | `health/__init__.py` | Operator health: one alarm type for `blackbox status` and the dashboard |
+| `health/community_authority.py` | Operator alarms about the community authority |
 | `public_suffix/__init__.py` | The Public Suffix List: registrable domains and shared-hosting suffixes |
+| `public_suffix/public_suffix_list.dat` | The vendored Public Suffix List data |
 | `signing/__init__.py` | Signing: the one envelope every signed Blackbox statement uses |
+| `signing/authority.py` | The two trust authorities: who may say what, and in which graph |
 | `signing/envelope.py` | Signed statements: the one envelope every signed Blackbox statement uses |
 | `signing/key_manifest.py` | The curator key manifest: which keys may sign what, per environment |
 | `signing/statement_order.py` | Curator statement types and which statement about a threat is current |
-| `public_suffix/public_suffix_list.dat` | The vendored Public Suffix List data |
+| `signing/trust_anchors.py` | Trust anchors: which root keys this node trusts, per authority |
 
 </details>
 
@@ -846,9 +981,11 @@ default protected paths, so an agent reaching into it is flagged, and blocked in
 | `sighting_tally.json` | this week's seen-again counts | `community/digest.py` |
 | `community_first_seen.json` | when this node first saw each community statement, for the per-author daily budget | `community/statements/` |
 | `shadow_metrics.jsonl` | what would have flagged, in shadow mode | `community/shadow/` |
+| `community_trust.json` | every curator statement and key manifest this node verified; the state of record when the graph cannot be read | `community/trust/` |
 | `overrides.json` | your local unblock decisions | `overrides/` |
 | `kill_list.json` | the last good curator kill list | `killlist/` |
 | `allowlist.json` | your own additions to the allowlist, optional | you |
+| `curate/` (curator nodes only) | the curator key, proposals, the consent ledger, the private reputation ledger, statements kept alive, the automation-policy acceptance and the service's daily count | `curate/` |
 
 ### Where to look
 
@@ -894,6 +1031,7 @@ per-process session token, so another page in your browser cannot alter settings
 | Connected agents | the local agents Blackbox protects; "Manage local agents" attaches or detaches |
 | Community graph: connected agents | every reporter the node has verified, with report counts |
 | Community graph: statements | retractions, disputes and curator statements the node could verify: who, when, why |
+| Trust | both curator authorities (manifest state, expiry, each key's last heartbeat), the trusted reporters and who listed them, the confirmed pool with the evidence the curators checked |
 | My reports | what this node shared, the share outcome, each report's current stage and reason |
 | Threat graph | Verifiable, Community and Local tiers side by side, with a compact and an explore view |
 | Threats detected | the live findings feed, newest or most severe first |
@@ -910,7 +1048,7 @@ apply to every agent.
 |---|---|---|
 | ACTION | the threat ruleset is empty; my node is stale; community rows signed for another network or graph; curator key manifest stale | the alarm names the command, usually `blackbox sync --wait` |
 | SECURITY | two trusted curator manifests disagree; future-dated community rows ignored; the newest kill list was refused | usually nothing: the bad input is already ignored |
-| INFO | community graph could not be read (last good tier kept); community ingest paused by the curator; curators quiet, away or backlogged | nothing: verified rules still enforce |
+| INFO | community graph could not be read (last good tier kept); community ingest paused by the curator; curators quiet, away or backlogged; community curators silent; community key manifest stale or about to expire; the trust lookup was cut short; confirmations or listings held by this node's daily cap | nothing: verified rules still enforce |
 
 ---
 

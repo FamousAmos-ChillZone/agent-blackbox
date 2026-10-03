@@ -13,6 +13,7 @@ string is served through :func:`.safe_payloads.safe_text`.
   authors, backlog and away notices, held-back and pending counts, and R2b's
   weekly sighting digests with the per-threat heat estimate ("seen by ~N
   agents this week").
+* ``GET /api/trust`` — Community Curation C10: the trust panel (:mod:`.trust_routes`).
 * ``GET /api/health`` — Refine R10: the operator's health items (the SAME
   ``kernel.health`` items `blackbox status` prints; INFO never red).
 """
@@ -23,6 +24,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
+from . import trust_routes
 from .safe_payloads import safe_identifier, safe_text, sanitized_ledger
 
 
@@ -219,4 +221,5 @@ def register_community_routes(app: Any, *, community_read: CommunityReadSource,
     def community_statements() -> Any:
         return community_statements_payload(community_read)
 
+    trust_routes.register_trust_routes(app, community_read=community_read)   # Community Curation C10: GET /api/trust
     return CommunityEndpoints(community_stats=community_stats, reports=reports)

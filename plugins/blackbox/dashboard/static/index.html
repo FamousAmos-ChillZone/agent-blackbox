@@ -599,6 +599,20 @@
   .health-item .h-class { font-size: 9px; text-transform: uppercase; letter-spacing: .14em; margin-right: 8px; color: var(--muted); }
   .health-item.red .h-class { color: var(--signal); }
   .health-item .h-todo { color: var(--muted); }
+  /* Community Curation C10: the trust panel */
+  .trust-authorities { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; padding: 14px; }
+  .trust-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background: var(--panel); min-width: 0; }
+  .trust-card h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--text); }
+  .trust-card .t-state { font-family: var(--mono-font); font-size: 11px; color: var(--muted); margin-bottom: 8px; overflow-wrap: anywhere; }
+  .trust-card .t-state.warn { color: var(--signal); }
+  .trust-card .t-beat { font-family: var(--mono-font); font-size: 11px; color: var(--text); overflow-wrap: anywhere; }
+  .trust-card .t-beat.silent { color: var(--muted); }
+  #trust-reporters-body td, #trust-confirmed-body td { overflow-wrap: anywhere; }
+  /* At phone width the table header is hidden and cells stack: each trust cell then carries its own label. */
+  .t-label { display: none; }
+  @media (max-width: 520px) {
+    .t-label { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); margin-bottom: 2px; }
+  }
   .banner-inner .b-icon {
     flex-shrink: 0; width: 16px; height: 16px;
   }
@@ -2787,6 +2801,45 @@
       </div>
     </section>
 
+    <!-- Community Curation C10: trust — who curates, who is trusted, what is confirmed -->
+    <section class="section" aria-label="Trust">
+      <div class="section-head">
+        <div class="section-htext">
+          <h2>Trust &mdash; curators, trusted reporters, confirmed threats</h2>
+          <div class="section-note">Who may vouch for community threats on this network, whom they trust, and what they confirmed with evidence. Community curators can only flag; blocking stays with the verified graph. <span id="trust-note"></span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="trust-authorities" id="trust-authorities">
+          <div class="empty" style="padding:20px; width:100%;">Loading the trust layer&hellip;</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="table-scroll">
+          <table aria-label="Trusted reporters">
+            <thead>
+              <tr><th>Trusted reporter</th><th>Class</th><th>Listed by</th><th>Until</th></tr>
+            </thead>
+            <tbody id="trust-reporters-body">
+              <tr><td colspan="4"><div class="empty">Loading trusted reporters&hellip;</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="table-scroll">
+          <table aria-label="Confirmed pool">
+            <thead>
+              <tr><th>Confirmed threat</th><th>Evidence the curators checked</th><th>When</th><th>Curator keys</th><th>Reporters</th></tr>
+            </thead>
+            <tbody id="trust-confirmed-body">
+              <tr><td colspan="5"><div class="empty">Loading the confirmed pool&hellip;</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- Community graph — statements (Refine R2): who / when / why -->
     <section class="section" aria-label="Community graph statements">
       <div class="section-head">
@@ -3856,6 +3909,59 @@
       ((data && data.heat) || []).forEach(function (h) { heatByIdentifier[h.identifier] = h; });
       renderCommunityStatements(data);
     }, function () {});
+  }
+
+  // Community Curation C10: the trust panel (the same facts `blackbox status` prints). Values arrive
+  // sanitized by the server; esc() keeps this renderer safe on its own.
+  function renderTrust(data) {
+    var cards = $("trust-authorities"), reporters = $("trust-reporters-body"), confirmed = $("trust-confirmed-body"), note = $("trust-note");
+    if (!cards || !reporters || !confirmed) return;
+    function empty(columns, text) {
+      return '<tr><td colspan="' + columns + '"><div class="empty">' + esc(text) + '</div></td></tr>';
+    }
+    function cell(label, text) {
+      return '<td><span class="t-label">' + esc(label) + '</span>' + esc(text) + '</td>';
+    }
+    function all(text) {
+      cards.innerHTML = '<div class="empty" style="padding:20px; width:100%;">' + esc(text) + '</div>';
+      reporters.innerHTML = empty(4, text); confirmed.innerHTML = empty(5, text); note.textContent = "";
+    }
+    if (!data || !data.configured) { all("No community graph is configured."); return; }
+    if (!data.available) { all("The community graph could not be read yet, so nothing is shown as trusted or untrusted."); return; }
+    var stateText = { ok: "manifest in force", pending: "new manifest waiting (72 h time-lock) until ", stale: "manifest STALE since ",
+                      conflict: "manifest CONFLICT: two root-signed manifests disagree", unavailable: "could not be read" };
+    cards.innerHTML = (data.authorities || []).map(function (a) {
+      var title = a.authority === "community" ? "Community curators (flag only)" : "Verified-graph curators";
+      if (!a.trusted && a.state === "none") {
+        return '<div class="trust-card"><h3>' + esc(title) + '</h3><div class="t-state">none trusted on this network</div></div>';
+      }
+      var state = (stateText[a.state] || a.state) + ((a.state === "pending" || a.state === "stale") ? a.state_day : "");
+      var line = a.threshold + " of " + a.keys + " keys \u00b7 manifest v" + a.version + " \u00b7 " + state + (a.expires ? " \u00b7 expires " + a.expires : "");
+      var beats = (a.heartbeats || []).map(function (b) {
+        return '<div class="t-beat' + (b.silent ? ' silent' : '') + '">key ' + esc(b.key) + '\u2026 \u00b7 ' +
+          esc(b.day ? "last heartbeat " + b.day : "no heartbeat seen") + (b.silent ? " \u00b7 silent" : "") + '</div>';
+      }).join("");
+      return '<div class="trust-card"><h3>' + esc(title) + '</h3><div class="t-state' + (a.state === "ok" ? "" : " warn") + '">' +
+        esc(line) + '</div>' + beats + '</div>';
+    }).join("");
+    reporters.innerHTML = (data.reporters || []).length ? data.reporters.map(function (r) {
+      return "<tr>" + cell("Trusted reporter", r.address + " (key " + r.key + "\u2026)") +
+        cell("Class", r["class"] + (r.org ? " (" + r.org + ")" : "")) + cell("Listed by", r.listed_by + " curators") +
+        cell("Until", r.expires) + "</tr>";
+    }).join("") : empty(4, "No reporter is trusted yet: every report is stored and shown, and weighs nothing.");
+    confirmed.innerHTML = (data.confirmed || []).length ? data.confirmed.map(function (c) {
+      return "<tr>" + cell("Confirmed threat", c.identifier) + cell("Evidence the curators checked", c.evidence) +
+        cell("When", c.when) + cell("Curator keys", num(c.curators)) + cell("Reporters", num(c.reporters)) + "</tr>";
+    }).join("") : empty(5, "The community curators have not confirmed a threat yet.");
+    var bits = [num(data.reporters_total) + " trusted reporter" + (data.reporters_total === 1 ? "" : "s") + ", " +
+                num(data.confirmed_total) + " confirmed threat" + (data.confirmed_total === 1 ? "" : "s") + "."];
+    if (data.held_raising) bits.push(num(data.held_raising) + " held by this node's daily cap.");
+    if (data.lookup_incomplete) bits.push("The trust lookup was cut short; showing what this node already verified.");
+    note.textContent = "\u00b7 " + bits.join(" ");
+  }
+
+  function loadTrust() {
+    return getJSON("/api/trust").then(renderTrust, function () {});
   }
 
   // Refine R10: the shared health items (kernel.health) — the same lines `blackbox status` prints.
@@ -6649,6 +6755,7 @@
     loadAudit();   // full history refresh (independent of the fixed-index batch below)
     loadCommunityStatements();   // Refine R2 (independent too)
     loadHealth();                // Refine R10
+    loadTrust();                 // Community Curation C10
     loadMyReports();             // Refine R10
     return Promise.allSettled([
       loadFindings(),

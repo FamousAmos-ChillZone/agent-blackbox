@@ -164,6 +164,9 @@ def _print_health(cfg: Any, rs: Any, client: DkgClient, reachable: bool) -> None
     retries = community.share_retry_stats()
     items = health.operator_health(health.gather(cfg, rs, reachable, read, audit.blocked_counts_by_identifier(), time.time(),
                                                  pending_shares=retries.pending, shares_given_up=retries.given_up))
+    if cfg.community_graph_id:   # who curates, who is trusted, what is confirmed (the dashboard's trust panel shows the same)
+        for line in community.trust_status_lines(community.trust_panel(read)):
+            print(line)
     for line in health.render_lines(items):
         print(line)
 
