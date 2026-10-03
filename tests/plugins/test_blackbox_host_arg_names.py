@@ -60,17 +60,39 @@ def test_the_reserved_names_are_still_what_hermes_reads():
     assert "args.command" in head
 
 
+#: Runs in its OWN Python process: building Hermes's parser loads the plugin a second time under
+#: ``hermes_plugins.blackbox``, and that copy must not leak into the shared test process (it broke a
+#: later test that runs a Blackbox background thread — KI-278).
+_REAL_PARSE = """
+import json, sys
+from hermes_cli import main as hermes_main
+from plugins.blackbox import cli
+parser, subparsers = hermes_main._build_cli_parser()
+if "blackbox" not in subparsers.choices:
+    cli.setup_cli(subparsers.add_parser("blackbox"))
+args = hermes_main._parse_cli_args(parser, subparsers, json.loads(sys.argv[1]))
+print(json.dumps({"version": bool(getattr(args, "version", False)), "command": args.command,
+                  "value": getattr(args, sys.argv[2], None)}))
+"""
+
+
 @pytest.mark.parametrize("argv, attribute, value", [
     (["blackbox", "curate", "--authority", "community", "manifest", "--curator-key", "a" * 64, "--threshold", "2",
       "--manifest-version", "3"], "manifest_version", 3),
     (["blackbox", "report", "--type", "dependency", "--ecosystem", "npm", "--name", "loadyaml", "--package-version", "1.0.0",
       "--kind", "malware", "--reason", "typosquat"], "package_version", "1.0.0"),
 ])
-def test_the_commands_that_broke_now_reach_the_plugin_through_the_real_hermes_parser(argv, attribute, value):
-    from hermes_cli import main as hermes_main
-    parser, subparsers = hermes_main._build_cli_parser()      # Hermes registers the blackbox plugin's commands itself
-    if "blackbox" not in subparsers.choices:
-        cli.setup_cli(subparsers.add_parser("blackbox"))
-    args = hermes_main._parse_cli_args(parser, subparsers, argv)
-    assert not getattr(args, "version", False) and args.command == "blackbox"       # no banner: the plugin runs
-    assert getattr(args, attribute) == value
+def test_the_commands_that_broke_now_reach_the_plugin_through_the_real_hermes_parser(argv, attribute, value, tmp_path):
+    import json
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    env = {**os.environ, "HERMES_HOME": str(tmp_path / "hermes"), "PYTHONPATH": str(root)}
+    done = subprocess.run([sys.executable, "-c", _REAL_PARSE, json.dumps(argv), attribute], cwd=root, env=env,
+                          capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr[-2000:]
+    parsed = json.loads(done.stdout.strip().splitlines()[-1])
+    assert parsed == {"version": False, "command": "blackbox", "value": value}     # no banner: the plugin runs
