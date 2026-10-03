@@ -62,6 +62,11 @@ def _background_pulse(config: BlackboxConfig) -> None:
         from . import refresh_cycle   # lazy: refresh_cycle imports this module
 
         client = DkgClient(url=config.dkg_url, dkg_home=config.dkg_home)
+        # KI-216 / FIX-0039: the beat is the one path that ALWAYS runs on a node
+        # (the heavy refresh fails outright on a node without the verified graph),
+        # so membership — dial the owner, subscribe — lives here too. Membership
+        # rate-limits itself; a confirmed subscription costs nothing per beat.
+        community.ensure_community_subscription(client, config)
         refresh_cycle._retry_shares(client, config)
         cached = refresh_cycle.peek(config)
         # KI-208: a process with no probe yet compares against the fingerprint the

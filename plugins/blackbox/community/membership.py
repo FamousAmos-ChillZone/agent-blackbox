@@ -53,6 +53,9 @@ class CommunityMembership:
         self._last_subscribe: Dict[str, float] = {}
         self._last_join: Dict[str, float] = {}
         self._joined: Set[str] = set()
+        #: graph -> when the node last confirmed it is subscribed; inside
+        #: RETRY_SECONDS the listing is not re-read (the pulse calls every ~20 s).
+        self._confirmed: Dict[str, float] = {}
 
     def ensure(self, client: DkgClient, cfg: object) -> Tuple[bool, str]:
         """Make sure this node is subscribed to (and has asked to join) the
@@ -61,6 +64,8 @@ class CommunityMembership:
         if not graph:
             return False, "no community graph configured"
         owner_peer = str(getattr(cfg, "community_graph_peer_id", "") or "")
+        if self._recently_confirmed(graph):
+            return True, "subscribed"
         entry = _graph_entry(client, graph)
         if not (entry and entry.get("subscribed")):
             if not self._due(self._last_subscribe, graph):
@@ -73,10 +78,22 @@ class CommunityMembership:
                             int(self.FAILED_SUBSCRIBE_RETRY_SECONDS), exc)
                 self._retry_sooner(self._last_subscribe, graph)
                 return False, f"subscribe failed: {exc}"
-        if entry and str(entry.get("accessPolicy") or "") == "public":
-            return True, "subscribed"   # D-040: a public graph has no join step
+        with self._lock:
+            self._confirmed[graph] = self._clock()
+        # A join request is an OUTWARD action, so it fails closed: it is sent only
+        # when the node's own listing says the graph is private. Before the first
+        # subscribe the graph has no listing row at all — bench F sent a join to a
+        # public graph through that gap (2026-10-03), so re-read after subscribing.
+        entry = entry if entry and entry.get("subscribed") else _graph_entry(client, graph)
+        if not entry or str(entry.get("accessPolicy") or "") != "private":
+            return True, "subscribed"   # D-040: a public (or unknown) graph has no join step
         self._join_once(client, graph, owner_peer)
         return True, "subscribed"
+
+    def _recently_confirmed(self, graph: str) -> bool:
+        with self._lock:
+            when = self._confirmed.get(graph)
+        return when is not None and self._clock() - when < self.RETRY_SECONDS
 
     def _retry_sooner(self, last: Dict[str, float], graph: str) -> None:
         """Pull the next attempt forward to ``FAILED_SUBSCRIBE_RETRY_SECONDS`` from now."""

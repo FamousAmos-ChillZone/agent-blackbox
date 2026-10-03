@@ -53,6 +53,12 @@ class FakeClient:
     def reachable(self):
         return True
 
+    def context_graphs(self):
+        # The node lists a graph only once subscribed; this fake's graph is the
+        # PRIVATE dev graph (join-and-approve era) — FIX-0039 sends a join only
+        # for a graph the node lists as private.
+        return [{"id": cg_id, "subscribed": True, "accessPolicy": "private"} for cg_id, _ in self.subscribes]
+
 
 # ---------------------------------------------------------------------------
 # _ensure_community_subscription

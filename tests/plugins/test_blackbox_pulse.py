@@ -257,3 +257,19 @@ def test_a_curator_statement_in_shared_memory_changes_the_fingerprint_too():
     graph.statements.append({"r": "urn:guardian:curator:stage-attestation:abc:1"})
     assert pulse.changed(graph, cfg) is True and pulse.report_count == 1
     assert "CuratorStatement=1:" in pulse_module.fingerprint(graph, cfg)
+
+
+def test_the_beat_runs_membership_so_a_fresh_node_subscribes_without_a_full_refresh(monkeypatch):
+    """KI-216 / FIX-0039: on blackbox-main-f the heavy refresh never completed (no
+    verified graph), so membership had no caller and the node sat unsubscribed
+    for 7+ minutes. The beat always runs, so membership runs on the beat."""
+    calls = []
+    monkeypatch.setattr(pulse_beat, "DkgClient", lambda *a, **k: object())
+    monkeypatch.setattr(pulse_beat.community, "ensure_community_subscription",
+                        lambda client, cfg: calls.append(cfg.community_graph_id) or (True, "subscribed"))
+    monkeypatch.setattr(refresh_cycle, "_retry_shares", lambda client, cfg: None)   # lazy import inside the beat
+    monkeypatch.setattr(refresh_cycle, "peek", lambda cfg: compiler.Ruleset())
+    monkeypatch.setattr(pulse_beat.community.PULSE, "changed", lambda client, cfg, applied=None: False)
+    cfg = BlackboxConfig(community_graph_id=GRAPH, community_graph_peer_id="12D3KooWowner")
+    pulse_beat._background_pulse(cfg)
+    assert calls == [GRAPH]

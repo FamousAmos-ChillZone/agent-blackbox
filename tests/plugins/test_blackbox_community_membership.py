@@ -158,3 +158,46 @@ def test_no_join_request_for_a_public_graph():
     node = _Node(access_policy="public")
     CommunityMembership().ensure(node, _cfg())
     assert node.join_calls == 0 and node.subscribe_calls == 1
+
+
+def test_a_confirmed_subscription_is_not_re_probed_inside_the_window():
+    """The pulse calls ensure() every ~20 s; once the node said "subscribed" the
+    listing is not re-read until RETRY_SECONDS have passed."""
+    clock = _Clock()
+    node = _Node(subscribed=True)
+    probes = {"n": 0}
+    real = node.context_graphs
+    def counting():
+        probes["n"] += 1
+        return real()
+    node.context_graphs = counting
+    membership = CommunityMembership(clock=clock)
+    for _ in range(5):
+        membership.ensure(node, _cfg())
+    assert probes["n"] == 1
+    clock.now += CommunityMembership.RETRY_SECONDS + 1
+    membership.ensure(node, _cfg())
+    assert probes["n"] == 2
+
+
+def test_no_join_when_the_listing_does_not_know_the_graph_yet():
+    """Bench F (2026-10-03): the first ensure() ran before the node listed the
+    graph, the public check saw no row, and a join request went to the owner of
+    a PUBLIC graph. A join is outward and fails closed: only a row that says
+    "private" earns one."""
+    class _Unlisted(_Node):
+        def context_graphs(self):
+            return []   # the node has no row for the graph, even after subscribing
+    node = _Unlisted()
+    CommunityMembership().ensure(node, _cfg())
+    assert node.subscribe_calls == 1 and node.join_calls == 0
+
+
+def test_a_private_graph_still_gets_its_join_after_the_first_subscribe():
+    class _ListsAfterSubscribe(_Node):
+        def subscribe_context_graph(self, graph, include_shared_memory=False):
+            self.subscribed = True   # the node lists it from now on, access private
+            return super().subscribe_context_graph(graph, include_shared_memory)
+    node = _ListsAfterSubscribe()
+    CommunityMembership().ensure(node, _cfg())
+    assert node.join_calls == 1
