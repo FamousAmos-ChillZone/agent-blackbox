@@ -161,6 +161,32 @@ def attach_openclaw(workspace: Path, *, dry_run: bool = False) -> Dict[str, Any]
     return report
 
 
+def _desired_entry(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """The ``plugins.entries.blackbox`` block the bridge reads (the ONE shape attach writes)."""
+    return {
+        "enabled": True,
+        "config": {
+            "dkgUrl": cfg["dkg_url"],
+            "dkgHome": cfg["dkg_home"],
+            "contextGraphId": cfg["context_graph_id"],
+            "mode": cfg["mode"],
+            # Point OpenClaw's local findings log at THIS Hermes blackbox home so
+            # the one dashboard surfaces OpenClaw detections too. OpenClaw writes
+            # findings.openclaw.jsonl here; the dashboard merges all findings*.jsonl.
+            "blackboxHome": cfg.get("blackbox_home") or str(constants.blackbox_home()),
+            # KI-182 port: the bridge shares to the SAME community graph under the same
+            # gates — the graph + owner-peer pair, the switch and the cap travel with it
+            # (consent is read from blackboxHome, so one consent record covers both runtimes).
+            "communityGraphId": cfg.get("community_graph_id", ""),
+            "communityGraphPeerId": cfg.get("community_graph_peer_id", ""),
+            "report": bool(cfg.get("report", False)),
+            "dailyReportLimit": int(cfg.get("daily_report_limit") or 20),
+            "reportMinSeverity": cfg.get("report_min_severity", "high"),
+        },
+        "hooks": {"allowConversationAccess": True},
+    }
+
+
 def _merge_openclaw(data: Dict[str, Any], cfg: Dict[str, Any], load_path: Optional[str]) -> bool:
     """Idempotently merge the Blackbox block into an ``openclaw.json`` dict.
 
@@ -209,20 +235,7 @@ def _merge_openclaw(data: Dict[str, Any], cfg: Dict[str, Any], load_path: Option
     if not isinstance(entries, dict):
         entries = {}
         plugins["entries"] = entries
-    desired_entry = {
-        "enabled": True,
-        "config": {
-            "dkgUrl": cfg["dkg_url"],
-            "dkgHome": cfg["dkg_home"],
-            "contextGraphId": cfg["context_graph_id"],
-            "mode": cfg["mode"],
-            # Point OpenClaw's local findings log at THIS Hermes blackbox home so
-            # the one dashboard surfaces OpenClaw detections too. OpenClaw writes
-            # findings.openclaw.jsonl here; the dashboard merges all findings*.jsonl.
-            "blackboxHome": cfg.get("blackbox_home") or str(constants.blackbox_home()),
-        },
-        "hooks": {"allowConversationAccess": True},
-    }
+    desired_entry = _desired_entry(cfg)
     if entries.get("blackbox") != desired_entry:
         entries["blackbox"] = desired_entry
         changed = True
@@ -303,6 +316,11 @@ def load_blackbox_config_snapshot() -> Dict[str, Any]:
             "context_graph_id": cfg.context_graph_id,
             "mode": cfg.mode,
             "blackbox_home": str(constants.blackbox_home()),
+            "community_graph_id": cfg.community_graph_id,
+            "community_graph_peer_id": cfg.community_graph_peer_id,
+            "report": cfg.report,
+            "daily_report_limit": cfg.daily_report_limit,
+            "report_min_severity": cfg.report_min_severity,
         }
     except Exception:
         return {
@@ -311,4 +329,9 @@ def load_blackbox_config_snapshot() -> Dict[str, Any]:
             "context_graph_id": constants.DEFAULT_CONTEXT_GRAPH_ID,
             "mode": "audit",
             "blackbox_home": str(constants.blackbox_home()),
+            "community_graph_id": constants.DEFAULT_COMMUNITY_GRAPH_ID,
+            "community_graph_peer_id": constants.DEFAULT_COMMUNITY_GRAPH_PEER_ID,
+            "report": False,
+            "daily_report_limit": constants.DEFAULT_DAILY_REPORT_LIMIT,
+            "report_min_severity": "high",
         }
