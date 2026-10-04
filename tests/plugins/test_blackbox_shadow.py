@@ -20,7 +20,7 @@ import os
 
 import pytest
 
-from _community_rows import GRAPH, Reporter, signed_row
+from _community_rows import GRAPH
 from plugins.blackbox.community import reputation, shadow
 from plugins.blackbox.community.statements import curator_view as cv
 from plugins.blackbox.kernel import config as config_mod

@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from _community_rows import GRAPH, Reporter
+from _community_rows import GRAPH
 from plugins.blackbox import audit
 from plugins.blackbox.community import consent as consent_module
 from plugins.blackbox.community import keep_alive, share_retry, sharing

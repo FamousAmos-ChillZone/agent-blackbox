@@ -21,7 +21,6 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from _community_rows import GRAPH, NETWORK, Reporter, signed_row
 from plugins.blackbox.community import CommunityRead, ReadState, reputation, verification
-from plugins.blackbox.community.statements import curator_statements as cs
 from plugins.blackbox.community.statements import curator_view as cv
 from plugins.blackbox.community.trust import manifests as trust_manifests
 from plugins.blackbox.curate import intake, verbs
@@ -30,7 +29,7 @@ from plugins.blackbox.kernel.signing import key_manifest as km
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind
 from plugins.blackbox.ruleset import compiler
 from test_blackbox_curate import FakeNode, _ctx, curators  # noqa: F401 - fixture
-from test_blackbox_curator_view import _curator_row, _manifest_row, _rows
+from test_blackbox_curator_view import _curator_row
 
 TODAY = "2026-10-02"
 NOW = 1_800_000_000.0

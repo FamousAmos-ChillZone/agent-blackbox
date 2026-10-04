@@ -13,7 +13,7 @@ import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from ... import audit
 from ... import detection
-from .. import consent, graph_stats, report_builder, report_schema, report_signer, sharing, share_retry
+from .. import graph_stats, report_builder, report_schema, report_signer, sharing, share_retry
 from . import report_rights, report_tracking, statement_verbs, submission_gate
 from .. import reader as graph_reader
 from ...kernel import constants, threat_ids
