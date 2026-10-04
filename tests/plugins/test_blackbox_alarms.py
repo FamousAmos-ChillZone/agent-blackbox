@@ -103,7 +103,9 @@ def test_curator_alarms_cover_sla_depth_drift_velocity_failures_and_expiry():
 
 def test_the_verifier_counts_why_rows_were_dropped():
     good = signed_row("ioc:domain:a.example", Reporter("0xa"))
-    verifier = verification.ReportVerifier(NETWORK, GRAPH, today=TODAY)
+    # signed_row dates its rows by the real clock, so this reader takes the real day too:
+    # a fixed date here made every row "future-dated" two days after it was written (KI-280)
+    verifier = verification.ReportVerifier(NETWORK, GRAPH)
     assert verifier.verify(good) is not None
     other_network = signed_row("ioc:domain:b.example", Reporter("0xb"), environment="another-network")
     assert verifier.verify(other_network) is None
