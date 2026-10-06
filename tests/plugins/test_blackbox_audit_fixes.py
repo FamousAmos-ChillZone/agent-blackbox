@@ -22,6 +22,7 @@ import time
 import pytest
 
 from _blackbox_loader import load_blackbox
+from _vm_partitions import answer_partition_query, is_partition_query
 
 
 audit = load_blackbox("audit")
@@ -130,27 +131,19 @@ class _Pager:
                 },
                 "status": {"value": "confirmed"},
             } for i in range(partition_count)]
-        if "VALUES ?sourceGraph" not in sparql:
+        if not is_partition_query(sparql):
             return []
-        lim = int(re.search(r"LIMIT (\d+)", sparql).group(1))
-        off = int(re.search(r"OFFSET (\d+)", sparql).group(1))
-        partitions = [
-            int(value)
-            for value in re.findall(r"/_verifiable_memory/partition/(\d{4})>", sparql)
-        ]
-        rows = []
-        for partition in partitions:
-            start = partition * 1000
-            end = min(start + 1000, self.n)
-            rows.extend({
-                "threat": {"value": f"urn:test:dependency:{i:08d}"},
-                "rdfType": {"value": "urn:defender:DependencySignal"},
-                "packageEcosystem": {"value": "npm"},
-                "packageName": {"value": f"pkg{i}"},
-                "packageVersion": {"value": "1.0"},
-                "severity": {"value": "critical"},
-            } for i in range(start, end))
-        return rows[off:off + lim]
+        partition = re.search(r"GRAPH <([^>]+)>", sparql).group(1)
+        index = int(partition.rsplit("/", 1)[1])
+        start, end = index * 1000, min(index * 1000 + 1000, self.n)
+        return answer_partition_query(sparql, {partition: [{
+            "threat": f"urn:test:dependency:{i:08d}",
+            "rdfType": "urn:defender:DependencySignal",
+            "packageEcosystem": "npm",
+            "packageName": f"pkg{i}",
+            "packageVersion": "1.0",
+            "severity": "critical",
+        } for i in range(start, end)]})
 
 def test_ruleset_sync_is_uncapped(monkeypatch):
     monkeypatch.setattr(ruleset_disk_cache, "_write_cache", lambda rs: None)
@@ -159,19 +152,12 @@ def test_ruleset_sync_is_uncapped(monkeypatch):
     rs = ruleset_mod.refresh(config_mod.BlackboxConfig(), pager)
     assert len(rs.dependency) == 16_250
     metadata_queries = [query for query, _kwargs in pager.queries if "dkg:assertionGraph" in query]
-    partition_queries = [
-        (query, kwargs)
-        for query, kwargs in pager.queries
-        if "VALUES ?sourceGraph" in query
-    ]
+    partition_queries = [(query, kwargs) for query, kwargs in pager.queries if is_partition_query(query)]
     assert len(metadata_queries) == 1
-    assert len(partition_queries) == 4
-    assert all("OFFSET 0" in query for query, _kwargs in partition_queries)
+    # KI-288/KI-289: one plain triple read per asset (17 assets of up to 1,000 threats), no OFFSET paging
+    assert len(partition_queries) == 17
+    assert not any("OFFSET" in query for query, _kwargs in partition_queries)
     assert all(kwargs["view"] is None for _query, kwargs in partition_queries)
-    assert all(
-        kwargs["timeout"] == ruleset_fetching._VM_PARTITION_QUERY_TIMEOUT
-        for _query, kwargs in partition_queries
-    )
 
 
 def test_concurrent_ruleset_refresh_reuses_completed_generation(monkeypatch, tmp_path):

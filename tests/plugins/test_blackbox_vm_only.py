@@ -16,6 +16,7 @@ from plugins.blackbox.ruleset import fetching as ruleset_fetching
 from plugins.blackbox.ruleset import refresh_cycle as ruleset_refresh
 from plugins.blackbox.kernel import config, constants
 from plugins.blackbox.dashboard import server
+from _vm_partitions import answer_partition_query, is_partition_query
 
 
 DASHBOARD_HTML = (
@@ -428,130 +429,71 @@ def test_dashboard_community_surfaces_live_but_dormant_without_graph(monkeypatch
     assert stats["community_threats"] == 0
 
 
-def test_partition_kill_retries_once_then_falls_back_to_verified_view(monkeypatch):
-    """KI-062: a partition page killed by the daemon's 30s store deadline gets
-    exactly ONE delayed retry (sort-bound query — smaller pages can't help),
-    then the tier is served from cursor-paged lanes on the daemon's
-    verifiable-memory view."""
-    monkeypatch.setattr(ruleset_fetching, "_VM_PARTITION_RETRY_DELAY_S", 0)
-    monkeypatch.setattr(ruleset_fetching, "_VM_FALLBACK_PAUSE_S", 0)
+def test_a_refused_partition_keeps_the_last_good_tier_and_never_reads_the_broad_view(monkeypatch):
+    """KI-288: a partition the node refuses (a store deadline) is deferred to the
+    next refresh. With nothing cached yet the tier is None, so the caller keeps
+    its last-good rules — and nothing falls back to the daemon's broad
+    verified-view lanes, which leaked partial lanes and never succeeded under
+    load (bench v21, 2026-10-06)."""
     cg = "0xC/agent-blackbox-vm"
-    data_graph = f"did:dkg:context-graph:{cg}"
-    partition = f"{data_graph}/_verifiable_memory/0xc/1"
-    partition_attempts = []
-    lane_views = []
+    partition = f"did:dkg:context-graph:{cg}/_verifiable_memory/0xc/1"
+    views = []
 
     class Client:
         def query(self, sparql, _cg, on_error=None, view="unset", **kwargs):
+            views.append(view)
             if "dkg:assertionGraph" in sparql:
                 return [{"assertionGraph": partition, "status": "confirmed"}]
-            if "VALUES ?sourceGraph" in sparql:
-                partition_attempts.append(1)
-                return on_error  # every partition page deadline-killed
-            lane_views.append(view)
-            if "IocSignal" in sparql and "defender:DependencySignal" not in sparql:
-                if "FILTER(STR(?threat) >" in sparql:
-                    return []  # cursor past our single row: lane exhausted
-                return [{
-                    "threat": "urn:guardian:threat:y",
-                    "rdfType": "urn:defender:IocSignal",
-                    "identifier": "ioc:ip:1.2.3.4",
-                    "severity": "high",
-                    "category": "ip",
-                    "iocValue": "1.2.3.4",
-                }]
-            return []
-
-    rows = ruleset_fetching.fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
-    assert rows is not None
-    assert any(r.get("identifier") == "ioc:ip:1.2.3.4" for r in rows)
-    # one attempt + one delayed retry, never a shrink ladder
-    assert len(partition_attempts) == 2
-    # the fallback lanes must query the daemon-verified view, never a broad read
-    assert set(lane_views) == {constants.VIEW_VERIFIABLE_MEMORY}
-
-
-def test_partition_and_fallback_failure_keeps_last_good(monkeypatch):
-    """Both the partition path AND the view-lane fallback failing -> None
-    (caller preserves last-good; the tier is never fabricated or emptied)."""
-    monkeypatch.setattr(ruleset_fetching, "_VM_PARTITION_RETRY_DELAY_S", 0)
-    monkeypatch.setattr(ruleset_fetching, "_VM_FALLBACK_PAUSE_S", 0)
-    cg = "0xC/agent-blackbox-vm"
-    data_graph = f"did:dkg:context-graph:{cg}"
-    partition = f"{data_graph}/_verifiable_memory/0xc/1"
-
-    class Client:
-        def query(self, sparql, _cg, on_error=None, **kwargs):
-            if "dkg:assertionGraph" in sparql:
-                return [{"assertionGraph": partition, "status": "confirmed"}]
-            return on_error  # everything else refused
+            return on_error  # every partition read refused
 
     assert ruleset_fetching.fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY) is None
+    assert constants.VIEW_VERIFIABLE_MEMORY not in views
 
 
-def test_partition_success_never_touches_fallback(monkeypatch):
-    """Healthy partition reads compile exactly as before — no lane queries on
-    the verified view, preserving the confirmed-partition trust path."""
-    monkeypatch.setattr(ruleset_fetching, "_VM_PARTITION_RETRY_DELAY_S", 0)
-    monkeypatch.setattr(ruleset_fetching, "_VM_FALLBACK_PAUSE_S", 0)
+def test_a_readable_partition_is_read_as_triples_never_through_the_verified_view(monkeypatch):
+    """The confirmed-partition trust path, now one plain triple read per asset."""
     cg = "0xC/agent-blackbox-vm"
     data_graph = f"did:dkg:context-graph:{cg}"
     partition = f"{data_graph}/_verifiable_memory/0xc/1"
-    lane_views = []
+    rows_by_partition = {partition: [{
+        "threat": "urn:guardian:threat:z", "rdfType": "urn:defender:IocSignal",
+        "severity": "high", "category": "domain", "iocValue": "bad.example",
+    }]}
+    views = []
 
     class Client:
         def query(self, sparql, _cg, on_error=None, view="unset", **kwargs):
+            views.append(view)
             if "dkg:assertionGraph" in sparql:
                 return [{"assertionGraph": partition, "status": "confirmed"}]
-            if "VALUES ?sourceGraph" in sparql:
-                return [{
-                    "threat": "urn:guardian:threat:z",
-                    "rdfType": "urn:defender:IocSignal",
-                    "identifier": "ioc:domain:bad.example",
-                    "severity": "high",
-                    "category": "domain",
-                    "iocValue": "bad.example",
-                }]
-            lane_views.append(view)
+            if is_partition_query(sparql):
+                return answer_partition_query(sparql, rows_by_partition)
             return []
 
     rows = ruleset_fetching.fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
-    assert rows and any(r.get("identifier") == "ioc:domain:bad.example" for r in rows)
-    assert constants.VIEW_VERIFIABLE_MEMORY not in lane_views
+    assert rows and any(r.get("iocValue") == "bad.example" for r in rows)
+    assert constants.VIEW_VERIFIABLE_MEMORY not in views
 
 
 def test_lane_pager_survives_daemon_row_cap(monkeypatch):
-    """KI-062: DKG daemons cap a response below the requested LIMIT (measured
-    on 10.0.19: 5,000 requested -> 1,000 returned). The lane pager must keep
-    paging until an EMPTY page — a short page is NOT exhaustion."""
-    monkeypatch.setattr(ruleset_fetching, "_VM_PARTITION_RETRY_DELAY_S", 0)
-    monkeypatch.setattr(ruleset_fetching, "_VM_FALLBACK_PAUSE_S", 0)
+    """KI-052: a daemon may cap a response below the requested LIMIT (measured
+    on 10.0.19: 5,000 requested -> 1,000 returned). The lane pager — which
+    still reads the root data graph — keeps paging until an EMPTY page."""
     cg = "0xC/agent-blackbox-vm"
-    data_graph = f"did:dkg:context-graph:{cg}"
-    partition = f"{data_graph}/_verifiable_memory/0xc/1"
-    # 2,500 IOC threats served in daemon-capped pages of 1,000
     all_subjects = [f"urn:guardian:threat:{i:05d}" for i in range(2500)]
 
     class Client:
         def query(self, sparql, _cg, on_error=None, view="unset", **kwargs):
             if "dkg:assertionGraph" in sparql:
-                return [{"assertionGraph": partition, "status": "confirmed"}]
-            if "VALUES ?sourceGraph" in sparql:
-                return on_error  # partitions starved -> verified-view lanes
+                return []  # no partitions: the root data graph holds the threats
             if "IocSignal" in sparql and "defender:DependencySignal" not in sparql:
                 after = ""
                 if "FILTER(STR(?threat) >" in sparql:
                     after = sparql.split('FILTER(STR(?threat) > "')[1].split('"')[0]
                 remaining = [s for s in all_subjects if s > after]
                 return [
-                    {
-                        "threat": s,
-                        "rdfType": "urn:defender:IocSignal",
-                        "identifier": f"ioc:ip:10.0.{i // 250}.{i % 250}",
-                        "severity": "high",
-                        "category": "ip",
-                        "iocValue": f"10.0.{i // 250}.{i % 250}",
-                    }
+                    {"threat": s, "rdfType": "urn:defender:IocSignal", "severity": "high",
+                     "category": "ip", "iocValue": f"10.0.{i // 250}.{i % 250}"}
                     for i, s in enumerate(remaining[:1000])  # daemon row cap
                 ]
             return []
@@ -562,39 +504,3 @@ def test_lane_pager_survives_daemon_row_cap(monkeypatch):
     assert len(got) == 2500, f"pager truncated at the daemon row cap: {len(got)}"
 
 
-def test_lane_pager_one_delayed_retry_per_page(monkeypatch):
-    """A lane page failing once (recovery window) is retried once and succeeds;
-    the retry budget resets per page."""
-    monkeypatch.setattr(ruleset_fetching, "_VM_PARTITION_RETRY_DELAY_S", 0.001)
-    monkeypatch.setattr(ruleset_fetching, "_VM_FALLBACK_PAUSE_S", 0)
-    cg = "0xC/agent-blackbox-vm"
-    data_graph = f"did:dkg:context-graph:{cg}"
-    partition = f"{data_graph}/_verifiable_memory/0xc/1"
-    lane_calls = {"n": 0}
-
-    class Client:
-        def query(self, sparql, _cg, on_error=None, view="unset", **kwargs):
-            if "dkg:assertionGraph" in sparql:
-                return [{"assertionGraph": partition, "status": "confirmed"}]
-            if "VALUES ?sourceGraph" in sparql:
-                return on_error
-            if "IocSignal" in sparql and "defender:DependencySignal" not in sparql:
-                lane_calls["n"] += 1
-                if lane_calls["n"] == 1:
-                    return on_error  # first attempt lands in the recovery window
-                if "FILTER(STR(?threat) >" in sparql:
-                    return []
-                return [{
-                    "threat": "urn:guardian:threat:r",
-                    "rdfType": "urn:defender:IocSignal",
-                    "identifier": "ioc:ip:9.9.9.9",
-                    "severity": "high",
-                    "category": "ip",
-                    "iocValue": "9.9.9.9",
-                }]
-            return []
-
-    rows = ruleset_fetching.fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
-    assert rows is not None
-    assert any(r.get("identifier") == "ioc:ip:9.9.9.9" for r in rows)
-    assert lane_calls["n"] >= 2  # failed once, retried, then paged to empty

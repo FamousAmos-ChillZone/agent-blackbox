@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import re
-from typing import List
 
 _SELECT_COLUMNS = """?threat ?rdfType ?identifier ?severity ?name ?description
        ?pattern ?toolName ?argShape ?packageName ?packageVersion
@@ -251,67 +250,23 @@ ORDER BY ?assertionGraph
 """
 
 
-def _partition_threats_sparql(
-    graph_uris: List[str],
-    *,
-    limit: int = _VM_PARTITION_QUERY_LIMIT,
-    offset: int = 0,
-) -> str:
-    values = " ".join(f"<{uri}>" for uri in graph_uris)
-    return f"""{_DEFENDER_PREFIXES}PREFIX g: <http://umanitek.ai/ontology/guardian/>
-SELECT DISTINCT ?sourceGraph {_SELECT_COLUMNS}
+def _partition_triples_sparql(graph_uri: str, *, after: str = "", limit: int = _VM_PARTITION_QUERY_LIMIT) -> str:
+    """Every triple of ONE verified partition, in threat order, after a cursor.
+
+    A plain scan of one asset's named graph — no joins, no DISTINCT, no OFFSET.
+    The joined query this replaces (one row per threat with ~27 OPTIONAL
+    columns over five partitions) exceeded DKG 10.0.21's 30 s store deadline on
+    a single asset even on a calm node, while this read returns the largest
+    asset (15,032 triples) in 1.7 s (KI-288/KI-289, bench v21 2026-10-06).
+    :mod:`.partitions` rebuilds the same rows from the triples.
+    """
+    return f"""SELECT ?threat ?p ?o
 WHERE {{
-  VALUES ?sourceGraph {{ {values} }}
-  GRAPH ?sourceGraph {{
-    {{
-      ?threat a ?rdfType .
-      VALUES ?rdfType {{
-        defender:DependencySignal defender:InjectionSignal
-        defender:SkillSignal defender:IocSignal defender:CorrectionSignal
-        blackbox:SourceObservation
-      }}
-    }} UNION {{
-      ?threat g:identifier ?identifier .
-      OPTIONAL {{ ?threat a ?rdfType . }}
-    }}
-    OPTIONAL {{ ?threat dp:kind ?kind . }}
-    OPTIONAL {{ ?threat g:kind ?kind . }}
-    OPTIONAL {{ ?threat dp:severity ?severity . }}
-    OPTIONAL {{ ?threat g:severity ?severity . }}
-    OPTIONAL {{ ?threat schema:name ?name . }}
-    OPTIONAL {{ ?threat schema:description ?description . }}
-    OPTIONAL {{ ?threat dp:pattern ?pattern . }}
-    OPTIONAL {{ ?threat g:pattern ?pattern . }}
-    OPTIONAL {{ ?threat g:toolName ?toolName . }}
-    OPTIONAL {{ ?threat g:argShape ?argShape . }}
-    OPTIONAL {{ ?threat dp:package ?packageName . }}
-    OPTIONAL {{ ?threat g:packageName ?packageName . }}
-    OPTIONAL {{ ?threat dp:version ?packageVersion . }}
-    OPTIONAL {{ ?threat g:packageVersion ?packageVersion . }}
-    OPTIONAL {{ ?threat dp:ecosystem ?packageEcosystem . }}
-    OPTIONAL {{ ?threat g:packageEcosystem ?packageEcosystem . }}
-    OPTIONAL {{ ?threat dp:advisoryId ?advisoryId . }}
-    OPTIONAL {{ ?threat schema:identifier ?advisoryId . }}
-    OPTIONAL {{ ?threat g:curated ?curated . }}
-    OPTIONAL {{ ?threat dp:iocType ?category . }}
-    OPTIONAL {{ ?threat g:category ?category . }}
-    OPTIONAL {{ ?threat g:skillName ?skillName . }}
-    OPTIONAL {{ ?threat g:skillVersion ?skillVersion . }}
-    OPTIONAL {{ ?threat g:dangerShape ?dangerShape . }}
-    OPTIONAL {{ ?threat dp:value ?iocValue . }}
-    OPTIONAL {{ ?threat dp:targetSubject ?targetSubject . }}
-    OPTIONAL {{ ?threat dp:action ?correctionAction . }}
-    OPTIONAL {{ ?threat bp:canonicalType ?canonicalType . }}
-    OPTIONAL {{ ?threat bp:category ?observationCategory . }}
-    OPTIONAL {{ ?threat bp:lifecycleStatus ?lifecycleStatus . }}
-    OPTIONAL {{ ?threat bp:normalizedValue ?normalizedValue . }}
-    OPTIONAL {{ ?threat bp:provenanceJson ?provenanceJson . }}
-    OPTIONAL {{ ?threat bp:sourceId ?sourceId . }}
-  }}
+  GRAPH <{graph_uri}> {{ ?threat ?p ?o }}
+  {_threat_cursor_filter(after)}
 }}
-ORDER BY ?sourceGraph ?threat
+ORDER BY STR(?threat) ?p ?o
 LIMIT {int(limit)}
-OFFSET {int(offset)}
 """
 
 

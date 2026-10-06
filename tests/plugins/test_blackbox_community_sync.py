@@ -176,7 +176,7 @@ def test_term_safe_strips_controls_and_clamps():
 def test_status_screams_when_ruleset_empty(bb_home, monkeypatch, capsys):
     class EmptyRs:
         def counts(self):
-            return {"injection": 0, "escalation": 0, "dependency": 0, "fileaccess": 0, "skill": 0}
+            return {"injection": 0, "escalation": 0, "dependency": 0, "fileaccess": 0, "skill": 0, "ioc": 0, "community": 0}
 
     class QuietClient:
         def reachable(self):
@@ -196,7 +196,7 @@ def test_status_screams_when_ruleset_empty(bb_home, monkeypatch, capsys):
 def test_status_quiet_when_rules_present(bb_home, monkeypatch, capsys):
     class FullRs:
         def counts(self):
-            return {"injection": 5, "escalation": 3, "dependency": 9, "fileaccess": 2, "skill": 1}
+            return {"injection": 5, "escalation": 3, "dependency": 9, "fileaccess": 2, "skill": 1, "ioc": 4, "community": 0}
 
     class QuietClient:
         def reachable(self):

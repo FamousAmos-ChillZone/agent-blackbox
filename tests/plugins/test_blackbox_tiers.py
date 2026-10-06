@@ -9,6 +9,7 @@
 
 
 from _blackbox_loader import load_blackbox
+from _vm_partitions import answer_partition_query, is_partition_query
 
 
 detection = load_blackbox("detection")
@@ -233,11 +234,12 @@ def test_mixed_vm_store_merges_root_and_confirmed_partitions_without_duplicates(
                     },
                     "status": {"value": "confirmed"},
                 }]
-            if "VALUES ?sourceGraph" in sparql:
-                return [
-                    {"threat": {"value": partition_only}},
-                    {"threat": {"value": duplicate}},
-                ]
+            if is_partition_query(sparql):
+                partition = f"{data_graph}/_verifiable_memory/partition/0000"
+                return answer_partition_query(sparql, {partition: [
+                    {"threat": partition_only, "rdfType": "urn:defender:DependencySignal"},
+                    {"threat": duplicate, "rdfType": "urn:defender:DependencySignal"},
+                ]})
             if "FILTER(STR(?threat) >" in sparql:
                 return []  # cursor advanced past the rows: lane exhausted
             if "defender:DependencySignal" in sparql:
@@ -249,16 +251,17 @@ def test_mixed_vm_store_merges_root_and_confirmed_partitions_without_duplicates(
 
     rows = ruleset_fetching.fetch_tier(_Client(), "cg", "verifiable-memory")
 
+    # Partition rows come first, in threat order; the root copy of `duplicate` is dropped.
     assert [ruleset_fetching.extract_binding(row.get("threat")) for row in rows] == [
-        partition_only,
         duplicate,
+        partition_only,
         root_only,
     ]
     assert all(kwargs["view"] is None for _query, kwargs in calls)
     root_queries = [
         query
         for query, _kwargs in calls
-        if "dkg:assertionGraph" not in query and "VALUES ?sourceGraph" not in query
+        if "dkg:assertionGraph" not in query and not is_partition_query(query)
     ]
     assert root_queries
     assert all(f"GRAPH <{data_graph}>" in query for query in root_queries)

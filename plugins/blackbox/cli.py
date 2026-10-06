@@ -142,7 +142,8 @@ def _cmd_status(args: argparse.Namespace) -> int:
     _print_health(cfg, rs, client, reachable)
     print(f"  ruleset:           {counts['injection']} injection, "
           f"{counts['escalation']} escalation, {counts['dependency']} dependency, "
-          f"{counts['fileaccess']} fileaccess, {counts['skill']} skill")
+          f"{counts['fileaccess']} fileaccess, {counts['skill']} skill, {counts['ioc']} ioc")
+    _print_verified_progress(cfg)
     if not any(counts.values()):
         # KI-023: an empty ruleset is a LOUD state, never a quiet day.
         print("  !! UNPROTECTED:    threat ruleset is EMPTY — detection has no rules.")
@@ -151,6 +152,17 @@ def _cmd_status(args: argparse.Namespace) -> int:
     print(f"  dashboard:         http://127.0.0.1:{cfg.dashboard_port}")
     _print_attached_targets()
     return 0
+
+
+def _print_verified_progress(cfg: Any) -> None:
+    """KI-290: rules that cover only part of the verified graph must look partial."""
+    done = ruleset.verified_progress(cfg.context_graph_id)
+    if not done or not done.get("assets_total"):
+        return
+    line = f"  verified graph:    {done['assets_compiled']} of {done['assets_total']} assets compiled into rules"
+    if done.get("stopped_early"):
+        line += f" ({done['stopped_early']})"
+    print(line)
 
 
 def _print_health(cfg: Any, rs: Any, client: DkgClient, reachable: bool) -> None:
