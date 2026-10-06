@@ -27,6 +27,7 @@ from ..kernel.dkg_client import DkgClient, DkgError
 from .progress import capture_durable_progress_cursor, read_durable_progress
 from ..kernel import display_safety
 from . import managed_node
+from .catchup_job import _catchup_denied, _catchup_job_id, _catchup_status
 
 logger = logging.getLogger(__name__)
 
@@ -1354,51 +1355,6 @@ def _connect_verifiable_source(
     if last_error is not None:
         raise last_error
     raise DkgError("publisher discovery deadline reached")
-
-
-def _catchup_denied(catchup: Dict[str, Any]) -> bool:
-    if not isinstance(catchup, dict):
-        return False
-    status = str(catchup.get("status") or "").lower()
-    if status == "denied":
-        return True
-    result = catchup.get("result") if isinstance(catchup.get("result"), dict) else {}
-    if result.get("denied") is True:
-        return True
-    error = str(catchup.get("error") or result.get("error") or "").lower()
-    return any(term in error for term in ("denied", "unauthorized", "unconfirmed"))
-
-
-def _catchup_job_id(catchup: Any) -> str:
-    if not isinstance(catchup, dict):
-        return ""
-    nested = catchup.get("catchup")
-    if isinstance(nested, dict):
-        catchup = nested
-    return str(catchup.get("jobId") or catchup.get("job_id") or catchup.get("id") or "")
-
-
-def _catchup_status(
-    client: DkgClient,
-    context_graph_id: str,
-    job_id: str = "",
-) -> tuple[Dict[str, Any], bool]:
-    """Read an exact catch-up job when supported, otherwise the graph latest."""
-    if job_id:
-        try:
-            return client.catchup_status(context_graph_id, job_id=job_id), True
-        except TypeError as exc:
-            # Compatibility for older plugin clients and test doubles that do
-            # not yet accept the keyword. Do not hide unrelated TypeErrors.
-            if "job_id" not in str(exc):
-                raise
-        except DkgError as exc:
-            # The daemon bounds its job history. If the exact job was evicted,
-            # inspect the latest job and adopt it in the caller. Transport and
-            # server failures must keep the caller pinned to this exact job.
-            if exc.status_code not in {404, 410}:
-                raise
-    return client.catchup_status(context_graph_id), False
 
 
 def _should_request_private_join(cfg: BlackboxConfig) -> bool:

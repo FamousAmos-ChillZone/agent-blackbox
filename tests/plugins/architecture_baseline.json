@@ -4,8 +4,7 @@
     "dashboard/server.py": 2204,
     "kernel/config.py": 428,
     "kernel/dkg_client.py": 641,
-    "sync/command.py": 1449,
-    "sync/managed_node.py": 427
+    "sync/command.py": 1405
   },
   "functions": {
     "attach/hermes_homes.py::attach_hermes": 58,
