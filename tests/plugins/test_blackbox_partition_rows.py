@@ -103,19 +103,28 @@ def test_rebuilt_rows_compile_into_the_same_rules_as_joined_rows():
 
 
 class _Node:
-    """Answers the triple query from a triple list; can be told to fail."""
+    """Answers the triple read and count queries from a triple list; can be told
+    to fail, to answer "0 rows" (a restarting store), or to cut a read short."""
 
     def __init__(self, triples_by_partition, fail=(), page=None):
         self.triples = triples_by_partition
         self.fail = set(fail)
         self.page = page
         self.queries = []
+        self.answers_empty = False
+        self.drop_last = set()     # partitions whose read loses its last triple
 
     def query(self, sparql, _cg, view=None, on_error=None, **_kw):
         partition = sparql.split("GRAPH <", 1)[1].split(">", 1)[0]
-        self.queries.append(partition)
         if partition in self.fail:
             return on_error
+        if self.answers_empty:
+            return []
+        if "COUNT(*)" in sparql:
+            return [{"n": f'"{len(self.triples.get(partition, []))}"^^<http://www.w3.org/2001/XMLSchema#integer>'}]   # as DKG 10.0.21 sends it
+        self.queries.append(partition)
+        if partition in self.drop_last:
+            return [{"threat": s, "p": p, "o": o} for s, p, o in sorted(self.triples.get(partition, []))[:-1]]
         after = sparql.split('FILTER(STR(?threat) > "', 1)[1].split('"', 1)[0] if "FILTER(STR(?threat) >" in sparql else ""
         rows = sorted(t for t in self.triples.get(partition, []) if t[0] > after)
         limit = int(sparql.rsplit("LIMIT", 1)[1].split()[0])
@@ -325,3 +334,44 @@ def test_last_good_rules_kept_through_a_failed_read_still_retry_soon_while_catch
     kept = refresh_cycle._reuse_generation(compiler.build_from_rows([]), "cg", None, _Config())
 
     assert kept.synced_at + _Config.sync_interval - 1_000_000.0 == refresh_cycle._CATCHING_UP_RETRY_S
+
+
+
+# ------------------------------------------------------------------ "could not tell" is never cached
+
+
+def test_an_empty_answer_for_a_confirmed_asset_is_not_cached(tmp_path):
+    """Bench native-c 2026-10-06: after its store restarted the node answered every query
+    with 0 rows; caching that would drop the asset's threats from the rules for good."""
+    parts = _partitions(1)
+    node = _Node({parts[0]: _ioc("urn:defender:signal:0")})
+    node.answers_empty = True
+    cache = pr.PartitionCache(tmp_path)
+
+    read = pr.verified_partition_rows(node, "cg", parts, cache=cache)
+
+    assert read.compiled == 0 and "refused" in read.stopped_early
+    assert cache.load(parts[0]) is None
+    node.answers_empty = False
+    assert pr.verified_partition_rows(node, "cg", parts, cache=cache).compiled == 1
+
+
+def test_a_read_shorter_than_the_count_is_not_cached(tmp_path):
+    parts = _partitions(1)
+    node = _Node({parts[0]: _ioc("urn:defender:signal:0")})
+    node.drop_last = {parts[0]}
+    cache = pr.PartitionCache(tmp_path)
+
+    assert pr.verified_partition_rows(node, "cg", parts, cache=cache).compiled == 0
+    assert cache.load(parts[0]) is None
+
+
+def test_an_empty_asset_listing_keeps_every_cached_asset(tmp_path):
+    parts = _partitions(2)
+    node = _Node({p: _ioc(f"urn:defender:signal:{i}", value=f"x{i}.example") for i, p in enumerate(parts)})
+    cache = pr.PartitionCache(tmp_path)
+    pr.verified_partition_rows(node, "cg", parts, cache=cache)
+
+    pr.verified_partition_rows(node, "cg", [], cache=cache)          # a restarting node lists nothing
+
+    assert all(cache.load(p) is not None for p in parts)

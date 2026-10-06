@@ -26,6 +26,7 @@ _IDENTIFIER = "http://umanitek.ai/ontology/guardian/identifier"
 _GRAPH = re.compile(r"GRAPH <([^>]+)> \{ \?threat \?p \?o \}")
 _AFTER = re.compile(r'FILTER\(STR\(\?threat\) > "([^"]*)"\)')
 _LIMIT = re.compile(r"LIMIT (\d+)")
+_COUNT = "SELECT (COUNT(*) AS ?n)"
 
 
 def _cell(value):
@@ -47,13 +48,22 @@ def triples_for_rows(rows: List[dict]) -> List[tuple]:
     return sorted(set(triples))
 
 
-def is_partition_query(sparql: str) -> bool:
+def is_partition_read(sparql: str) -> bool:
+    """A page of one partition's triples."""
     return bool(_GRAPH.search(sparql)) and "SELECT ?threat ?p ?o" in sparql
 
 
+def is_partition_query(sparql: str) -> bool:
+    """Any query aimed at one partition: a page read or its triple count."""
+    return is_partition_read(sparql) or (bool(_GRAPH.search(sparql)) and _COUNT in sparql)
+
+
 def answer_partition_query(sparql: str, rows_by_partition: Dict[str, List[dict]]) -> List[dict]:
-    """One page of the triple query for the partition it names."""
+    """One page of the triple query (or the triple count) for the partition it names."""
     partition = _GRAPH.search(sparql).group(1)
+    if _COUNT in sparql:
+        count = len(triples_for_rows(rows_by_partition.get(partition, [])))
+        return [{"n": f'"{count}"^^<http://www.w3.org/2001/XMLSchema#integer>'}]   # as DKG 10.0.21 sends it
     after_match = _AFTER.search(sparql)
     after = after_match.group(1) if after_match else ""
     limit = int(_LIMIT.search(sparql).group(1))

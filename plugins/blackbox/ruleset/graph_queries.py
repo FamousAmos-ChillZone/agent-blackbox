@@ -270,6 +270,16 @@ LIMIT {int(limit)}
 """
 
 
+def _partition_triple_count_sparql(graph_uri: str) -> str:
+    """How many triples ONE verified partition holds — the check a read is held to.
+
+    A DKG node whose store is restarting answers queries with zero rows rather
+    than an error (bench native-c, 2026-10-06), so a read alone cannot tell an
+    empty or cut-short answer from the real content.
+    """
+    return f"SELECT (COUNT(*) AS ?n) WHERE {{ GRAPH <{graph_uri}> {{ ?threat ?p ?o }} }}"
+
+
 # ---------------------------------------------------------------------------
 # Legacy proof verification (backward compatibility)
 # ---------------------------------------------------------------------------

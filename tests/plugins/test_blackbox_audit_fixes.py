@@ -22,7 +22,7 @@ import time
 import pytest
 
 from _blackbox_loader import load_blackbox
-from _vm_partitions import answer_partition_query, is_partition_query
+from _vm_partitions import answer_partition_query, is_partition_query, is_partition_read
 
 
 audit = load_blackbox("audit")
@@ -152,7 +152,7 @@ def test_ruleset_sync_is_uncapped(monkeypatch):
     rs = ruleset_mod.refresh(config_mod.BlackboxConfig(), pager)
     assert len(rs.dependency) == 16_250
     metadata_queries = [query for query, _kwargs in pager.queries if "dkg:assertionGraph" in query]
-    partition_queries = [(query, kwargs) for query, kwargs in pager.queries if is_partition_query(query)]
+    partition_queries = [(query, kwargs) for query, kwargs in pager.queries if is_partition_read(query)]
     assert len(metadata_queries) == 1
     # KI-288/KI-289: one plain triple read per asset (17 assets of up to 1,000 threats), no OFFSET paging
     assert len(partition_queries) == 17

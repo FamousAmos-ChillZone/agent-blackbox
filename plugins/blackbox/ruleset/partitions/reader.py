@@ -44,7 +44,36 @@ GROWTH_QUIET_SECONDS = 900.0
 
 
 def read_partition_triples(client: DkgClient, cg_id: str, partition: str) -> Optional[List[Triple]]:
-    """Every triple of one partition, cursor-paged; None when the node failed."""
+    """Every triple of one partition, cursor-paged; None when the node failed
+    or the answer cannot be trusted to be whole.
+
+    The read must deliver exactly the number of triples the node counts for the
+    partition, and that count must be above zero: a confirmed asset is never
+    empty, and a node whose store is restarting answers "0 rows" instead of an
+    error. Anything else is "could not tell" (None) — never cached as the
+    asset's content, so its threats cannot silently drop out of the rules.
+    """
+    expected = _triple_count(client, cg_id, partition)
+    if not expected:
+        return None
+    triples = _read_pages(client, cg_id, partition)
+    if triples is not None and len(triples) != expected:
+        logger.warning("blackbox: %s read %d of %d triples; it is read again on the next refresh",
+                       partition, len(triples), expected)
+        return None
+    return triples
+
+
+def _triple_count(client: DkgClient, cg_id: str, partition: str) -> Optional[int]:
+    rows = client.query(graph_queries._partition_triple_count_sparql(partition), cg_id, view=None, on_error=None)
+    try:
+        return int(extract_binding(rows[0].get("n"))) if rows else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _read_pages(client: DkgClient, cg_id: str, partition: str) -> Optional[List[Triple]]:
+    """The partition's triples, cursor-paged; None when a page failed."""
     failure = object()
     triples: List[Triple] = []
     after = ""
@@ -159,7 +188,10 @@ def verified_partition_rows(
         if rows is not None:
             read.rows.extend(rows)
             read.compiled += 1
-    cache.prune(partitions)
+    if partitions:
+        # An empty listing is "could not tell" (a restarting node lists nothing), never
+        # "the graph is gone": pruning on it would throw away every asset already read.
+        cache.prune(partitions)
     return read
 
 
