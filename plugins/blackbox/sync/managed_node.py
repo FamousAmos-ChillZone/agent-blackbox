@@ -8,6 +8,7 @@ when one supervises it (FIX-0014: never stop/start behind systemd's back).
 from __future__ import annotations
 
 import argparse
+import logging
 from contextlib import contextmanager
 import os
 import psutil
@@ -24,11 +25,16 @@ from ..kernel.dkg_client import DkgClient, DkgError
 # patch them here.
 from .node_profile import (  # noqa: F401 - re-exported, see above
     _DKG_CONFIG_SYNC_SETTINGS,
+    _DKG_ENV_ONLY_SETTINGS,
+    _DKG_RECOVERY_SPEEDUPS,
     _DKG_STEADY_SYNC_SETTINGS,
     _managed_dkg_sync_mode_matches,
     _persisted_dkg_sync_settings,
-    _set_persisted_dkg_steady_state,
+    _set_persisted_dkg_sync_state,
+    node_sync_settings,
 )
+
+logger = logging.getLogger(__name__)
 
 def _uses_managed_dkg(cfg: BlackboxConfig, args: argparse.Namespace) -> bool:
     """Return whether this is a blocking sync for Blackbox's managed DKG."""
@@ -86,7 +92,7 @@ def _managed_sync_lock():
 
 def _dkg_sync_environment(cfg: BlackboxConfig) -> Dict[str, str]:
     env = os.environ.copy()
-    sync_settings = dict(_DKG_STEADY_SYNC_SETTINGS)
+    sync_settings = node_sync_settings(cfg)
     sync_settings.update(_persisted_dkg_sync_settings(cfg))
     env.update(sync_settings)
     env["DKG_HOME"] = str(cfg.dkg_home)
@@ -199,6 +205,35 @@ def _systemd_unit_of(pid: int, proc_root: Path = Path("/proc")) -> Optional[str]
         if leaf.endswith(".service"):
             return leaf
     return None
+
+
+def expected_node_settings(cfg: BlackboxConfig) -> Dict[str, str]:
+    """The settings a running node must have for a sync to skip the restart.
+
+    A node supervised by a service manager is restarted through it, with the
+    unit's own environment, so an environment-only switch the unit lacks can
+    never be added by a restart. Counting it would restart that node on every
+    hourly sync (the KI-059/KI-065 loop), so it is left out here and logged;
+    re-running the installer writes it into the unit.
+    """
+    expected = node_sync_settings(cfg)
+    pid = _daemon_pid(cfg)
+    if pid is None or _systemd_unit_of(pid) is None:
+        return expected
+    missing = sorted(name for name in _DKG_ENV_ONLY_SETTINGS if name in expected)
+    if missing:
+        logger.warning(
+            "blackbox: the DKG node runs under a service unit; %s can only be set in the unit's "
+            "environment — re-run the Blackbox installer to update the unit", ", ".join(missing))
+    return {name: value for name, value in expected.items() if name not in _DKG_ENV_ONLY_SETTINGS}
+
+
+def _daemon_pid(cfg: BlackboxConfig) -> Optional[int]:
+    """The managed node's PID from its pidfile, or None."""
+    try:
+        return int((Path(cfg.dkg_home) / "daemon.pid").read_text(encoding="utf-8").strip())
+    except (OSError, TypeError, ValueError):
+        return None
 
 
 def _restart_managed_dkg(cfg: BlackboxConfig) -> None:

@@ -26,7 +26,7 @@ from ..kernel.config import BlackboxConfig, load_blackbox_config
 from ..kernel.dkg_client import DkgClient, DkgError
 from .progress import capture_durable_progress_cursor, read_durable_progress
 from ..kernel import display_safety
-from . import managed_node
+from . import managed_node, native
 from .catchup_job import _catchup_denied, _catchup_job_id, _catchup_status
 
 logger = logging.getLogger(__name__)
@@ -45,8 +45,8 @@ def cmd_sync(args: argparse.Namespace) -> int:
                 if not acquired:
                     print("Blackbox sync is already running; no second transfer was queued.")
                     return 2 if getattr(args, "require_rules", False) else 0
-                return _cmd_sync_impl(args)
-        return _cmd_sync_impl(args)
+                return native.route(cfg, _cmd_sync_impl)(args)
+        return native.route(cfg, _cmd_sync_impl)(args)
     except KeyboardInterrupt:
         try:
             current_transfer = sync_state.read()
@@ -151,12 +151,12 @@ def _cmd_sync_with_managed_dkg(cfg: BlackboxConfig, args: argparse.Namespace) ->
             community_entries=known_community,
         )
         terminal_state: Dict[str, Any] = {}
-        steady_changed = managed_node._set_persisted_dkg_steady_state(cfg)
-        if steady_changed or not managed_node._managed_dkg_sync_mode_matches(
-            cfg, managed_node._DKG_STEADY_SYNC_SETTINGS
+        profile_changed = managed_node._set_persisted_dkg_sync_state(cfg)
+        if profile_changed or not managed_node._managed_dkg_sync_mode_matches(
+            cfg, managed_node.expected_node_settings(cfg)
         ):
             managed_node._restart_managed_dkg(cfg)
-        result = _cmd_sync_impl(args)
+        result = native.route(cfg, _cmd_sync_impl)(args)
         terminal_state = sync_state.read_for_graph(cfg.context_graph_id)
         status = str(terminal_state.get("status") or "")
         if status == "running" or not status:

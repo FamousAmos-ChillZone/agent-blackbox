@@ -828,6 +828,44 @@ def test_dkg_config_writer_reports_only_real_runtime_changes(tmp_path: Path) -> 
     assert config.stat().st_mtime_ns == first_mtime
 
 
+DEFAULT_GRAPH = "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"
+
+
+def _write_dkg_config(home: Path, context_graph_id: str, default_graph: str) -> dict:
+    command = [sys.executable, "-c", _extract_unix_config_writer(), str(home), "9320", "blazegraph",
+               BLAZEGRAPH_URL, "true", context_graph_id, default_graph]
+    subprocess.run(command, check=True, capture_output=True, text=True)
+    return json.loads((home / "config.json").read_text(encoding="utf-8"))
+
+
+def test_dkg_config_writer_gives_the_default_graph_the_native_profile(tmp_path: Path) -> None:
+    """KI-282: on DKG 10.0.21 the default graph is recovered by the node's VM
+    reconciler with recovery prefetch on and the older sync reconciler off."""
+    data = _write_dkg_config(tmp_path / "dkg", DEFAULT_GRAPH, DEFAULT_GRAPH)
+
+    assert data["syncReconcilerEnabled"] is False
+    assert data["vmReconcilerEnabled"] is True
+    assert data["vmRecoveryPrefetchEnabled"] is True
+    assert data["syncOnConnectEnabled"] is True     # KI-044: authority still reaches subscribers
+
+
+def test_dkg_config_writer_keeps_the_steady_profile_for_another_graph(tmp_path: Path) -> None:
+    data = _write_dkg_config(tmp_path / "dkg", "umanitek/blackbox-threats-staging", DEFAULT_GRAPH)
+
+    assert data["syncReconcilerEnabled"] is True
+    assert "vmRecoveryPrefetchEnabled" not in data
+
+
+def test_dkg_config_writer_called_without_the_default_keeps_the_steady_profile(tmp_path: Path) -> None:
+    """An older caller passes six arguments; it must neither crash nor switch profile."""
+    home = tmp_path / "dkg"
+    command = [sys.executable, "-c", _extract_unix_config_writer(), str(home), "9320", "blazegraph",
+               BLAZEGRAPH_URL, "true", DEFAULT_GRAPH]
+    subprocess.run(command, check=True, capture_output=True, text=True)
+
+    assert json.loads((home / "config.json").read_text(encoding="utf-8"))["syncReconcilerEnabled"] is True
+
+
 def test_dkg_config_writer_preserves_oxigraph_config_during_switch(tmp_path: Path) -> None:
     home = tmp_path / "dkg"
     home.mkdir()
@@ -1482,7 +1520,9 @@ def test_installers_use_native_dkg_membership_without_sync_overrides() -> None:
         assert "DKG daemon is ready on npm build" in text
         assert "autoApproveJoinRequests" not in text
         assert 'data["syncOnConnectEnabled"] = True' in text
-        assert 'data["syncReconcilerEnabled"] = True' in text
+        assert 'data["syncReconcilerEnabled"] = not native_profile' in text   # KI-282
+        assert "DKG_EXACT_BATCH_STREAM_ENABLED" in text
+        assert "DKG_VM_RECOVERY_PREFETCH_ENABLED" in text
         assert 'data["durableSyncEnabled"] = True' in text
         assert 'data["syncGlobalMaxInflight"] = 1' in text
         assert 'data["syncGlobalQueueLimit"] = 0' in text

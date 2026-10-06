@@ -71,8 +71,13 @@ BLACKBOX_DKG_DURABLE_SYNC_ENABLED="${BLACKBOX_DKG_DURABLE_SYNC_ENABLED:-1}"
 BLACKBOX_DKG_CATCHUP_MAX_CONCURRENT_PEERS="1"
 BLACKBOX_DKG_STORE_QUEUE_WAIT_TIMEOUT_MS="300000"
 BLACKBOX_DKG_NODE_OPTIONS=""
+# DKG 10.0.21+ recovery speed-ups (KI-282), both off by default in the node. The exact
+# batch stream is read ONLY from the environment, so every launch path below passes it.
+BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED="${BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED:-1}"
+BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED="${BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED:-1}"
 NODE_MAJOR="${BLACKBOX_NODE_MAJOR:-22}"
-BLACKBOX_CONTEXT_GRAPH_ID="${BLACKBOX_CONTEXT_GRAPH_ID:-0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm}"
+BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID="0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"
+BLACKBOX_CONTEXT_GRAPH_ID="${BLACKBOX_CONTEXT_GRAPH_ID:-$BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID}"
 BLACKBOX_GRAPH_PEER_ID="${BLACKBOX_GRAPH_PEER_ID:-12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyKndHXjZM}"
 # Community graph + the peer id of the node that OWNS it (its read authority).
 # Set as a PAIR: an unregistered public graph cannot be found by a fresh node
@@ -205,6 +210,8 @@ blackbox_dkg() {
     DKG_STORE_QUEUE_WAIT_TIMEOUT_MS="$BLACKBOX_DKG_STORE_QUEUE_WAIT_TIMEOUT_MS" \
     DKG_SYNC_TOTAL_TIMEOUT_MS="1800000" \
     DKG_SWM_RECOVERY_TIMEOUT_MS="3600000" \
+    DKG_EXACT_BATCH_STREAM_ENABLED="$BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED" \
+    DKG_VM_RECOVERY_PREFETCH_ENABLED="$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED" \
     NODE_OPTIONS="$BLACKBOX_DKG_NODE_OPTIONS" \
     "$BLACKBOX_DKG_BIN" "$@"
 }
@@ -671,7 +678,7 @@ reset_fresh_managed_blazegraph() {
 
 ensure_blackbox_dkg_config() {
     local config_state
-    config_state="$("$VENV_DIR/bin/python" - "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_PORT" "$BLACKBOX_DKG_SELECTED_STORE_BACKEND" "$BLACKBOX_DKG_STORE_URL" "$BLACKBOX_DKG_STORE_MANAGED_BY_DKG" "$BLACKBOX_CONTEXT_GRAPH_ID" <<'PYEOF'
+    config_state="$("$VENV_DIR/bin/python" - "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_PORT" "$BLACKBOX_DKG_SELECTED_STORE_BACKEND" "$BLACKBOX_DKG_STORE_URL" "$BLACKBOX_DKG_STORE_MANAGED_BY_DKG" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID" <<'PYEOF'
 import json
 import os
 import secrets
@@ -685,6 +692,9 @@ store_backend = sys.argv[3]
 store_url = sys.argv[4]
 store_managed = sys.argv[5].lower() == "true"
 context_graph_id = sys.argv[6]
+# Absent (an older caller): no graph is treated as the default, so the
+# steady profile stays exactly as before.
+default_context_graph_id = sys.argv[7] if len(sys.argv) > 7 else ""
 home.mkdir(parents=True, exist_ok=True)
 cfg_path = home / "config.json"
 original = None
@@ -721,8 +731,16 @@ data["relayReservationCount"] = int(data.get("relayReservationCount") or 4)
 # foreground pinned catch-up runs before a fresh install subscribes, while an
 # upgrade must not interrupt an existing checkpointed transfer.
 data["syncOnConnectEnabled"] = True
-data["syncReconcilerEnabled"] = True
 data["durableSyncEnabled"] = True
+# Umanitek's default graph uses the DKG 10.0.21 native profile (KI-282, the same
+# profile `blackbox sync` persists in sync/managed_node.py): the node's VM
+# reconciler recovers the graph and the older sync reconciler stays off so it
+# does not compete for the single sync slot. Any other graph keeps the steady one.
+native_profile = context_graph_id == default_context_graph_id
+data["syncReconcilerEnabled"] = not native_profile
+if native_profile:
+    data["vmReconcilerEnabled"] = True
+    data["vmRecoveryPrefetchEnabled"] = True
 data.pop("syncAgentsMeta", None)
 data["syncGlobalMaxInflight"] = 1
 data["syncGlobalQueueLimit"] = 0
@@ -1935,13 +1953,18 @@ After=network-online.target
 Type=simple
 Environment=PATH=$node_bin_dir:/usr/local/bin:/usr/bin:/bin
 Environment=DKG_HOME=$BLACKBOX_DKG_HOME
-# Steady-state sync stays ON (matches cli.py _DKG_STEADY_SYNC_SETTINGS): the
-# connection-time meta sync is what delivers context-graph authority to
-# subscribers — with it off, community-graph subscribes fail closed (KI-044).
-# The =0 values used during install bootstrap are for that one supervised
-# transfer only and must never leak into the boot service.
+# Connection-time sync stays ON: the meta sync on connect is what delivers
+# context-graph authority to subscribers — with it off, community-graph
+# subscribes fail closed (KI-044). The =0 values used during install bootstrap
+# are for that one supervised transfer only and must never leak into the boot
+# service. The periodic sync reconciler is NOT set here: config.json decides it
+# per graph (sync/managed_node.py), and an environment value would override it.
 Environment=DKG_SYNC_ON_CONNECT_ENABLED=1
-Environment=DKG_SYNC_RECONCILER_ENABLED=1
+# DKG 10.0.21+ recovery speed-ups (KI-282). The exact batch stream is read ONLY
+# from the environment: without this line a service-started node recovers the
+# graph about 8x slower. The reconciler choice itself lives in config.json.
+Environment=DKG_EXACT_BATCH_STREAM_ENABLED=$BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED
+Environment=DKG_VM_RECOVERY_PREFETCH_ENABLED=$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED
 # Clear any orphaned daemon before starting: DKG CLI commands auto-spawn a
 # detached daemon when none is running; that orphan holds daemon.pid and
 # would crash-loop this unit forever ("Daemon already running", KI-045).

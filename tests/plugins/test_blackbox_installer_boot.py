@@ -49,9 +49,19 @@ def test_systemd_unit_keeps_steady_state_sync_enabled():
     src = _src()
     unit = src.split("[Unit]", 1)[1].split("UNIT", 1)[0]
     assert "DKG_SYNC_ON_CONNECT_ENABLED=1" in unit
-    assert "DKG_SYNC_RECONCILER_ENABLED=1" in unit
     assert "DKG_SYNC_ON_CONNECT_ENABLED=0" not in unit
-    assert "DKG_SYNC_RECONCILER_ENABLED=0" not in unit
+
+
+def test_systemd_unit_leaves_the_reconciler_to_config_and_carries_the_stream_switch():
+    """KI-282: the periodic sync reconciler is chosen per graph in config.json
+    (off for Umanitek's default graph on DKG 10.0.21). An environment value in
+    the unit would override that choice, so the unit must not set it. The exact
+    batch stream, by contrast, exists ONLY as an environment switch: without it
+    a service-started node recovers the graph about 8x slower."""
+    unit = _src().split("[Unit]", 1)[1].split("UNIT", 1)[0]
+    assert "DKG_SYNC_RECONCILER_ENABLED" not in unit
+    assert "Environment=DKG_EXACT_BATCH_STREAM_ENABLED=$BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED" in unit
+    assert "Environment=DKG_VM_RECOVERY_PREFETCH_ENABLED=$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED" in unit
 
 
 def test_systemd_unit_clears_orphaned_daemons():

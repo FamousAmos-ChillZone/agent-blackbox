@@ -82,7 +82,12 @@ $DkgCatchupMaxConcurrentPeers = "1"
 $DkgStoreQueueWaitTimeoutMs = "300000"
 $script:DkgNodeOptions = ""
 $NodeMajor   = if ($env:BLACKBOX_NODE_MAJOR)  { [int]$env:BLACKBOX_NODE_MAJOR } else { 22 }
-$ContextGraphId = if ($env:BLACKBOX_CONTEXT_GRAPH_ID) { $env:BLACKBOX_CONTEXT_GRAPH_ID } else { "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm" }
+$DefaultContextGraphId = "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"
+$ContextGraphId = if ($env:BLACKBOX_CONTEXT_GRAPH_ID) { $env:BLACKBOX_CONTEXT_GRAPH_ID } else { $DefaultContextGraphId }
+# DKG 10.0.21+ recovery speed-ups (KI-282), both off by default in the node. The exact
+# batch stream is read ONLY from the environment, so the node launch below passes it.
+$DkgExactBatchStreamEnabled = if ($env:BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED) { $env:BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED } else { "1" }
+$DkgVmRecoveryPrefetchEnabled = if ($env:BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED) { $env:BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED } else { "1" }
 $GraphPeerId = if ($env:BLACKBOX_GRAPH_PEER_ID) { $env:BLACKBOX_GRAPH_PEER_ID } else { "12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyKndHXjZM" }
 $CatchupTimeout = if ($env:BLACKBOX_DKG_CATCHUP_TIMEOUT) { [int]$env:BLACKBOX_DKG_CATCHUP_TIMEOUT } else { 3600 }
 $script:InstallIncomplete = $false
@@ -270,6 +275,8 @@ function Invoke-BlackboxDkg {
         "DKG_STORE_QUEUE_WAIT_TIMEOUT_MS",
         "DKG_SYNC_TOTAL_TIMEOUT_MS",
         "DKG_SWM_RECOVERY_TIMEOUT_MS",
+        "DKG_EXACT_BATCH_STREAM_ENABLED",
+        "DKG_VM_RECOVERY_PREFETCH_ENABLED",
         "NODE_OPTIONS",
         "Path"
     )
@@ -297,6 +304,8 @@ function Invoke-BlackboxDkg {
         $env:DKG_STORE_QUEUE_WAIT_TIMEOUT_MS = "$DkgStoreQueueWaitTimeoutMs"
         $env:DKG_SYNC_TOTAL_TIMEOUT_MS = "1800000"
         $env:DKG_SWM_RECOVERY_TIMEOUT_MS = "3600000"
+        $env:DKG_EXACT_BATCH_STREAM_ENABLED = "$DkgExactBatchStreamEnabled"
+        $env:DKG_VM_RECOVERY_PREFETCH_ENABLED = "$DkgVmRecoveryPrefetchEnabled"
         $env:NODE_OPTIONS = $script:DkgNodeOptions
         & $DkgBin @Args
     } finally {
@@ -751,6 +760,9 @@ store_backend = sys.argv[3]
 store_url = sys.argv[4]
 store_managed = sys.argv[5].lower() == "true"
 context_graph_id = sys.argv[6]
+# Absent (an older caller): no graph is treated as the default, so the
+# steady profile stays exactly as before.
+default_context_graph_id = sys.argv[7] if len(sys.argv) > 7 else ""
 home.mkdir(parents=True, exist_ok=True)
 cfg_path = home / "config.json"
 original = None
@@ -784,8 +796,16 @@ data["relayReservationCount"] = int(data.get("relayReservationCount") or 4)
 # foreground pinned catch-up runs before a fresh install subscribes, while an
 # upgrade must not interrupt an existing checkpointed transfer.
 data["syncOnConnectEnabled"] = True
-data["syncReconcilerEnabled"] = True
 data["durableSyncEnabled"] = True
+# Umanitek's default graph uses the DKG 10.0.21 native profile (KI-282, the same
+# profile `blackbox sync` persists in sync/managed_node.py): the node's VM
+# reconciler recovers the graph and the older sync reconciler stays off so it
+# does not compete for the single sync slot. Any other graph keeps the steady one.
+native_profile = context_graph_id == default_context_graph_id
+data["syncReconcilerEnabled"] = not native_profile
+if native_profile:
+    data["vmReconcilerEnabled"] = True
+    data["vmRecoveryPrefetchEnabled"] = True
 data.pop("syncAgentsMeta", None)
 data["syncGlobalMaxInflight"] = 1
 data["syncGlobalQueueLimit"] = 0
@@ -845,7 +865,7 @@ print("switched" if switched else ("changed" if changed else "unchanged"))
     $writerFile = Join-Path $env:TEMP "blackbox_dkg_config.py"
     Set-Content -Path $writerFile -Value $writer -Encoding UTF8
     try {
-        $configState = & $VenvPython $writerFile $DkgHome $DkgPort $script:DkgSelectedStoreBackend $DkgStoreUrl $DkgStoreManagedByDkg $ContextGraphId
+        $configState = & $VenvPython $writerFile $DkgHome $DkgPort $script:DkgSelectedStoreBackend $DkgStoreUrl $DkgStoreManagedByDkg $ContextGraphId $DefaultContextGraphId
         if ($LASTEXITCODE -ne 0) { throw "dkg config exit $LASTEXITCODE" }
         $configResult = $configState | Select-Object -Last 1
         if ($configResult -eq "switched") {

@@ -24,6 +24,17 @@ config_mod = load_blackbox("kernel.config")
 constants = load_blackbox("kernel.constants")
 cli_mod = load_blackbox("cli")
 chat_command = load_blackbox("chat.command")
+sync_native = load_blackbox("sync.native")
+
+
+@pytest.fixture(autouse=True)
+def _pin_the_catch_up_route(monkeypatch):
+    """The sync tests in this file pin the durable catch-up route. Since KI-282
+    (DKG 10.0.21) Umanitek's default graph takes the native route instead, and
+    the catch-up route serves every graph an operator chooses — so these tests
+    keep it covered by running it explicitly. The native route has its own
+    tests in test_blackbox_native_sync.py."""
+    monkeypatch.setattr(sync_native, "handles", lambda _cfg: False)
 managed_node = load_blackbox("sync.managed_node")
 sync_command = load_blackbox("sync.command")
 
