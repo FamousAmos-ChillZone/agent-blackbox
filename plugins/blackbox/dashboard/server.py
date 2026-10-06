@@ -1131,10 +1131,7 @@ def create_app(*, manage_blackbox: bool = False):
                 public = int(counts.get("public") or 0)
                 community = int(counts.get("community") or 0)
                 elapsed = time.monotonic() - started
-                wait = max(
-                    _RULESET_MIN_RETRY_SEC,
-                    float(cfg.sync_interval or _RULESET_EMPTY_RETRY_SEC) - elapsed,
-                )
+                wait = sync_timing.next_sync_delay(cfg, ruleset.peek(cfg), elapsed, _RULESET_MIN_RETRY_SEC)
                 if public == 0:
                     wait = min(_RULESET_EMPTY_RETRY_SEC, wait)
                 if total != last_total:

@@ -314,3 +314,14 @@ def test_progress_for_another_graph_is_not_catching_up(tmp_path, monkeypatch):
     pr.record_progress("cg", pr.PartitionRead(total=564, compiled=1))
 
     assert pr.catching_up("cg") and not pr.catching_up("another-graph")
+
+
+def test_last_good_rules_kept_through_a_failed_read_still_retry_soon_while_catching_up(tmp_path, monkeypatch):
+    """A store deadline mid-catch-up keeps the last-good rules; it must not also reset the pace to hourly."""
+    monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
+    monkeypatch.setattr(refresh_cycle.time, "time", lambda: 1_000_000.0)
+    _record(6, 290)
+
+    kept = refresh_cycle._reuse_generation(compiler.build_from_rows([]), "cg", None, _Config())
+
+    assert kept.synced_at + _Config.sync_interval - 1_000_000.0 == refresh_cycle._CATCHING_UP_RETRY_S

@@ -830,6 +830,33 @@ def test_the_worker_refreshes_soon_when_nothing_was_ever_compiled():
     assert sync_timing.initial_sync_delay(cfg, compiled, 5.0, 10.0) == 3600.0
 
 
+def test_the_worker_follows_the_rulesets_own_schedule_while_the_graph_is_arriving(monkeypatch):
+    """KI-288, bench native-b 2026-10-06: the worker slept a full hour after the first
+    compile (6 assets) while the node kept downloading; the ruleset had asked for 2 minutes."""
+    from plugins.blackbox.dashboard import sync_timing
+    from plugins.blackbox.kernel.config import BlackboxConfig
+    from plugins.blackbox.ruleset import compiler
+    monkeypatch.setattr(sync_timing.time, "time", lambda: 1_000_000.0)
+    cfg = BlackboxConfig(sync_interval=3600)
+    catching_up = compiler.Ruleset()
+    catching_up.synced_at = 1_000_000.0 - 3600 + 120                # the refresh cycle asked for 120 s
+
+    assert sync_timing.next_sync_delay(cfg, catching_up, 40.0, 5.0) == 120.0
+
+
+def test_the_worker_keeps_its_period_when_the_ruleset_asks_for_nothing_sooner(monkeypatch):
+    from plugins.blackbox.dashboard import sync_timing
+    from plugins.blackbox.kernel.config import BlackboxConfig
+    from plugins.blackbox.ruleset import compiler
+    monkeypatch.setattr(sync_timing.time, "time", lambda: 1_000_000.0)
+    cfg = BlackboxConfig(sync_interval=3600)
+    fresh = compiler.Ruleset()
+    fresh.synced_at = 1_000_000.0
+
+    assert sync_timing.next_sync_delay(cfg, fresh, 40.0, 5.0) == 3560.0   # period counted from the refresh start
+    assert sync_timing.next_sync_delay(cfg, compiler.Ruleset(), 40.0, 5.0) == 3560.0
+
+
 # ---------------------------------------------------------------------------
 # KI-215: a node that does not follow the verified graph says so, no clock
 # ---------------------------------------------------------------------------

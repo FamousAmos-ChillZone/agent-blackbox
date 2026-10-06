@@ -204,6 +204,7 @@ def _reuse_generation(rs: compiler.Ruleset, context_graph_id: str, client: Optio
     write it to disk and memory."""
     rs.context_graph_id = context_graph_id
     rs.synced_at = time.time()
+    _schedule_next_refresh(rs, config, False)   # a deferred read while catching up retries soon
     _apply_overlays(rs, client, config, reused=True)
     disk_cache._write_cache(rs)
     _memory.store(rs)
