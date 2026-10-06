@@ -251,13 +251,13 @@ class _Config:
 def _next_refresh_in(progress, tmp_path, monkeypatch):
     """Seconds until the scheduler wants the next refresh, given recorded progress."""
     monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
+    monkeypatch.setattr(refresh_cycle.time, "time", lambda: 1_000_000.0)   # one clock for record and check
     if progress is not None:
         pr.record_progress("cg", pr.PartitionRead(rows=[], total=progress[1], compiled=progress[0],
                                                   read_now=0, stopped_early=""))
     rs = compiler.build_from_rows([])
     rs.context_graph_id = "cg"
     rs.synced_at = 1_000_000.0
-    monkeypatch.setattr(refresh_cycle.time, "time", lambda: 1_000_000.0)
     refresh_cycle._schedule_next_refresh(rs, _Config(), False)
     return rs.synced_at + _Config.sync_interval - 1_000_000.0
 
@@ -267,8 +267,41 @@ def test_a_partly_compiled_graph_is_refreshed_again_within_minutes(tmp_path, mon
     assert _next_refresh_in((1, 564), tmp_path, monkeypatch) == refresh_cycle._CATCHING_UP_RETRY_S
 
 
-def test_a_fully_compiled_graph_keeps_the_normal_interval(tmp_path, monkeypatch):
+def test_a_fully_compiled_graph_that_stopped_growing_keeps_the_normal_interval(tmp_path, monkeypatch):
+    monkeypatch.setattr(pr, "GROWTH_QUIET_SECONDS", 0)
     assert _next_refresh_in((564, 564), tmp_path, monkeypatch) == _Config.sync_interval
+
+
+def _record(compiled, total):
+    pr.record_progress("cg", pr.PartitionRead(total=total, compiled=compiled))
+
+
+def test_a_node_still_receiving_the_graph_is_catching_up_though_all_it_lists_is_compiled(tmp_path, monkeypatch):
+    """Bench native-a 2026-10-06: 5 of 5 listed assets compiled while 559 were still
+    downloading, so the rules waited an hour behind a node that already held 288."""
+    monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
+    clock = [1_000_000.0]
+    monkeypatch.setattr(pr.time, "time", lambda: clock[0])
+    _record(1, 1)
+    clock[0] += 120
+    _record(5, 5)                                   # grew: every listed asset compiled, yet more coming
+
+    clock[0] += pr.GROWTH_QUIET_SECONDS - 1
+    assert pr.catching_up("cg")
+
+
+def test_a_pause_in_the_download_does_not_end_catching_up_early(tmp_path, monkeypatch):
+    monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
+    clock = [1_000_000.0]
+    monkeypatch.setattr(pr.time, "time", lambda: clock[0])
+    _record(5, 5)
+    for _ in range(3):                              # refreshes during a pause: the count stands still
+        clock[0] += 120
+        _record(5, 5)
+
+    assert pr.catching_up("cg")
+    clock[0] = 1_000_000.0 + pr.GROWTH_QUIET_SECONDS + 1
+    assert not pr.catching_up("cg")                 # quiet for the whole window: done
 
 
 def test_no_recorded_progress_keeps_the_normal_interval(tmp_path, monkeypatch):

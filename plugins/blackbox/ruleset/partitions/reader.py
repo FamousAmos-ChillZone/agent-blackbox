@@ -34,6 +34,13 @@ logger = logging.getLogger(__name__)
 PAGE_TRIPLES = 50_000
 #: New partitions read per refresh at most this long; the rest wait for the next.
 READ_BUDGET_SECONDS = 600.0
+#: The node is treated as still receiving the graph until its asset count has
+#: not grown for this long. A recovering DKG node lists only what it already
+#: holds, so "every listed asset compiled" says nothing about the assets still
+#: on their way; and downloads pause for minutes between batches (bench
+#: blackbox-native-a, 2026-10-06: 5 assets listed and compiled while 559 more
+#: were queued, so the rules waited an hour behind a node holding 288).
+GROWTH_QUIET_SECONDS = 900.0
 
 
 def read_partition_triples(client: DkgClient, cg_id: str, partition: str) -> Optional[List[Triple]]:
@@ -164,13 +171,16 @@ def record_progress(cg_id: str, read: PartitionRead) -> None:
     """Remember how much of the verified graph the last refresh compiled (KI-290).
 
     ``blackbox status`` shows it, so rules that cover only part of what the node
-    holds are visible instead of looking complete. Best effort: a failed write
-    only loses the status line.
+    holds are visible instead of looking complete. It also keeps when the
+    node's asset count last grew, which :func:`catching_up` reads. Best effort:
+    a failed write only loses the status line and the faster refresh pace.
     """
     path = _progress_path()
+    now = time.time()
     record = {
         "context_graph_id": cg_id, "assets_total": read.total, "assets_compiled": read.compiled,
-        "assets_read_now": read.read_now, "stopped_early": read.stopped_early, "at": time.time(),
+        "assets_read_now": read.read_now, "stopped_early": read.stopped_early, "at": now,
+        "total_grew_at": _total_grew_at(progress(cg_id), read.total, now),
     }
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -179,6 +189,16 @@ def record_progress(cg_id: str, read: PartitionRead) -> None:
         os.replace(tmp, path)
     except OSError as exc:
         logger.warning("blackbox: could not record verified-graph progress: %s", exc)
+
+
+def _total_grew_at(previous: Optional[Dict[str, object]], total: int, now: float) -> float:
+    """When the asset count last grew: *now* if it grew since *previous* (or
+    this is the first record of a non-empty graph), else the earlier time."""
+    before_total = (previous or {}).get("assets_total")
+    before_grew_at = (previous or {}).get("total_grew_at")
+    if isinstance(before_total, int) and total <= before_total and isinstance(before_grew_at, (int, float)):
+        return float(before_grew_at)
+    return now if total > 0 else 0.0
 
 
 def progress(cg_id: str) -> Optional[Dict[str, object]]:
@@ -191,10 +211,15 @@ def progress(cg_id: str) -> Optional[Dict[str, object]]:
 
 
 def catching_up(cg_id: str) -> bool:
-    """True while the last refresh compiled only part of *cg_id*'s verified
-    graph (a fresh node, or assets deferred by a store deadline or the read
-    budget). False when nothing was recorded: a graph never read partition by
-    partition is not catching up."""
+    """True while *cg_id*'s verified rules are behind the node or the node is
+    still receiving the graph: the last refresh compiled only part of what the
+    node listed (assets deferred by a store deadline or the read budget), or
+    the node's asset count grew within :data:`GROWTH_QUIET_SECONDS`. False when
+    nothing was recorded: a graph never read partition by partition is not
+    catching up."""
     done = progress(cg_id) or {}
     compiled, total = done.get("assets_compiled"), done.get("assets_total")
-    return isinstance(compiled, int) and isinstance(total, int) and compiled < total
+    if isinstance(compiled, int) and isinstance(total, int) and compiled < total:
+        return True
+    grew_at = done.get("total_grew_at")
+    return isinstance(grew_at, (int, float)) and grew_at > 0 and time.time() - grew_at < GROWTH_QUIET_SECONDS
