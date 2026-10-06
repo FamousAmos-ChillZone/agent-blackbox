@@ -924,10 +924,15 @@ function Resolve-Repo {
     }
     if (Test-BlackboxRepoCheckout $RepoDir) {
         Write-Step "Updating existing clone at $RepoDir"
+        # Single-branch shallow clone: add the branch to the fetch rule once, so a
+        # DIFFERENT branch becomes a normal remote branch to check out (KI-287).
+        $branchRule = "+refs/heads/${RepoBranch}:refs/remotes/origin/${RepoBranch}"
+        $fetchRules = @(& git -C $RepoDir config --get-all remote.origin.fetch)
+        if ($fetchRules -notcontains $branchRule) { & git -C $RepoDir remote set-branches --add origin $RepoBranch }
         & git -C $RepoDir fetch --depth 1 origin $RepoBranch
         if ($LASTEXITCODE -ne 0) { throw "Could not fetch $RepoBranch from $RepoUrl" }
         & git -C $RepoDir checkout $RepoBranch
-        if ($LASTEXITCODE -ne 0) { throw "Could not check out $RepoBranch in $RepoDir" }
+        if ($LASTEXITCODE -ne 0) { throw "Could not switch $RepoDir to $RepoBranch (git's reason is above)" }
         & git -C $RepoDir pull --ff-only origin $RepoBranch
         if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward $RepoDir to origin/$RepoBranch" }
     } else {

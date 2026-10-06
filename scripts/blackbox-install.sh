@@ -918,12 +918,20 @@ resolve_repo() {
     fi
     if blackbox_repo_is_valid "$REPO_DIR"; then
         step "Updating existing clone at $REPO_DIR"
+        # The clone is single-branch and shallow: its fetch rule names only the
+        # branch it was cloned from, so a DIFFERENT branch would land only in
+        # FETCH_HEAD and could be neither checked out nor tracked (KI-287).
+        # Adding the branch to the rule (once) makes it a normal remote branch.
+        local branch_rule="+refs/heads/$REPO_BRANCH:refs/remotes/origin/$REPO_BRANCH"
+        if ! git -C "$REPO_DIR" config --get-all remote.origin.fetch | grep -qxF -- "$branch_rule"; then
+            git -C "$REPO_DIR" remote set-branches --add origin "$REPO_BRANCH"
+        fi
         if ! git -C "$REPO_DIR" fetch --depth 1 origin "$REPO_BRANCH"; then
             err "Could not fetch $REPO_BRANCH from $REPO_URL."
             return 1
         fi
         if ! git -C "$REPO_DIR" checkout "$REPO_BRANCH"; then
-            err "Could not check out $REPO_BRANCH in $REPO_DIR. Resolve local changes and re-run."
+            err "Could not switch $REPO_DIR to $REPO_BRANCH (git's reason is above)."
             return 1
         fi
         if ! git -C "$REPO_DIR" pull --ff-only origin "$REPO_BRANCH"; then
