@@ -23,6 +23,7 @@ from . import compiler
 from . import disk_cache
 from . import errors
 from . import fetching
+from . import partitions
 from . import community_tier
 from . import curator_tier
 from .. import community
@@ -78,6 +79,10 @@ def _latest_cached_ruleset(context_graph_id: str = "") -> Optional[compiler.Rule
 
 
 _EMPTY_RULESET_RETRY_S = 30.0
+#: While the verified graph is only partly compiled, refresh again this soon so
+#: the rules reach the whole graph in minutes, not hours (KI-288); long enough
+#: for the store's post-deadline recovery window to clear.
+_CATCHING_UP_RETRY_S = 120.0
 _NONEMPTY_REFRESH_MIN_S = 15 * 60.0
 
 
@@ -319,12 +324,18 @@ def _schedule_next_refresh(rs: compiler.Ruleset, config: BlackboxConfig, empty_s
 
     A fresh node's subscribe/catch-up is async. Do not cache "0 rules" as
     fresh for the full sync interval; retry soon so the dashboard updates
-    shortly after VM lands locally.
+    shortly after VM lands locally. Likewise, while the last refresh compiled
+    only part of the verified graph, come back in :data:`_CATCHING_UP_RETRY_S`
+    rather than an hour (KI-288).
     """
     if empty_success:
-        interval = max(1.0, float(config.sync_interval or 1))
-        retry_after = min(_EMPTY_RULESET_RETRY_S, interval)
-        rs.synced_at = time.time() - interval + retry_after
+        retry_after = _EMPTY_RULESET_RETRY_S
+    elif partitions.catching_up(rs.context_graph_id):
+        retry_after = _CATCHING_UP_RETRY_S
+    else:
+        return
+    interval = max(1.0, float(config.sync_interval or 1))
+    rs.synced_at = time.time() - interval + min(retry_after, interval)
 
 
 def get(config: Optional[BlackboxConfig] = None) -> compiler.Ruleset:

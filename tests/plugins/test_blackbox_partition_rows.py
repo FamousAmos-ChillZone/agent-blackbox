@@ -236,3 +236,48 @@ def test_nothing_readable_and_nothing_cached_keeps_the_last_good_tier(tmp_path, 
 
     assert fetching.fetch_tier(Client(), "cg", constants.VIEW_VERIFIABLE_MEMORY) is None
     assert json.loads((tmp_path / "verified_partitions" / "progress.json").read_text())["assets_compiled"] == 0
+
+
+# ------------------------------------------------------------------ catching up between refreshes
+
+
+refresh_cycle = load_blackbox("ruleset.refresh_cycle")
+
+
+class _Config:
+    sync_interval = 3600
+
+
+def _next_refresh_in(progress, tmp_path, monkeypatch):
+    """Seconds until the scheduler wants the next refresh, given recorded progress."""
+    monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
+    if progress is not None:
+        pr.record_progress("cg", pr.PartitionRead(rows=[], total=progress[1], compiled=progress[0],
+                                                  read_now=0, stopped_early=""))
+    rs = compiler.build_from_rows([])
+    rs.context_graph_id = "cg"
+    rs.synced_at = 1_000_000.0
+    monkeypatch.setattr(refresh_cycle.time, "time", lambda: 1_000_000.0)
+    refresh_cycle._schedule_next_refresh(rs, _Config(), False)
+    return rs.synced_at + _Config.sync_interval - 1_000_000.0
+
+
+def test_a_partly_compiled_graph_is_refreshed_again_within_minutes(tmp_path, monkeypatch):
+    """KI-288: 1 of 564 assets compiled must not wait a whole sync interval for the rest."""
+    assert _next_refresh_in((1, 564), tmp_path, monkeypatch) == refresh_cycle._CATCHING_UP_RETRY_S
+
+
+def test_a_fully_compiled_graph_keeps_the_normal_interval(tmp_path, monkeypatch):
+    assert _next_refresh_in((564, 564), tmp_path, monkeypatch) == _Config.sync_interval
+
+
+def test_no_recorded_progress_keeps_the_normal_interval(tmp_path, monkeypatch):
+    """A custom graph that never went through the partition reader is not 'catching up'."""
+    assert _next_refresh_in(None, tmp_path, monkeypatch) == _Config.sync_interval
+
+
+def test_progress_for_another_graph_is_not_catching_up(tmp_path, monkeypatch):
+    monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
+    pr.record_progress("cg", pr.PartitionRead(total=564, compiled=1))
+
+    assert pr.catching_up("cg") and not pr.catching_up("another-graph")

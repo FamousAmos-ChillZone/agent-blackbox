@@ -188,3 +188,13 @@ def progress(cg_id: str) -> Optional[Dict[str, object]]:
     except (OSError, ValueError):
         return None
     return record if isinstance(record, dict) and record.get("context_graph_id") == cg_id else None
+
+
+def catching_up(cg_id: str) -> bool:
+    """True while the last refresh compiled only part of *cg_id*'s verified
+    graph (a fresh node, or assets deferred by a store deadline or the read
+    budget). False when nothing was recorded: a graph never read partition by
+    partition is not catching up."""
+    done = progress(cg_id) or {}
+    compiled, total = done.get("assets_compiled"), done.get("assets_total")
+    return isinstance(compiled, int) and isinstance(total, int) and compiled < total
