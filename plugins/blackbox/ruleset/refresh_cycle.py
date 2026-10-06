@@ -179,13 +179,7 @@ def _refresh_unlocked(
     rs = compiler.build_from_rows(rows)
     rs.context_graph_id = context_graph_id
     _apply_overlays(rs, client, config)
-    if empty_success:
-        # A fresh node's subscribe/catch-up is async. Do not cache "0 rules" as
-        # fresh for the full sync interval; retry soon so the dashboard updates
-        # shortly after VM lands locally.
-        interval = max(1.0, float(config.sync_interval or 1))
-        retry_after = min(_EMPTY_RULESET_RETRY_S, interval)
-        rs.synced_at = time.time() - interval + retry_after
+    _schedule_next_refresh(rs, config, empty_success)
 
     errored = failed_tiers
     if errored:
@@ -318,6 +312,19 @@ def _background_refresh(config: BlackboxConfig) -> None:
         logger.debug("blackbox: background refresh failed: %s", exc)
     finally:
         _refreshing = False
+
+
+def _schedule_next_refresh(rs: compiler.Ruleset, config: BlackboxConfig, empty_success: bool) -> None:
+    """Backdate ``rs.synced_at`` when the next refresh should come before a full interval.
+
+    A fresh node's subscribe/catch-up is async. Do not cache "0 rules" as
+    fresh for the full sync interval; retry soon so the dashboard updates
+    shortly after VM lands locally.
+    """
+    if empty_success:
+        interval = max(1.0, float(config.sync_interval or 1))
+        retry_after = min(_EMPTY_RULESET_RETRY_S, interval)
+        rs.synced_at = time.time() - interval + retry_after
 
 
 def get(config: Optional[BlackboxConfig] = None) -> compiler.Ruleset:
