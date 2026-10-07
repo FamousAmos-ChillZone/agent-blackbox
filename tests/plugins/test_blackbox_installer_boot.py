@@ -94,3 +94,67 @@ def test_disable_instructions_documented():
     src = _src()
     assert "systemctl disable --now blackbox-dkg" in src
     assert "launchctl unload" in src
+
+
+# ---------------------------------------------------------------- the dashboard (KI-296)
+
+
+def _dashboard_function() -> str:
+    import re
+    match = re.search(r"^register_dashboard_service\(\) \{.*?\n\}", _src(), re.DOTALL | re.MULTILINE)
+    assert match is not None
+    return match.group(0)
+
+
+def test_dashboard_service_is_registered_after_the_node_in_main():
+    """KI-296: a rebooted machine got its DKG node back but not the dashboard, whose
+    worker refreshes the rules and whose health poll drives the community pulse."""
+    main_body = _src().split("main() {", 1)[1]
+    assert main_body.index("register_boot_service") < main_body.index("register_dashboard_service")
+    assert main_body.index("register_dashboard_service") < main_body.index("next_steps")
+
+
+def test_dashboard_unit_starts_after_the_node_and_runs_the_dashboard():
+    unit = _dashboard_function().split("[Unit]", 1)[1].split("DASHUNIT", 1)[0]
+    assert "After=network-online.target blackbox-dkg.service" in unit
+    assert "ExecStart=$HERMES_BIN blackbox dashboard" in unit
+    assert "Environment=HERMES_HOME=$HERMES_HOME" in unit
+    assert "Restart=on-failure" in unit
+
+
+def test_dashboard_service_respects_auto_dashboard_off():
+    body = _dashboard_function()
+    assert body.index('case "$BLACKBOX_AUTO_DASHBOARD"') < body.index("[Unit]")
+
+
+def test_dashboard_service_is_written_and_enabled_on_a_systemd_machine(tmp_path):
+    """Runs the real function on a Linux-shaped sandbox: a non-root user gets a user
+    unit under $HOME, and systemctl is asked to enable it (stub records the calls)."""
+    import shutil
+    import subprocess
+    if shutil.which("bash") is None:
+        import pytest
+        pytest.skip("needs bash")
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    calls = tmp_path / "systemctl.calls"
+    for name, body in (("systemctl", f'echo "$*" >> "{calls}"'), ("node", "exit 0"), ("uname", "echo Linux"),
+                       ("hermes", "exit 0")):
+        (stubs / name).write_text(f"#!/bin/sh\n{body}\n")
+        (stubs / name).chmod(0o755)
+    script = "\n".join([
+        "set -euo pipefail",
+        "ok() { echo \"OK $*\"; }", "warn() { echo \"WARN $*\"; }", "step() { :; }",
+        "id() { echo 1000; }",           # a non-root user: the unit goes under $HOME
+        f"HOME={tmp_path}", f"HERMES_HOME={tmp_path}/.hermes", f"HERMES_BIN={stubs}/hermes",
+        "BLACKBOX_AUTO_DASHBOARD=1",
+        _dashboard_function(),
+        "register_dashboard_service",
+    ])
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                            env={"PATH": f"{stubs}:/usr/bin:/bin"})
+
+    assert result.returncode == 0, result.stderr
+    unit = tmp_path / ".config" / "systemd" / "user" / "blackbox-dashboard.service"
+    assert f"ExecStart={stubs}/hermes blackbox dashboard" in unit.read_text()
+    assert "--user enable blackbox-dashboard" in calls.read_text()

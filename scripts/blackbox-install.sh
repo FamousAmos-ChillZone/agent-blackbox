@@ -2066,6 +2066,87 @@ PLIST
     esac
 }
 
+# Boot persistence for the DASHBOARD (KI-296). The dashboard is what keeps a
+# node's protection current: its worker refreshes the verified rules and its
+# health poll drives the community pulse. Registering only the DKG node meant a
+# rebooted machine came back with the node running but Blackbox frozen until an
+# agent happened to run (bench swm21-b, 2026-10-07). Same shape as the node's
+# service; it starts after the node. Skipped when dashboard auto-start is off.
+# Disable anytime:
+#   Linux:  systemctl disable --now blackbox-dashboard
+#   macOS:  launchctl unload ~/Library/LaunchAgents/ai.umanitek.blackbox-dashboard.plist
+register_dashboard_service() {
+    case "$BLACKBOX_AUTO_DASHBOARD" in
+        0|false|never|no) return 0 ;;
+    esac
+    if [ -z "${HERMES_BIN:-}" ] || [ ! -x "$HERMES_BIN" ]; then
+        warn "hermes not found — the dashboard will NOT restart after a reboot; start it with: blackbox dashboard"
+        return 0
+    fi
+    local node_bin_dir
+    node_bin_dir="$(dirname "$(command -v node)")"
+    case "$(uname -s)" in
+        Linux)
+            command -v systemctl >/dev/null 2>&1 || return 0   # register_boot_service already warned
+            local unit=/etc/systemd/system/blackbox-dashboard.service
+            if [ ! -w /etc/systemd/system ] && [ "$(id -u)" != 0 ]; then
+                unit="$HOME/.config/systemd/user/blackbox-dashboard.service"
+                mkdir -p "$(dirname "$unit")"
+            fi
+            cat > "$unit" <<DASHUNIT
+[Unit]
+Description=Agent Blackbox dashboard (rule refresh + community pulse)
+After=network-online.target blackbox-dkg.service
+Wants=blackbox-dkg.service
+
+[Service]
+Type=simple
+Environment=HOME=$HOME
+Environment=HERMES_HOME=$HERMES_HOME
+Environment=PATH=$HOME/.local/bin:$node_bin_dir:/usr/local/bin:/usr/bin:/bin
+ExecStart=$HERMES_BIN blackbox dashboard
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target default.target
+DASHUNIT
+            if [ "$unit" = /etc/systemd/system/blackbox-dashboard.service ]; then
+                systemctl daemon-reload && systemctl enable blackbox-dashboard >/dev/null 2>&1 \
+                    && ok "systemd service registered (blackbox-dashboard) — protection stays current after reboots" \
+                    || warn "could not enable blackbox-dashboard; enable manually: systemctl enable blackbox-dashboard"
+            else
+                systemctl --user daemon-reload && systemctl --user enable blackbox-dashboard >/dev/null 2>&1 \
+                    && ok "systemd user service registered (blackbox-dashboard)" \
+                    || warn "could not enable the dashboard user service; enable manually: systemctl --user enable blackbox-dashboard"
+            fi
+            ;;
+        Darwin)
+            local plist="$HOME/Library/LaunchAgents/ai.umanitek.blackbox-dashboard.plist"
+            mkdir -p "$HOME/Library/LaunchAgents"
+            cat > "$plist" <<DASHPLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.umanitek.blackbox-dashboard</string>
+  <key>ProgramArguments</key><array>
+    <string>$HERMES_BIN</string><string>blackbox</string><string>dashboard</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>$HOME/.local/bin:$node_bin_dir:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HERMES_HOME</key><string>$HERMES_HOME</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+</dict></plist>
+DASHPLIST
+            # Registered for the next login only: the dashboard started above keeps
+            # running now, and loading the agent here would start a second one.
+            ok "LaunchAgent registered (blackbox-dashboard) — starts at your next login"
+            ;;
+    esac
+}
+
 # KI-032: any local process that can read the DKG auth token can bypass every
 # Blackbox gate at the node. The token must be owner-only.
 secure_dkg_token_perms() {
@@ -2100,6 +2181,7 @@ main() {
     sync_ruleset
     start_dashboard
     register_boot_service
+    register_dashboard_service
     next_steps
     if [ "$BLACKBOX_INSTALL_INCOMPLETE" = true ]; then
         exit 1
