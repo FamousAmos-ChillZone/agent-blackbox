@@ -14,7 +14,18 @@ object owns that state:
   the first subscribe — an unregistered public graph has no on-chain pointer,
   so a fresh node that is not connected to the owner gets "read authority
   unavailable" forever (KI-216, FIX-0039). A failed subscribe is retried after
-  ``FAILED_SUBSCRIBE_RETRY_SECONDS``, not the long window.
+  ``FAILED_SUBSCRIBE_RETRY_SECONDS``, not the long window;
+* keep the link to the owner alive: re-dial it every ``OWNER_LINK_SECONDS``
+  whether or not the node is subscribed. Community reports reach a node over
+  that link, and a node that lost it stayed "subscribed" while receiving
+  nothing for hours (KI-297) — the DKG's sync-on-connect then replays what was
+  missed;
+* when the node is subscribed but its listing shows no access policy, the
+  graph's public definition never arrived (it is served only by a peer that
+  holds it, in practice the owner, and is fetched once, at subscribe time): the
+  node can read but every post fails CONTEXT_GRAPH_NOT_FOUND (KI-295). Dial the
+  owner and subscribe again, at most once per ``FAILED_SUBSCRIBE_RETRY_SECONDS``,
+  until the definition is in.
 
 Pattern: a single owner of mutable state with one lock, exposed as the
 module-level :data:`MEMBERSHIP` (Global Object — the state is per process by
@@ -46,6 +57,10 @@ class CommunityMembership:
     #: A subscribe the node REFUSED (owner not reachable yet, chain hiccup) is
     #: retried this soon — a fresh install should not sit dark for ten minutes.
     FAILED_SUBSCRIBE_RETRY_SECONDS = 60.0
+    #: How often the live link to the graph owner is re-dialled (KI-297). A dial
+    #: of a connected peer is a cheap no-op on the node; a dropped link costs at
+    #: most this long plus the node's catch-up (169 s measured on the bench).
+    OWNER_LINK_SECONDS = 120.0
 
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
@@ -56,6 +71,8 @@ class CommunityMembership:
         #: graph -> when the node last confirmed it is subscribed; inside
         #: RETRY_SECONDS the listing is not re-read (the pulse calls every ~20 s).
         self._confirmed: Dict[str, float] = {}
+        self._last_owner_dial: Dict[str, float] = {}
+        self._own_peer = ""   # this node's peer id, once known (never dial ourselves)
 
     def ensure(self, client: DkgClient, cfg: object) -> Tuple[bool, str]:
         """Make sure this node is subscribed to (and has asked to join) the
@@ -64,13 +81,17 @@ class CommunityMembership:
         if not graph:
             return False, "no community graph configured"
         owner_peer = str(getattr(cfg, "community_graph_peer_id", "") or "")
+        dialled = self._keep_owner_link(client, owner_peer)
         if self._recently_confirmed(graph):
             return True, "subscribed"
         entry = _graph_entry(client, graph)
+        if entry and entry.get("subscribed") and owner_peer and not _has_definition(entry):
+            return self._fetch_definition(client, graph, owner_peer, dialled)
         if not (entry and entry.get("subscribed")):
             if not self._due(self._last_subscribe, graph):
                 return False, "subscribe attempted recently; waiting for the node"
-            _connect_owner(client, owner_peer)
+            if not dialled:
+                _connect_owner(client, owner_peer)
             try:
                 client.subscribe_context_graph(graph, include_shared_memory=True)
             except Exception as exc:
@@ -78,17 +99,66 @@ class CommunityMembership:
                             int(self.FAILED_SUBSCRIBE_RETRY_SECONDS), exc)
                 self._retry_sooner(self._last_subscribe, graph)
                 return False, f"subscribe failed: {exc}"
-        with self._lock:
-            self._confirmed[graph] = self._clock()
         # A join request is an OUTWARD action, so it fails closed: it is sent only
         # when the node's own listing says the graph is private. Before the first
         # subscribe the graph has no listing row at all — bench F sent a join to a
         # public graph through that gap (2026-10-03), so re-read after subscribing.
         entry = entry if entry and entry.get("subscribed") else _graph_entry(client, graph)
+        if not owner_peer or (entry and _has_definition(entry)):
+            with self._lock:   # confirmed only with the definition in (KI-295)
+                self._confirmed[graph] = self._clock()
+        else:
+            self._retry_sooner(self._last_subscribe, graph)   # fetch the definition in a minute
         if not entry or str(entry.get("accessPolicy") or "") != "private":
             return True, "subscribed"   # D-040: a public (or unknown) graph has no join step
         self._join_once(client, graph, owner_peer)
         return True, "subscribed"
+
+    def _keep_owner_link(self, client: DkgClient, owner_peer: str) -> bool:
+        """Re-dial the graph owner every ``OWNER_LINK_SECONDS`` (KI-297); never
+        this node itself. Returns True when it dialled on this call."""
+        if not owner_peer or owner_peer == self._own_peer_id(client):
+            return False
+        if not self._due_after(self._last_owner_dial, owner_peer, self.OWNER_LINK_SECONDS):
+            return False
+        _connect_owner(client, owner_peer)
+        return True
+
+    def _fetch_definition(self, client: DkgClient, graph: str, owner_peer: str,
+                          dialled: bool) -> Tuple[bool, str]:
+        """Subscribed, but the graph's definition never arrived (KI-295): dial the
+        owner and subscribe again, at most once per short window. Reads keep
+        working meanwhile, so this still reports the node as subscribed."""
+        if not self._due(self._last_subscribe, graph):
+            return True, "subscribed; waiting for the graph definition from its owner"
+        self._retry_sooner(self._last_subscribe, graph)   # look again in a minute, not ten
+        if not dialled:
+            _connect_owner(client, owner_peer)
+        logger.info("blackbox: the community graph's definition is missing on this node "
+                    "(posts would be refused); fetching it again from the owner")
+        try:
+            client.subscribe_context_graph(graph, include_shared_memory=True)
+        except Exception as exc:
+            logger.info("blackbox: community re-subscribe failed (retry in %ds): %s",
+                        int(self.FAILED_SUBSCRIBE_RETRY_SECONDS), exc)
+        return True, "subscribed; fetching the graph definition from its owner"
+
+    def _own_peer_id(self, client: DkgClient) -> str:
+        if not self._own_peer:
+            try:
+                self._own_peer = str((client.status() or {}).get("peerId") or "")
+            except Exception:   # cannot tell yet: dial anyway (the node refuses a self-dial)
+                return ""
+        return self._own_peer
+
+    def _due_after(self, last: Dict[str, float], key: str, window: float) -> bool:
+        """Claim the next attempt for *key* if *window* seconds have passed."""
+        now = self._clock()
+        with self._lock:
+            if key in last and now - last[key] < window:
+                return False
+            last[key] = now
+            return True
 
     def _recently_confirmed(self, graph: str) -> bool:
         with self._lock:
@@ -141,6 +211,12 @@ def _graph_entry(client: DkgClient, graph: str) -> Optional[Dict[str, object]]:
         if str(entry.get("id") or "") == graph:
             return entry
     return None
+
+
+def _has_definition(entry: Dict[str, object]) -> bool:
+    """True when the node holds the graph's definition: its listing names an
+    access policy. A node without it lists the graph with no policy (KI-295)."""
+    return str(entry.get("accessPolicy") or "").strip().lower() in {"public", "private"}
 
 
 def _connect_owner(client: DkgClient, owner_peer: str) -> None:
