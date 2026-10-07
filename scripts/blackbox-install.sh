@@ -1864,14 +1864,28 @@ start_dashboard() {
     local log_file="$log_dir/blackbox-dashboard-install.log"
     mkdir -p "$log_dir"
 
+    # The code revision the running dashboard was started from (KI-300): a
+    # dashboard keeps the code it loaded, so after an update the installer must
+    # launch it again — `blackbox dashboard` replaces the one on its port.
+    local revision_file="$HERMES_HOME/blackbox/.dashboard-revision"
+    local revision=""
+    if git -C "$REPO_DIR" rev-parse -q --verify HEAD >/dev/null 2>&1; then
+        revision="$(git -C "$REPO_DIR" rev-parse HEAD)"
+    fi
     if command -v curl >/dev/null 2>&1 && curl -fsS "$url/" >/dev/null 2>&1; then
-        ok "Dashboard already running at $url"
-        return 0
+        if [ -z "$revision" ] || [ "$(cat "$revision_file" 2>/dev/null)" = "$revision" ]; then
+            ok "Dashboard already running at $url"
+            return 0
+        fi
+        step "Blackbox was updated: restarting the dashboard so the new code runs"
     fi
 
     step "Launching: blackbox dashboard"
     run_detached "$log_file" "$HERMES_BIN" blackbox dashboard
     sleep 2
+    if [ -n "$revision" ]; then
+        mkdir -p "$(dirname "$revision_file")" && printf '%s\n' "$revision" > "$revision_file"
+    fi
 
     if command -v curl >/dev/null 2>&1 && ! curl -fsS "$url/" >/dev/null 2>&1; then
         warn "Dashboard process started, but $url did not respond yet."
@@ -2112,11 +2126,14 @@ RestartSec=10
 WantedBy=multi-user.target default.target
 DASHUNIT
             if [ "$unit" = /etc/systemd/system/blackbox-dashboard.service ]; then
-                systemctl daemon-reload && systemctl enable blackbox-dashboard >/dev/null 2>&1 \
+                # --now: the dashboard runs under systemd from this moment (restarted
+                # on a crash), not only after the next reboot; it replaces the one
+                # the installer just launched on the same port.
+                systemctl daemon-reload && systemctl enable --now blackbox-dashboard >/dev/null 2>&1 \
                     && ok "systemd service registered (blackbox-dashboard) — protection stays current after reboots" \
                     || warn "could not enable blackbox-dashboard; enable manually: systemctl enable blackbox-dashboard"
             else
-                systemctl --user daemon-reload && systemctl --user enable blackbox-dashboard >/dev/null 2>&1 \
+                systemctl --user daemon-reload && systemctl --user enable --now blackbox-dashboard >/dev/null 2>&1 \
                     && ok "systemd user service registered (blackbox-dashboard)" \
                     || warn "could not enable the dashboard user service; enable manually: systemctl --user enable blackbox-dashboard"
             fi
