@@ -1889,7 +1889,7 @@ def create_app(*, manage_blackbox: bool = False):
         """Map a UI tier name to a DKG SPARQL view.
 
         ``public`` → verifiable-memory (the curated source of truth),
-        ``community`` → coming soon (never queried),
+        ``community`` → shared-working-memory (the community graph; flag-only),
         ``local`` → working-memory (this node's own private graph).
         """
         tier = (tier or default).lower()
