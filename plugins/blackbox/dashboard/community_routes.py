@@ -26,6 +26,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
+from .lifecycle import on_shutdown, on_startup
 from .pulse_driver import PulseDriver
 from .safe_payloads import safe_identifier, safe_text, sanitized_ledger
 
@@ -210,8 +211,8 @@ def register_community_routes(app: Any, *, community_read: CommunityReadSource,
     verified_reports = _reports_of(community_read)
     reachable = node_reachable or (lambda cfg: True)
     driver = pulse_driver or PulseDriver()
-    app.on_event("startup")(driver.start)   # same lifecycle hooks the server uses
-    app.on_event("shutdown")(driver.stop)
+    on_startup(app)(driver.start)
+    on_shutdown(app)(driver.stop)
 
     @app.get("/api/health")
     def health_items() -> Any:

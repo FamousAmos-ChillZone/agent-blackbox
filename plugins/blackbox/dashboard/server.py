@@ -30,8 +30,7 @@ from typing import Any, Dict, List, Set, Tuple
 
 from ..sync import state as sync_state
 from ..sync import read_durable_progress
-from . import community_routes
-from . import sync_timing
+from . import community_routes, lifecycle, sync_timing
 from .node_probe import node_sync_probe
 from .sync_labels import _community_progress, _sync_label, not_subscribed_activity
 from .safe_payloads import graph_tier_item, safe_identifier, safe_text
@@ -1159,7 +1158,7 @@ def create_app(*, manage_blackbox: bool = False):
                     return
                 time.sleep(0.1)
 
-    @app.on_event("startup")
+    @lifecycle.on_startup(app)
     def _start_rescanner() -> None:
         # Do NOT pre-seed ``known``: attach is idempotent, so the first
         # iteration walks every workspace and self-heals anything the
@@ -1179,7 +1178,7 @@ def create_app(*, manage_blackbox: bool = False):
             blackbox_thread.start()
             logger.info("agent blackbox runtime: supervisor started")
 
-    @app.on_event("shutdown")
+    @lifecycle.on_shutdown(app)
     def _stop_rescanner() -> None:
         _rescan_state["stop"] = True
         _blackbox_stop.set()
@@ -2157,7 +2156,7 @@ def create_app(*, manage_blackbox: bool = False):
             logger.debug("blackbox dashboard: threat detail query failed: %s", exc)
         return detail
 
-    @app.on_event("startup")
+    @lifecycle.on_startup(app)
     def _warm_node_caches() -> None:
         """Prime the SWR node caches at boot so the first load shows data
         instead of a "Loading…" window. Off-thread, fail-open."""
