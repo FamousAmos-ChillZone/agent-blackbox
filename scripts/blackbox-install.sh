@@ -1108,11 +1108,11 @@ ensure_web_extra() {
         return 0
     fi
     step "Installing dashboard extras (.[web]) …"
-    local installed=false
-    if command -v uv >/dev/null 2>&1; then
-        ( cd "$REPO_DIR" && VIRTUAL_ENV="$VENV_DIR" uv pip install -e ".[web]" >/dev/null 2>&1 ) && installed=true
+    local installed=false uv_bin
+    if uv_bin="$(find_uv)"; then
+        ( cd "$REPO_DIR" && VIRTUAL_ENV="$VENV_DIR" "$uv_bin" pip install -e ".[web]" >/dev/null 2>&1 ) && installed=true
     fi
-    if [ "$installed" != true ]; then
+    if [ "$installed" != true ] && ensure_venv_pip "$VENV_DIR"; then
         ( cd "$REPO_DIR" && "$VENV_DIR/bin/python" -m pip install -e ".[web]" >/dev/null 2>&1 ) && installed=true
     fi
     if [ "$installed" = true ] && "$VENV_DIR/bin/python" -c "import fastapi, uvicorn" >/dev/null 2>&1; then
@@ -1120,6 +1120,27 @@ ensure_web_extra() {
     else
         warn "Dashboard extras unavailable — 'blackbox dashboard' may not start. Retry: (cd $REPO_DIR && uv pip install -e '.[web]')"
     fi
+}
+
+# uv as setup-hermes.sh installs it: on PATH, or in ~/.local/bin / ~/.cargo/bin,
+# which the installer's own PATH may not include yet (KI-042). Prints the path.
+find_uv() {
+    if command -v uv >/dev/null 2>&1; then command -v uv; return 0; fi
+    local candidate
+    for candidate in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do
+        if [ -x "$candidate" ]; then printf '%s\n' "$candidate"; return 0; fi
+    done
+    return 1
+}
+
+# A uv-built venv ships no pip, so `python -m pip` fails with "No module named
+# pip" and the install stops (KI-042, every fresh Ubuntu 24.04 bench). Bootstrap
+# pip from the interpreter's own bundled copy (offline) before using it.
+ensure_venv_pip() {
+    local venv="$1"
+    if "$venv/bin/python" -m pip --version >/dev/null 2>&1; then return 0; fi
+    step "This environment has no pip yet; bootstrapping it (ensurepip) ..."
+    "$venv/bin/python" -m ensurepip --upgrade >/dev/null
 }
 
 minimal_python_env() {
@@ -1139,9 +1160,11 @@ minimal_python_env() {
     fi
     step "Installing Hermes + Agent Blackbox (web extras, editable) ..."
     # A uv-built venv ships no pip, so install with uv when it's available.
-    if command -v uv >/dev/null 2>&1; then
-        ( cd "$REPO_DIR" && VIRTUAL_ENV="$VENV_DIR" uv pip install -e ".[web]" )
+    local uv_bin
+    if uv_bin="$(find_uv)"; then
+        ( cd "$REPO_DIR" && VIRTUAL_ENV="$VENV_DIR" "$uv_bin" pip install -e ".[web]" )
     else
+        ensure_venv_pip "$VENV_DIR"
         "$VENV_DIR/bin/python" -m pip install --upgrade pip >/dev/null
         ( cd "$REPO_DIR" && "$VENV_DIR/bin/python" -m pip install -e ".[web]" )
     fi
