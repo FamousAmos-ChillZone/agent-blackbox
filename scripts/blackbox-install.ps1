@@ -1536,6 +1536,95 @@ function Show-NextSteps {
     Write-Host ""
 }
 
+# ── Start on sign-in (Windows parity with the Linux/macOS boot services) ────
+# The Linux/macOS installer registers the DKG node and the dashboard as boot
+# services (KI-022, KI-296: the dashboard refreshes the rules and drives the
+# community pulse). On Windows nothing came back after a restart or sign-out.
+# Two per-user Scheduled Tasks at sign-in, no admin rights: the node (through
+# a generated launcher carrying the same steady-state settings as the Linux
+# service) and, 30 s later, the dashboard. Remove with:
+#   Unregister-ScheduledTask -TaskName 'Agent Blackbox DKG node' -Confirm:$false
+#   Unregister-ScheduledTask -TaskName 'Agent Blackbox dashboard' -Confirm:$false
+function ConvertTo-PsLiteral {
+    param([string]$Value)
+    "'" + ($Value -replace "'", "''") + "'"
+}
+
+function New-BlackboxDkgLauncherLines {
+    # The node launcher's lines. Connection-time sync stays ON (it delivers
+    # context-graph authority to subscribers, KI-044); the periodic reconciler is
+    # left to config.json, as in the Linux unit; the stream/prefetch switches and
+    # the installer's safety limits ride along (KI-282).
+    param([string]$NodeDir = "")
+    $lines = @(
+        "# managed-by: agent-blackbox-installer -- starts the Blackbox DKG node at sign-in; rewritten on every install.",
+        "`$env:DKG_HOME = $(ConvertTo-PsLiteral $DkgHome)",
+        "`$env:DKG_SYNC_ON_CONNECT_ENABLED = '1'",
+        "`$env:DKG_DURABLE_SYNC_ENABLED = $(ConvertTo-PsLiteral $script:DkgDurableSyncEnabled)",
+        "`$env:DKG_STORE_QUEUE_LIMIT = $(ConvertTo-PsLiteral "$DkgStoreQueueLimit")",
+        "`$env:DKG_LIST_CONTEXT_GRAPHS_PROJECTION = $(ConvertTo-PsLiteral "$DkgListContextGraphsProjection")",
+        "`$env:DKG_EXACT_BATCH_STREAM_ENABLED = $(ConvertTo-PsLiteral "$DkgExactBatchStreamEnabled")",
+        "`$env:DKG_VM_RECOVERY_PREFETCH_ENABLED = $(ConvertTo-PsLiteral "$DkgVmRecoveryPrefetchEnabled")"
+    )
+    if ($script:DkgNodeOptions) { $lines += "`$env:NODE_OPTIONS = $(ConvertTo-PsLiteral $script:DkgNodeOptions)" }
+    if ($NodeDir) { $lines += "`$env:Path = $(ConvertTo-PsLiteral "$NodeDir;") + `$env:Path" }
+    $lines += "& $(ConvertTo-PsLiteral $DkgBin) start --foreground"
+    return $lines
+}
+
+function Register-BlackboxStartupTasks {
+    Write-Heading "Starting Blackbox when you sign in"
+    if (-not (Get-Command Register-ScheduledTask -ErrorAction SilentlyContinue)) {
+        Write-Warn2 "Scheduled Tasks are unavailable: after a restart, start the node and run 'blackbox dashboard' yourself."
+        return
+    }
+    if (-not (Test-Path $DkgBin)) {
+        Write-Warn2 "The DKG node is not installed; nothing to start at sign-in."
+        return
+    }
+    $nodeDir = ""
+    $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+    if ($nodeCommand -and $nodeCommand.Source) { $nodeDir = Split-Path -Parent $nodeCommand.Source }
+    New-Item -ItemType Directory -Force -Path $DkgHome | Out-Null
+    $nodeLauncher = Join-Path $DkgHome "start-blackbox-dkg.ps1"
+    Set-Content -Path $nodeLauncher -Value (New-BlackboxDkgLauncherLines -NodeDir $nodeDir) -Encoding UTF8
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+    $hidden = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File"
+    try {
+        $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "$hidden `"$nodeLauncher`""
+        Register-ScheduledTask -TaskName "Agent Blackbox DKG node" -Action $action -Trigger $trigger `
+            -Principal $principal -Settings $settings -Force | Out-Null
+        Write-Ok "The DKG node starts when you sign in (task 'Agent Blackbox DKG node')"
+    } catch {
+        Write-Warn2 "Could not register the DKG node task: $($_.Exception.Message)"
+        return
+    }
+    if (-not ($script:HermesBin -and (Test-Path $script:HermesBin))) {
+        Write-Warn2 "hermes was not found; run 'blackbox dashboard' yourself after a restart."
+        return
+    }
+    New-Item -ItemType Directory -Force -Path $BlackboxHome | Out-Null
+    $dashLauncher = Join-Path $BlackboxHome "start-blackbox-dashboard.ps1"
+    Set-Content -Path $dashLauncher -Encoding UTF8 -Value @(
+        "# managed-by: agent-blackbox-installer -- starts the Blackbox dashboard at sign-in (rule refresh + community pulse).",
+        "`$env:HERMES_HOME = $(ConvertTo-PsLiteral $HermesHome)",
+        "& $(ConvertTo-PsLiteral $script:HermesBin) blackbox dashboard"
+    )
+    try {
+        $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+        $trigger.Delay = "PT30S"   # after the node
+        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "$hidden `"$dashLauncher`""
+        Register-ScheduledTask -TaskName "Agent Blackbox dashboard" -Action $action -Trigger $trigger `
+            -Principal $principal -Settings $settings -Force | Out-Null
+        Write-Ok "The dashboard starts when you sign in (task 'Agent Blackbox dashboard')"
+    } catch {
+        Write-Warn2 "Could not register the dashboard task: $($_.Exception.Message)"
+    }
+}
+
 # ── Main ────────────────────────────────────────────────────────────────────
 function Main {
     Write-Banner
@@ -1553,6 +1642,7 @@ function Main {
     Configure-BlackboxMode
     Protect-AllAgents
     Sync-Ruleset
+    Register-BlackboxStartupTasks
     Show-NextSteps
     if ($script:InstallIncomplete) {
         exit 1
