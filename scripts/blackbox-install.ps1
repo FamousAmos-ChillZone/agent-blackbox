@@ -941,10 +941,10 @@ function Resolve-Repo {
         $head = (& git -C $RepoDir rev-parse HEAD)
         if ($fetchedBefore -and $head -eq $fetchedBefore) {
             & git -C $RepoDir reset -q --keep "refs/remotes/origin/$RepoBranch"
-            if ($LASTEXITCODE -ne 0) { throw "Could not update $RepoDir to origin/$RepoBranch: it has uncommitted changes (git's reason is above)" }
+            if ($LASTEXITCODE -ne 0) { throw "Could not update $RepoDir to origin/${RepoBranch}: it has uncommitted changes (git's reason is above)" }
         } else {
             & git -C $RepoDir pull --ff-only origin $RepoBranch
-            if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward $RepoDir to origin/$RepoBranch: it holds local commits (git's reason is above)" }
+            if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward $RepoDir to origin/${RepoBranch}: it holds local commits (git's reason is above)" }
         }
     } else {
         Write-Step "Cloning $RepoUrl -> $RepoDir"
