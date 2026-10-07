@@ -929,12 +929,23 @@ function Resolve-Repo {
         $branchRule = "+refs/heads/${RepoBranch}:refs/remotes/origin/${RepoBranch}"
         $fetchRules = @(& git -C $RepoDir config --get-all remote.origin.fetch)
         if ($fetchRules -notcontains $branchRule) { & git -C $RepoDir remote set-branches --add origin $RepoBranch }
+        # What this install last fetched: HEAD equal to it = no local commits (KI-294).
+        $fetchedBefore = (& git -C $RepoDir rev-parse -q --verify "refs/remotes/origin/$RepoBranch" 2>$null)
         & git -C $RepoDir fetch --depth 1 origin $RepoBranch
         if ($LASTEXITCODE -ne 0) { throw "Could not fetch $RepoBranch from $RepoUrl" }
         & git -C $RepoDir checkout $RepoBranch
         if ($LASTEXITCODE -ne 0) { throw "Could not switch $RepoDir to $RepoBranch (git's reason is above)" }
-        & git -C $RepoDir pull --ff-only origin $RepoBranch
-        if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward $RepoDir to origin/$RepoBranch" }
+        # A depth-1 fetch brings the new tip without its parent, so `pull --ff-only`
+        # refuses every update (KI-294): move to the new tip when the install holds
+        # no work of its own (--keep still refuses uncommitted changes).
+        $head = (& git -C $RepoDir rev-parse HEAD)
+        if ($fetchedBefore -and $head -eq $fetchedBefore) {
+            & git -C $RepoDir reset -q --keep "refs/remotes/origin/$RepoBranch"
+            if ($LASTEXITCODE -ne 0) { throw "Could not update $RepoDir to origin/$RepoBranch: it has uncommitted changes (git's reason is above)" }
+        } else {
+            & git -C $RepoDir pull --ff-only origin $RepoBranch
+            if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward $RepoDir to origin/$RepoBranch: it holds local commits (git's reason is above)" }
+        }
     } else {
         Write-Step "Cloning $RepoUrl -> $RepoDir"
         & git clone --depth 1 --branch $RepoBranch $RepoUrl $RepoDir

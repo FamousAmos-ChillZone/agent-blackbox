@@ -209,9 +209,71 @@ def test_shell_installer_moves_an_existing_install_to_another_branch(tmp_path: P
     assert again.returncode == 0, again.stderr
 
 
+def _source_repo(tmp_path: Path) -> Path:
+    source = tmp_path / "source"
+    source.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=source, check=True, capture_output=True)
+    (source / "pyproject.toml").write_text("[project]\nname='agent-blackbox'\n")
+    (source / "plugins" / "blackbox").mkdir(parents=True)
+    (source / "plugins" / "blackbox" / "plugin.yaml").write_text("name: blackbox\n")
+    _commit_all(source, "v1")
+    return source
+
+
+@pytest.mark.skipif(
+    shutil.which("git") is None or shutil.which("bash") is None,
+    reason="requires git and bash",
+)
+def test_shell_installer_updates_an_existing_install_when_its_branch_moved(tmp_path: Path) -> None:
+    """KI-294: the install is a --depth 1 clone and the update fetched --depth 1
+    too, so the new tip arrived without its parent; git saw no shared history
+    ("ahead 1, behind 1") and `pull --ff-only` refused — every user upgrade by
+    re-running the installer failed as soon as the branch had one new commit
+    (bench native-c, 2026-10-07)."""
+    source = _source_repo(tmp_path)
+    install_dir = tmp_path / "agent-blackbox"
+    assert _resolve_repo(install_dir, source, "main").returncode == 0
+    (source / "RELEASE").write_text("v2\n")
+    _commit_all(source, "v2")
+
+    updated = _resolve_repo(install_dir, source, "main")
+
+    assert updated.returncode == 0, updated.stderr
+    assert (install_dir / "RELEASE").read_text() == "v2\n"
+
+
+@pytest.mark.skipif(
+    shutil.which("git") is None or shutil.which("bash") is None,
+    reason="requires git and bash",
+)
+def test_shell_installer_never_discards_a_local_commit_when_updating(tmp_path: Path) -> None:
+    """The update moves the install to the new tip only when the install holds no
+    work of its own; a local commit makes it stop with git's reason instead."""
+    source = _source_repo(tmp_path)
+    install_dir = tmp_path / "agent-blackbox"
+    assert _resolve_repo(install_dir, source, "main").returncode == 0
+    (install_dir / "LOCAL").write_text("operator's own change\n")
+    _commit_all(install_dir, "local work")
+    (source / "RELEASE").write_text("v2\n")
+    _commit_all(source, "v2")
+
+    refused = _resolve_repo(install_dir, source, "main")
+
+    assert refused.returncode != 0
+    assert (install_dir / "LOCAL").exists()
+
+
 def test_powershell_installer_fetches_a_branch_with_an_explicit_refspec() -> None:
     """KI-287 mirror: the Windows installer must record origin/<branch> too."""
     text = INSTALL_PS1.read_text(encoding="utf-8")
 
     assert '"+refs/heads/${RepoBranch}:refs/remotes/origin/${RepoBranch}"' in text
     assert "remote set-branches --add origin $RepoBranch" in text
+
+
+def test_powershell_installer_updates_like_the_shell_installer() -> None:
+    """KI-294 mirror: the Windows installer moves a work-free install to the new tip."""
+    text = INSTALL_PS1.read_text(encoding="utf-8")
+
+    assert '$fetchedBefore = (& git -C $RepoDir rev-parse -q --verify "refs/remotes/origin/$RepoBranch"' in text
+    assert '& git -C $RepoDir reset -q --keep "refs/remotes/origin/$RepoBranch"' in text

@@ -926,6 +926,12 @@ resolve_repo() {
         if ! git -C "$REPO_DIR" config --get-all remote.origin.fetch | grep -qxF -- "$branch_rule"; then
             git -C "$REPO_DIR" remote set-branches --add origin "$REPO_BRANCH"
         fi
+        # What this install last fetched: when HEAD still equals it, the install
+        # holds no commits of its own (KI-294).
+        local fetched_before=""
+        if git -C "$REPO_DIR" rev-parse -q --verify "refs/remotes/origin/$REPO_BRANCH" >/dev/null 2>&1; then
+            fetched_before="$(git -C "$REPO_DIR" rev-parse "refs/remotes/origin/$REPO_BRANCH")"
+        fi
         if ! git -C "$REPO_DIR" fetch --depth 1 origin "$REPO_BRANCH"; then
             err "Could not fetch $REPO_BRANCH from $REPO_URL."
             return 1
@@ -934,8 +940,19 @@ resolve_repo() {
             err "Could not switch $REPO_DIR to $REPO_BRANCH (git's reason is above)."
             return 1
         fi
-        if ! git -C "$REPO_DIR" pull --ff-only origin "$REPO_BRANCH"; then
-            err "Could not fast-forward $REPO_DIR to origin/$REPO_BRANCH."
+        # A depth-1 fetch brings the new tip WITHOUT its parent, so git cannot
+        # see that it follows the installed commit and `pull --ff-only` refuses
+        # every update (KI-294). When the install holds no work of its own
+        # (HEAD is what it last fetched), move to the new tip; --keep still
+        # refuses to overwrite uncommitted changes. Otherwise keep the strict
+        # fast-forward, which stops with git's reason instead of losing work.
+        if [ -n "$fetched_before" ] && [ "$(git -C "$REPO_DIR" rev-parse HEAD)" = "$fetched_before" ]; then
+            if ! git -C "$REPO_DIR" reset -q --keep "refs/remotes/origin/$REPO_BRANCH"; then
+                err "Could not update $REPO_DIR to origin/$REPO_BRANCH: it has uncommitted changes (git's reason is above)."
+                return 1
+            fi
+        elif ! git -C "$REPO_DIR" pull --ff-only origin "$REPO_BRANCH"; then
+            err "Could not fast-forward $REPO_DIR to origin/$REPO_BRANCH: it holds local commits (git's reason is above)."
             return 1
         fi
     else
