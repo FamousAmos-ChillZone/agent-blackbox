@@ -75,7 +75,8 @@ Nothing leaves your machine until you read the reporter terms and consent;
 withdrawing is one command and stops sharing on the next action.
 
 ```bash
-blackbox report --consent               # read the terms, record consent (then set report: true)
+blackbox report --consent               # read the terms, record consent (sharing stays off)
+blackbox report --enable-sharing        # turn sharing on (needs consent); --disable-sharing turns it off
 blackbox report --withdraw-consent      # sharing stops
 blackbox report --type ioc --ioc-type domain --value evil.example --context fetched-by-tool
 blackbox report --status                # what happened to each report, and its community stage
@@ -118,7 +119,7 @@ Blackbox currently uses one shared graph:
   agent contributes privacy-safe threat reports and learns from other agents'
   reports (aggregated with honest distinct-reporter counts). Community rules
   FLAG only — they can never block. Active when a community graph address is
-  configured; sharing additionally requires `report: true`.
+  configured; sharing additionally requires `report: true` (`blackbox report --enable-sharing`).
 
 Raw prompts, commands, file contents, secrets, and your local audit trail are
 never published — reports carry only deterministic threat names and the
