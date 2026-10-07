@@ -15,6 +15,9 @@ string is served through :func:`.safe_payloads.safe_text`.
   agents this week").
 * ``GET /api/health`` — Refine R10: the operator's health items (the SAME
   ``kernel.health`` items `blackbox status` prints; INFO never red).
+
+It also starts the :class:`.pulse_driver.PulseDriver` with the app, so the
+community pulse beats while the dashboard runs even with no browser open (KI-283).
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
+from .pulse_driver import PulseDriver
 from .safe_payloads import safe_identifier, safe_text, sanitized_ledger
 
 
@@ -196,12 +200,18 @@ def health_payload(community_read: CommunityReadSource, node_reachable: Callable
 
 
 def register_community_routes(app: Any, *, community_read: CommunityReadSource,
-                              node_reachable: Optional[Callable[[Any], bool]] = None) -> CommunityEndpoints:
-    """Add the community endpoints to *app* (a FastAPI app); returns their handlers."""
+                              node_reachable: Optional[Callable[[Any], bool]] = None,
+                              pulse_driver: Optional[PulseDriver] = None) -> CommunityEndpoints:
+    """Add the community endpoints to *app* (a FastAPI app) and run the community
+    pulse for the app's lifetime (*pulse_driver*, default a real one — KI-283);
+    returns the endpoint handlers."""
     from fastapi import Query
 
     verified_reports = _reports_of(community_read)
     reachable = node_reachable or (lambda cfg: True)
+    driver = pulse_driver or PulseDriver()
+    app.on_event("startup")(driver.start)   # same lifecycle hooks the server uses
+    app.on_event("shutdown")(driver.stop)
 
     @app.get("/api/health")
     def health_items() -> Any:
