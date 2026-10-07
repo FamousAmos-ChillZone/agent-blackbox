@@ -193,4 +193,8 @@ def test_the_dashboard_renders_clean_at_desktop_and_phone_widths(served, tmp_pat
         assert "dispute" in sections["community-statements-body"] and "retraction" in sections["community-statements-body"]
         assert "accepted" in sections["my-reports-body"] and "reported" in sections["my-reports-body"], (width, sections["my-reports-body"])
         assert sections["tab-community"] and sections["tab-community"].split()[-1].isdigit()
+        # The summary tiles are filled from /api/community-stats (they sat on "—" before).
+        assert sections["stat-community-count"].replace(",", "").isdigit(), (width, sections["stat-community-count"])
+        assert sections["stat-sharing-state"] in {"on", "off", "paused"}, (width, sections["stat-sharing-state"])
+        assert "threats" in sections["cg-summary"] and "sharing" in sections["cg-summary"], (width, sections["cg-summary"])
         assert view["spillingCells"] == [], (width, view["spillingCells"])

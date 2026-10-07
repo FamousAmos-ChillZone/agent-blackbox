@@ -70,7 +70,13 @@ for (const vp of viewports) {
 
   const checks = [await overflow("landing")];
   const sections = {};
-  for (const id of ["health-strip", "community-statements-body", "my-reports-body", "tab-community"]) sections[id] = await sectionText(id);
+  for (const id of ["health-strip", "community-statements-body", "my-reports-body", "tab-community",
+                    "stat-community-count", "stat-sharing-state", "cg-summary"]) sections[id] = await sectionText(id);
+  // The community panel's own tabs: each pane renders without page overflow.
+  for (const pane of ["statements", "reports", "agents"]) {
+    const tab = page.locator(`#cg-tab-${pane}`);
+    if (await tab.count()) { await tab.click(); await page.waitForTimeout(300); checks.push(await overflow(`community-${pane}`)); }
+  }
   const spillingCells = await cellSqueeze();
   const communityTab = page.locator("#tab-community");
   if (await communityTab.count()) {

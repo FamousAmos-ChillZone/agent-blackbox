@@ -937,6 +937,44 @@
     background: var(--signal-soft);
   }
 
+  /* ---------- Community graph panel ---------- */
+  .cg-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+  .cg-chip { display: inline-flex; align-items: baseline; gap: 7px; padding: 7px 11px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel); font-family: var(--mono-font); font-size: 11px; color: var(--muted); }
+  .cg-chip strong { color: var(--text); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .cg-chip.on strong { color: var(--text); }
+  .cg-chip.warn { border-color: color-mix(in srgb, var(--signal) 40%, var(--border)); }
+  .cg-chip.warn strong { color: var(--signal); }
+  .cg-panel { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+  .cg-tabs { align-self: flex-start; flex-wrap: wrap; }
+  .cg-note { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .cg-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+  .cg-list > .empty { padding: 20px; }
+  .cg-row { display: grid; grid-template-columns: minmax(96px, auto) minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--border); }
+  .cg-row:first-child, .cg-group:first-child > summary { border-top: 0; }
+  .cg-kind { font-family: var(--mono-font); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .cg-ident { font-family: var(--mono-font); font-size: 12px; color: var(--text); overflow-wrap: anywhere; min-width: 0; }
+  .cg-sub { display: block; font-family: var(--body-font, inherit); font-size: 11.5px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+  .cg-when { font-family: var(--mono-font); font-size: 11px; color: var(--muted); white-space: nowrap; text-align: right; }
+  .cg-group > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: minmax(96px, auto) minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--border); }
+  .cg-group > summary::-webkit-details-marker { display: none; }
+  .cg-group > summary:focus-visible, .cg-more:focus-visible, .cg-tabs .tab:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+  .cg-group > summary .cg-ident::before { content: "\25B8  "; color: var(--muted); }
+  .cg-group[open] > summary .cg-ident::before { content: "\25BE  "; }
+  .cg-idents { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 12px 12px; }
+  .cg-idents span { font-family: var(--mono-font); font-size: 11px; padding: 2px 7px; border: 1px solid var(--border); border-radius: 2px; color: var(--muted-strong); overflow-wrap: anywhere; max-width: 100%; }
+  .cg-stage { font-family: var(--mono-font); font-size: 10.5px; padding: 2px 7px; border-radius: 2px; border: 1px solid var(--border); color: var(--muted-strong); white-space: nowrap; }
+  .cg-stage.flag, .cg-stage.corroborated { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 45%, transparent); background: var(--signal-soft); }
+  .cg-sends { font-family: var(--mono-font); font-size: 10.5px; color: var(--muted); }
+  .cg-sends .bad { color: var(--signal); }
+  .cg-more { align-self: flex-start; appearance: none; font: inherit; font-family: var(--mono-font); font-size: 11px; color: var(--text); background: var(--elevated); border: 1px solid var(--border); border-radius: 3px; padding: 6px 12px; cursor: pointer; }
+  @media (max-width: 640px) {
+    /* one compact row of tabs (the page's phone rule stacks the tier tabs) */
+    .tabs.cg-tabs { display: flex; flex-direction: row; flex-wrap: nowrap; align-self: stretch; overflow-x: auto; }
+    .tabs.cg-tabs .tab { flex: 1 1 auto; flex-direction: row; justify-content: center; padding: 7px 8px; gap: 6px; white-space: nowrap; }
+    .cg-row, .cg-group > summary { grid-template-columns: minmax(0, 1fr) auto; }
+    .cg-row .cg-kind, .cg-group > summary .cg-kind { grid-column: 1 / -1; }
+  }
+
   /* ---------- Threat graph (force-directed) ---------- */
   .graph-body { padding: 0; }
   .sync-progress {
@@ -2772,67 +2810,35 @@
       </div>
     </section>
 
-    <!-- Community graph — connected agents (remote reporters via the DKG) -->
-    <section class="section" aria-label="Community graph connected agents">
+    <!-- Community graph: one panel (summary + agents / statements / my reports).
+         Replaces three full-height sections that grew to hundreds of rows. -->
+    <section class="section" id="community-panel" aria-label="Community graph">
       <div class="section-head">
         <div class="section-htext">
-          <h2>Community graph &mdash; connected agents</h2>
-          <div class="section-note">Agents that have reported into the shared community graph, reached through the DKG. They are not connected to this Blackbox. <span id="community-agents-note"></span></div>
+          <h2>Community graph</h2>
+          <div class="section-note">Threats shared between Blackbox nodes through the DKG. Community reports flag; they never block. <span id="community-agents-note"></span></div>
         </div>
       </div>
-      <div class="panel">
-        <div class="agents-strip" id="community-agents-strip">
-          <div class="empty" style="padding:28px 20px; width:100%;">Loading community graph agents&hellip;</div>
+      <div class="cg-summary" id="cg-summary" aria-live="polite"></div>
+      <div class="panel cg-panel">
+        <div class="tabs cg-tabs" role="tablist" aria-label="Community graph views">
+          <button class="tab active" id="cg-tab-agents" role="tab" aria-selected="true" aria-controls="cg-pane-agents" data-cg="agents">Agents<span class="tab-count" id="cg-count-agents">&middot;</span></button>
+          <button class="tab" id="cg-tab-statements" role="tab" aria-selected="false" aria-controls="cg-pane-statements" data-cg="statements">Statements<span class="tab-count" id="cg-count-statements">&middot;</span></button>
+          <button class="tab" id="cg-tab-reports" role="tab" aria-selected="false" aria-controls="cg-pane-reports" data-cg="reports">My reports<span class="tab-count" id="cg-count-reports">&middot;</span></button>
         </div>
-      </div>
-    </section>
-
-    <!-- Community graph — statements (Refine R2): who / when / why -->
-    <section class="section" aria-label="Community graph statements">
-      <div class="section-head">
-        <div class="section-htext">
-          <h2>Community graph &mdash; statements</h2>
-          <div class="section-note">What reporters and the curator have said about community threats &mdash; who, when and why. Only statements this node could verify are shown. A dispute never changes what blocks. <span id="community-statements-note"></span></div>
+        <div class="cg-pane" id="cg-pane-agents" role="tabpanel" aria-labelledby="cg-tab-agents">
+          <div class="cg-note">Agents that have reported into the shared community graph, reached through the DKG. They are not connected to this Blackbox.</div>
+          <div class="agents-strip" id="community-agents-strip">
+            <div class="empty" style="padding:28px 20px; width:100%;">Loading community graph agents&hellip;</div>
+          </div>
         </div>
-      </div>
-      <div class="panel">
-        <div class="table-scroll">
-          <table aria-label="Community statements">
-            <thead>
-              <tr>
-                <th>Statement</th>
-                <th>Threat</th>
-                <th>Who</th>
-                <th>When</th>
-                <th>Why</th>
-              </tr>
-            </thead>
-            <tbody id="community-statements-body">
-              <tr><td colspan="5"><div class="empty">Loading community statements&hellip;</div></td></tr>
-            </tbody>
-          </table>
+        <div class="cg-pane" id="cg-pane-statements" role="tabpanel" aria-labelledby="cg-tab-statements" hidden>
+          <div class="cg-note">What reporters and the curator said about community threats: who, when and why. Only statements this node could verify are shown. A dispute never changes what blocks. <span id="community-statements-note"></span></div>
+          <div class="cg-list" id="community-statements-body"><div class="empty">Loading community statements&hellip;</div></div>
         </div>
-      </div>
-    </section>
-
-    <!-- Refine R10: my reports — what happened to each report this node shared -->
-    <section class="section" aria-label="My reports">
-      <div class="section-head">
-        <div class="section-htext">
-          <h2>My reports</h2>
-          <div class="section-note">What this node shared with the community graph and what happened to each: the share outcome, then the threat's current stage and reason (the same stage every node computes). <span id="my-reports-note"></span></div>
-        </div>
-      </div>
-      <div class="panel">
-        <div class="table-scroll">
-          <table aria-label="My reports">
-            <thead>
-              <tr><th>When</th><th>Kind</th><th>Threat</th><th>Share</th><th>Stage</th></tr>
-            </thead>
-            <tbody id="my-reports-body">
-              <tr><td colspan="5"><div class="empty">Loading your reports&hellip;</div></td></tr>
-            </tbody>
-          </table>
+        <div class="cg-pane" id="cg-pane-reports" role="tabpanel" aria-labelledby="cg-tab-reports" hidden>
+          <div class="cg-note">What this node shared, one line per threat: its current stage (the same on every node) and what happened to each send. <span id="my-reports-note"></span></div>
+          <div class="cg-list" id="my-reports-body"><div class="empty">Loading your reports&hellip;</div></div>
         </div>
       </div>
     </section>
@@ -3772,6 +3778,7 @@
     $("community-agents-note").textContent = list.length
       ? "\u00b7 " + list.length + " agent" + (list.length === 1 ? "" : "s") + " so far."
       : "";
+    $("cg-count-agents").textContent = num(list.length);
     if (!list.length) {
       strip.innerHTML = '<div class="empty" style="padding:28px 20px; width:100%;">' +
         '<strong>No community graph reports yet.</strong></div>';
@@ -3842,10 +3849,45 @@
     if (data.held_back) bits.push(num(data.held_back) + " held back by the daily per-author budget.");
     if (data.pending_tombstones) bits.push(num(data.pending_tombstones) + " retraction(s) waiting for a report not seen yet.");
     note.textContent = "\u00b7 " + bits.join(" ");
+    $("cg-count-statements").textContent = num(rows.length);
     if (!rows.length) { body.innerHTML = emptyRow("No statements yet."); return; }
-    body.innerHTML = rows.map(function (r) {
-      return "<tr>" + r.map(function (cell) { return "<td>" + esc(cell) + "</td>"; }).join("") + "</tr>";
-    }).join("");
+    body.innerHTML = groupStatementRows(rows).map(renderStatementGroup).join("");
+  }
+
+  // Rows are [kind, threat, who, when, why]. One signer saying the same kind of
+  // thing for the same reason many times (a dispute flood, a batch of
+  // retractions) folds into ONE expandable line instead of one line each.
+  var STATEMENT_GROUP_MIN = 3;
+
+  function groupStatementRows(rows) {
+    var groups = [], byKey = {};
+    rows.forEach(function (r) {
+      var key = r[0] + "\u0000" + r[2] + "\u0000" + r[4];
+      if (!byKey[key]) { byKey[key] = { kind: r[0], who: r[2], why: r[4], when: r[3], rows: [] }; groups.push(byKey[key]); }
+      byKey[key].rows.push(r);
+    });
+    return groups;
+  }
+
+  function shortWho(who) {
+    var s = String(who || "");
+    return /^0x[0-9a-f]{40}$/i.test(s) ? s.slice(0, 8) + "\u2026" + s.slice(-4) : s;
+  }
+
+  function renderStatementGroup(g) {
+    if (g.rows.length < STATEMENT_GROUP_MIN) {
+      return g.rows.map(function (r) {
+        return '<div class="cg-row"><span class="cg-kind">' + esc(r[0]) + '</span>' +
+          '<span class="cg-ident">' + esc(r[1]) + '<span class="cg-sub">' + esc(shortWho(r[2])) +
+          (r[4] ? ' \u00b7 ' + esc(r[4]) : '') + '</span></span>' +
+          '<span class="cg-when">' + esc(r[3]) + '</span></div>';
+      }).join("");
+    }
+    return '<details class="cg-group"><summary><span class="cg-kind">' + esc(g.kind) + '</span>' +
+      '<span class="cg-ident">' + num(g.rows.length) + ' ' + esc(g.kind) + 's<span class="cg-sub">from ' +
+      esc(shortWho(g.who)) + (g.why ? ' \u00b7 ' + esc(g.why) : '') + '</span></span>' +
+      '<span class="cg-when">' + esc(g.when) + '</span></summary><div class="cg-idents">' +
+      g.rows.map(function (r) { return '<span>' + esc(r[1]) + '</span>'; }).join("") + '</div></details>';
   }
 
   var heatByIdentifier = {};   // R10: "seen by ~N agents this week" joined onto verified leaves
@@ -3874,18 +3916,108 @@
     return getJSON("/api/health").then(renderHealth, function () {});
   }
 
+  // One line per threat: the stage every node computes, then what happened to
+  // this node's sends of it ("accepted · kept alive 2x"). The ledger itself lists
+  // every send, so keep-alive copies used to repeat each threat several times.
+  var MY_REPORTS_SHOWN = 8;
+  var myReportsExpanded = false;
+
+  function groupMyReports(rows) {
+    var groups = [], byId = {};
+    rows.forEach(function (r) {   // newest first, as the API returns them
+      var id = String(r.identifier || "");
+      if (!byId[id]) { byId[id] = { latest: r, outcomes: {}, sends: 0 }; groups.push(byId[id]); }
+      var g = byId[id];
+      g.sends += 1;
+      g.outcomes[r.outcome] = (g.outcomes[r.outcome] || 0) + 1;
+    });
+    return groups;
+  }
+
+  function outcomeSummary(outcomes) {
+    return Object.keys(outcomes).map(function (o) {
+      var bad = /fail|refus|retry/i.test(o);
+      var label = o === "kept-alive" ? "kept alive" : o;
+      var text = label + (outcomes[o] > 1 ? " " + outcomes[o] + "\u00d7" : "");
+      return bad ? '<span class="bad">' + esc(text) + '</span>' : esc(text);
+    }).join(" \u00b7 ");
+  }
+
   function renderMyReports(data) {
     var body = $("my-reports-body");
     var note = $("my-reports-note");
     if (!body) return;
     var rows = (data && Array.isArray(data.outbound)) ? data.outbound : [];
     note.textContent = data && data.sharing_enabled === false ? "\u00b7 Sharing is off; nothing new leaves this node." : "";
-    if (!rows.length) { body.innerHTML = '<tr><td colspan="5"><div class="empty">No reports shared from this node yet.</div></td></tr>'; return; }
-    body.innerHTML = rows.map(function (r) {
-      var stage = r.stage ? r.stage + (r.stage_reason ? " \u2014 " + r.stage_reason : "") : "not in the compiled community tier";
-      return "<tr><td>" + esc(r.ts) + "</td><td>" + esc(r.category) + "</td><td>" + esc(r.identifier) + "</td><td>" +
-        esc(r.outcome) + "</td><td>" + esc(stage) + "</td></tr>";
+    var groups = groupMyReports(rows);
+    $("cg-count-reports").textContent = num(groups.length);
+    if (!groups.length) { body.innerHTML = '<div class="empty">No reports shared from this node yet.</div>'; return; }
+    var shown = myReportsExpanded ? groups : groups.slice(0, MY_REPORTS_SHOWN);
+    body.innerHTML = shown.map(function (g) {
+      var r = g.latest;
+      var stage = r.stage || "not compiled";
+      var stageClass = /corroborated/.test(stage) ? " corroborated" : "";
+      var reason = r.stage ? (r.stage_reason || "") : "not in the compiled community tier (not read yet, retracted, or below the cap)";
+      return '<div class="cg-row"><span class="cg-kind">' + esc(r.category) + '</span>' +
+        '<span class="cg-ident">' + esc(r.identifier) +
+          '<span class="cg-sub"><span class="cg-stage' + stageClass + '">' + esc(stage) + '</span> ' + esc(reason) + '</span>' +
+          '<span class="cg-sub cg-sends">' + outcomeSummary(g.outcomes) + '</span></span>' +
+        '<span class="cg-when" title="' + esc(r.ts) + '">' + fmtAgo(r.ts) + '</span></div>';
+    }).join("") + (groups.length > MY_REPORTS_SHOWN
+      ? '<div class="cg-row" style="grid-template-columns:1fr"><button class="cg-more" type="button" id="my-reports-more">' +
+        (myReportsExpanded ? "Show fewer" : "Show all " + num(groups.length) + " threats") + '</button></div>'
+      : "");
+    var more = $("my-reports-more");
+    if (more) more.addEventListener("click", function () { myReportsExpanded = !myReportsExpanded; renderMyReports(data); });
+  }
+
+  // The two summary tiles and the chip strip, from /api/community-stats.
+  function renderCommunityStats(s) {
+    var strip = $("cg-summary");
+    if (!s || !s.configured) {
+      $("stat-community-count").textContent = "off";
+      $("stat-community-meta").textContent = "no community graph configured";
+      $("stat-sharing-state").textContent = "off";
+      $("stat-sharing-meta").textContent = "outbound threat sharing";
+      if (strip) strip.innerHTML = "";
+      return;
+    }
+    var sharing = s.paused ? "paused" : (s.sharing_enabled ? "on" : "off");
+    $("stat-community-count").textContent = num(s.community_threats || 0);
+    $("stat-community-meta").textContent = num(s.contributing_agents || 0) + " agent" +
+      (s.contributing_agents === 1 ? "" : "s") + " \u00b7 " + num(s.corroborated_2plus || 0) + " with 2+ reporters";
+    $("stat-sharing-state").textContent = sharing;
+    var last = s.last_share;
+    $("stat-sharing-meta").textContent = last
+      ? "last share " + fmtAgo(last.ts) + " \u00b7 " + (last.outcome || (last.ok ? "accepted" : "failed"))
+      : (s.sharing_enabled ? "nothing shared yet" : "turn on in settings");
+    if (!strip) return;
+    var chips = [
+      ["threats", s.community_threats || 0, ""],
+      ["agents", s.contributing_agents || 0, ""],
+      ["2+ reporters", s.corroborated_2plus || 0, ""],
+      ["new today", s.new_today || 0, ""],
+      ["sharing", sharing, s.paused ? "warn" : ""]
+    ];
+    strip.innerHTML = chips.map(function (c) {
+      return '<span class="cg-chip ' + c[2] + '"><strong>' + esc(typeof c[1] === "number" ? num(c[1]) : c[1]) + '</strong>' + esc(c[0]) + '</span>';
     }).join("");
+  }
+
+  function loadCommunityStats() {
+    return getJSON("/api/community-stats").then(renderCommunityStats, function () {});
+  }
+
+  // Tabs inside the community panel (separate from the threat-graph tier tabs).
+  var CG_TAB_KEY = "bb.communityTab";
+  function switchCommunityTab(name) {
+    ["agents", "statements", "reports"].forEach(function (n) {
+      var on = n === name;
+      $("cg-tab-" + n).classList.toggle("active", on);
+      $("cg-tab-" + n).setAttribute("aria-selected", on ? "true" : "false");
+      $("cg-pane-" + n).hidden = !on;
+    });
+    try { localStorage.setItem(CG_TAB_KEY, name); } catch (e) { /* storage blocked: tab just isn't remembered */ }
   }
 
   function loadMyReports() {
@@ -6650,6 +6782,7 @@
     loadCommunityStatements();   // Refine R2 (independent too)
     loadHealth();                // Refine R10
     loadMyReports();             // Refine R10
+    loadCommunityStats();        // summary tiles + chips
     return Promise.allSettled([
       loadFindings(),
       getJSON("/api/graph-status"),
@@ -6685,6 +6818,14 @@
   TIERS.forEach(function (t) {
     $("tab-" + t).addEventListener("click", function () { switchTier(t); });
   });
+  ["agents", "statements", "reports"].forEach(function (n) {
+    $("cg-tab-" + n).addEventListener("click", function () { switchCommunityTab(n); });
+  });
+  (function restoreCommunityTab() {
+    var saved = null;
+    try { saved = localStorage.getItem(CG_TAB_KEY); } catch (e) { saved = null; }
+    if (saved === "statements" || saved === "reports") switchCommunityTab(saved);
+  })();
   // Collapse the header actions into one animated disclosure on phone/tablet.
   (function wireHeaderMenu() {
     var toggle = $("header-menu-toggle");
