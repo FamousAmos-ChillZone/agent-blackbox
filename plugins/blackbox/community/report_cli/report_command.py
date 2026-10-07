@@ -230,6 +230,8 @@ _REPORT_FLAGS: Tuple[Tuple[Tuple[str, ...], Dict[str, Any]], ...] = (
     (("--severity",), dict(default="high", choices=list(constants.SEVERITY_ORDER))),
     (("--consent",), dict(action="store_true", help="read the reporter terms and record consent to share (R13; opt-in)")),
     (("--withdraw-consent",), dict(dest="withdraw_consent", action="store_true", help="withdraw consent: sharing stops")),
+    (("--enable-sharing",), dict(dest="enable_sharing", action="store_true", help="turn community sharing on (needs consent)")),
+    (("--disable-sharing",), dict(dest="disable_sharing", action="store_true", help="turn community sharing off")),
 )
 
 

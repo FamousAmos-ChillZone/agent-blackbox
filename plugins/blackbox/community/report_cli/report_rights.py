@@ -1,7 +1,13 @@
 """The operator's rights over this node's reporter identity (Refine R1).
 
-Three local verbs of ``blackbox report``. None needs the DKG node, and none
-sends anything:
+Local verbs of ``blackbox report``. None needs the DKG node, and none sends
+anything:
+
+* ``--consent`` / ``--withdraw-consent`` — record or withdraw the opt-in to the
+  reporter terms (R13). Consent alone does not start sharing.
+* ``--enable-sharing`` / ``--disable-sharing`` — the sharing switch itself
+  (``report`` in the config), through the same validate-then-persist path as
+  the dashboard toggle, so turning it on without consent is refused (KI-299).
 
 * ``--export PATH`` — a machine-readable JSON copy of this node's statements
   (the share ledger: reports, disputes, retractions and their outcomes) plus
@@ -47,7 +53,8 @@ def wants_local_verb(args: argparse.Namespace) -> bool:
     """True when *args* ask for one of this module's verbs."""
     return bool(getattr(args, "export", None) or getattr(args, "restore_key", None)
                 or getattr(args, "erase_identity", False) or getattr(args, "consent", False)
-                or getattr(args, "withdraw_consent", False))
+                or getattr(args, "withdraw_consent", False)
+                or getattr(args, "enable_sharing", False) or getattr(args, "disable_sharing", False))
 
 
 def run_local_verb(args: argparse.Namespace) -> int:
@@ -57,6 +64,8 @@ def run_local_verb(args: argparse.Namespace) -> int:
         return record_consent()
     if getattr(args, "withdraw_consent", False):
         return withdraw_consent()
+    if getattr(args, "enable_sharing", False) or getattr(args, "disable_sharing", False):
+        return set_sharing(bool(getattr(args, "enable_sharing", False)))
     if args.export:
         return export_identity(store, Path(args.export).expanduser())
     if args.restore_key:
@@ -74,9 +83,42 @@ def record_consent() -> int:
     entry = consent.record()
     if entry is None:
         return 1
-    print(f"Consent recorded for terms version {entry.terms_version} at {entry.accepted_at}. Sharing may now run")
-    print("(`report: true` in the config). Withdraw at any time with `blackbox report --withdraw-consent`.")
+    print(f"Consent recorded for terms version {entry.terms_version} at {entry.accepted_at}.")
+    if _sharing_on():
+        print("Sharing is on. Turn it off with `blackbox report --disable-sharing`.")
+    else:
+        print("Sharing is still OFF: consent alone sends nothing. Turn it on with")
+        print("`blackbox report --enable-sharing` (or the dashboard's Community sharing toggle).")
+    print("Withdraw consent at any time with `blackbox report --withdraw-consent`.")
     return 0
+
+
+def set_sharing(on: bool) -> int:
+    """``--enable-sharing`` / ``--disable-sharing``: the ``report`` switch (KI-299).
+
+    Goes through ``kernel.settings.write_settings`` — the path the dashboard
+    toggle uses — with the real consent state, so "on" without consent is
+    refused there, not by a second copy of the rule here.
+    """
+    from ...kernel import settings
+    result = settings.write_settings({"report": on}, sharing_consent=consent.in_force())
+    if not result.get("ok"):
+        for error in result.get("errors") or ["the setting could not be saved"]:
+            print(f"Not changed: {error}")
+        return 1
+    if on:
+        print("Sharing is on: findings that pass the sharing rules are shared with the community graph.")
+    else:
+        print("Sharing is off: nothing new leaves this node. Consent stays recorded.")
+    return 0
+
+
+def _sharing_on() -> bool:
+    from ...kernel.config import load_blackbox_config
+    try:
+        return bool(load_blackbox_config().report)
+    except Exception:   # cannot read the config: say nothing is on
+        return False
 
 
 def withdraw_consent() -> int:
