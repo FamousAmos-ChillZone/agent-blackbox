@@ -57,8 +57,10 @@ class PulseDriver:
     logged and the loop continues — the dashboard must never die of a pulse.
     """
 
-    def __init__(self, beat: Callable[[], None] = beat_once,
-                 interval: Callable[[], float] = poll_interval) -> None:
+    def __init__(self, beat: Optional[Callable[[], None]] = None,
+                 interval: Optional[Callable[[], float]] = None) -> None:
+        # None = the module's functions, looked up at each beat (not bound here),
+        # so the test harness can keep real beats out of tests that start apps.
         self._beat = beat
         self._interval = interval
         self._stopping = threading.Event()
@@ -81,7 +83,7 @@ class PulseDriver:
             wait = self._next_wait()
             if wait > 0:
                 try:
-                    self._beat()
+                    (self._beat or beat_once)()
                 except Exception as exc:  # fail-open: one bad beat never stops the loop
                     logger.warning("blackbox: community pulse beat failed: %s", exc)
             self._stopping.wait(wait if wait > 0 else IDLE_RECHECK_SECONDS)
@@ -89,7 +91,7 @@ class PulseDriver:
     def _next_wait(self) -> float:
         """Seconds until the next offer; 0 means the pulse is switched off."""
         try:
-            interval = float(self._interval())
+            interval = float((self._interval or poll_interval)())
         except Exception as exc:
             logger.warning("blackbox: could not read the community poll interval: %s", exc)
             return MIN_INTERVAL_SECONDS

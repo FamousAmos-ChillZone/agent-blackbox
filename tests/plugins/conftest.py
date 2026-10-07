@@ -38,6 +38,19 @@ def _sharing_consent_in_force(monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _no_real_dashboard_pulse(monkeypatch):
+    """A test that starts the dashboard app (``with TestClient(app)``) also starts
+    its PulseDriver (KI-283). A real beat runs ``ruleset.pulse`` on a thread
+    nothing joins; it can finish after its test and leave community rules in
+    the process-wide ruleset cache, which a later test then reads (one failure
+    in three full runs on 2026-10-07: "assert 3 == 0" community threats). Real
+    beats stay out of tests unless a test injects its own beat."""
+    from plugins.blackbox.dashboard import pulse_driver
+    monkeypatch.setattr(pulse_driver, "beat_once", lambda: None)
+    yield
+
+
 @pytest.fixture
 def real_consent(monkeypatch):
     """The real consent gate (undoes the autouse stub for one test)."""
