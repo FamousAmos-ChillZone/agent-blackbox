@@ -260,3 +260,14 @@ def test_removed_snapshot_overrides_do_not_change_runtime_fingerprint(tmp_path, 
     first = FINGERPRINTER.compute_fingerprint(*runtime)
     monkeypatch.setenv("DKG_SYNC_RESPONDER_GLOBAL_SNAPSHOT_ROW_LIMIT", "1600000")
     assert FINGERPRINTER.compute_fingerprint(*runtime) == first
+
+
+def test_cli_write_limits_records_the_installers_choice(tmp_path, capsys):
+    """The installer records its node limits for Blackbox's own restarts (process_limits)."""
+    with mock.patch.object(FINGERPRINTER.process_limits, "resolve_dkg_heap_mb", return_value=7000):
+        assert FINGERPRINTER.main(["write-limits", str(tmp_path), "--enable-source-maps", "256", "0"]) == 0
+    limits = FINGERPRINTER.process_limits.read_process_limits(str(tmp_path))
+    assert limits == FINGERPRINTER.process_limits.ProcessLimits(7000, 256, False)
+    assert FINGERPRINTER.main(["write-limits", str(tmp_path), "--max-old-space-size=3000", "512", "1"]) == 0
+    assert FINGERPRINTER.process_limits.read_process_limits(str(tmp_path)).heap_mb == 3000
+    assert FINGERPRINTER.main(["write-limits", str(tmp_path), "", "512", "yes"]) == 1

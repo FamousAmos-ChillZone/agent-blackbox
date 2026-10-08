@@ -20,6 +20,7 @@ from typing import Dict, List, Optional
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, DkgError
+from . import process_limits
 # The node's sync profile lives in node_profile. These names stay reachable as
 # managed_node.<name>: sync/command.py calls them through this module and tests
 # patch them here.
@@ -100,6 +101,7 @@ def _dkg_sync_environment(cfg: BlackboxConfig) -> Dict[str, str]:
     env.setdefault("DKG_STORE_QUEUE_WAIT_TIMEOUT_MS", "300000")
     env.setdefault("DKG_SYNC_TOTAL_TIMEOUT_MS", "1800000")
     env.setdefault("DKG_SWM_RECOVERY_TIMEOUT_MS", "3600000")
+    _apply_process_limits(cfg, env)
     # Native DKG dependencies are tied to the Node ABI used at installation.
     # A dashboard launched from another runtime can have a different ``node``
     # first on PATH, so preserve the executable of the currently managed node.
@@ -107,6 +109,19 @@ def _dkg_sync_environment(cfg: BlackboxConfig) -> Dict[str, str]:
     if node_executable is not None:
         env["PATH"] = str(node_executable.parent) + os.pathsep + env.get("PATH", "")
     return env
+
+
+def _apply_process_limits(cfg: BlackboxConfig, env: Dict[str, str]) -> None:
+    """Give a restarted node the heap / queue / projection limits the installer
+    chose (PR #21 runtime-safety gap): the recorded ones, else the installer's
+    defaults for this host. Fail-open: an unsizeable host keeps Node's default."""
+    try:
+        limits = process_limits.read_process_limits(cfg.dkg_home)
+        limits = limits or process_limits.default_process_limits(env.get("NODE_OPTIONS", ""))
+    except process_limits.ProcessLimitsError as exc:
+        logger.warning("blackbox: DKG process limits unavailable, node keeps its defaults: %s", exc)
+        return
+    process_limits.apply_process_limits(env, limits)
 
 
 def _managed_dkg_node_executable(cfg: BlackboxConfig) -> Optional[Path]:

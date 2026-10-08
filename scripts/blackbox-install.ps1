@@ -253,6 +253,13 @@ function Initialize-BlackboxDkgProcessEnvironment {
         return $false
     }
     $script:DkgNodeOptions = "$($nodeOptionsOutput | Select-Object -Last 1)".Trim()
+    # Record them so Blackbox's own node restarts relaunch with the same limits
+    # (sync/process_limits.py). Not fatal: without the record they are recomputed.
+    $limitsOutput = @(& $script:VenvPython $helper write-limits $DkgHome $script:DkgNodeOptions "$DkgStoreQueueLimit" "$DkgListContextGraphsProjection" 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        if ($limitsOutput) { $limitsOutput | ForEach-Object { Write-Warn2 "$_" } }
+        Write-Warn2 "Could not record the DKG node limits; Blackbox restarts will recompute them."
+    }
     Write-Ok "DKG safety limits: one large sync at a time; V8 heap ${heapMb}MB"
     return $true
 }

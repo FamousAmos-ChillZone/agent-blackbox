@@ -184,6 +184,13 @@ prepare_blackbox_dkg_process_environment() {
         warn "Could not prepare Node.js options for the DKG daemon."
         return 1
     fi
+    # Record them so Blackbox's own node restarts (blackbox sync, the dashboard)
+    # relaunch with the same limits (sync/process_limits.py). Not fatal: without
+    # the record those restarts use the same defaults computed again.
+    if ! "$VENV_DIR/bin/python" "$helper" write-limits "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_NODE_OPTIONS" \
+        "$BLACKBOX_DKG_STORE_QUEUE_LIMIT" "$BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION" >/dev/null; then
+        warn "Could not record the DKG node limits; Blackbox restarts will recompute them."
+    fi
     ok "DKG safety limits: one large sync at a time; V8 heap ${heap_mb}MB"
 }
 
