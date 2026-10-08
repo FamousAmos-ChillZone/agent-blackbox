@@ -219,3 +219,109 @@ def test_a_dashboard_already_running_the_current_code_is_left_alone(tmp_path):
 def test_a_first_launch_records_the_revision(tmp_path):
     launched, revision, head = _start_dashboard_run(tmp_path, running=False, marker=None)
     assert launched and revision == head
+
+
+# ------------------------------- the boot units carry the node's environment-only settings (KI-308)
+
+def _top_level_function(name: str) -> str:
+    """The text of one top-level shell function of the installer."""
+    src = _src()
+    start = src.index(f"\n{name}() {{\n") + 1
+    return src[start:src.index("\n}\n", start) + 3]
+
+
+_NODE_SETTINGS = {
+    "BLACKBOX_DKG_HOME": "/srv/bb/.dkg",
+    "BLACKBOX_DKG_BIN": "/srv/bb/dkg/node_modules/.bin/dkg",
+    "BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED": "1",
+    "BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED": "1",
+    "BLACKBOX_DKG_NODE_OPTIONS": "--enable-source-maps --max-old-space-size=6144",
+    "BLACKBOX_DKG_STORE_QUEUE_LIMIT": "512",
+    "BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION": "1",
+}
+
+
+def _register_boot_service(tmp_path, os_name: str):
+    """Run the real register_boot_service in a sandbox shaped like *os_name*."""
+    import shutil
+    import subprocess
+    if shutil.which("bash") is None:
+        pytest.skip("needs bash")
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    for name, body in (("uname", f"echo {os_name}"), ("node", "exit 0"), ("systemctl", "exit 0"),
+                       ("launchctl", "exit 0")):
+        (stubs / name).write_text(f"#!/bin/sh\n{body}\n")
+        (stubs / name).chmod(0o755)
+    script = "\n".join([
+        "set -euo pipefail",
+        "ok() { :; }", "warn() { echo \"WARN $*\"; }", "step() { :; }", "heading() { :; }",
+        "secure_dkg_token_perms() { :; }", "id() { echo 1000; }",
+        f"HOME={tmp_path}",
+        *(f"{key}='{value}'" for key, value in _NODE_SETTINGS.items()),
+        _top_level_function("xml_escape"),
+        _top_level_function("register_boot_service"),
+        "register_boot_service",
+    ])
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                            env={"PATH": f"{stubs}:/usr/bin:/bin"})
+    assert result.returncode == 0, result.stderr
+
+
+def _expected_node_environment():
+    return {
+        "DKG_EXACT_BATCH_STREAM_ENABLED": "1",
+        "DKG_VM_RECOVERY_PREFETCH_ENABLED": "1",
+        "NODE_OPTIONS": "--enable-source-maps --max-old-space-size=6144",
+        "DKG_STORE_QUEUE_LIMIT": "512",
+        "DKG_LIST_CONTEXT_GRAPHS_PROJECTION": "1",
+    }
+
+
+def test_the_systemd_unit_starts_the_node_with_its_limits_and_switches(tmp_path):
+    _register_boot_service(tmp_path, "Linux")
+    unit = (tmp_path / ".config" / "systemd" / "user" / "blackbox-dkg.service").read_text()
+
+    environment = {}
+    for line in unit.splitlines():
+        if line.startswith("Environment="):
+            assignment = line[len("Environment="):].strip('"')
+            key, _, value = assignment.partition("=")
+            environment[key] = value
+
+    for key, value in _expected_node_environment().items():
+        assert environment.get(key) == value, key
+
+
+def test_the_macos_login_item_starts_the_node_with_its_limits_and_switches(tmp_path):
+    import plistlib
+
+    _register_boot_service(tmp_path, "Darwin")
+    plist = plistlib.loads((tmp_path / "Library" / "LaunchAgents" / "ai.umanitek.blackbox-dkg.plist").read_bytes())
+
+    environment = plist["EnvironmentVariables"]
+    for key, value in _expected_node_environment().items():
+        assert environment.get(key) == value, key
+    assert environment["DKG_SYNC_ON_CONNECT_ENABLED"] == "1"
+    assert environment["DKG_HOME"] == "/srv/bb/.dkg"
+
+
+def test_a_plist_value_is_escaped_as_xml_text(tmp_path):
+    settings_with_markup = dict(_NODE_SETTINGS, BLACKBOX_DKG_HOME="/srv/a&b<c>/.dkg")
+    import plistlib
+    import subprocess
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    for name, body in (("uname", "echo Darwin"), ("node", "exit 0"), ("launchctl", "exit 0")):
+        (stubs / name).write_text(f"#!/bin/sh\n{body}\n")
+        (stubs / name).chmod(0o755)
+    script = "\n".join([
+        "set -euo pipefail", "ok() { :; }", "warn() { :; }", "step() { :; }", "heading() { :; }",
+        "secure_dkg_token_perms() { :; }", f"HOME={tmp_path}",
+        *(f"{key}='{value}'" for key, value in settings_with_markup.items()),
+        _top_level_function("xml_escape"), _top_level_function("register_boot_service"), "register_boot_service",
+    ])
+    subprocess.run(["bash", "-c", script], check=True, env={"PATH": f"{stubs}:/usr/bin:/bin"})
+
+    plist = plistlib.loads((tmp_path / "Library" / "LaunchAgents" / "ai.umanitek.blackbox-dkg.plist").read_bytes())
+    assert plist["EnvironmentVariables"]["DKG_HOME"] == "/srv/a&b<c>/.dkg"

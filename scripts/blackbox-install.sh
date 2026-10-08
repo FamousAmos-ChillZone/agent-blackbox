@@ -1589,7 +1589,7 @@ dkg_manual_hint() {
     echo "      export BLACKBOX_DKG_STORE_URL=\"$BLACKBOX_DKG_STORE_URL\""
     echo "      export BLACKBOX_DKG_DAEMON_URL=\"$BLACKBOX_DKG_DAEMON_URL\""
     echo "      # create config.json/auth.token as in scripts/blackbox-install.sh, then:"
-    echo "      NODE_OPTIONS=\"$BLACKBOX_DKG_NODE_OPTIONS\" DKG_HOME=\"\$BLACKBOX_DKG_HOME\" DKG_SYNC_GLOBAL_MAX_INFLIGHT=\"$BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT\" DKG_STORE_QUEUE_LIMIT=\"$BLACKBOX_DKG_STORE_QUEUE_LIMIT\" DKG_LIST_CONTEXT_GRAPHS_PROJECTION=\"$BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION\" \"\$BLACKBOX_DKG_BIN\" start"
+    echo "      NODE_OPTIONS=\"$BLACKBOX_DKG_NODE_OPTIONS\" DKG_HOME=\"\$BLACKBOX_DKG_HOME\" DKG_SYNC_GLOBAL_MAX_INFLIGHT=\"$BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT\" DKG_STORE_QUEUE_LIMIT=\"$BLACKBOX_DKG_STORE_QUEUE_LIMIT\" DKG_LIST_CONTEXT_GRAPHS_PROJECTION=\"$BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION\" DKG_EXACT_BATCH_STREAM_ENABLED=\"$BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED\" DKG_VM_RECOVERY_PREFETCH_ENABLED=\"$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED\" \"\$BLACKBOX_DKG_BIN\" start"
     echo "      # then re-run:  blackbox sync --wait --require-rules"
 }
 
@@ -1996,6 +1996,15 @@ EOF
 #   Linux:  systemctl disable --now blackbox-dkg
 #   macOS:  launchctl unload ~/Library/LaunchAgents/ai.umanitek.blackbox-dkg.plist
 # ---------------------------------------------------------------------------
+# A value placed inside a launchd plist <string> must be XML text.
+xml_escape() {
+    local value="$1"
+    value="${value//&/&amp;}"
+    value="${value//</&lt;}"
+    value="${value//>/&gt;}"
+    printf '%s' "$value"
+}
+
 register_boot_service() {
     heading "Registering the DKG node to start on boot"
     local node_bin_dir
@@ -2034,6 +2043,12 @@ Environment=DKG_SYNC_ON_CONNECT_ENABLED=1
 # graph about 8x slower. The reconciler choice itself lives in config.json.
 Environment=DKG_EXACT_BATCH_STREAM_ENABLED=$BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED
 Environment=DKG_VM_RECOVERY_PREFETCH_ENABLED=$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED
+# The node's safety limits are ALSO environment-only (no config.json key): the
+# V8 heap cap, the store queue limit and the graph-list projection. Without
+# them a reboot brings the node back on Node's ~4 GB default heap (KI-308).
+Environment="NODE_OPTIONS=$BLACKBOX_DKG_NODE_OPTIONS"
+Environment=DKG_STORE_QUEUE_LIMIT=$BLACKBOX_DKG_STORE_QUEUE_LIMIT
+Environment=DKG_LIST_CONTEXT_GRAPHS_PROJECTION=$BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION
 # Clear any orphaned daemon before starting: DKG CLI commands auto-spawn a
 # detached daemon when none is running; that orphan holds daemon.pid and
 # would crash-loop this unit forever ("Daemon already running", KI-045).
@@ -2069,8 +2084,14 @@ UNIT
     <string>$BLACKBOX_DKG_BIN</string><string>start</string><string>--foreground</string>
   </array>
   <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>$node_bin_dir:/usr/local/bin:/usr/bin:/bin</string>
-    <key>DKG_HOME</key><string>$BLACKBOX_DKG_HOME</string>
+    <key>PATH</key><string>$(xml_escape "$node_bin_dir:/usr/local/bin:/usr/bin:/bin")</string>
+    <key>DKG_HOME</key><string>$(xml_escape "$BLACKBOX_DKG_HOME")</string>
+    <key>DKG_SYNC_ON_CONNECT_ENABLED</key><string>1</string>
+    <key>DKG_EXACT_BATCH_STREAM_ENABLED</key><string>$(xml_escape "$BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED")</string>
+    <key>DKG_VM_RECOVERY_PREFETCH_ENABLED</key><string>$(xml_escape "$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED")</string>
+    <key>NODE_OPTIONS</key><string>$(xml_escape "$BLACKBOX_DKG_NODE_OPTIONS")</string>
+    <key>DKG_STORE_QUEUE_LIMIT</key><string>$(xml_escape "$BLACKBOX_DKG_STORE_QUEUE_LIMIT")</string>
+    <key>DKG_LIST_CONTEXT_GRAPHS_PROJECTION</key><string>$(xml_escape "$BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION")</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
