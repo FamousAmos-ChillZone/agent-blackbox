@@ -21,15 +21,15 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from _community_rows import GRAPH, NETWORK, Reporter, signed_row
 from plugins.blackbox.community import CommunityRead, ReadState, reputation, verification
-from plugins.blackbox.community.statements import curator_statements as cs
 from plugins.blackbox.community.statements import curator_view as cv
+from plugins.blackbox.community.trust import manifests as trust_manifests
 from plugins.blackbox.curate import intake, verbs
 from plugins.blackbox.kernel import health, signing
 from plugins.blackbox.kernel.signing import key_manifest as km
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind
 from plugins.blackbox.ruleset import compiler
 from test_blackbox_curate import FakeNode, _ctx, curators  # noqa: F401 - fixture
-from test_blackbox_curator_view import _curator_row, _manifest_row, _rows
+from test_blackbox_curator_view import _curator_row
 
 TODAY = "2026-10-02"
 NOW = 1_800_000_000.0
@@ -102,7 +102,9 @@ def test_curator_alarms_cover_sla_depth_drift_velocity_failures_and_expiry():
 
 def test_the_verifier_counts_why_rows_were_dropped():
     good = signed_row("ioc:domain:a.example", Reporter("0xa"))
-    verifier = verification.ReportVerifier(NETWORK, GRAPH, today=TODAY)
+    # signed_row dates its rows by the real clock, so this reader takes the real day too:
+    # a fixed date here made every row "future-dated" two days after it was written (KI-280)
+    verifier = verification.ReportVerifier(NETWORK, GRAPH)
     assert verifier.verify(good) is not None
     other_network = signed_row("ioc:domain:b.example", Reporter("0xb"), environment="another-network")
     assert verifier.verify(other_network) is None
@@ -112,7 +114,7 @@ def test_the_verifier_counts_why_rows_were_dropped():
     unsigned = dict(good)
     unsigned["signedStatement"] = "not an envelope"
     assert verifier.verify(unsigned) is None
-    assert verifier.drops == {"env_mismatch": 1, "future_dated": 0, "other": 1}
+    assert verifier.drops == {"env_mismatch": 1, "future_dated": 0, "schema": 0, "other": 1}
     # a reader whose "today" is far behind the row's signed day sees a future-dated row (clock skew > 1 day)
     behind = verification.ReportVerifier(NETWORK, GRAPH, today="2020-01-01")
     assert behind.verify(signed_row("ioc:domain:f.example", Reporter("0xf"))) is None and behind.drops["future_dated"] == 1
@@ -129,7 +131,7 @@ def test_the_view_carries_heartbeats_and_detects_a_manifest_conflict(monkeypatch
     assert view.heartbeats == {signing.public_key_hex(key_a): "2026-10-02"}           # a key beats only for itself
     assert view.last_statement_day == "2026-10-02"
     twin = km.KeyManifest(**{**manifest.__dict__, "promotion_author": "0x" + "2" * 40})
-    assert cv.manifests_conflict([manifest, twin]) and not cv.manifests_conflict([manifest, manifest])
+    assert trust_manifests.manifests_conflict([manifest, twin]) and not trust_manifests.manifests_conflict([manifest, manifest])
     assert cv.build_view(None, [], [], verified_graph=manifest.graph, community_graph=GRAPH, manifest_conflict=True).manifest_conflict
 
 

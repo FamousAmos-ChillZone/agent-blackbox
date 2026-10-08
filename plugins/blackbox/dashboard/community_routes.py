@@ -13,6 +13,7 @@ string is served through :func:`.safe_payloads.safe_text`.
   authors, backlog and away notices, held-back and pending counts, and R2b's
   weekly sighting digests with the per-threat heat estimate ("seen by ~N
   agents this week").
+* ``GET /api/trust`` — Community Curation C10: the trust panel (:mod:`.trust_routes`).
 * ``GET /api/health`` — Refine R10: the operator's health items (the SAME
   ``kernel.health`` items `blackbox status` prints; INFO never red).
 
@@ -26,6 +27,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
+from . import trust_routes
 from .lifecycle import on_shutdown, on_startup
 from .pulse_driver import PulseDriver
 from .safe_payloads import safe_identifier, safe_text, sanitized_ledger
@@ -194,7 +196,8 @@ def health_payload(community_read: CommunityReadSource, node_reachable: Callable
     read = community_read(cfg) if getattr(cfg, "community_graph_id", "") else None
     retries = community.share_retry_stats()
     inputs = health.gather(cfg, rs, node_reachable(cfg), read, audit.blocked_counts_by_identifier(), time.time(),
-                           pending_shares=retries.pending, shares_given_up=retries.given_up)
+                           pending_shares=retries.pending, shares_given_up=retries.given_up,
+                           sharing_consent_problem=community.consent.why_not())
     items = health.operator_health(inputs)
     return {"items": [{**item.as_dict(), "red": health.red(item)} for item in items],
             "ruleset_age": health.ruleset_age_text(inputs.ruleset_age_s), "community_paused": inputs.community_paused}
@@ -230,4 +233,5 @@ def register_community_routes(app: Any, *, community_read: CommunityReadSource,
     def community_statements() -> Any:
         return community_statements_payload(community_read)
 
+    trust_routes.register_trust_routes(app, community_read=community_read)   # Community Curation C10: GET /api/trust
     return CommunityEndpoints(community_stats=community_stats, reports=reports)

@@ -20,7 +20,7 @@ import os
 
 import pytest
 
-from _community_rows import GRAPH, Reporter, signed_row
+from _community_rows import GRAPH
 from plugins.blackbox.community import reputation, shadow
 from plugins.blackbox.community.statements import curator_view as cv
 from plugins.blackbox.kernel import config as config_mod
@@ -57,8 +57,8 @@ def test_in_shadow_mode_nothing_community_derived_becomes_matchable(monkeypatch)
     """A corroborated threat from three partner clusters WOULD flag; in shadow it is monitor-only and never materializes."""
     view, keys = _listed_view()
     monkeypatch.setattr(community_tier.community, "read_verified_reports",
-                        lambda client, cfg: type("R", (), {"available": True, "reports": _reports(keys), "curator": view,
-                                                             "disputes": (), "state": None})())
+                        lambda client, cfg, **kw: type("R", (), {"available": True, "reports": _reports(keys), "curator": view,
+                                                                   "disputes": (), "retractions": (), "state": None})())
     monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda client, cfg: None)
     monkeypatch.setattr(community_tier.community, "community_pause_active", lambda client, cfg: False)
     monkeypatch.setattr(community_tier.time, "time", lambda: NOW)

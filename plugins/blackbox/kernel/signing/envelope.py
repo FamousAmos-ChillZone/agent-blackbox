@@ -46,6 +46,7 @@ Usage::
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, replace
 from typing import Any, Dict, FrozenSet, Mapping, Optional, Tuple
@@ -129,6 +130,36 @@ def _signed_message(envelope: SignedEnvelope) -> bytes:
     """The exact bytes every signature covers: domain tag + canonical JSON."""
     body = json.dumps(_domain_document(envelope), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return _DOMAIN_TAG + body.encode("ascii")
+
+
+def content_id(envelope: SignedEnvelope) -> str:
+    """The identity of WHAT was signed: sha256 (hex) of the exact bytes every
+    signature covers. One statement can be written as many texts that all
+    verify (other spacing or key order, an ignored extra key, upper-case hex,
+    more or fewer signatures) and anyone can publish such copies without a
+    key — so a reader that counts, stores or de-duplicates statements keys on
+    this, never on the text (KI-266)."""
+    return hashlib.sha256(_signed_message(envelope)).hexdigest()
+
+
+def canonical_text(envelope: SignedEnvelope) -> str:
+    """*envelope* written the ONE canonical way: compact sorted JSON, its
+    signatures in lower-case hex, one per signer (the first given), sorted by
+    signer. A copy that differs from a statement only in how it is written
+    comes back as the statement's original text. The result is as UNVERIFIED
+    as any text — verify it before relying on it."""
+    first: Dict[str, Signature] = {}
+    for signature in envelope.signatures:
+        first.setdefault(signature.signer.lower(), Signature(signature.signer.lower(), signature.value.lower()))
+    return replace(envelope, signatures=tuple(first[signer] for signer in sorted(first))).to_text()
+
+
+def is_canonical(text: str) -> bool:
+    """True when *text* is exactly its own canonical form. Parsing accepts
+    more than that; a file in which every byte must matter (an export bundle)
+    accepts only this."""
+    envelope = from_text(text)
+    return envelope is not None and canonical_text(envelope) == text
 
 
 def public_key_hex(private_key: Ed25519PrivateKey) -> str:

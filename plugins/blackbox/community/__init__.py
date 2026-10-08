@@ -23,7 +23,10 @@ Public surface:
 * :func:`read_verified_reports` — THE community read: fetch + verify (R0c/R0d).
 * The curator's view and statements (Refine R2/R6): :func:`read_curator_view` ->
   :class:`CuratorView`; :func:`sign_curator_statement`, :func:`curator_statement_quads`,
-  :func:`key_manifest_quads`, :data:`VERIFIED_GRAPH_KINDS` (which kinds live in the verified graph).
+  :func:`key_manifest_quads`, :data:`VERIFIED_GRAPH_KINDS` (which kinds live in the verified graph),
+  :data:`EVIDENCE_REFERENCE` (the closed format of the evidence a confirmation cites).
+* :func:`trust_panel` / :func:`trust_status_lines` — who curates, who is trusted, what is confirmed: one read
+  model for the dashboard's trust panel and `blackbox status` (Community Curation C10).
 * :func:`stage_for` (+ :class:`Stage`, :class:`Enforcement`, :class:`StageResult`) —
   a community threat's local stage from the counted-author list (R3).
 * :func:`record_verified_sighting` / :func:`publish_due_digests` — the
@@ -33,6 +36,8 @@ Public surface:
   the share gate refuses without it.
 * :mod:`allowlist` — the allowlist / warninglist verdict and canaries (R9): byte-exact
   names hold, look-alikes support the report.
+* :mod:`pool` — the confirmed pool (threats with a standing, evidenced community confirmation) and the
+  export bundle its receiver checks offline from the community root (Community Curation C8).
 * :mod:`reputation` — automated graduation, novelty, partners, collusion and the
   curator-private ledger (R4); readers see its decisions only through the counted-author list.
 * :func:`publish_due_copies` — keep-alive (R5): this node re-publishes an
@@ -54,14 +59,16 @@ from __future__ import annotations
 from .report_builder import build_false_positive_quads, build_report_quads, build_retraction_quads
 from .membership import ensure_community_subscription
 from .report_cli import add_report_parser, cmd_report, print_community_status
-from .sharing import NEVER_SHARED_SOURCES, CommunitySharePolicy, spawn_community_share
+from .sharing import ALREADY_SEALED_REPLY, NEVER_SHARED_SOURCES, CommunitySharePolicy, spawn_community_share
 from .graph_stats import community_agents, contributing_agent_count, most_reported_threats, reports_signed_by
 from .verification import ReportVerifier, VerifiedReport, verify_report_rows
 from .report_signer import network_environment
 from .aggregation import CommunityRule, aggregate_community_reports
 from .digest import publish_due_digests, record_verified_sighting
+from . import keep_alive
 from .keep_alive import publish_due_copies
-from . import allowlist, consent, reputation, shadow
+from .statements.curator_view import COMMUNITY_LISTING_MAX_DAYS
+from . import allowlist, consent, pool, reputation, shadow
 from .pulse import PULSE
 from .pulse import fingerprint as community_fingerprint
 from .statements.lifetimes import lifetime_days
@@ -69,6 +76,7 @@ from .statements.author_budget import FirstSeenStore as _FirstSeenStore
 from .share_retry import retry_due_shares, share_retry_stats
 from .stages import Enforcement, Stage, StageResult, stage_for
 from .statements.curator_view import VERIFIED_GRAPH_KINDS, CuratorView, counted_dispute_weight
+from .statements.curator_statements import EVIDENCE_REFERENCE
 from .statements.curator_statements import manifest_quads as key_manifest_quads
 from .statements.curator_statements import sign_statement as sign_curator_statement
 from .statements.curator_statements import statement_quads as curator_statement_quads
@@ -79,11 +87,13 @@ from .reader import (
     fetch_community_report_rows,
     CommunityRead,
     ReadState,
-    page_rows,
-    read_curator_view,
     read_verified_reports,
 )
-from .statements.curator_view import trusted_roots as curator_trusted_roots
+from .trust import known_curator_statements, read_curator_view
+from .trust import status_lines as trust_status_lines
+from .trust import trust_panel
+from ..kernel.sparql_text import page_rows
+from ..kernel.signing.trust_anchors import trusted_roots as curator_trusted_roots
 from .statements.curator_view import today_utc as curator_today
 
 
@@ -93,6 +103,8 @@ def first_seen_trail():
 
 
 __all__ = [
+    "ALREADY_SEALED_REPLY",
+    "EVIDENCE_REFERENCE",
     "COMMUNITY_PAUSE_SUBJECT",
     "NEVER_SHARED_SOURCES",
     "CommunitySharePolicy",
@@ -127,7 +139,10 @@ __all__ = [
     "counted_dispute_weight",
     "publish_due_digests",
     "publish_due_copies",
+    "keep_alive",
+    "COMMUNITY_LISTING_MAX_DAYS",
     "reputation",
+    "pool",
     "allowlist",
     "consent",
     "shadow",
@@ -139,6 +154,9 @@ __all__ = [
     "share_retry_stats",
     "stage_for",
     "read_curator_view",
+    "known_curator_statements",
+    "trust_panel",
+    "trust_status_lines",
     "page_rows",
     "curator_trusted_roots",
     "curator_today",

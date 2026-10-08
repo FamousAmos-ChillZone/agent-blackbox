@@ -2177,6 +2177,73 @@ secure_dkg_token_perms() {
     done
 }
 
+# ---------------------------------------------------------------------------
+# The curator service (Community Curation C9) — OPT-IN, curator nodes only.
+# An ordinary protected agent never runs it; nothing here is registered unless
+# the installer is told this machine is a curator node:
+#   BLACKBOX_CURATOR_SERVICE=1 BLACKBOX_CURATOR_PEERS="peer-a,peer-b" bash blackbox-install.sh
+# The service runs `blackbox curate run` as its own process (never inside an
+# agent). It SIGNS NOTHING until the operator has read and accepted the
+# automation policy on this machine:
+#   blackbox curate policy                    (read it)
+#   blackbox curate policy --accept --code <code shown under the text>
+# Linux (systemd) only. Disable anytime:  systemctl disable --now blackbox-curator
+# ---------------------------------------------------------------------------
+register_curator_service() {
+    [ "${BLACKBOX_CURATOR_SERVICE:-0}" = 1 ] || return 0
+    heading "Registering the curator service (this machine is a curator node)"
+    local peer peer_args="" old_ifs="$IFS"
+    IFS=','
+    for peer in ${BLACKBOX_CURATOR_PEERS:-}; do
+        IFS="$old_ifs"
+        case "$peer" in
+            ""|*[!A-Za-z0-9._:-]*)
+                warn "ignoring curator peer '$peer' (letters, digits, . _ : - only)" ;;
+            *) peer_args="$peer_args --peer $peer" ;;
+        esac
+        IFS=','
+    done
+    IFS="$old_ifs"
+    [ -n "$peer_args" ] || warn "no curator peers given (BLACKBOX_CURATOR_PEERS): proposals will wait until a peer is configured"
+    if [ "$(uname -s)" != Linux ] || ! command -v systemctl >/dev/null 2>&1; then
+        warn "the curator service unit is provided for Linux with systemd only."
+        warn "Start it yourself on this machine:  blackbox curate run$peer_args"
+        return 0
+    fi
+    local unit=/etc/systemd/system/blackbox-curator.service
+    if [ ! -w /etc/systemd/system ] && [ "$(id -u)" != 0 ]; then
+        unit="$HOME/.config/systemd/user/blackbox-curator.service"
+        mkdir -p "$(dirname "$unit")"
+    fi
+    cat > "$unit" <<CURATOR_UNIT
+[Unit]
+Description=Agent Blackbox curator service (routine curation for the community graph)
+After=network-online.target blackbox-dkg.service
+Wants=blackbox-dkg.service
+
+[Service]
+Type=simple
+Environment=HERMES_HOME=$HERMES_HOME
+Environment=BLACKBOX_HOME=$BLACKBOX_HOME
+ExecStart=$HERMES_BIN blackbox curate run$peer_args
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target default.target
+CURATOR_UNIT
+    if [ "$unit" = /etc/systemd/system/blackbox-curator.service ]; then
+        systemctl daemon-reload && systemctl enable --now blackbox-curator >/dev/null 2>&1 \
+            && ok "curator service registered (blackbox-curator)" \
+            || warn "could not enable the curator service; enable manually: systemctl enable --now blackbox-curator"
+    else
+        systemctl --user daemon-reload && systemctl --user enable --now blackbox-curator >/dev/null 2>&1 \
+            && ok "curator user service registered (blackbox-curator)" \
+            || warn "could not enable the user service; enable manually: systemctl --user enable --now blackbox-curator"
+    fi
+    step "  It signs nothing until you accept the automation policy:  blackbox curate policy"
+}
+
 main() {
     banner
     heading "Checking your system"
@@ -2199,6 +2266,7 @@ main() {
     start_dashboard
     register_boot_service
     register_dashboard_service
+    register_curator_service
     next_steps
     if [ "$BLACKBOX_INSTALL_INCOMPLETE" = true ]; then
         exit 1

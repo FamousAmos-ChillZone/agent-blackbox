@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import AbstractSet, Any, Dict, Optional, Set
 
 from .. import community
 from ..kernel import threat_ids
@@ -31,12 +31,13 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
 
     Populates ``rs.community`` (the corroboration/display store, keyed by
     identifier literal) and materializes MATCHABLE community rules into the
-    ``dependency``/``ioc`` O(1) lookup dicts only — identifier-equality
-    matching, never pattern execution (KI-004). Public rules always win a
-    key collision (merge precedence). Injection/escalation/fileaccess/skill
-    community reports stay display-and-corroboration only in v1: their
-    local detections derive the same deterministic identifiers, so
-    corroboration works without ever interpreting community content.
+    ``dependency``/``ioc`` O(1) lookup dicts and the ``skill`` rules —
+    identifier-equality matching, never pattern execution (KI-004). Public
+    rules always win a key collision (merge precedence).
+    Injection/escalation/fileaccess community reports stay
+    display-and-corroboration only: their local detections derive the same
+    deterministic identifiers, so corroboration works without ever
+    interpreting community content.
 
     *prior* is this node's previous ruleset generation (first-seen history and
     the last-good fallback); the refresh cycle passes it in.
@@ -51,20 +52,22 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
         community.ensure_community_subscription(client, cfg)
         # R0c/R0d: only reports whose signature verifies for THIS network and
         # graph are counted; the self-described reporter field never is.
-        read = community.read_verified_reports(client, cfg)
-        if _signed_pause(rs, read) or _legacy_pause(rs, read, client, cfg) or not read.available:
-            # Unavailable — a failed or malformed page, an unverifiable
-            # network, or an unproven empty read: keep last-good (fail-open).
-            # Never mistake "could not read" for "no threats" (KI-112).
+        read = community.read_verified_reports(client, cfg, held=tuple(previous))   # KI-275: ask about what it holds too
+        if not read.available:   # could not read is never "no threats" (KI-112): keep last-good
             _keep_last_good(rs, prior)
             return
-        if not read.reports and previous and _graph_still_has_reports(client, cfg):   # KI-210: a replay window
-            _keep_last_good(rs, prior)
+        withdrawn = _withdrawn(read)
+        if (_signed_pause(rs, read) or _legacy_pause(rs, read, client, cfg)
+                or _empty_read_not_believed(rs, prior, read, previous, client, cfg)):
+            # Paused, or an empty read not yet believed: keep last-good — minus what
+            # this read shows was rejected, revoked or retracted, because reductions
+            # always get through (KI-275, LES-016).
+            _keep_last_good(rs, prior, withdrawn=withdrawn)
             return
         rules = community.aggregate_community_reports(read.reports, _first_seen_history(prior))
         rs.community = {rule.identifier: {**rule.as_rule(), **_stage_fields(rule, read), "networkLive": "yes"}
                         for rule in rules}
-        _carry_kept_locally(rs, previous, time.time())
+        _carry_kept_locally(rs, previous, time.time(), withdrawn=withdrawn)
         if getattr(cfg, "community_shadow", False):   # R15: stages logged, only MONITOR enforced
             community.shadow.clamp_to_monitor(rs.community)
         materialize_community_rules(rs)
@@ -109,6 +112,33 @@ def _graph_still_has_reports(client: DkgClient, cfg: BlackboxConfig) -> bool:
         return False
 
 
+#: KI-262: how long a "no reports" read must persist before this node believes it and
+#: clears a tier that still holds threats (a store busy with a flood answered empty for
+#: up to 18 minutes on the bench; the pulse re-reads every 20 s, so this is many reads).
+EMPTY_READ_WITNESS_SECONDS = 1800.0
+
+
+def _empty_read_not_believed(rs: compiler.Ruleset, prior: Optional[compiler.Ruleset], read: Any,
+                             previous: Dict[str, Dict[str, Any]], client: DkgClient, cfg: BlackboxConfig) -> bool:
+    """KI-210 / KI-262: a read with no reports while this node still holds some is not
+    believed at once — a replay window or a timed-out store looks exactly like an empty
+    graph. True = keep last-good: the graph still counts reports, or the emptiness has
+    not yet lasted ``EMPTY_READ_WITNESS_SECONDS``. A read WITH reports ends the spell.
+    (What the read shows was withdrawn is dropped from the kept tier by the caller, KI-275.)"""
+    if read.reports:
+        rs.community_empty_since = 0.0
+        return False
+    return _graph_still_has_reports(client, cfg) or not _empty_read_witnessed(rs, prior, time.time())
+
+
+def _empty_read_witnessed(rs: compiler.Ruleset, prior: Optional[compiler.Ruleset], now: float) -> bool:
+    """True once reads have come back empty for ``EMPTY_READ_WITNESS_SECONDS``.
+    The first empty read only starts the clock (carried on the ruleset)."""
+    since = float(getattr(prior, "community_empty_since", 0.0) or 0.0) or now
+    rs.community_empty_since = since
+    return now - since >= EMPTY_READ_WITNESS_SECONDS
+
+
 #: R5 reader persistence: a counted threat whose network copies expired stays
 #: in this node's tier this long after it was last read, so a slow-burn threat
 #: survives its author's silence on the reader side too (plan §06: ≤90 d).
@@ -116,14 +146,28 @@ KEPT_LOCALLY_DAYS = 90
 _DAY_SECONDS = 86_400.0
 
 
-def _carry_kept_locally(rs: compiler.Ruleset, previous: Dict[str, Dict[str, Any]], now: float) -> None:
+def _withdrawn(read: Any) -> Set[str]:
+    """Threats the read itself says are gone on purpose: a curator rejection
+    or revocation, or a retraction this reader honoured. Their reports are
+    left out of the read, so they "vanish" — and a vanished threat must not be
+    mistaken for one whose network copies merely expired (KI-275, LES-016:
+    reductions always get through)."""
+    curator = read.curator
+    terminal = {identifier for identifier in curator.verdicts if curator.rejected(identifier)} | set(curator.revoked)
+    return terminal | {retraction.identifier for retraction in read.retractions}
+
+
+def _carry_kept_locally(rs: compiler.Ruleset, previous: Dict[str, Dict[str, Any]], now: float, *,
+                        withdrawn: AbstractSet[str] = frozenset()) -> None:
     """Carry over entries the fresh read no longer has — only threats with at
     least one counted cluster, within their type's lifetime (decay on this
     node's observation time, never the sender's), gone for ≤ KEPT_LOCALLY_DAYS.
     They keep their last stage and are marked ``networkLive: no`` so the
-    dashboard shows "kept locally" apart from what the network still carries."""
+    dashboard shows "kept locally" apart from what the network still carries.
+    A threat in *withdrawn* (rejected, revoked or retracted) is never carried:
+    it left the network on purpose."""
     for identifier, rule in previous.items():
-        if identifier in rs.community or int(rule.get("counted") or 0) < 1:
+        if identifier in rs.community or identifier in withdrawn or int(rule.get("counted") or 0) < 1:
             continue
         gone_since = float(rule.get("keptSince") or now)
         first_seen = float(rule.get("firstSeen") or now)
@@ -147,6 +191,7 @@ def reapply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: Blackbo
     for table in (rs.dependency, rs.ioc):
         for key in [k for k, rule in table.items() if rule.get("source") == "community"]:
             del table[key]
+    rs.skill = [rule for rule in rs.skill if rule.get("source") != "community"]
     apply_community_tier(rs, client, cfg, rs)
     rs._graph_entries_cache.clear()
 
@@ -159,7 +204,10 @@ def _stage_fields(rule: community.CommunityRule, read: community.CommunityRead) 
     result = community.stage_for(rule.identifier, rule.authors, rule.first_seen, read.curator, dispute_weight,
                                  read.curator.verdict(rule.identifier), time.time(), dict(rule.fields),
                                  verdict_day=verdict_record.day if verdict_record is not None else "")
-    return result.as_fields()
+    # How many of its reporters are not on the trusted list: the curator's queue
+    # shows threats whose confirmation would credit a newcomer (the graduation lane).
+    unlisted = sum(1 for author in set(rule.authors) if not read.curator.is_counted(author))
+    return {**result.as_fields(), "unlistedReporters": str(unlisted)}
 
 
 def _first_seen_history(prior: Optional[compiler.Ruleset]) -> Dict[str, float]:
@@ -174,9 +222,12 @@ def _first_seen_history(prior: Optional[compiler.Ruleset]) -> Dict[str, float]:
     }
 
 
-def _keep_last_good(rs: compiler.Ruleset, prior: Optional[compiler.Ruleset]) -> None:
+def _keep_last_good(rs: compiler.Ruleset, prior: Optional[compiler.Ruleset], *,
+                    withdrawn: AbstractSet[str] = frozenset()) -> None:
+    """Keep the previous community tier — except the threats in *withdrawn*
+    (rejected, revoked or retracted according to a read this node DID make)."""
     if prior is not None and prior.community:
-        rs.community = dict(prior.community)
+        rs.community = {identifier: rule for identifier, rule in prior.community.items() if identifier not in withdrawn}
         materialize_community_rules(rs)
 
 
@@ -219,3 +270,21 @@ def materialize_community_rules(rs: compiler.Ruleset) -> None:
                 parts = identifier.split(":", 2)
                 fallback_type = parts[1] if len(parts) >= 3 else ""
                 rs.ioc[identifier] = {**rule, "iocType": str(rule.get("iocType") or fallback_type)}
+        elif identifier.startswith("skill:"):
+            _materialize_skill(rs, identifier, rule)
+
+
+def _materialize_skill(rs: compiler.Ruleset, identifier: str, rule: Dict[str, Any]) -> None:
+    """A FLAG-stage community skill report as a skill rule matched by EXACT
+    identifier: a registry skill by its name and version, a local one by its
+    code hash and danger shape (the same identifier every node derives from
+    the artifact). A skill report without a version is not materialized, and a
+    public rule for the same identifier wins."""
+    if any(existing.get("identifier") == identifier for existing in rs.skill):
+        return
+    if identifier.startswith("skill:artifact:"):
+        rs.skill.append({**rule, "skillName": "", "skillVersion": ""})   # matched by identifier in detection
+        return
+    name, _, version = identifier[len("skill:"):].rpartition("@")
+    if name and version:
+        rs.skill.append({**rule, "skillName": name, "skillVersion": version})

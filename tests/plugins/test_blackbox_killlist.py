@@ -20,7 +20,6 @@ import json
 import time
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from plugins.blackbox import killlist, ruleset
 from plugins.blackbox.curate import verbs
@@ -28,7 +27,6 @@ from plugins.blackbox.curate.proposal import ProposalStore
 from plugins.blackbox.guard import hooks
 from plugins.blackbox.kernel import signing
 from plugins.blackbox.kernel.config import BlackboxConfig
-from plugins.blackbox.kernel.signing import key_manifest as km
 from plugins.blackbox.ruleset import compiler, curator_tier, disk_cache
 from test_blackbox_curate import COMMUNITY, NETWORK, VM_GRAPH, FakeNode, _ctx, _machine, curators  # noqa: F401 - fixture
 
@@ -185,6 +183,8 @@ class _VmNode(FakeNode):
         if "g:KillList" in sparql:
             served, self.rows = self.rows, []
             return served
+        if "VALUES ?r" in sparql:                                   # the read-back after a publish
+            return super().query(sparql, cg_id, view=view, on_error=on_error, **kw)
         return on_error if "g:KeyManifest" not in sparql else []
 
 

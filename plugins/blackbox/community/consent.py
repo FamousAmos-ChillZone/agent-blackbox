@@ -93,6 +93,40 @@ def in_force() -> bool:
     return bool(text) and record is not None and record.in_force_for(terms_hash(text))
 
 
+def why_not() -> str:
+    """"" when consent is in force; otherwise ONE plain sentence saying why not —
+    never given, withdrawn, or given for an earlier text of the terms (which
+    is what every operator sees once after the terms change, Community
+    Curation C11). The share gates, `blackbox report --consent` and the
+    operator's health list all say it the same way. It never disagrees
+    with :func:`in_force`: when that says yes, this says nothing."""
+    if in_force():
+        return ""
+    text = terms_text()
+    if not text:
+        return "the reporter terms are missing from this installation, so nothing can be consented to"
+    entry = current()
+    if entry is None:
+        return "no sharing consent is recorded (`blackbox report --consent`)"
+    if entry.withdrawn_at:
+        return f"sharing consent was withdrawn on {entry.withdrawn_at[:10]} (`blackbox report --consent` to give it again)"
+    if entry.terms_hash != terms_hash(text):
+        return (f"the reporter terms changed since you consented to version {entry.terms_version} on {entry.accepted_at[:10]} "
+                f"(now version {terms_version(text)}); sharing stopped until you read and accept them (`blackbox report --consent`)")
+    return ""
+
+
+def changes_section(text: Optional[str] = None) -> str:
+    """The terms' "What changed" section ("" when there is none) — shown first to
+    an operator who consented to an earlier version."""
+    lines = (terms_text() if text is None else text).splitlines()
+    start = next((i for i, line in enumerate(lines) if line.lower().startswith("## what changed")), None)
+    if start is None:
+        return ""
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+    return "\n".join(lines[start:end]).strip()
+
+
 def record() -> Optional[SharingConsentRecord]:
     """Record consent to the terms as they are now (None when there are no terms to consent to)."""
     text = terms_text()

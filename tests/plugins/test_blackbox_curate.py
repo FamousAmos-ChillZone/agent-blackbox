@@ -17,7 +17,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from plugins.blackbox import ruleset
 from plugins.blackbox.community.statements import curator_view as cv
-from plugins.blackbox.curate import consent, dossier, keys, node_ui_views, queue, transport, verbs
+from plugins.blackbox.curate import consent, dossier, keys, node_ui_views, publishing, queue, transport, verbs
 from plugins.blackbox.curate.context import CurateContext
 from plugins.blackbox.curate.proposal import Proposal, ProposalError, ProposalState, ProposalStore
 from plugins.blackbox.kernel import constants, node_routes, signing
@@ -45,8 +45,13 @@ class FakeNode:
     def context_graphs(self):
         return []
 
-    def query(self, *a, **kw):
-        return kw.get("on_error")
+    def query(self, sparql, cg_id=None, view=None, on_error=None, **kw):
+        """Answers only the read-back after a publish: is this signed statement among what was written?"""
+        written = [quad for _, _, quads in (*self.vm_published, *self.shared) for quad in quads]
+        if "VALUES ?r" in sparql and any(f"<{quad['subject']}>" in sparql and quad["object"] in sparql
+                                         for quad in written if quad["predicate"].endswith("signedStatement")):
+            return [{"r": "readable"}]
+        return on_error
 
     def write_private_knowledge_asset(self, cg, name, quads):
         self.sealed.append((cg, name, quads))
@@ -296,7 +301,7 @@ def test_the_second_signer_refuses_a_crafted_promotion_payload(monkeypatch, tmp_
                                   provenance=promotion.ProvenanceMap())
     envelope = promotion.sign(whole, curators["b"], curators["manifest"], sequence=2)
     proposal = Proposal.new(Kind.PROMOTION.value, "dep:npm:evil-pkg@*", envelope, VM_GRAPH, checks={})
-    assert "WHOLE PACKAGE" in verbs.summary(proposal)
+    assert "WHOLE PACKAGE" in publishing.summary(proposal)
 
 
 def test_saved_views_are_catalog_entries_in_the_nodes_vocabulary():

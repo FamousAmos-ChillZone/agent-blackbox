@@ -1,9 +1,16 @@
-"""``curate`` — the curator node's tooling (Community Graph Refine, R6).
+"""``curate`` — the curator node's tooling (Community Graph Refine, R6; Community Curation).
+
+A curator machine acts for ONE authority (:mod:`.context`): the verified one
+publishes its manifest and enforcement statements in the verified graph; the
+community one publishes everything in the community graph and can only ever
+cause FLAG. ``blackbox curate --authority community …`` selects it explicitly.
 
 The read side (queue, dossier, saved node-UI views) and the two-key write
 side (propose -> private message -> approve + consent -> publish) of the
 curator role. Public entry: :func:`add_curate_parser` (wired by cli.py).
 
+* :mod:`.parser` — the `blackbox curate` argument parser; :mod:`.commands` — one Command per verb.
+* :mod:`.publishing` — numbering, quorum check, consent and the write of an approved proposal.
 * :mod:`.queue` — the delta view (NEW vs ALREADY VERIFIED) and lanes.
 * :mod:`.dossier` — evidence dossier (Builder) + the ≤3-item checklist.
 * :mod:`.proposal` — proposals and their lifecycle (State) + store.
@@ -15,6 +22,7 @@ curator role. Public entry: :func:`add_curate_parser` (wired by cli.py).
 * :mod:`.catalog_import` — threat-catalog import helpers (unused; kept for adoption or deletion).
 """
 
-from .commands import add_curate_parser, cmd_curate
+from .commands import cmd_curate
+from .parser import add_curate_parser
 
 __all__ = ["add_curate_parser", "cmd_curate"]

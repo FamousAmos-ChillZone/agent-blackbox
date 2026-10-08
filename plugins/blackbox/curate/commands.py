@@ -6,9 +6,10 @@ sandbox) · ``manifest`` (sandbox: stage a root-signed key manifest) · ``queue`
 checklist preview) · ``propose`` (promotion / verdict / nomination / pause,
 first key) · ``inbox`` (receive proposals) · ``approve`` (second key: co-sign,
 consent, publish) · ``publish`` · ``reject`` · ``list`` · ``watch`` (intake ->
-webhook) · ``views`` / ``view`` (saved node-UI queries). Each verb is one
-Command function; read verbs need no keys. The compiled ruleset is injected by
-cli.py, the composition root.
+webhook) · ``views`` / ``view`` (saved node-UI queries) · ``pool`` / ``export`` /
+``verify-bundle`` (the confirmed pool and its hand-off bundle, :mod:`.handoff`). Each verb is one
+Command function; read verbs need no keys. The argument parser is
+:mod:`.parser`; the compiled ruleset is injected by cli.py, the composition root.
 """
 
 from __future__ import annotations
@@ -16,106 +17,20 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Callable, Dict
 
 from .. import community
 from ..detection import osv
 from ..kernel import display_safety, node_routes, signing
+from ..kernel.signing.authority import Authority
 from ..kernel.signing.statement_order import CuratorStatement
-from . import dossier, intake, keys, node_ui_views, queue, transport, verbs
-from .context import CompiledRuleset, CurateContext, build_context, verified_identifiers
+from . import dossier, handoff, intake, keys, node_ui_views, publishing, queue, service, transport, verbs
+from .ladder import outcomes
+from .upkeep import heartbeat, published
+from .context import CurateContext, build_context, verified_identifiers
 from .proposal import ProposalState, ProposalStore
 
 _term = display_safety.term_safe
-
-
-def add_curate_parser(sub: "argparse._SubParsersAction", *, compiled_ruleset: Optional[CompiledRuleset] = None) -> None:
-    """Register ``blackbox curate <verb>`` on the CLI's sub-parsers."""
-    curate = sub.add_parser("curate", help="Curator tooling: queue, dossier, two-key proposals, publish")
-    curate.set_defaults(func=cmd_curate, compiled_ruleset=compiled_ruleset, verb=None)
-    verbs_ = curate.add_subparsers(dest="verb")
-    k = verbs_.add_parser("keys", help="Show or create this machine's curator key (sandbox: --root too)")
-    k.add_argument("--root", action="store_true", help="SANDBOX: also create/show a local root key")
-    m = verbs_.add_parser("manifest", help="SANDBOX: stage a root-signed key manifest (then `publish`)")
-    m.add_argument("--curator-key", dest="curator_keys", action="append", required=True, metavar="HEX")
-    m.add_argument("--threshold", type=int, default=2)
-    m.add_argument("--promotion-author", dest="promotion_author", required=True, metavar="ADDRESS")
-    m.add_argument("--root-epoch", dest="root_epoch", type=int, default=1)
-    m.add_argument("--version", type=int, default=1)
-    verbs_.add_parser("queue", help="The delta view: NEW threats by lane; already-verified closed as duplicates")
-    s = verbs_.add_parser("show", help="The evidence dossier and checklist preview for one threat")
-    s.add_argument("identifier")
-    _add_propose(verbs_)
-    verbs_.add_parser("inbox", help="Receive proposals sent by the other curator")
-    a = verbs_.add_parser("approve", help="Second key: co-sign, consent, publish")
-    a.add_argument("proposal_id")
-    a.add_argument("--evidence", default="", help="your own item-1 evidence (promotions)")
-    a.add_argument("--root", action="store_true", help="SANDBOX: add the root signature (wide / popular kills, R14)")
-    _add_consent(a)
-    p = verbs_.add_parser("publish", help="Publish an APPROVED proposal (after consent)")
-    p.add_argument("proposal_id")
-    _add_consent(p)
-    r = verbs_.add_parser("reject", help="Drop a proposal locally (no statement is sent)")
-    r.add_argument("proposal_id")
-    verbs_.add_parser("list", help="This machine's proposals and their state")
-    w = verbs_.add_parser("watch", help="Intake: announce NEW threats to a webhook")
-    w.add_argument("--webhook", required=True)
-    w.add_argument("--interval", type=float, default=60.0)
-    w.add_argument("--once", action="store_true")
-    vi = verbs_.add_parser("views", help="Install the saved node-UI queries (query catalog)")
-    vi.add_argument("--install", action="store_true", required=True)
-    _add_reputation(verbs_)
-    verbs_.add_parser("metrics", help="R15: the latest shadow-phase snapshot and the newcomer calibration gap")
-    v = verbs_.add_parser("view", help="Run one saved view from the CLI")
-    v.add_argument("slug", choices=[x.slug for x in (*node_ui_views.COMMUNITY_VIEWS, *node_ui_views.VERIFIED_VIEWS)])
-
-
-def _add_propose(verbs_: Any) -> None:
-    p = verbs_.add_parser("propose", help="First key: sign a proposal and send it to the other curator")
-    what = p.add_mutually_exclusive_group(required=True)
-    what.add_argument("--promote", metavar="IDENTIFIER", help="promote a malware dependency (dep:…)")
-    what.add_argument("--verdict", nargs=2, metavar=("KIND", "IDENTIFIER"),
-                      help="confirmation | rejection | revocation | deferral | in-review | deferral-lapsed")
-    what.add_argument("--nominate", metavar="KEY_HEX", help="counted-author entry for a reporter key")
-    what.add_argument("--attest", nargs=2, metavar=("STAGE", "IDENTIFIER"),
-                      help="stage attestation (R3-attest): reported | held | corroborated | deferred")
-    what.add_argument("--pause", action="store_true", help="pause community ingest (needs --until)")
-    what.add_argument("--kill-list", dest="kill_list", metavar="FILE", help="R14: a JSON list of kill entries (next version)")
-    p.add_argument("--severity", default="critical")
-    p.add_argument("--evidence", default="", help="item 1: advisory:<id> | registry-action:<url> | reproduced:<sha256>")
-    p.add_argument("--reason", default="", help="verdict reason / scope reason")
-    p.add_argument("--name", default="")
-    p.add_argument("--class", dest="author_class", default="established", choices=["partner", "established"])
-    p.add_argument("--address", default="", help="nomination: the reporter's agent address")
-    p.add_argument("--org", default="")
-    p.add_argument("--expires", default="")
-    p.add_argument("--until", default="")
-    p.add_argument("--delist", action="store_true", help="nomination: remove (the denylist)")
-    p.add_argument("--to", default="", metavar="PEER", help="send to this curator peer (name or peer id)")
-
-
-def _add_reputation(verbs_: Any) -> None:
-    """R4: the curator-private reputation verbs (``outcome``, ``graduate``)."""
-    o = verbs_.add_parser("outcome", help="R4: record a curator decision about a reporter's report in the PRIVATE reputation ledger")
-    o.add_argument("key", help="the reporter KEY (64 hex) — the identity, never an address")
-    decided = o.add_mutually_exclusive_group(required=True)
-    decided.add_argument("--confirmed", action="store_true")
-    decided.add_argument("--rejected", action="store_true")
-    o.add_argument("--novel", action="store_true", help="the report earned a novelty credit (judge with the §05 rules first)")
-    o.add_argument("--strike", action="store_true", help="confirmed bad faith")
-    o.add_argument("--first-seen", dest="first_seen", default="", help="UTC day of the reporter's first share (new entries)")
-    o.add_argument("--day", default="", help="UTC day of the decision (default today)")
-    g = verbs_.add_parser("graduate", help="R4: who graduates or is demoted today; --propose builds the counted-author proposal")
-    g.add_argument("--propose", metavar="KEY", default="", help="propose the listing / delisting this key calls for")
-    g.add_argument("--address", default="", help="the reporter's agent address (display only; required with --propose)")
-    g.add_argument("--cluster", default="", help="collapse: list the key under this shared cluster id")
-    g.add_argument("--erase", metavar="KEY", default="", help="crypto-shred this reporter's ledger entry (erasure request)")
-    g.add_argument("--to", default="", metavar="PEER")
-
-
-def _add_consent(parser: Any) -> None:
-    parser.add_argument("--code", default=None, help="the 8-hex confirmation code shown for this content")
-    parser.add_argument("--yes", action="store_true", help="SANDBOX only: consent without typing the code")
 
 
 # -- dispatch --------------------------------------------------------------------
@@ -134,12 +49,26 @@ def cmd_curate(args: argparse.Namespace) -> int:
 
 
 def _usage(args: argparse.Namespace) -> int:
-    print("usage: blackbox curate {keys,manifest,queue,show,propose,inbox,approve,publish,reject,list,watch,views,view,outcome,graduate}")
+    print("usage: blackbox curate [--authority verified|community] {keys,manifest,queue,show,propose,inbox,approve,"
+          "publish,reject,list,heartbeat,upkeep,pool,export,verify-bundle,policy,run,watch,views,view,outcome,graduate}")
     return 2
 
 
 def _ctx(args: argparse.Namespace) -> CurateContext:
-    return build_context(getattr(args, "compiled_ruleset", None))
+    """The context for this verb: the acting authority (``--authority`` or
+    worked out from this machine's key) and the identifiers the verb is about."""
+    return build_context(getattr(args, "compiled_ruleset", None), authority=getattr(args, "authority", None),
+                         interest=_interest(args))
+
+
+def _interest(args: argparse.Namespace) -> list:
+    """The identifiers this verb needs the curators' statements about."""
+    wanted = [getattr(args, "identifier", None), getattr(args, "promote", None)]
+    wanted += [pair[1] for pair in (getattr(args, "verdict", None), getattr(args, "attest", None)) if pair]
+    for key in (getattr(args, "nominate", None), getattr(args, "key", None)):
+        if key:
+            wanted.append(f"author:{str(key).lower()}")
+    return [identifier for identifier in wanted if identifier]
 
 
 # -- read verbs ------------------------------------------------------------------
@@ -148,8 +77,12 @@ def _ctx(args: argparse.Namespace) -> CurateContext:
 def _keys(args: argparse.Namespace) -> int:
     print(f"curator key: {keys.curator_key_store().public_key_hex()}")
     if args.root:
-        print(f"root key (SANDBOX ONLY): {keys.root_key_store().public_key_hex()}")
-        print("Set BLACKBOX_CURATOR_ROOT_KEYS to this root key on every sandbox node before publishing a manifest.")
+        ctx = _ctx(args)
+        if not ctx.sandbox:   # KI-256: a locally held root exists only in a development setup
+            raise verbs.VerbError("this network has a pinned root; the root key is offline and never created on this machine")
+        variable = "BLACKBOX_COMMUNITY_ROOT_KEYS" if ctx.authority is Authority.COMMUNITY else "BLACKBOX_CURATOR_ROOT_KEYS"
+        print(f"{ctx.authority.value} root key (SANDBOX ONLY): {keys.root_key_store(ctx.authority).public_key_hex()}")
+        print(f"Set {variable} to this root key on every sandbox node before publishing a manifest.")
     return 0
 
 
@@ -176,7 +109,9 @@ def _show(args: argparse.Namespace) -> int:
     verdict = ctx.view.verdict(args.identifier)
     built = (dossier.DossierBuilder(args.identifier).community(rule).advisories(osv.lookup)
              .allowlist(community.allowlist.check(args.identifier, rule))
-             .curator(verdict.value if verdict else None, weight).heat(read.heat.get(args.identifier))
+             .curator(verdict.value if verdict else None, weight)
+             .community_confirmation(handoff.confirmation_for(ctx, args.identifier, getattr(args, "bundle", "")))
+             .heat(read.heat.get(args.identifier))
              .history(ProposalStore().for_identifier(args.identifier)).build())
     for line in dossier.render(built):
         print(_term(line, 220))
@@ -184,6 +119,28 @@ def _show(args: argparse.Namespace) -> int:
     for item in dossier.checklist(args.identifier, kind=kind, evidence="", reason=""):
         print(f"  checklist {item.item}. {item.title}: {'ok' if item.ok else 'NOT YET'} — {item.note}")
     return 0
+
+
+def _pool(args: argparse.Namespace) -> int:
+    return handoff.print_pool(_ctx(args))
+
+
+def _export(args: argparse.Namespace) -> int:
+    return handoff.export(_ctx(args), args.out)
+
+
+def _verify_bundle(args: argparse.Namespace) -> int:
+    return handoff.verify_file(args.file, root=args.root, network=args.network, graph=args.graph)   # offline: no context
+
+
+def _run(args: argparse.Namespace) -> int:
+    def context(interest):
+        return build_context(getattr(args, "compiled_ruleset", None), authority=getattr(args, "authority", None), interest=interest)
+    return service.run_command(context, peers=args.peer or [], interval=args.interval, once=args.once)
+
+
+def _policy(args: argparse.Namespace) -> int:
+    return service.policy_command(accept=args.accept, withdraw=args.withdraw, code=args.code)   # local: no context
 
 
 def _list(args: argparse.Namespace) -> int:
@@ -240,7 +197,7 @@ def _propose(args: argparse.Namespace) -> int:
                                            fields={"stage": args.attest[0]}, evidence=args.evidence)
     elif args.nominate:
         fields = {"listed": "no" if args.delist else "yes", "class": args.author_class, "org": args.org,
-                  "expires": args.expires, "address": args.address.lower()}
+                  "expires": args.expires or verbs.default_expiry(ctx), "address": args.address.lower()}
         proposal = verbs.propose_statement(ctx, store, kind=CuratorStatement.COUNTED_AUTHORS,
                                            identifier=f"author:{args.nominate.lower()}", fields=fields)
     else:
@@ -282,9 +239,22 @@ def _approve(args: argparse.Namespace) -> int:
 
 
 def _publish(args: argparse.Namespace) -> int:
-    proposal, outcome = verbs.publish(_ctx(args), ProposalStore(), args.proposal_id, typed_code=args.code, yes=args.yes)
+    proposal, outcome = publishing.publish(_ctx(args), ProposalStore(), args.proposal_id, typed_code=args.code, yes=args.yes)
     print(f"{proposal.id}: {outcome}")
     return 0 if outcome.startswith("published") else 2
+
+
+def _heartbeat(args: argparse.Namespace) -> int:
+    proposal, outcome = heartbeat.publish_heartbeat(_ctx(args), ProposalStore(), typed_code=args.code, yes=args.yes)
+    print(f"heartbeat {proposal.id}: {outcome}")
+    return 0 if outcome.startswith("published") else 2
+
+
+def _upkeep(args: argparse.Namespace) -> int:
+    ctx = _ctx(args)
+    sent = published.publish_due(ctx.client, ctx.cfg)
+    print(f"kept alive: {sent} statement(s) re-published this epoch; {len(published.store().all())} current statement(s) remembered")
+    return 0
 
 
 def _reject(args: argparse.Namespace) -> int:
@@ -299,23 +269,24 @@ def _reject(args: argparse.Namespace) -> int:
 
 def _manifest(args: argparse.Namespace) -> int:
     ctx = _ctx(args)
-    if not ctx.sandbox:
-        raise verbs.VerbError("this network has a pinned curator root; manifests come from the offline root (R7b)")
+    if ctx.authority is Authority.VERIFIED and not args.promotion_author:
+        raise verbs.VerbError("a verified-authority manifest needs --promotion-author (the pinned publisher of verified rows)")
     proposal = verbs.manifest_proposal(ctx, ProposalStore(), curator_keys=args.curator_keys, threshold=args.threshold,
                                        promotion_author=args.promotion_author, root_epoch=args.root_epoch,
-                                       version=args.version, legacy_uals=[])
-    print(f"manifest staged as {proposal.id} (root {signing.public_key_hex(keys.root_key_store().load_or_create())[:16]}…); "
+                                       version=args.manifest_version, legacy_uals=[], issued_day=args.issued_day)
+    root = signing.public_key_hex(keys.root_key_store(ctx.authority).load_or_create())
+    print(f"{ctx.authority.value} manifest for {proposal.graph} staged as {proposal.id} (root {root[:16]}…); "
           f"run `blackbox curate publish {proposal.id} --yes`")
     return 0
 
 
 def _watch(args: argparse.Namespace) -> int:
-    ctx = _ctx(args)
     watcher = intake.IntakeWatcher()
     alarms = intake.AlarmWatcher()
     sink = intake.WebhookSink(args.webhook)
     while True:
-        compiled = args.compiled_ruleset(ctx.cfg) if args.compiled_ruleset else None
+        ctx = _ctx(args)   # KI-261: a fresh view every round (the curators' statements change between rounds)
+        compiled = ctx.compiled
         if compiled is not None:
             announced = watcher.poll(queue.delta_view(compiled.community, verified_identifiers(compiled)), sink)
             if announced:
@@ -344,6 +315,9 @@ def _graduate(args: argparse.Namespace) -> int:
     today = _today()
     if args.erase:
         print("erased" if community.reputation.ReputationLedger().erase(args.erase) else "no ledger entry for that key")
+        ended = published.forget_identifier(f"author:{args.erase.lower()}")   # and its listing is no longer kept alive
+        if ended:
+            print(f"stopped keeping {ended} published statement(s) about that reporter alive")
         return 0
     if args.propose:
         if not args.address:
@@ -356,6 +330,10 @@ def _graduate(args: argparse.Namespace) -> int:
             result = verbs.send(_ctx(args), proposal, args.to)
             print(f"sent to {_term(args.to, 60)}: delivered={result.get('delivered')}")
         return 0
+    ctx = _ctx(args)
+    synced = outcomes.credit_verdicts(ctx)   # every curator node rebuilds its ledger from the public record
+    print(f"synced with the published verdicts: {synced.credited} new outcome(s), {synced.novel} novel"
+          if synced.available else "could not read the community graph: the ledger below may be behind")
     rows = verbs.graduation_candidates(today)
     if not rows:
         print("the reputation ledger is empty")
@@ -363,6 +341,9 @@ def _graduate(args: argparse.Namespace) -> int:
     for standing, score, action in rows:
         print(f"{standing.key[:16]}…  {standing.band.value:<11} rep {score:.2f}  confirmed {standing.confirmed} rejected "
               f"{standing.rejected} strikes {standing.strikes} novel {standing.novel_credits}  {action or '-'}")
+    for ring in outcomes.overlap_rings(ctx):
+        print("possible single operator (same threats, in turn): " + ", ".join(f"{key[:16]}…" for key in sorted(ring))
+              + "  -> list them under one --cluster so they count once")
     return 0
 
 
@@ -384,5 +365,7 @@ def _metrics(args: argparse.Namespace) -> int:
 _VERBS: Dict[str, Callable[[argparse.Namespace], int]] = {
     "keys": _keys, "manifest": _manifest, "queue": _queue, "show": _show, "propose": _propose, "inbox": _inbox,
     "approve": _approve, "publish": _publish, "reject": _reject, "list": _list, "watch": _watch, "views": _views,
+    "heartbeat": _heartbeat, "upkeep": _upkeep, "pool": _pool, "export": _export, "verify-bundle": _verify_bundle,
+    "policy": _policy, "run": _run,
     "view": _view, "outcome": _outcome, "graduate": _graduate, "metrics": _metrics,
 }

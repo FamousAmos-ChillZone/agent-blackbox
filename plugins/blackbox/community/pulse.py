@@ -26,7 +26,7 @@ import threading
 import time
 from typing import Any, Callable, Optional
 
-from ..kernel import constants
+from ..kernel import constants, sparql_text
 from ..kernel.dkg_client import DkgClient, extract_binding
 
 logger = logging.getLogger(__name__)
@@ -35,9 +35,11 @@ logger = logging.getLogger(__name__)
 #: kind (reports, retractions, disputes, digests, curator statements such as
 #: stage attestations — R3-attest) how many there are and the
 #: newest subject — so a retraction or a dispute changes the fingerprint too,
-#: not only a new report (bench finding 2026-10-02). Kinds absent from the
-#: graph simply return no row.
-_STATEMENT_KINDS = ("ThreatReport", "Retraction", "FalsePositive", "SightingDigest", "CuratorStatement")
+#: not only a new report (bench finding 2026-10-02). Key manifests are counted
+#: too (Community Curation: the community authority's manifest lives in this
+#: graph, so a new one must be picked up within a pulse, KI-248). Kinds absent
+#: from the graph simply return no row.
+_STATEMENT_KINDS = ("ThreatReport", "Retraction", "FalsePositive", "SightingDigest", "CuratorStatement", "KeyManifest")
 _FINGERPRINT_SPARQL = (
     "PREFIX g: <http://umanitek.ai/ontology/guardian/> "
     "SELECT ?t (COUNT(DISTINCT ?r) AS ?n) (MAX(STR(?r)) AS ?last) WHERE { "
@@ -48,11 +50,12 @@ _FINGERPRINT_SPARQL = (
 def fingerprint(client: DkgClient, cfg: Any) -> Optional[str]:
     """``"ThreatReport=<count>:<newest subject>;Retraction=…"`` (kinds sorted,
     absent kinds omitted; ``""`` for an empty graph), or None when the probe
-    failed (fail-open: no change is ever inferred from a failed probe)."""
+    failed or timed out (fail-open: no change is ever inferred from a failed
+    probe, and a timed-out probe looks like an empty graph — KI-262)."""
     graph = str(getattr(cfg, "community_graph_id", "") or "")
     if not graph:
         return None
-    rows = client.query(_FINGERPRINT_SPARQL, graph, view=constants.VIEW_SHARED_WORKING_MEMORY, on_error=None)
+    rows = sparql_text.query_rows(client, _FINGERPRINT_SPARQL, graph, constants.VIEW_SHARED_WORKING_MEMORY)
     if rows is None:
         return None
     parts = []

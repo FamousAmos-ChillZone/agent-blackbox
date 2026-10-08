@@ -253,9 +253,16 @@ def _authorised_empty():
     return client
 
 
+def _long_empty(rs):
+    """*rs* as a prior whose reads have been empty long enough to be believed (KI-262:
+    one empty read is not; see test_blackbox_trust_read.py for the witness rule itself)."""
+    rs.community_empty_since = NOW - 2 * community_tier.EMPTY_READ_WITNESS_SECONDS
+    return rs
+
+
 def test_a_counted_threat_that_vanished_from_the_network_is_kept_locally(monkeypatch):
     monkeypatch.setattr(community_tier.time, "time", lambda: NOW)
-    prior = Ruleset()
+    prior = _long_empty(Ruleset())
     prior.community = _counted()
     rs = Ruleset()
     community_tier.apply_community_tier(rs, _authorised_empty(), CFG, prior)
@@ -275,7 +282,7 @@ def test_a_counted_threat_that_vanished_from_the_network_is_kept_locally(monkeyp
 
 def test_uncounted_or_expired_threats_are_not_kept_and_a_live_read_is_marked_live(monkeypatch):
     monkeypatch.setattr(community_tier.time, "time", lambda: NOW)
-    prior = Ruleset()
+    prior = _long_empty(Ruleset())
     prior.community = {**_counted("ioc:domain:uncounted.example", counted="0"),
                        **_counted("ioc:ip:203.0.113.9", firstSeen=NOW - 48 * DAY)}     # past the 47-day IP lifetime
     rs = Ruleset()
@@ -288,7 +295,7 @@ def test_uncounted_or_expired_threats_are_not_kept_and_a_live_read_is_marked_liv
 
 def test_the_reapply_path_carries_kept_threats_too(monkeypatch):
     monkeypatch.setattr(community_tier.time, "time", lambda: NOW)
-    rs = Ruleset()
+    rs = _long_empty(Ruleset())
     rs.community = _counted()
     community_tier.reapply_community_tier(rs, _authorised_empty(), CFG)        # prior IS rs
     assert rs.community[THREAT]["networkLive"] == "no"
@@ -325,9 +332,9 @@ def test_a_transient_empty_view_during_a_replay_never_wipes_the_tier(monkeypatch
     assert rs.community == prior.community and THREAT in rs.ioc                     # last-good, still matchable
     monkeypatch.setattr(community_tier.community, "community_fingerprint", lambda c, cfg: "")
     rs2 = Ruleset()
-    community_tier.apply_community_tier(rs2, _authorised_empty(), CFG, prior)
+    community_tier.apply_community_tier(rs2, _authorised_empty(), CFG, _long_empty(prior))
     assert THREAT in rs2.community and rs2.community[THREAT]["networkLive"] == "no"   # truly empty: R5 keeps counted threats locally
-    uncounted = Ruleset()
+    uncounted = _long_empty(Ruleset())
     uncounted.community = _counted(counted="0")
     rs3 = Ruleset()
     community_tier.apply_community_tier(rs3, _authorised_empty(), CFG, uncounted)

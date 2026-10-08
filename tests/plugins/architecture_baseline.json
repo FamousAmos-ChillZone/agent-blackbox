@@ -31,7 +31,7 @@
     "dashboard/server.py::create_app.threat": 120,
     "detection/detectors.py::detect_dependency": 53,
     "detection/detectors.py::detect_escalation": 58,
-    "detection/skill_detection.py::detect_skill": 69,
+    "detection/skill_detection.py::detect_skill": 51,
     "detection/detectors.py::discover_dependency_candidates": 52,
     "detection/reviewer_setup.py::cmd_setup_llm": 102,
     "guard/hooks.py::on_pre_tool_call": 45,

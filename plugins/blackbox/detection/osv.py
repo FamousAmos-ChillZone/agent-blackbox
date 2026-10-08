@@ -24,7 +24,7 @@ import logging
 import threading
 import urllib.error
 import urllib.request
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from ..kernel import constants
 
@@ -123,16 +123,40 @@ def lookup(ecosystem: str, name: str, version: str) -> Optional[Dict[str, str]]:
     with _cache_lock:
         if key in _cache:
             return _cache[key]
-    result: Optional[Dict[str, str]] = None
-    data = _query(osv_eco, name, version)
-    if isinstance(data, dict):
-        vulns = data.get("vulns")
-        if isinstance(vulns, list) and vulns:
-            records = [v for v in vulns if isinstance(v, dict)] or [{}]
-            # A malicious-package advisory outranks any vulnerability advisory.
-            first = next((v for v in records if advisory_kind(v.get("id")) == "malware"), records[0])
-            advisory_id = str(first.get("id") or "OSV")
-            result = {"advisory_id": advisory_id, "severity": _severity_of(first), "kind": advisory_kind(advisory_id)}
+    result = _finding(_query(osv_eco, name, version))
     with _cache_lock:
         _cache[key] = result
     return result
+
+
+def advisory_status(ecosystem: str, name: str, version: str) -> Tuple[str, Optional[Dict[str, str]]]:
+    """Like :func:`lookup`, but "nothing found" and "could not ask" are told
+    apart: ``("found", {advisory_id, severity, kind})``, ``("clean", None)``
+    when OSV answered and names no advisory, ``("unavailable", None)`` when the
+    query failed or the package cannot be asked about (no version, an
+    ecosystem OSV does not cover). Never cached: unavailable is transient. The
+    curator service decides on this — a failed query must not read as clean."""
+    eco, name, version = (ecosystem or "").strip().lower(), (name or "").strip(), (version or "").strip()
+    osv_eco = osv_ecosystem(eco)
+    if not name or not version or not osv_eco:
+        return "unavailable", None
+    data = _query(osv_eco, name, version)
+    if not isinstance(data, dict):
+        return "unavailable", None
+    finding = _finding(data)
+    return ("found", finding) if finding is not None else ("clean", None)
+
+
+def _finding(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
+    """``{advisory_id, severity, kind}`` from one OSV answer, or None when it
+    names no advisory (or is no answer at all)."""
+    if not isinstance(data, dict):
+        return None
+    vulns = data.get("vulns")
+    if not isinstance(vulns, list) or not vulns:
+        return None
+    records = [v for v in vulns if isinstance(v, dict)] or [{}]
+    # A malicious-package advisory outranks any vulnerability advisory.
+    first = next((v for v in records if advisory_kind(v.get("id")) == "malware"), records[0])
+    advisory_id = str(first.get("id") or "OSV")
+    return {"advisory_id": advisory_id, "severity": _severity_of(first), "kind": advisory_kind(advisory_id)}

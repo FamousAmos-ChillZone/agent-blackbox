@@ -27,6 +27,7 @@ from plugins.blackbox import killlist, overrides
 from plugins.blackbox.community import keep_alive, reputation, share_retry
 from plugins.blackbox.community.statements import curator_statements as cs
 from plugins.blackbox.community.statements import curator_view as cv
+from plugins.blackbox.community.trust import manifests as trust_manifests
 from plugins.blackbox.detection import Finding
 from plugins.blackbox.kernel import signing
 from plugins.blackbox.kernel.config import DEFAULT_PROTECTED_PATHS, BlackboxConfig
@@ -107,13 +108,13 @@ def _rows_of(envelope):
 def test_an_undated_manifest_never_beats_a_dated_one_and_a_conflict_freezes(keys):
     dated = _manifest(keys, version=1, issued_day="2026-09-01")
     undated_newer = _manifest(keys, version=2)
-    assert cv.effective_manifest([dated, undated_newer], TODAY) == dated
-    assert cv.effective_manifest([undated_newer], TODAY) == undated_newer                   # nothing dated: it serves
+    assert trust_manifests.effective_manifest([dated, undated_newer], TODAY) == dated
+    assert trust_manifests.effective_manifest([undated_newer], TODAY) == undated_newer                   # nothing dated: it serves
     pending = _manifest(keys, version=3, issued_day="2026-10-01")
-    assert cv.effective_manifest([dated, pending], TODAY) == dated
+    assert trust_manifests.effective_manifest([dated, pending], TODAY) == dated
     twin = km.KeyManifest(**{**pending.__dict__, "promotion_author": "0x" + "2" * 40})
-    assert cv.effective_manifest([dated, pending, twin], "2026-10-10") == dated            # conflicting order skipped
-    assert cv.manifests_conflict([pending, twin])
+    assert trust_manifests.effective_manifest([dated, pending, twin], "2026-10-10") == dated            # conflicting order skipped
+    assert trust_manifests.manifests_conflict([pending, twin])
 
 
 # ------------------------------------------------------------------ finding 4: withdrawal stops every beat
@@ -167,7 +168,9 @@ def test_salts_are_in_their_own_file_and_pruned_with_expired_entries(tmp_path):
     assert "salts" not in entries and "a" * 64 not in json.dumps(entries)
     assert ledger.keys() == ["a" * 64]                                                       # b's entry is expired
     ledger.record("a" * 64, reputation.Outcome("2026-09-02", True))                        # the next write persists the pruning
-    salts = json.loads((tmp_path / "reputation_salts.json").read_text(encoding="utf-8"))
+    from plugins.blackbox.community.reputation import sealed_index
+    salts = sealed_index.open_sealed((tmp_path / "reputation_salts.json").read_text(encoding="utf-8"),
+                                     sealed_index.load_or_create_key(tmp_path / "reputation_index.key"))
     assert set(salts) == {"a" * 64}                                                          # b's salt died with its entry
 
 
@@ -189,7 +192,7 @@ def test_a_listing_longer_than_twelve_months_is_refused_and_a_signed_pause_is_en
     monkeypatch.setattr(community_tier.community, "curator_today", lambda: TODAY)
     from plugins.blackbox.community import CommunityRead, ReadState
     monkeypatch.setattr(community_tier.community, "read_verified_reports",
-                        lambda client, cfg: CommunityRead(ReadState.ROWS, reports=(), curator=view))
+                        lambda client, cfg, **kw: CommunityRead(ReadState.ROWS, reports=(), curator=view))
     rs = compiler.Ruleset()
     community_tier.apply_community_tier(rs, FakeClient(), BlackboxConfig(community_graph_id=GRAPH), None)
     assert rs.community_paused is True and rs.community == {}

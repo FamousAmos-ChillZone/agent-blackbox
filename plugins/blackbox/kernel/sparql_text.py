@@ -3,6 +3,11 @@
 * :func:`sparql_string_literal` — THE escaper for any value interpolated into
   a query (never hand-escape at a call site).
 * ``MAX_ROWS`` — the hard ceiling on rows any paged read may collect.
+* :func:`query_rows` — ONE query whose answer can be believed: None when it
+  failed or came back empty after a timeout-length wait (a node answers a
+  timed-out query with an empty result, not an error — KI-262).
+* :func:`page_rows` — the cursor pager every statement read uses (bounded
+  pages, hard row ceiling, None when any page fails).
 * :func:`extract_binding` / :func:`normalize_bindings` — reading the daemon's
   answers: one result cell to a plain string, any response shape to a row
   list. Re-exported by :mod:`.dkg_client` (``from ..kernel.dkg_client import
@@ -11,7 +16,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import time
+from typing import Any, Callable, Dict, List, Optional
 
 
 # Safety ceiling so a misbehaving node can never spin the pager forever.
@@ -124,4 +130,78 @@ def rows_or_fallback(result: Any, on_error: Any) -> Any:
     rows = recognized_bindings(result)
     if rows is None:
         return [] if on_error is None else on_error
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Paged statement reads
+# ---------------------------------------------------------------------------
+
+#: Rows per page and the most rows one statement read collects (KI-100).
+STATEMENT_PAGE_SIZE = 5000
+STATEMENT_MAX_ROWS = 100_000
+
+#: A DKG node answers a query that TIMED OUT with an empty result and a normal
+#: success status, after about ten seconds (bench 2026-10-03, DKG 10.0.20:
+#: 10-20 s for every query shape while the store was busy; the same queries
+#: answered in under a second on a settled node). An empty answer that took at
+#: least this long is therefore a failed read, never proof that nothing is there.
+SLOW_EMPTY_SECONDS = 8.0
+
+_FAILED = object()
+
+
+def query_rows(client: Any, sparql: str, graph: str, view: str, *,
+               slow_empty_seconds: float = SLOW_EMPTY_SECONDS) -> Optional[List[Dict[str, Any]]]:
+    """Run ONE query against *graph* / *view* and return its rows — or None
+    when the read cannot be believed: the query failed, or it came back EMPTY
+    after at least *slow_empty_seconds* (the node's timeout signature, KI-262).
+
+    ``[]`` therefore means "the node answered promptly that there are no such
+    rows". Callers keep their last good state on None.
+
+    Usage::
+
+        rows = query_rows(client, sparql, graph, constants.VIEW_SHARED_WORKING_MEMORY)
+        if rows is None: ...keep last good...
+    """
+    started = time.monotonic()
+    rows = client.query(sparql, graph, view=view, on_error=_FAILED)
+    if rows is _FAILED:
+        return None
+    if not rows and time.monotonic() - started >= slow_empty_seconds:
+        return None
+    return rows
+
+
+def page_rows(client: Any, graph: str, view: str, sparql_after: Callable[[str], str], *,
+              page_size: int = STATEMENT_PAGE_SIZE, max_rows: int = STATEMENT_MAX_ROWS) -> Optional[List[Dict[str, Any]]]:
+    """Page every row a query returns from *graph* / *view*; ``sparql_after(cursor)``
+    builds one page's query (subjects after *cursor*, ordered, LIMITed).
+
+    Same cursor discipline as the verified pager (monotonic subject cursor,
+    bounded pages, hard row ceiling). Returns None when ANY page fails, comes
+    back malformed, or comes back empty after a timeout-length wait
+    (:func:`query_rows`), so the caller keeps last-good (fail-open); [] when
+    the node answered that the graph holds no such rows.
+    """
+    rows: List[Dict[str, Any]] = []
+    after = ""
+    while len(rows) < max_rows:
+        page = query_rows(client, sparql_after(after), graph, view)
+        if page is None:
+            # A failed, malformed or timed-out page — even after good ones —
+            # makes the whole read unavailable: a partial list must never pass
+            # as the graph's contents (R0 tri-state, KI-112, KI-262).
+            return None
+        if not page:
+            break
+        rows.extend(page)
+        cursors = [extract_binding(r.get("r")) for r in page if extract_binding(r.get("r"))]
+        next_cursor = max(cursors) if cursors else ""
+        if not next_cursor or next_cursor <= after:
+            break  # non-monotonic cursor: stop rather than loop forever
+        after = next_cursor
+        if len(page) < page_size:
+            break
     return rows

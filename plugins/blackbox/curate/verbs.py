@@ -9,54 +9,31 @@ item-1 check, co-signs, gives consent bound to the content, and PUBLISHES
 ("whoever signs second publishes"). Nothing reaches a shared graph before
 approval. Every outward write is ledgered.
 
-Where a statement goes: promotions, revocations, pauses, the counted-author
-list and key manifests -> the VERIFIED graph (publish to verifiable memory);
-confirmations, rejections, deferrals and notices -> the COMMUNITY graph.
+Numbering, the quorum check, consent and the write itself live in
+:mod:`.publishing`.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from .. import audit, community, killlist
-from ..kernel import health, node_routes, signing, threat_ids
+from .. import community, killlist
+from ..kernel import health, signing
 from ..kernel.signing import key_manifest
+from ..kernel.signing.authority import Authority
 from ..kernel.signing.statement_order import CuratorStatement
-from . import consent, dossier, keys, promotion, transport
+from . import dossier, keys, promotion, transport
 from .context import CurateContext
 from .proposal import Proposal, ProposalState, ProposalStore
+from .publishing import MANIFEST_KIND, VerbError, next_sequence, publish
+from .publishing.publish import _validated_promotion
 from ..community import reputation
 
 logger = logging.getLogger(__name__)
-
-MANIFEST_KIND = key_manifest.KEY_MANIFEST_STATEMENT
-
-
-class VerbError(ValueError):
-    """A verb refused; the message says why (printed, never a traceback)."""
-
-
-# -- sequence numbers -----------------------------------------------------------
-
-
-def next_sequence(ctx: CurateContext, store: ProposalStore, identifier: str) -> int:
-    """One past the highest per-identifier sequence this node knows (verified
-    statements, counted-author entries, its own proposals)."""
-    seen = [0]
-    record = ctx.view.verdicts.get(identifier)
-    if record is not None:
-        seen.append(record.sequence)
-    for proposal in store.for_identifier(identifier):
-        envelope = proposal.parsed()
-        if envelope is not None:
-            seen.append(envelope.sequence)
-    return max(seen) + 1
 
 
 # -- propose -----------------------------------------------------------------
@@ -66,6 +43,7 @@ def propose_promotion(ctx: CurateContext, store: ProposalStore, *, identifier: s
                       reason: str, report_subjects: Iterable[str], name: str = "") -> Proposal:
     """A promotion proposal (dependency, kind=malware): checklist, first signature, stored."""
     _require_manifest(ctx)
+    _require_verified_authority(ctx, "promote into the verified graph")
     items = dossier.checklist(identifier, kind="malware", evidence=evidence, reason=reason)
     if not dossier.passes(items):
         raise VerbError("checklist failed: " + "; ".join(f"{i.item}. {i.note}" for i in items if not i.ok))
@@ -80,9 +58,15 @@ def propose_promotion(ctx: CurateContext, store: ProposalStore, *, identifier: s
 
 def propose_statement(ctx: CurateContext, store: ProposalStore, *, kind: CuratorStatement, identifier: str,
                       fields: Mapping[str, str], evidence: str = "") -> Proposal:
-    """A verdict / notice / counted-author / pause proposal, first signature on it."""
+    """A verdict / notice / counted-author / pause proposal, first signature on
+    it — signed for the graph where the ACTING authority publishes that kind.
+    Refused when that authority may not sign the kind at all."""
     _require_manifest(ctx)
-    graph = ctx.verified_graph if kind in community.VERIFIED_GRAPH_KINDS else ctx.community_graph
+    fields = _with_confirmation_evidence(ctx, kind, fields, evidence)
+    graph = ctx.graph_for(kind)
+    if not graph:
+        raise VerbError(f"the {ctx.authority.value} authority may not sign a {kind.value.split('.', 1)[1]} statement"
+                        if graph is None else "no community graph is configured on this node")
     key = keys.curator_key_store().load_or_create()
     try:
         envelope = community.sign_curator_statement(kind, identifier, sequence=next_sequence(ctx, store, identifier),
@@ -90,6 +74,21 @@ def propose_statement(ctx: CurateContext, store: ProposalStore, *, kind: Curator
     except ValueError as exc:
         raise VerbError(str(exc)) from exc
     return _stored(store, kind.value, identifier, envelope, graph, {signing.public_key_hex(key): evidence or "n/a"})
+
+
+_EVIDENCE_HELP = "advisory:<id> | registry-action:<url> | reproduced:<sha256>"
+
+
+def _with_confirmation_evidence(ctx: CurateContext, kind: CuratorStatement, fields: Mapping[str, str],
+                                evidence: str) -> Mapping[str, str]:
+    """A COMMUNITY confirmation signs the evidence its curators checked (plan
+    §08); without evidence the honest statement is a deferral, never a confirmation."""
+    if kind is not CuratorStatement.CONFIRMATION or ctx.authority is not Authority.COMMUNITY:
+        return fields
+    cited = evidence.strip()
+    if not community.EVIDENCE_REFERENCE.fullmatch(cited):
+        raise VerbError(f"a community confirmation needs --evidence {_EVIDENCE_HELP}; without evidence, propose a deferral")
+    return {**fields, "evidence": cited}
 
 
 def record_outcome(key: str, *, confirmed: bool, day: str, novel: bool = False, strike: bool = False,
@@ -121,23 +120,23 @@ def propose_graduation(ctx: CurateContext, store: ProposalStore, *, key: str, ad
                        cluster: str = "", ledger: Optional[reputation.ReputationLedger] = None) -> Proposal:
     """R4: turn a standing into the counted-author proposal it calls for
     (graduation lists, demotion delists, a collapse shares an org) — the same
-    2-of-3 flow as every nomination; readers never see the ledger."""
+    2-of-3 flow as every nomination; readers never see the ledger. The ledger's
+    band changes when the listing is PUBLISHED (``ladder.outcomes.sync_bands``),
+    never here: a proposal nobody co-signs changes nothing (KI-255)."""
     book = ledger or reputation.ReputationLedger()
     standing = book.standing(key.lower())
     fields = reputation.nomination_fields(standing, address=address, today=today,
-                                          reputation=book.reputation(key.lower(), today), cluster=cluster)
+                                          reputation=book.reputation(key.lower(), today), cluster=cluster,
+                                          listing_days=listing_days(ctx))
     if fields is None:
         raise VerbError(f"nothing to propose for this reporter today (band {standing.band.value}, "
                         f"{standing.novel_credits} novel credit(s), {standing.strikes} strike(s))")
-    proposal = propose_statement(ctx, store, kind=CuratorStatement.COUNTED_AUTHORS, identifier=f"author:{key.lower()}",
-                                 fields=fields, evidence=f"reputation ledger {today}")
-    if fields["listed"] == "yes" and standing.band is reputation.ReputationBand.PROBATION:
-        book.set_standing(replace(standing, band=reputation.ReputationBand.ESTABLISHED, org=cluster))
-    elif fields["listed"] == "no":
-        demoted = reputation.demotion(standing, book.reputation(key.lower(), today), today)
-        if demoted is not None:
-            book.set_standing(demoted)
-    return proposal
+    identifier = f"author:{key.lower()}"
+    waiting = [p for p in store.open() if p.identifier == identifier]
+    if waiting:   # the band only moves on publish, so a second proposal would duplicate the first
+        raise VerbError(f"a proposal for this reporter is already waiting ({waiting[0].id}, {waiting[0].state.value})")
+    return propose_statement(ctx, store, kind=CuratorStatement.COUNTED_AUTHORS, identifier=identifier,
+                             fields=fields, evidence=f"reputation ledger {today}")
 
 
 def curator_alarms(ctx: CurateContext, compiled: Optional[Any], *, today: str, now: float,
@@ -210,6 +209,7 @@ def propose_kill_list(ctx: CurateContext, store: ProposalStore, *, entries: List
     """R14: first signature on a kill list (the next version); wide or popular
     kills still need the root to co-sign at approval (`approve --root`)."""
     _require_manifest(ctx)
+    _require_verified_authority(ctx, "sign a kill list")
     parsed = [killlist.KillEntry.from_json(item) for item in entries]
     if not parsed or any(e is None for e in parsed):
         raise VerbError("every kill-list entry needs registry (skill|mcp), identifier, action (disable|warn) and a closed reason")
@@ -226,10 +226,13 @@ def propose_kill_list(ctx: CurateContext, store: ProposalStore, *, entries: List
 
 
 def approve(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, evidence: str,
-            typed_code: Optional[str], yes: bool, root: bool = False) -> Tuple[Proposal, str]:
+            typed_code: Optional[str], yes: bool, root: bool = False, standing: str = "") -> Tuple[Proposal, str]:
     """Second signature + consent + publish. Returns (proposal, what happened).
     *root* (SANDBOX, kill lists): also add the root key's signature — the third
-    signature a wide or popular kill needs (R14)."""
+    signature a wide or popular kill needs (R14). *standing* — the curator
+    service's standing consent (see ``publishing.publish``)."""
+    if root and not ctx.sandbox:   # KI-256: a locally held root exists only in a development setup
+        raise VerbError("this network has a pinned root; the root signature comes from the offline root, never from this machine")
     _require_manifest(ctx)
     proposal = store.get(proposal_id)
     if proposal is None or proposal.state is not ProposalState.PROPOSED:
@@ -243,6 +246,9 @@ def approve(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, evide
         if not evidence:
             raise VerbError("a promotion needs your own item-1 evidence (--evidence advisory:<id> …); each key checks the truth itself")
         _validated_promotion(envelope)   # KI-195: never cosign a payload you did not check yourself
+    if envelope.payload.get("evidence") and not community.EVIDENCE_REFERENCE.fullmatch(evidence.strip()):
+        raise VerbError(f"this confirmation cites evidence; co-sign it only after your own check of it "
+                        f"(--evidence {_EVIDENCE_HELP}) — each key checks the truth itself")
     try:
         cosigned = signing.cosign(envelope, my_key)
         if root and proposal.kind == killlist.KILL_LIST_STATEMENT:
@@ -252,7 +258,7 @@ def approve(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, evide
     proposal = proposal.with_envelope(cosigned, {signing.public_key_hex(my_key): evidence or "n/a"})
     proposal = proposal.transition(ProposalState.APPROVED)
     store.save(proposal)
-    return publish(ctx, store, proposal.id, typed_code=typed_code, yes=yes)
+    return publish(ctx, store, proposal.id, typed_code=typed_code, yes=yes, standing=standing)
 
 
 def _check_first_signer(ctx: CurateContext, envelope: signing.SignedEnvelope, proposal: Proposal, my_key: str) -> None:
@@ -267,112 +273,60 @@ def _check_first_signer(ctx: CurateContext, envelope: signing.SignedEnvelope, pr
         raise VerbError("you already signed this proposal; the SECOND signature must come from another curator")
 
 
-# -- publish -----------------------------------------------------------------
-
-
-def publish(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, typed_code: Optional[str], yes: bool) -> Tuple[Proposal, str]:
-    """Write an APPROVED proposal to its graph, behind content-bound consent."""
-    proposal = store.get(proposal_id)
-    if proposal is None or proposal.state is not ProposalState.APPROVED:
-        raise VerbError("no APPROVED proposal with that id")
-    envelope = proposal.parsed()
-    if envelope is None or not _has_quorum(ctx, proposal, envelope):
-        raise VerbError("the proposal does not carry enough curator signatures to publish")
-    ledger = consent.ConsentLedger()
-    code = ledger.show(proposal.envelope, summary(proposal))
-    ok, why = ledger.consent(proposal.envelope, typed=typed_code, sandbox=ctx.sandbox, yes=yes)
-    if not ok:
-        return proposal, f"not published — {why}. Confirmation code: {code}"
-    name, graph = _write(ctx, proposal, envelope)
-    audit.record_share_outcome(identifier=proposal.identifier, category=f"curator:{proposal.kind.split('.', 1)[-1]}",
-                               severity="info", subject=proposal.id, asset_name=name, ok=True, outcome="accepted")
-    store.save(proposal.transition(ProposalState.PUBLISHED, note=f"published to {graph} as {name}"))
-    return proposal, f"published to {graph} as {name}"
-
-
-def _has_quorum(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedEnvelope) -> bool:
-    if proposal.kind == MANIFEST_KIND:
-        return True   # root-signed; verified by readers against the pinned roots
-    if ctx.manifest is None:
-        return False
-    if proposal.kind == killlist.KILL_LIST_STATEMENT:
-        return ctx.manifest.has_quorum(envelope, statement_type=killlist.KILL_LIST_STATEMENT, graph=proposal.graph)
-    if proposal.kind == CuratorStatement.PROMOTION.value:
-        signers = signing.verified_signers(envelope, statement_type=envelope.statement_type,
-                                           environment=ctx.manifest.environment, graph=proposal.graph,
-                                           chain=ctx.manifest.chain, root_epoch=ctx.manifest.root_epoch)
-        return len(signers & frozenset(ctx.manifest.curator_keys)) >= ctx.manifest.threshold
-    kind = CuratorStatement(proposal.kind)
-    needed = ctx.manifest.threshold if kind.needs_quorum else 1
-    return len(ctx.manifest.curator_signers(envelope, statement_type=kind.value, graph=proposal.graph)) >= needed
-
-
-def _write(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedEnvelope) -> Tuple[str, str]:
-    """Build the quads and write them where the statement lives; (asset name, graph)."""
-    if proposal.kind == CuratorStatement.PROMOTION.value:
-        _validated_promotion(envelope)
-        quads = promotion.verified_rule_quads(dict(envelope.payload), envelope)
-        name = promotion.asset_name(proposal.identifier)
-        node_routes.publish_to_verified_memory(ctx.client, ctx.verified_graph, name, quads)
-        return name, ctx.verified_graph
-    if proposal.kind == killlist.KILL_LIST_STATEMENT:
-        name = f"kill-list-{envelope.sequence}"
-        node_routes.publish_to_verified_memory(ctx.client, ctx.verified_graph, name, killlist.kill_list_quads(envelope))
-        return name, ctx.verified_graph
-    if proposal.kind == MANIFEST_KIND:
-        quads = community.key_manifest_quads(envelope)
-        name = f"key-manifest-{envelope.root_epoch}-{envelope.sequence}"
-        node_routes.publish_to_verified_memory(ctx.client, ctx.verified_graph, name, quads)
-        return name, ctx.verified_graph
-    kind = CuratorStatement(proposal.kind)
-    quads = community.curator_statement_quads(envelope)
-    name = f"curator-{kind.value.split('.', 1)[1]}-{threat_ids.stable_hash(proposal.identifier, 12)}-{envelope.sequence}"
-    if kind in community.VERIFIED_GRAPH_KINDS:
-        node_routes.publish_to_verified_memory(ctx.client, ctx.verified_graph, name, quads)
-        return name, ctx.verified_graph
-    ctx.client.share_knowledge_asset(ctx.community_graph, name, quads)
-    return name, ctx.community_graph
-
-
-def _validated_promotion(envelope: signing.SignedEnvelope) -> None:
-    try:
-        promotion.validate_payload(envelope.payload)
-    except promotion.PromotionError as exc:
-        raise VerbError(f"the promotion payload is not acceptable: {exc}") from exc
-
-
-def summary(proposal: Proposal) -> str:
-    """What the operator is asked to consent to (graph, kind, subject, signers);
-    a whole-package promotion says so in words, so the second signer cannot
-    miss the scope."""
-    envelope = proposal.parsed()
-    signers = ", ".join(s[:12] + "…" for s in envelope.signers) if envelope else "?"
-    scope = " · WHOLE PACKAGE (every version)" if envelope and promotion.whole_package(envelope.payload) else ""
-    return f"{proposal.kind} · {proposal.identifier}{scope} · graph {proposal.graph} · seq {envelope.sequence if envelope else '?'} · keys {signers}"
-
-
 # -- manifest (sandbox) --------------------------------------------------------
 
 
 def manifest_proposal(ctx: CurateContext, store: ProposalStore, *, curator_keys: List[str], threshold: int,
-                      promotion_author: str, root_epoch: int, version: int, legacy_uals: Iterable[str]) -> Proposal:
-    """SANDBOX: a root-signed key manifest, stored APPROVED (one root signature
-    is the whole quorum) for `curate publish`. On a real network the root is
-    offline; its manifest arrives as a file, not from this verb (R7b)."""
-    manifest = key_manifest.KeyManifest(environment=ctx.environment, graph=ctx.verified_graph, chain="",
-                                        root_epoch=root_epoch, version=version, curator_keys=tuple(sorted(curator_keys)),
-                                        threshold=threshold, promotion_author=promotion_author,
-                                        legacy_assets_hash=key_manifest.legacy_assets_hash(legacy_uals))
-    root: Ed25519PrivateKey = keys.root_key_store().load_or_create()
+                      promotion_author: str, root_epoch: int, version: int, legacy_uals: Iterable[str],
+                      issued_day: str = "") -> Proposal:
+    """SANDBOX: a root-signed key manifest for the ACTING authority, bound to
+    the graph that authority's manifest lives in (the community graph for the
+    community authority), stored APPROVED (one root signature is the whole
+    quorum) for `curate publish`. On a pinned network or graph the root is
+    offline; its manifest arrives as a file, not from this verb (R7b).
+    *issued_day* dates it (60-day validity, 72 h time-lock); "" = no clock."""
+    if not ctx.sandbox:   # KI-256
+        raise VerbError("this network has a pinned root; manifests come from the offline root (R7b)")
+    graph = ctx.manifest_graph
+    if not graph:
+        raise VerbError("no community graph is configured on this node")
+    community_authority = ctx.authority is Authority.COMMUNITY
+    manifest = key_manifest.KeyManifest(
+        environment=ctx.environment, graph=graph, chain="", root_epoch=root_epoch, version=version,
+        curator_keys=tuple(sorted(curator_keys)), threshold=threshold,
+        promotion_author=key_manifest.NO_PROMOTION_AUTHOR if community_authority else promotion_author,
+        legacy_assets_hash=key_manifest.legacy_assets_hash(() if community_authority else legacy_uals),
+        issued_day=issued_day)
+    root: Ed25519PrivateKey = keys.root_key_store(ctx.authority).load_or_create()
     envelope = key_manifest.sign_manifest(manifest, root)
-    proposal = Proposal.new(MANIFEST_KIND, "curator", envelope, ctx.verified_graph,
+    proposal = Proposal.new(MANIFEST_KIND, "curator", envelope, graph,
                             checks={signing.public_key_hex(root): "root"})
     proposal = proposal.transition(ProposalState.PROPOSED).transition(ProposalState.APPROVED)
     store.save(proposal)
     return proposal
 
 
+#: A community-authority listing runs this long unless an expiry is given (decision 6).
+COMMUNITY_LISTING_DAYS = 90
+
+
+def listing_days(ctx: CurateContext) -> int:
+    """How long a listing the acting authority proposes runs."""
+    return COMMUNITY_LISTING_DAYS if ctx.authority is Authority.COMMUNITY else reputation.LISTING_DAYS
+
+
+def default_expiry(ctx: CurateContext, today: Optional[date] = None) -> str:
+    """The expiry day a new listing gets when none is given."""
+    return ((today or datetime.now(timezone.utc).date()) + timedelta(days=listing_days(ctx))).isoformat()
+
+
 def _require_manifest(ctx: CurateContext) -> None:
     if ctx.manifest is None:
-        raise VerbError("no trusted key manifest on this network — publish one first (sandbox: `curate manifest`), "
-                        "and make sure BLACKBOX_CURATOR_ROOT_KEYS names its root")
+        root_env = "BLACKBOX_COMMUNITY_ROOT_KEYS" if ctx.authority is Authority.COMMUNITY else "BLACKBOX_CURATOR_ROOT_KEYS"
+        raise VerbError(f"no trusted key manifest for the {ctx.authority.value} authority — publish one first "
+                        f"(sandbox: `curate manifest`), and make sure {root_env} names its root")
+
+
+def _require_verified_authority(ctx: CurateContext, what: str) -> None:
+    if ctx.authority is not Authority.VERIFIED:
+        raise VerbError(f"the community authority may not {what}; that belongs to the verified graph's curators")

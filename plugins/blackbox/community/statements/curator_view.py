@@ -4,12 +4,9 @@ Builds ONE :class:`CuratorView` from root-signed key manifests and curator
 statements read from both graphs:
 
 * TRUST — a key manifest counts only when signed by a ROOT this network
-  trusts (:func:`trusted_roots`). Roots are pinned per network in
-  ``constants.CURATOR_ROOT_KEYS``. Only a network with no pinned root (a
-  sandbox) may take roots from the ``BLACKBOX_CURATOR_ROOT_KEYS`` environment
-  variable. The root is deliberately NOT a config-file setting, so a config
-  edit can never move trust. No root = no manifest = no curator statement
-  counts.
+  trusts (``kernel.signing.trust_anchors``); which manifest a reader acts on
+  is ``community.trust.manifests``. No root = no manifest = no curator
+  statement counts.
 * PLACEMENT — enforcement-affecting statements (promotion, revocation, pause,
   the counted-author list) count only from the VERIFIED graph;
   advisory ones only from the COMMUNITY graph (plan §06). A statement signed
@@ -23,9 +20,7 @@ rows the reader fetched.
 
 Usage (from the reader)::
 
-    roots = curator_view.trusted_roots(environment)
-    manifest = curator_view.newest_trusted_manifest(manifest_rows, environment, vm_graph, roots)
-    view = curator_view.build_view(manifest, verified_rows, community_rows,
+    view = curator_view.build_view(manifest, verified_rows, community_rows,   # manifest: community.trust.manifests
                                    verified_graph=vm_graph, community_graph=community_graph)
     view.is_counted(author_key), view.rejected(identifier), view.revoked
 """
@@ -33,16 +28,12 @@ Usage (from the reader)::
 from __future__ import annotations
 
 import logging
-
-import os
-import re
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, AbstractSet, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
-from ...kernel import constants, signing, sparql_text
-from ...kernel.dkg_client import extract_binding
 from ...kernel.signing import key_manifest, statement_order
+from ...kernel.signing.authority import Authority, allowed_kinds
 from ...kernel.signing.statement_order import CuratorStatement
 from . import curator_statements
 from .curator_statements import CuratorRecord
@@ -50,12 +41,10 @@ from .curator_statements import CuratorRecord
 logger = logging.getLogger(__name__)
 from .disputes import VerifiedDispute
 
-_ROOT_ENV = "BLACKBOX_CURATOR_ROOT_KEYS"
-_KEY_HEX = re.compile(r"[0-9a-f]{64}")
 
-#: Statement types that count only from the verified graph (plan §06).
-VERIFIED_GRAPH_KINDS = frozenset({CuratorStatement.PROMOTION, CuratorStatement.REVOCATION,
-                                  CuratorStatement.PAUSE, CuratorStatement.COUNTED_AUTHORS})
+#: Statement types the VERIFIED authority publishes in the verified graph (plan §06);
+#: the table itself is ``kernel.signing.authority``.
+VERIFIED_GRAPH_KINDS = allowed_kinds(Authority.VERIFIED, in_verified_graph=True)
 #: Statement types that decide a threat's verdict.
 _VERDICT_KINDS = frozenset({CuratorStatement.CONFIRMATION, CuratorStatement.REJECTION, CuratorStatement.REVOCATION,
                             CuratorStatement.IN_REVIEW, CuratorStatement.DEFERRAL, CuratorStatement.DEFERRAL_LAPSED})
@@ -85,6 +74,14 @@ class CuratorView:
     ``attestations`` — the current (highest-sequence) stage attestation per
     threat (R3-attest); readers prefer it over their local stage unless a
     terminal verdict dominates.
+
+    Community Curation: one view is built PER AUTHORITY (``authority``), each
+    from its own manifest and in its own sequence order. Readers act on the
+    combination (``community.trust.combine``), whose ``manifest`` is still
+    the VERIFIED authority's (the kill list and verified rules depend on it)
+    and whose ``community`` field holds the community authority's own view.
+    ``delisted`` — reporter keys whose latest entry says "not listed" and has
+    not expired: a delisting by either authority removes the reporter.
     """
 
     manifest: Optional[key_manifest.KeyManifest] = None
@@ -111,6 +108,18 @@ class CuratorView:
     #: legitimately empty). Readers must then keep their last good stages — an empty view
     #: here would silently de-list every counted author and drop every threat to MONITOR.
     unavailable: bool = False
+    #: Community Curation: which authority this view speaks for; the reporter keys it
+    #: explicitly delisted; and, on a combined view, the community authority's own view.
+    authority: Authority = Authority.VERIFIED
+    delisted: FrozenSet[str] = frozenset()
+    community: Optional["CuratorView"] = None
+    #: How many enforcement-raising statements this reader is holding back
+    #: today under its daily cap (``community.trust.raising_budget``); they are
+    #: admitted on the following days. Reductions are never held.
+    held_raising: int = 0
+    #: True when the last lookup of trust statements was cut short (a batch failed
+    #: or reached its row limit): the view rests on what this node had stored.
+    lookup_incomplete: bool = False
 
     def is_counted(self, author_key: str) -> bool:
         return author_key in self.counted
@@ -136,85 +145,17 @@ class CuratorView:
         return frozenset(i for i, r in self.verdicts.items() if r.kind is CuratorStatement.REVOCATION)
 
 
-def trusted_roots(environment: str, env: Mapping[str, str] = os.environ) -> FrozenSet[str]:
-    """The curator root keys *environment* (a DKG network id) trusts: the
-    pinned ones, else (sandbox networks only) those in the environment
-    variable. Malformed keys are ignored."""
-    pinned = constants.CURATOR_ROOT_KEYS.get(environment)
-    if pinned:
-        return frozenset(k.lower() for k in pinned if _KEY_HEX.fullmatch(k.lower()))
-    raw = env.get(_ROOT_ENV, "")
-    return frozenset(k.strip().lower() for k in raw.split(",") if _KEY_HEX.fullmatch(k.strip().lower()))
-
-
-def key_manifests_sparql(after: str) -> str:
-    """One page of key-manifest rows after the subject cursor *after*."""
-    cursor = f"FILTER(STR(?r) > {sparql_text.sparql_string_literal(after)})" if after else ""
-    return f"""
-PREFIX g: <http://umanitek.ai/ontology/guardian/>
-SELECT ?r ?signedStatement WHERE {{
-  ?r a g:KeyManifest ;
-     g:signedStatement ?signedStatement .
-  {cursor}
-}} ORDER BY STR(?r) LIMIT 500
-"""
-
-
-def newest_trusted_manifest(rows: Iterable[Mapping[str, Any]], environment: str, graph: str,
-                            roots: AbstractSet[str]) -> Optional[key_manifest.KeyManifest]:
-    """The newest manifest (by root epoch, version) signed by one of *roots*."""
-    if not roots:
-        return None
-    return key_manifest.newest(trusted_manifests(rows, environment, graph, roots))
-
-
-def trusted_manifests(rows: Iterable[Mapping[str, Any]], environment: str, graph: str,
-                      roots: AbstractSet[str]) -> List[key_manifest.KeyManifest]:
-    """Every root-signed manifest in *rows* for this environment and graph."""
-    manifests = []
-    for row in rows:
-        envelope = signing.from_text(extract_binding(row.get(curator_statements.SIGNED_STATEMENT_VAR)))
-        manifest = key_manifest.verify_manifest(envelope, environment=environment, graph=graph, root_keys=roots)
-        if manifest is not None:
-            manifests.append(manifest)
-    return manifests
-
-
-def effective_manifest(manifests: Iterable[key_manifest.KeyManifest], today: str) -> Optional[key_manifest.KeyManifest]:
-    """The manifest readers act on: never one inside its 72 h time-lock; an undated
-    manifest only when no dated one exists (an undated newer manifest cannot bypass
-    the lock); every manifest at an order two root-signed manifests disagree on is
-    skipped — the reader stays frozen at the previous version (review round 4)."""
-    rows = list(manifests)
-    seen: Dict[Tuple[int, int], set] = {}
-    for m in rows:
-        seen.setdefault(m.order, set()).add(m.content_hash())
-    candidates = [m for m in rows if len(seen[m.order]) == 1 and key_manifest.manifest_clock(m, today)[0] != "pending"]
-    dated = [m for m in candidates if m.issued_day]
-    return key_manifest.newest(dated or candidates)
-
-
-def manifests_conflict(manifests: Iterable[key_manifest.KeyManifest]) -> bool:
-    """R10b SECURITY: two trusted manifests with the same (root epoch, version)
-    but different content — someone published a second truth."""
-    seen: Dict[Tuple[int, int], str] = {}
-    for manifest in manifests:
-        digest = manifest.content_hash()
-        if seen.setdefault(manifest.order, digest) != digest:
-            return True
-    return False
-
-
 def _records(rows: Iterable[Mapping[str, Any]], manifest: key_manifest.KeyManifest, graph: str,
-             verified_graph: bool, *, root_keys: AbstractSet[str] = frozenset(),
+             allowed: AbstractSet[CuratorStatement], *, root_keys: AbstractSet[str] = frozenset(),
              curators_silent: bool = False) -> List[CuratorRecord]:
-    """Verified records from one graph, keeping only types that may live there."""
+    """Verified records from one graph, keeping only the kinds this authority
+    may publish there (*allowed*, from ``kernel.signing.authority``)."""
     records = []
     root_alone = 0
-    for row in rows:
+    for row in rows if allowed else ():
         record = curator_statements.parse_statement(row, manifest, graph=graph, root_keys=root_keys,
                                                     curators_silent=curators_silent)
-        if record is None or (record.kind in VERIFIED_GRAPH_KINDS) != verified_graph:
+        if record is None or record.kind not in allowed:
             continue
         if len(record.signers) < (manifest.threshold if record.kind.needs_quorum else 1):   # accepted root-alone
             root_alone += 1
@@ -259,19 +200,29 @@ def _frozen_out(records: Iterable[CuratorRecord], state: str, since: str) -> Lis
 def build_view(manifest: Optional[key_manifest.KeyManifest], verified_rows: Iterable[Mapping[str, Any]],
                community_rows: Iterable[Mapping[str, Any]], *, verified_graph: str, community_graph: str,
                today: Optional[str] = None, manifest_conflict: bool = False,
-               root_keys: AbstractSet[str] = frozenset(), community_readable: bool = False) -> CuratorView:
-    """The view from a trusted *manifest* and both graphs' statement rows."""
+               root_keys: AbstractSet[str] = frozenset(), community_readable: bool = False,
+               authority: Authority = Authority.VERIFIED) -> CuratorView:
+    """ONE authority's view from its trusted *manifest* and both graphs'
+    statement rows. Each graph contributes only the kinds *authority* may
+    publish there, so a community-authority view never contains a promotion
+    or a revocation, whatever its keys signed."""
     if manifest is None:
-        return CuratorView(manifest_conflict=manifest_conflict)
+        return CuratorView(manifest_conflict=manifest_conflict, authority=authority)
     day = today or _today()
     state, state_day = key_manifest.manifest_clock(manifest, day)
-    first_pass = _records(community_rows, manifest, community_graph, False)
+    in_verified = allowed_kinds(authority, in_verified_graph=True)
+    in_community = allowed_kinds(authority, in_verified_graph=False)
+    first_pass = _records(community_rows, manifest, community_graph, in_community)
     silent = _curators_silent(first_pass, day, community_readable)
-    records = _frozen_out(_records(verified_rows, manifest, verified_graph, True, root_keys=root_keys, curators_silent=silent)
-                          + _records(community_rows, manifest, community_graph, False, root_keys=root_keys,
+    records = _frozen_out(_records(verified_rows, manifest, verified_graph, in_verified, root_keys=root_keys, curators_silent=silent)
+                          + _records(community_rows, manifest, community_graph, in_community, root_keys=root_keys,
                                      curators_silent=silent), state, state_day)
+    if authority is Authority.COMMUNITY:
+        records = [r for r in records if _evidenced(r)]
+    counted, delisted = _counted_authors(
+        records, day, COMMUNITY_LISTING_MAX_DAYS if authority is Authority.COMMUNITY else None)
     return CuratorView(manifest=manifest, verdicts=_current_verdicts(records),
-                       counted=_counted_authors(records, today or _today()),
+                       counted=counted, delisted=delisted, authority=authority,
                        backlog=_latest(r for r in records if r.kind is CuratorStatement.BACKLOG),
                        away=tuple(r for r in records if r.kind is CuratorStatement.AWAY),
                        attestations=_current_attestations(records),
@@ -279,6 +230,13 @@ def build_view(manifest: Optional[key_manifest.KeyManifest], verified_rows: Iter
                        pause_until=_active_pause_until(records),
                        manifest_conflict=manifest_conflict, manifest_state=state, manifest_state_day=state_day,
                        manifest_expires_day=(state_day if state != "pending" else key_manifest.manifest_clock(manifest, state_day)[1]))
+
+
+def _evidenced(record: CuratorRecord) -> bool:
+    """A COMMUNITY confirmation counts only when it carries the signed
+    reference to the evidence its curators checked (plan §05: without one the
+    confirmed pool would be a list of opinions). Every other statement passes."""
+    return record.kind is not CuratorStatement.CONFIRMATION or bool(record.field("evidence"))
 
 
 def _heartbeats(records: Iterable[CuratorRecord]) -> Dict[str, str]:
@@ -299,33 +257,87 @@ def _current_verdicts(records: Iterable[CuratorRecord]) -> Dict[str, CuratorReco
     return {threat: by_order[ordered] for threat, ordered in current.items()}
 
 
+#: How much a stage enforces in the community tier — lower enforces less. Used
+#: wherever two attestations must be ordered without a sequence to decide.
+STAGE_ENFORCEMENT_RANK: Mapping[str, int] = {"held": 0, "deferred": 0, "reported": 1, "corroborated": 2}
+
+
+def _attestation_order(record: CuratorRecord) -> Tuple[int, int]:
+    """Sort key: higher sequence first; at a tie the stage that enforces LESS
+    wins, so the outcome never depends on which row was read first (KI-245)."""
+    return record.sequence, -STAGE_ENFORCEMENT_RANK.get(record.field("stage"), 0)
+
+
 def _current_attestations(records: Iterable[CuratorRecord]) -> Dict[str, CuratorRecord]:
     """The highest-sequence attestation per threat: a replayed older one loses."""
     current: Dict[str, CuratorRecord] = {}
     for record in records:
         if record.kind is CuratorStatement.ATTESTATION:
             held = current.get(record.identifier)
-            if held is None or record.sequence > held.sequence:
+            if held is None or _attestation_order(record) > _attestation_order(held):
                 current[record.identifier] = record
     return current
 
 
-def _counted_authors(records: Iterable[CuratorRecord], today: str) -> Dict[str, CountedAuthor]:
-    """The latest entry per author key (by sequence); listed and unexpired only."""
+#: A listing signed by the COMMUNITY authority counts for at most this many
+#: days from its signed day, whatever expiry it states (Community Curation
+#: decision 6: its curator keys are online, so a listing is short and renewed).
+COMMUNITY_LISTING_MAX_DAYS = 90
+
+
+def _effective_expiry(record: CuratorRecord, max_days: Optional[int]) -> str:
+    """The day a listing stops counting: its signed expiry, or *max_days*
+    after its signed day when that is earlier."""
+    stated = record.field("expires")
+    if max_days is None:
+        return stated
+    try:
+        capped = (date.fromisoformat(record.day) + timedelta(days=max_days)).isoformat()
+    except ValueError:
+        return stated
+    return min(stated, capped)
+
+
+def _listing_order(record: CuratorRecord) -> Tuple[int, bool]:
+    """Sort key: higher sequence first; at a tie a DELISTING wins, whichever
+    row was read first (KI-245 — a delisting must never lose to a listing)."""
+    return record.sequence, record.field("listed") == "no"
+
+
+def _delisting_in_force(record: CuratorRecord, today: str) -> bool:
+    """A delisting holds for as long as the longest listing it could be
+    overriding (``LISTING_MAX_DAYS`` from its signed day) — bounded, so a
+    reporter is never denylisted forever by one old statement."""
+    try:
+        age = (date.fromisoformat(today) - date.fromisoformat(record.day)).days
+    except ValueError:
+        return True   # an unreadable day never ends a reduction early
+    return age <= curator_statements.LISTING_MAX_DAYS
+
+
+def _counted_authors(records: Iterable[CuratorRecord], today: str,
+                     max_days: Optional[int] = None) -> Tuple[Dict[str, CountedAuthor], FrozenSet[str]]:
+    """(counted, delisted) from the latest entry per author key: *counted* —
+    listed and unexpired (a listing also ends *max_days* after its signed day
+    when given); *delisted* — keys whose latest entry says "not listed" and is
+    still in force (it also removes the other authority's listing)."""
     latest: Dict[str, CuratorRecord] = {}
     for record in records:
         if record.kind is CuratorStatement.COUNTED_AUTHORS:
             held = latest.get(record.identifier)
-            if held is None or record.sequence > held.sequence:
+            if held is None or _listing_order(record) > _listing_order(held):
                 latest[record.identifier] = record
-    counted = {}
+    counted, delisted = {}, set()
     for identifier, record in latest.items():
-        if record.field("listed") == "yes" and record.field("expires") >= today:
-            key = identifier[len("author:"):]
+        key = identifier[len("author:"):]
+        expires = _effective_expiry(record, max_days)
+        if record.field("listed") == "yes" and expires >= today:
             counted[key] = CountedAuthor(key=key, address=record.field("address"),
                                          author_class=record.field("class"), org=record.field("org"),
-                                         expires=record.field("expires"))
-    return counted
+                                         expires=expires)
+        elif record.field("listed") == "no" and _delisting_in_force(record, today):
+            delisted.add(key)
+    return counted, frozenset(delisted)
 
 
 def _active_pause_until(records: Iterable[CuratorRecord]) -> str:

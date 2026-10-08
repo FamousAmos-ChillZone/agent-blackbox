@@ -25,6 +25,7 @@ from plugins.blackbox.community.statements.disputes import VerifiedDispute
 from plugins.blackbox.kernel import constants, signing
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.kernel.signing import key_manifest as km
+from plugins.blackbox.kernel.signing import trust_anchors
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind
 from plugins.blackbox.ruleset import compiler, curator_tier
 
@@ -108,9 +109,9 @@ def test_a_pinned_network_cannot_be_overridden_from_the_environment(monkeypatch)
     pinned, sandbox = "a" * 64, "b" * 64
     monkeypatch.setattr(constants, "CURATOR_ROOT_KEYS", {NETWORK: (pinned,)})
     env = {"BLACKBOX_CURATOR_ROOT_KEYS": sandbox}
-    assert cv.trusted_roots(NETWORK, env) == {pinned}
-    assert cv.trusted_roots("sandbox-network", env) == {sandbox}
-    assert cv.trusted_roots("sandbox-network", {"BLACKBOX_CURATOR_ROOT_KEYS": "not-a-key, ,"}) == frozenset()
+    assert trust_anchors.trusted_roots(NETWORK, env) == {pinned}
+    assert trust_anchors.trusted_roots("sandbox-network", env) == {sandbox}
+    assert trust_anchors.trusted_roots("sandbox-network", {"BLACKBOX_CURATOR_ROOT_KEYS": "not-a-key, ,"}) == frozenset()
 
 
 def test_without_a_trusted_root_no_curator_statement_counts(keys, manifest):

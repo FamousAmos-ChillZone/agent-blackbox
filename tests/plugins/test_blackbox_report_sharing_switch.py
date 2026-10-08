@@ -71,5 +71,4 @@ def test_the_new_options_are_not_stored_under_a_name_hermes_reads_first():
     """LES-035: Hermes reads version / yolo / oneshot / command before dispatch."""
     args = _parse("--enable-sharing", "--disable-sharing")
     assert args.enable_sharing is True and args.disable_sharing is True
-    # (the older --package-version still stores under `version` here — KI-276,
-    # fixed on feat/community-curation; this checks only the new options)
+    assert not {"version", "yolo", "oneshot", "command"} & set(vars(args))   # KI-276 fixed: no option uses them

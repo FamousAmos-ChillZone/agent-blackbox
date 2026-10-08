@@ -74,15 +74,31 @@ def admitted(rule: Mapping[str, Any]) -> bool:
 
 
 def has_evidence(rule: Mapping[str, Any]) -> bool:
-    """A dependency report with an advisory-backed reason carries evidence."""
-    return str(rule.get("reason") or "").startswith("advisory:") or bool(rule.get("advisoryId"))
+    """A dependency report with an advisory-backed reason carries evidence.
+    Compiled community rules carry the reason as ``reportReason`` (the reader's
+    variable name); ``reason`` / ``advisoryId`` are the builder's and the
+    verified tier's names."""
+    reason = str(rule.get("reportReason") or rule.get("reason") or "")
+    return reason.startswith("advisory:") or bool(rule.get("advisoryId"))
+
+
+def credits_a_newcomer(rule: Mapping[str, Any]) -> bool:
+    """True when an unlisted reporter is among the threat's reporters: confirming
+    it is what lets that reporter earn its way onto the trusted list. Admission
+    is unchanged — the threat is in the queue only because a COUNTED reporter
+    (or a dispute) is behind it, so a flood of fresh reports still reaches no lane."""
+    return int(rule.get("unlistedReporters") or 0) > 0
 
 
 def lane_for(identifier: str, rule: Mapping[str, Any]) -> Lane:
     if rule.get("disputed") == "yes":
         return Lane.DISPUTES_AND_REVOCATIONS
+    if identifier.startswith(BLOCKABLE_PREFIXES) and has_evidence(rule):
+        return Lane.BLOCKABLE_WITH_EVIDENCE
+    if credits_a_newcomer(rule):
+        return Lane.GRADUATION
     if identifier.startswith(BLOCKABLE_PREFIXES):
-        return Lane.BLOCKABLE_WITH_EVIDENCE if has_evidence(rule) else Lane.BLOCKABLE_NEEDS_REPRODUCTION
+        return Lane.BLOCKABLE_NEEDS_REPRODUCTION
     return Lane.FLAG_ONLY_SAMPLING
 
 

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from .bands import SPONSOR_WEIGHT_CAP, ReporterStanding, ReputationBand, weight_for
 from .collusion import OVERLAP_JACCARD, OVERLAP_MIN_SHARED, OVERLAP_WINDOW_DAYS, collapse, jaccard, rings
-from .graduation import LISTING_DAYS, nomination_fields
+from .graduation import LISTING_DAYS, nomination_fields, renewal_fields
 from .ledger import RETENTION_DAYS, ReputationLedger, pseudonym
 from .novelty import SELF_DEALING_HOURS, NoveltyCredit, NoveltyFacts, NoveltyVerdict, novelty_credit
 from .partners import GRANT_MAX_DAYS, SUSPENSION_REJECTIONS, PartnerGrant, org_clusters, partner_weight
@@ -32,6 +32,6 @@ __all__ = [
     "NoveltyCredit", "NoveltyFacts", "NoveltyVerdict", "OVERLAP_JACCARD", "OVERLAP_MIN_SHARED", "OVERLAP_WINDOW_DAYS",
     "Outcome", "PartnerGrant", "REPUTATION_FLOOR", "RETENTION_DAYS", "ReporterStanding", "ReputationBand",
     "ReputationLedger", "SELF_DEALING_HOURS", "SPONSOR_WEIGHT_CAP", "STRIKES_TO_DEMOTE", "SUSPENSION_REJECTIONS",
-    "beta_reputation", "collapse", "demotion", "graduates", "jaccard", "nomination_fields", "novelty_credit",
+    "beta_reputation", "collapse", "demotion", "graduates", "jaccard", "nomination_fields", "renewal_fields", "novelty_credit",
     "org_clusters", "partner_weight", "pseudonym", "rings", "weight_for",
 ]

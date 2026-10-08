@@ -27,8 +27,9 @@ from .scoring import demotion, graduates
 LISTING_DAYS = 365
 
 
-def _listing(standing: ReporterStanding, address: str, author_class: str, org: str, today: str) -> Dict[str, str]:
-    expires = (date.fromisoformat(today) + timedelta(days=LISTING_DAYS)).isoformat()
+def _listing(standing: ReporterStanding, address: str, author_class: str, org: str, today: str,
+             days: int = LISTING_DAYS) -> Dict[str, str]:
+    expires = (date.fromisoformat(today) + timedelta(days=days)).isoformat()
     return {"listed": "yes", "class": author_class, "org": org, "expires": expires, "address": address.lower()}
 
 
@@ -36,8 +37,17 @@ def _delisting(address: str, today: str) -> Dict[str, str]:
     return {"listed": "no", "class": "established", "org": "", "expires": today, "address": address.lower()}
 
 
+def renewal_fields(standing: ReporterStanding, *, address: str, today: str,
+                   listing_days: int = LISTING_DAYS) -> Dict[str, str]:
+    """The counted-author payload that renews a plain ESTABLISHED listing in
+    good standing for another term (no organisation, no cluster — renewing a
+    partner or a collapsed group is a person's decision)."""
+    return _listing(standing, address, "established", "", today, listing_days)
+
+
 def nomination_fields(standing: ReporterStanding, *, address: str, today: str,
-                      reputation: Optional[float] = None, cluster: str = "") -> Optional[Dict[str, str]]:
+                      reputation: Optional[float] = None, cluster: str = "",
+                      listing_days: int = LISTING_DAYS) -> Optional[Dict[str, str]]:
     """The counted-author payload a standing calls for today, or None.
 
     * PROBATION that :func:`graduates` → listed ESTABLISHED (``org`` = the
@@ -48,11 +58,11 @@ def nomination_fields(standing: ReporterStanding, *, address: str, today: str,
     * PARTNER in good standing → listed PARTNER under its organisation.
     """
     if standing.band is ReputationBand.PROBATION:
-        return _listing(standing, address, "established", cluster, today) if graduates(standing, today) else None
+        return _listing(standing, address, "established", cluster, today, listing_days) if graduates(standing, today) else None
     if reputation is not None and demotion(standing, reputation, today) is not None:
         return _delisting(address, today)
     if standing.band is ReputationBand.PARTNER and standing.org:
-        return _listing(standing, address, "partner", standing.org, today)
+        return _listing(standing, address, "partner", standing.org, today, listing_days)
     if cluster:
-        return _listing(standing, address, "established", cluster, today)
+        return _listing(standing, address, "established", cluster, today, listing_days)
     return None

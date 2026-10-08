@@ -34,6 +34,7 @@ from typing import Dict, Any, Iterable, List, Mapping, Optional, Tuple
 
 from ..kernel import constants, signing, threat_ids
 from ..kernel.dkg_client import extract_binding
+from . import report_schema
 from .report_signer import REPORT_STATEMENT
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,10 @@ class VerifiedReport:
     ``author`` — the signer's Ed25519 public key (hex): THE identity for
     counting. ``reporter`` — the self-described agent address (display only).
     ``fields`` — evidence as (reader variable, signed value) pairs, sorted.
+    ``day`` — the signed UTC day of the report (who reported a threat first,
+    and since when a reporter has been reporting, are read from it).
+    ``signed`` — the signed statement itself, as text: what is handed on when
+    the report must be checked again by someone else (the export bundle).
     """
 
     subject: str
@@ -79,6 +84,8 @@ class VerifiedReport:
     severity: str
     fields: Tuple[Tuple[str, str], ...] = ()
     framework: str = ""      # the signed framework label (display only)
+    day: str = ""
+    signed: str = ""
 
 
 class ReportVerifier:
@@ -93,7 +100,8 @@ class ReportVerifier:
         self._today = today or _utc_today()
         #: R10b: why rows were dropped — "env_mismatch" (signed for another network / graph:
         #: a config mistake), "future_dated" (a modified client), "other" (unsigned / forged).
-        self.drops: Dict[str, int] = {"env_mismatch": 0, "future_dated": 0, "other": 0}
+        #: "schema" — signed and well attributed, but a value the closed report schema refuses today.
+        self.drops: Dict[str, int] = {"env_mismatch": 0, "future_dated": 0, "schema": 0, "other": 0}
 
     def verify(self, row: Mapping[str, Any]) -> Optional[VerifiedReport]:
         """The verified report for *row*, or None when it must be dropped."""
@@ -126,9 +134,23 @@ class ReportVerifier:
         fields = _agreed_evidence(row, payload)
         if fields is None:
             return None
+        if not _meets_the_schema(identifier, severity, payload):
+            self.drops["schema"] += 1
+            return None
         return VerifiedReport(subject=payload["subject"], identifier=identifier, author=author,
                               reporter=reporter, severity=severity, fields=fields,
-                              framework=payload.get("framework", ""))
+                              framework=payload.get("framework", ""), day=str(payload.get("day", "")),
+                              signed=extract_binding(row.get(SIGNED_STATEMENT_VAR)))
+
+    def verify_signed(self, text: str) -> Optional[VerifiedReport]:
+        """The verified report for one signed report TEXT on its own — an
+        export bundle holds the text, not a graph row. The row is rebuilt from
+        what the signature covers, then checked exactly like a row that was read."""
+        envelope = signing.from_text(text)
+        payload = envelope.payload if envelope is not None else {}
+        return self.verify({"r": payload.get("subject", ""), "identifier": payload.get("identifier", ""),
+                            "reporter": payload.get("reporter", ""), "severity": payload.get("severity", ""),
+                            SIGNED_STATEMENT_VAR: text})
 
 
 def _utc_today() -> str:
@@ -141,6 +163,24 @@ def _tomorrow(today: str) -> str:
         return (date.fromisoformat(today) + timedelta(days=1)).isoformat()
     except ValueError:
         return today
+
+
+def _meets_the_schema(identifier: str, severity: str, payload: Mapping[str, str]) -> bool:
+    """True when the SIGNED report would be built by today's writer. A signature
+    proves who said it, not that it fits the closed schema: a modified client,
+    or a row written before a rule existed, can carry a value outside the
+    closed vocabularies (a free-text context, a vulnerability dependency, a
+    locally named skill). Readers refuse those exactly as the writer would."""
+    # EVERY signed field beside the core is evidence: a field the schema does
+    # not know for this category is refused, exactly as the writer refuses it.
+    evidence = {key: value for key, value in payload.items() if key not in report_schema.REPORT_CORE_KEYS}
+    try:
+        report_schema.validate_report(identifier=identifier, category=threat_ids.category_for(identifier),
+                                      severity=severity, framework=payload.get("framework") or "hermes",
+                                      evidence=evidence)
+    except report_schema.ReportValidationError:
+        return False
+    return True
 
 
 def _agreed_evidence(row: Mapping[str, Any], payload: Mapping[str, str]) -> Optional[Tuple[Tuple[str, str], ...]]:

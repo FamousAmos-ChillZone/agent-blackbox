@@ -15,3 +15,8 @@ e7d0fd58976017b9850b18c52eae9894480bbce6:tests/plugins/test_blackbox_ki178_redac
 e7d0fd58976017b9850b18c52eae9894480bbce6:tests/plugins/test_blackbox_ki178_redaction.py:generic-api-key:29
 e7d0fd58976017b9850b18c52eae9894480bbce6:tests/plugins/test_blackbox_ki178_redaction.py:private-key:15
 fe2fa1bb1b6bb07024a50f6412e5e09bbb609b25:tests/plugins/_community_rows.py:generic-api-key:28
+# 2026-10-03 reviewed false positives: a test assertion that compared two tuples of PUBLIC curator
+# identifiers, and (second line) this file's own first note, which quoted that assertion. No secret in
+# either. Both lines were reworded; quote flagged code in a commit message, never here.
+b5b0cdd2711429bc8e52b7cd1abfc10eedf845df:tests/plugins/test_blackbox_trust_store.py:generic-api-key:316
+5fbd4954f9921984d985662f3eed9122d55aee07:.gitleaksignore:generic-api-key:19

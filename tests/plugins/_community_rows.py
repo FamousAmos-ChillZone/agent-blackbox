@@ -18,7 +18,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from plugins.blackbox.community import report_builder
 from plugins.blackbox.community.report_signer import ReportSigner
-from plugins.blackbox.kernel import signing
+from plugins.blackbox.kernel import constants, signing
 
 NETWORK = "test-network-id"
 GRAPH = "0x51E5dE758A45c8b64048E29918421F0bdD6D5d5C/agent-blackbox-community-dev"
@@ -40,6 +40,22 @@ class Reporter:
         return signing.public_key_hex(self.key)
 
 
+def signed_report_quads(identifier: str, reporter: Reporter, severity: str = "high", category: str = "",
+                        environment: str = NETWORK, graph: str = GRAPH, ts=None, **evidence: str):
+    """One report as the real writer builds it (quads), signed by *reporter*; *ts* dates it."""
+    category = category or {"dep": "dependency"}.get(identifier.split(":", 1)[0], identifier.split(":", 1)[0])
+    if category == "ioc":
+        evidence = {"ioc_type": identifier.split(":", 2)[1], "ioc_context": "fetched-by-tool", **evidence}
+    if category == "dependency":
+        eco, rest = identifier.split(":", 2)[1:]
+        name, version = rest.rsplit("@", 1)
+        evidence = {"ecosystem": eco, "package_name": name, "package_version": version, "kind": "malware",
+                    "reason": "typosquat", **evidence}
+    signer = ReportSigner(private_key=reporter.key, environment=environment, graph=graph)
+    return report_builder.build_report_quads(identifier=identifier, category=category, severity=severity,
+                                             reporter_address=reporter.address, signer=signer, ts=ts, **evidence)
+
+
 def signed_row(identifier: str, reporter: Reporter, severity: str = "high", category: str = "",
                environment: str = NETWORK, graph: str = GRAPH, **evidence: str) -> Dict[str, str]:
     """One report row as the community reader's query returns it."""
@@ -57,6 +73,8 @@ def signed_row(identifier: str, reporter: Reporter, severity: str = "high", cate
     row = {"r": quads[0]["subject"]}
     for quad in quads:
         obj = quad["object"]
+        if quad["predicate"] == constants.SCHEMA_IDENTIFIER_PRED:
+            continue                                    # the advisory id: the reader's ?identifier is the threat's, never this
         if obj.startswith('"') and obj.endswith('"'):   # plain literals only (skip IRIs and typed dates)
             row[quad["predicate"].rsplit("/", 1)[-1]] = json.loads(obj)
     return row

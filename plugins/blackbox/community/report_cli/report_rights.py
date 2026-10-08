@@ -79,6 +79,14 @@ def record_consent() -> int:
     if not text:
         print("The reporter terms are missing from this installation; nothing can be consented to.")
         return 1
+    earlier = consent.current()
+    if earlier is not None and not earlier.withdrawn_at and earlier.terms_hash != consent.terms_hash(text):
+        # C11: say why we are asking again before the full text, and what changed.
+        print(f"You are asked again because {consent.why_not().split(' (`blackbox')[0]}.")
+        changed = consent.changes_section(text)
+        if changed:
+            print(changed)
+        print("The full terms follow.\n")
     print(text)
     entry = consent.record()
     if entry is None:

@@ -14,24 +14,26 @@ Pattern: Builder (:class:`DossierBuilder`) for the dossier; pure
 
 Usage::
 
-    dossier = DossierBuilder(identifier).community(rule).advisories(osv.lookup).history(prior).build()
+    dossier = (DossierBuilder(identifier).community(rule).advisories(osv.lookup)
+               .community_confirmation(confirmed).history(prior).build())
     print("\n".join(render(dossier)))
     items = checklist(identifier, kind="malware", evidence="advisory:MAL-2026-1", reason="advisory:MAL-2026-1")
 """
 
 from __future__ import annotations
 
-import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, List, Mapping, Optional, Tuple
 
+from .. import community
 from ..kernel import threat_ids
 from .queue import BLOCKABLE_PREFIXES
 
 #: Evidence a curator may cite for item 1: an advisory id, a registry action
-#: (URL), or a reproduction (sha256 of the artifact the curator ran).
-_EVIDENCE = re.compile(r"(advisory:[A-Za-z0-9._-]{3,64}|registry-action:https?://\S{5,200}|reproduced:[0-9a-f]{64})")
+#: (URL), or a reproduction (sha256 of the artifact the curator ran) — the same
+#: closed format a community confirmation signs.
+_EVIDENCE = community.EVIDENCE_REFERENCE
 #: The only reasons a whole-package (*) rule may carry (plan §09 checklist item 2).
 WHOLE_PACKAGE_REASONS = ("typosquat", "internal-mirror-collision", "registry-takeover")
 
@@ -50,6 +52,20 @@ class Dossier:
     identifier: str
     sources: Tuple[Source, ...] = ()
     notes: Tuple[str, ...] = field(default=())
+
+
+@dataclass(frozen=True)
+class CommunityConfirmation:
+    """The community curators' confirmation of a threat, as a curator of
+    ANOTHER authority sees it: the signed ``day``, the ``evidence`` reference
+    they checked, how many ``curators`` signed, how many ``reporters`` stand
+    behind it (None when not known) and where this was read from (``source``)."""
+
+    day: str
+    evidence: str
+    curators: int
+    reporters: Optional[int]
+    source: str
 
 
 class DossierBuilder:
@@ -87,6 +103,15 @@ class DossierBuilder:
     def curator(self, verdict: Optional[str], dispute_weight: int) -> "DossierBuilder":
         self._add("curator statements", f"current verdict: {verdict or 'none'}")
         return self._add("disputes", f"{dispute_weight} counted author(s) dispute it")
+
+    def community_confirmation(self, confirmed: Optional[CommunityConfirmation]) -> "DossierBuilder":
+        """The community curators' confirmation and the evidence they checked —
+        evidence for this curator's own item 1, never a verdict to adopt."""
+        if confirmed is None:
+            return self._add("community curators", "no confirmation with evidence")
+        behind = "" if confirmed.reporters is None else f", {confirmed.reporters} signed report(s) attached"
+        return self._add("community curators", f"confirmed {confirmed.day} by {confirmed.curators} curator key(s); evidence they "
+                         f"checked: {confirmed.evidence}{behind} — check it yourself (from {confirmed.source})")
 
     def allowlist(self, verdict: Any) -> "DossierBuilder":
         """R9: what the allowlist / warninglist says (checklist item 3, now automatic)."""

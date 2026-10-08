@@ -50,6 +50,9 @@ from . import envelope as signing
 KEY_MANIFEST_STATEMENT = "blackbox.key-manifest"
 #: The fewest keys a curator statement may need (one key is never enough).
 MIN_THRESHOLD = 2
+#: The ``promotion_author`` of a COMMUNITY-authority manifest: that authority
+#: never promotes into a verified graph, so no publisher is pinned.
+NO_PROMOTION_AUTHOR = "none"
 #: The most curator keys one manifest may list (the envelope caps signatures).
 MAX_CURATOR_KEYS = 8
 #: R7b: a dated manifest is valid this long, and takes effect this long after its day (the 72 h time-lock).
