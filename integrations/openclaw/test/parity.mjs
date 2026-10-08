@@ -469,10 +469,12 @@ report("dependencyParses", ok, mismatches.join("\n"));
 
 // --- routine visibility parsing -------------------------------------------
 {
+  // no-tmp: ok — parser input / expected output strings; nothing is written to /tmp
   const reads = parseShellReads("cat ~/.ssh/id_rsa ./notes.txt | head -n 2 /tmp/out.log");
   const downloads = parseDownloads("curl https://example.test/a.tgz && wget 'https://cdn.test/b.zip'");
   report(
     "activity visibility parses",
+    // no-tmp: ok — parser input / expected output strings; nothing is written to /tmp
     eq(reads, ["~/.ssh/id_rsa", "./notes.txt", "/tmp/out.log"]) &&
       eq(downloads, ["https://example.test/a.tgz", "https://cdn.test/b.zip"]),
     `reads=${JSON.stringify(reads)} downloads=${JSON.stringify(downloads)}`,
@@ -481,6 +483,7 @@ report("dependencyParses", ok, mismatches.join("\n"));
 
 // --- native OpenClaw file-tool aliases ------------------------------------
 {
+  // no-tmp: ok — parser input / expected output strings; nothing is written to /tmp
   const findings = detectFileaccess("read", { path: "/tmp/test/.env" }, emptyRuleset());
   const benign = ["~/.ssh/config", ".env.example", "src/components/Cookies"]
     .flatMap((path) => detectFileaccess("read", { path }, emptyRuleset()));
