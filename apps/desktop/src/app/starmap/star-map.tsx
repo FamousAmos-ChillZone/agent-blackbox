@@ -784,6 +784,7 @@ export function StarMap({
     setSelectedId(null)
   }
 
+  // eslint-disable-next-line no-restricted-syntax -- local detail mode feeds imperative canvas camera refs, not an atom mirror
   useEffect(() => {
     fullFitRef.current = detailMode === 'all'
     viewportRef.current = fitViewport(

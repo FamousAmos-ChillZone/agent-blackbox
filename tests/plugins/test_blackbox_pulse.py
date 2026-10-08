@@ -39,10 +39,6 @@ class _Clock:
 class _Graph:
     """A community graph whose report rows can grow between probes."""
 
-    def __init__(self, reports=()):
-        self.reports = list(reports)
-        self.probes = 0
-
     def status(self):
         return {"networkId": NETWORK}
 
