@@ -34,6 +34,7 @@ def _lock_path() -> Path:
 def _serialize(rs: compiler.Ruleset) -> Dict[str, Any]:
     return {
         "synced_at": rs.synced_at,
+        "refresh_due_at": rs.refresh_due_at,
         "context_graph_id": rs.context_graph_id,
         "injection": [
             {k: v for k, v in rule.items() if k != "pattern"} for rule in rs.injection
@@ -57,6 +58,7 @@ def _serialize(rs: compiler.Ruleset) -> Dict[str, Any]:
 def _deserialize(data: Dict[str, Any]) -> compiler.Ruleset:
     rs = compiler.Ruleset(
         synced_at=float(data.get("synced_at", 0.0)),
+        refresh_due_at=float(data.get("refresh_due_at", 0.0)),
         context_graph_id=str(data.get("context_graph_id") or ""),
     )
     for rule in data.get("injection", []):

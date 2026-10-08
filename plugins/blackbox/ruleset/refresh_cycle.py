@@ -321,22 +321,23 @@ def _background_refresh(config: BlackboxConfig) -> None:
 
 
 def _schedule_next_refresh(rs: compiler.Ruleset, config: BlackboxConfig, empty_success: bool) -> None:
-    """Backdate ``rs.synced_at`` when the next refresh should come before a full interval.
+    """Set ``rs.refresh_due_at`` when the next refresh should come before a full interval.
 
     A fresh node's subscribe/catch-up is async. Do not cache "0 rules" as
     fresh for the full sync interval; retry soon so the dashboard updates
     shortly after VM lands locally. Likewise, while the last refresh compiled
     only part of the verified graph, come back in :data:`_CATCHING_UP_RETRY_S`
-    rather than an hour (KI-288).
+    rather than an hour (KI-288). ``synced_at`` stays the real compile time (KI-304).
     """
     if empty_success:
         retry_after = _EMPTY_RULESET_RETRY_S
     elif partitions.catching_up(rs.context_graph_id):
         retry_after = _CATCHING_UP_RETRY_S
     else:
+        rs.refresh_due_at = 0.0
         return
     interval = max(1.0, float(config.sync_interval or 1))
-    rs.synced_at = time.time() - interval + min(retry_after, interval)
+    rs.refresh_due_at = time.time() + min(retry_after, interval)
 
 
 def get(config: Optional[BlackboxConfig] = None) -> compiler.Ruleset:
@@ -356,14 +357,14 @@ def get(config: Optional[BlackboxConfig] = None) -> compiler.Ruleset:
             else compiler.Ruleset(context_graph_id=config.context_graph_id)
         )
         _memory.store(cached)
-    age = time.time() - cached.synced_at
     refresh_after = max(1.0, float(config.sync_interval or 1))
     if cached.source_count("public") > 0:
         refresh_after = max(refresh_after, _NONEMPTY_REFRESH_MIN_S)
+    due = cached.refresh_due(refresh_after)
     # Atomic check-and-set under the lock so two callers can't both spawn.
     should_spawn = False
     with _refreshing_lock:
-        if age > refresh_after and not _refreshing:
+        if time.time() > due and not _refreshing:
             _refreshing = True
             should_spawn = True
     if should_spawn:

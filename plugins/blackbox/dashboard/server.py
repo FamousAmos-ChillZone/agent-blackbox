@@ -324,10 +324,9 @@ def _sync_ruleset_once(load_config: Any, dkg_client_cls: Any, ruleset_mod: Any) 
     if callable(peek):
         cached = peek(cfg)
         counts = _ruleset_sync_counts(cached)
-        synced_at = float(getattr(cached, "synced_at", 0.0) or 0.0)
         configured_interval = float(getattr(cfg, "sync_interval", 0.0) or 0.0)
         refresh_interval = max(_RULESET_HEAVY_REFRESH_MIN_SEC, configured_interval)
-        if counts["public"] and time.time() - synced_at < refresh_interval:
+        if counts["public"] and time.time() < cached.refresh_due(refresh_interval):
             with _join_lock:
                 _connection_states[cfg.context_graph_id] = {
                     "state": "subscribed",

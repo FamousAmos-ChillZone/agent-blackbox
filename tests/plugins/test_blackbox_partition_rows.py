@@ -268,7 +268,8 @@ def _next_refresh_in(progress, tmp_path, monkeypatch):
     rs.context_graph_id = "cg"
     rs.synced_at = 1_000_000.0
     refresh_cycle._schedule_next_refresh(rs, _Config(), False)
-    return rs.synced_at + _Config.sync_interval - 1_000_000.0
+    assert rs.synced_at == 1_000_000.0           # KI-304: the compile time is never moved for scheduling
+    return rs.refresh_due(_Config.sync_interval) - 1_000_000.0
 
 
 def test_a_partly_compiled_graph_is_refreshed_again_within_minutes(tmp_path, monkeypatch):
@@ -333,7 +334,7 @@ def test_last_good_rules_kept_through_a_failed_read_still_retry_soon_while_catch
 
     kept = refresh_cycle._reuse_generation(compiler.build_from_rows([]), "cg", None, _Config())
 
-    assert kept.synced_at + _Config.sync_interval - 1_000_000.0 == refresh_cycle._CATCHING_UP_RETRY_S
+    assert kept.refresh_due(_Config.sync_interval) - 1_000_000.0 == refresh_cycle._CATCHING_UP_RETRY_S
 
 
 

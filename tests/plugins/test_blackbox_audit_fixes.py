@@ -514,7 +514,8 @@ def test_empty_initial_sync_retries_cache_without_network_orchestration(monkeypa
 
     cfg = config_mod.BlackboxConfig(sync_interval=300, context_graph_id="cg")
     rs = ruleset_mod.refresh(cfg, _Empty())
-    assert rs.synced_at == 730.0
+    assert rs.synced_at == 1000.0                 # the real compile time (KI-304)
+    assert rs.refresh_due(300) == 1030.0          # an empty read retries in 30 s
 
 
 def test_empty_refresh_keeps_last_verified_rules(monkeypatch):

@@ -121,13 +121,25 @@ class Ruleset:
     kill_list_refused: str = ""
     #: R7b: "" | "STALE since <day>" | "PENDING until <day>" — the curator manifest's clock as of the last refresh.
     curator_manifest_state: str = ""
+    #: When this generation was compiled (epoch seconds; 0 = never). Shown as "last sync" and
+    #: used for ages and staleness — never moved for scheduling (that is ``refresh_due_at``).
     synced_at: float = 0.0
+    #: When this generation asks for its next refresh (epoch seconds); 0 = one full interval
+    #: after ``synced_at``. Set earlier while the graph is still arriving or came back empty (KI-288).
+    refresh_due_at: float = 0.0
     context_graph_id: str = ""
     _graph_entries_cache: Dict[str, List[Dict[str, Any]]] = field(
         default_factory=dict,
         init=False,
         repr=False,
     )
+
+    def refresh_due(self, interval: float) -> float:
+        """Epoch seconds when this generation should be refreshed: its own early
+        schedule (``refresh_due_at``) if it set one, else *interval* after it was
+        compiled. Every scheduler (hooks, dashboard worker) asks this one method."""
+        due = self.synced_at + interval
+        return min(due, self.refresh_due_at) if self.refresh_due_at else due
 
     def counts(self) -> Dict[str, int]:
         return {
