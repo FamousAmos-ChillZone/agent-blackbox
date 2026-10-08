@@ -135,32 +135,6 @@ def test_fingerprint_forces_restart_when_store_backend_changes(tmp_path):
     assert blazegraph != oxigraph
 
 
-def test_dkg_heap_uses_smallest_host_or_cgroup_limit():
-    gb = 1024**3
-    with (
-        mock.patch.object(FINGERPRINTER, "read_cgroup_memory_limit", return_value=4 * gb),
-        mock.patch.object(FINGERPRINTER, "read_physical_memory", return_value=48 * gb),
-    ):
-        assert FINGERPRINTER.resolve_dkg_heap_mb() == 3072
-
-    with (
-        mock.patch.object(FINGERPRINTER, "read_cgroup_memory_limit", return_value=None),
-        mock.patch.object(FINGERPRINTER, "read_physical_memory", return_value=48 * gb),
-    ):
-        assert FINGERPRINTER.resolve_dkg_heap_mb() == 8192
-
-
-def test_node_options_merge_preserves_flags_and_explicit_heap():
-    assert FINGERPRINTER.merge_node_options("--enable-source-maps", 8192) == (
-        "--enable-source-maps --max-old-space-size=8192"
-    )
-    assert FINGERPRINTER.merge_node_options("--max-old-space-size=12288", 8192) == (
-        "--max-old-space-size=12288"
-    )
-    assert FINGERPRINTER.merge_node_options("--max_old_space_size 6144", 8192) == (
-        "--max_old_space_size 6144"
-    )
-
 def test_interrupted_restart_stays_stale_across_next_invocation(tmp_path):
     runtime = _make_runtime(tmp_path)
     marker = runtime[1] / ".blackbox-runtime.sha256"
@@ -196,8 +170,8 @@ def test_cli_compute_and_atomic_record(tmp_path, capsys):
 
 def test_cli_heap_reports_resolved_limit(capsys):
     with (
-        mock.patch.object(FINGERPRINTER, "read_cgroup_memory_limit", return_value=None),
-        mock.patch.object(FINGERPRINTER, "read_physical_memory", return_value=None),
+        mock.patch.object(FINGERPRINTER.process_limits, "read_cgroup_memory_limit", return_value=None),
+        mock.patch.object(FINGERPRINTER.process_limits, "read_physical_memory", return_value=None),
     ):
         assert FINGERPRINTER.main(["heap", "6144"]) == 0
     assert capsys.readouterr().out.strip() == "6144"
