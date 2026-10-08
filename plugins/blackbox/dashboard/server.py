@@ -349,13 +349,13 @@ def _graph_sync_state(
     node_reachable: bool,
     catchup_status: str,
     *,
-    settled: bool = False,
+    settled: bool = False, still_arriving: bool = False,
 ) -> str:
-    """Map queryable rows + DKG recovery state to an honest UI state."""
+    """Map queryable rows + DKG recovery state to an honest UI state; rules over a graph still arriving are "syncing", never "ready"."""
     if settled:
         # An authoritative snapshot can legitimately settle a tier at zero.
         return "ready"
-    if node_reachable and str(catchup_status or "").lower() in {"queued", "running"}:
+    if node_reachable and (still_arriving or str(catchup_status or "").lower() in {"queued", "running"}):
         return "syncing"
     if str(catchup_status or "").lower() in {
         "failed",
@@ -1508,7 +1508,7 @@ def create_app(*, manage_blackbox: bool = False):
             else _graph_sync_state(
                 public,
                 g["node_reachable"],
-                public_catchup_state,
+                public_catchup_state, still_arriving=sync_meter.verified_graph_still_arriving(cfg),
                 settled=(
                     authoritative_done
                     and public

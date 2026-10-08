@@ -13,7 +13,7 @@ from typing import Any, Dict, List
 import pytest
 
 from plugins.blackbox import ruleset
-from plugins.blackbox.dashboard import sync_meter
+from plugins.blackbox.dashboard import server, sync_meter
 from plugins.blackbox.ruleset import graph_queries
 from plugins.blackbox.sync import read_recovery_backlog
 from plugins.blackbox.sync.progress import RecoveryBacklog
@@ -191,3 +191,90 @@ def test_the_route_serves_the_meter_and_reuses_a_reading_within_the_cache_window
     assert first == second and len(loads) == 1
     assert first["state"] == "syncing" and first["graph_assets"] == 564
     assert first["verified_rules"] == 106_760 and first["checked_at"] == "2026-10-08 06:53:37"
+
+
+# --- the sync label never says "synced" over a graph still arriving (PR #21 audit) ---
+
+def _cfg(tmp_path):
+    return type("Cfg", (), {"context_graph_id": VM_GRAPH, "dkg_home": str(tmp_path)})()
+
+
+def test_rules_over_a_graph_still_arriving_are_syncing_not_ready():
+    assert server._graph_sync_state(490_760, True, "", still_arriving=True) == "syncing"
+    assert server._graph_sync_state(490_760, True, "") == "ready"
+
+
+def test_an_unreachable_node_is_never_called_syncing_on_a_stale_backlog():
+    assert server._graph_sync_state(490_760, False, "", still_arriving=True) == "ready"
+
+
+def test_a_backlog_in_the_nodes_log_means_still_arriving(tmp_path, monkeypatch):
+    (tmp_path / "daemon.log").write_text(_reconcile_line("2026-10-08 10:59:34", VM_GRAPH, 55), encoding="utf-8")
+    monkeypatch.setattr(ruleset, "verified_progress", lambda graph: None)
+
+    assert sync_meter.verified_graph_still_arriving(_cfg(tmp_path)) is True
+
+
+def test_rules_behind_what_the_node_holds_mean_still_arriving(tmp_path, monkeypatch):
+    (tmp_path / "daemon.log").write_text(_reconcile_line("2026-10-08 11:40:00", VM_GRAPH, 0), encoding="utf-8")
+    monkeypatch.setattr(ruleset, "verified_progress", lambda graph: {"assets_compiled": 560, "assets_total": 564})
+
+    assert sync_meter.verified_graph_still_arriving(_cfg(tmp_path)) is True
+
+
+def test_a_caught_up_graph_is_not_still_arriving(tmp_path, monkeypatch):
+    (tmp_path / "daemon.log").write_text(_reconcile_line("2026-10-08 11:40:00", VM_GRAPH, 0), encoding="utf-8")
+    monkeypatch.setattr(ruleset, "verified_progress", lambda graph: {"assets_compiled": 564, "assets_total": 564})
+
+    assert sync_meter.verified_graph_still_arriving(_cfg(tmp_path)) is False
+
+
+def test_no_evidence_is_not_still_arriving(tmp_path, monkeypatch):
+    monkeypatch.setattr(ruleset, "verified_progress", lambda graph: None)
+
+    assert sync_meter.verified_graph_still_arriving(_cfg(tmp_path)) is False
+
+
+@pytest.mark.parametrize("arriving, label", [(True, "VM syncing"), (False, "VM synced")])
+def test_the_dashboard_status_says_syncing_until_the_graph_has_arrived(monkeypatch, tmp_path, arriving, label):
+    """End to end through GET /api/graph-status on a reachable node holding rules."""
+    import time
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+
+    from plugins.blackbox import audit
+    from plugins.blackbox.kernel import config, dkg_client
+
+    cfg = SimpleNamespace(mode="audit", context_graph_id=VM_GRAPH, graph_peer_id="peer", report=False,
+                          community_graph_id="", dkg_url="http://127.0.0.1:9320", dkg_home=str(tmp_path),
+                          dkg_bin=str(tmp_path / "dkg"), sync_interval=3600)
+
+    class Rules:
+        synced_at = time.time()
+        community = {}
+
+        def counts(self):
+            return {"ioc": 490_760}
+
+        def source_count(self, source):
+            return 490_760 if source == "public" else 0
+
+    monkeypatch.setattr(config, "load_blackbox_config", lambda: cfg)
+    monkeypatch.setattr(ruleset, "peek", lambda _cfg=None: Rules())
+    monkeypatch.setattr(audit, "count_findings", lambda: 0)
+    monkeypatch.setattr(dkg_client.DkgClient, "reachable", lambda self, timeout=None: True)
+    monkeypatch.setattr(server, "node_sync_probe",
+                        lambda _cfg, reachable: {"node_reachable": True, "catchup": {}, "subscribed": True})
+    monkeypatch.setattr(sync_meter, "verified_graph_still_arriving", lambda _cfg: arriving)
+
+    client = TestClient(server.create_app(), base_url="http://127.0.0.1")
+    deadline = time.time() + 5
+    public = {}
+    while time.time() < deadline:   # the node probe is stale-while-revalidate: wait for the first real answer
+        public = client.get("/api/graph-status").json()["sync_progress"]["public"]
+        if public.get("label") == label:
+            break
+        time.sleep(0.1)
+
+    assert public["label"] == label

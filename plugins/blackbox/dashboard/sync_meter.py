@@ -110,6 +110,24 @@ def build_sync_meter(*, downloaded: Optional[ruleset.DownloadTotals], pending: O
     )
 
 
+def verified_graph_still_arriving(cfg: Any) -> bool:
+    """True while Umanitek's graph is still arriving on this node: its newest
+    reconcile pass reported assets left to download, or the rules cover fewer
+    assets than the node holds. The dashboard then says "syncing", never
+    "VM synced" over a partial graph (PR #21 audit).
+
+    Local reads only (the node's log tail and the compile record), so it is
+    cheap on every status poll. No evidence either way reads as False, the
+    label's previous behaviour.
+    """
+    backlog = read_recovery_backlog(cfg.dkg_home, cfg.context_graph_id)
+    if backlog is not None and backlog.pending > 0:
+        return True
+    done = ruleset.verified_progress(cfg.context_graph_id) or {}
+    compiled, total = done.get("assets_compiled"), done.get("assets_total")
+    return isinstance(compiled, int) and isinstance(total, int) and compiled < total
+
+
 def read_sync_meter(cfg: Any, *, node_reachable: bool, verified_rules: int) -> SyncMeter:
     """Take one live reading for *cfg*'s verified graph (``cfg.context_graph_id``)."""
     graph_id = cfg.context_graph_id
