@@ -34,6 +34,7 @@ from . import community_routes, lifecycle, sync_timing
 from .network_sync import network_sync_argv as _network_sync_argv
 from .node_probe import node_sync_probe
 from .sync_labels import _community_progress, _sync_label, not_subscribed_activity
+from .threat_detail_fields import DETAIL_FIELDS
 from .safe_payloads import graph_tier_item, safe_identifier, safe_text
 
 logger = logging.getLogger(__name__)
@@ -1988,38 +1989,6 @@ def create_app(*, manage_blackbox: bool = False):
 
     community_endpoints = community_routes.register_community_routes(app, community_read=_community_read, node_reachable=_node_reachable)
 
-    # Predicate IRI -> friendly detail key, for the single-threat lookup.
-    _DETAIL_FIELDS = {
-        constants.SEVERITY_PRED: "severity",
-        constants.KIND_PRED: "kind",
-        constants.SCHEMA_NAME_PRED: "name",
-        constants.SCHEMA_DESCRIPTION_PRED: "description",
-        constants.OWASP_CATEGORY_PRED: "owasp",
-        constants.PACKAGE_ECOSYSTEM_PRED: "ecosystem",
-        constants.PACKAGE_NAME_PRED: "package",
-        constants.PACKAGE_VERSION_PRED: "version",
-        constants.FIXED_VERSION_PRED: "fixed_version",
-        constants.TOOL_NAME_PRED: "tool",
-        constants.ARG_SHAPE_PRED: "arg_shape",
-        constants.CATEGORY_PRED: "file_category",
-        constants.SKILL_NAME_PRED: "skill",
-        constants.SKILL_VERSION_PRED: "skill_version",
-        constants.DANGER_SHAPE_PRED: "danger_shape",
-        constants.PATTERN_PRED: "pattern",
-        constants.CURATED_PRED: "curated",
-        constants.SCHEMA_DATE_MODIFIED_PRED: "modified",
-        constants.SCHEMA_CONTRIBUTOR_PRED: "contributor",
-        "urn:defender:p:severity": "severity",
-        "urn:defender:p:kind": "kind",
-        "urn:defender:p:pattern": "pattern",
-        "urn:defender:p:ecosystem": "ecosystem",
-        "urn:defender:p:package": "package",
-        "urn:defender:p:version": "version",
-        "urn:defender:p:advisoryId": "advisory_id",
-        "urn:defender:p:iocType": "ioc_type",
-        "urn:defender:p:value": "value",
-    }
-
     @app.get("/api/threat")
     def threat(identifier: str = Query(..., min_length=1), tier: str = Query("public")) -> Any:
         """Full detail for ONE threat via a targeted point-lookup.
@@ -2135,8 +2104,8 @@ def create_app(*, manage_blackbox: bool = False):
                             detail["sources"].append(obj)
                     elif pred == "urn:defender:p:contributor":
                         detail["contributor"] = obj
-                    elif pred in _DETAIL_FIELDS:
-                        detail[_DETAIL_FIELDS[pred]] = obj
+                    elif pred in DETAIL_FIELDS:
+                        detail[DETAIL_FIELDS[pred]] = obj
             detail["reporters"] = len(reporters)
         except Exception as exc:  # pragma: no cover - fail open
             logger.debug("blackbox dashboard: threat detail query failed: %s", exc)
