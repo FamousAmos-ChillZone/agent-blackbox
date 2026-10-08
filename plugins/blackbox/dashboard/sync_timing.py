@@ -28,11 +28,20 @@ from typing import Any
 
 
 def initial_sync_delay(cfg: Any, cached: Any, min_retry_s: float, empty_retry_s: float) -> float:
-    """Seconds the worker sleeps before its first refresh."""
+    """Seconds the worker sleeps before its first refresh.
+
+    Never compiled: the short empty-ruleset retry. Compiled: whatever the
+    ruleset's own schedule asks for — a generation compiled just now waits one
+    sync_interval as before, but one that asked for an early refresh (the
+    verified graph still arriving, KI-288) gets it. Before, a dashboard
+    (re)started after the installer compiled the first asset waited a full hour
+    with the node still downloading (bench bb-ours, 2026-10-08: 1,000 rules
+    for an hour while 100+ assets landed).
+    """
     never_compiled = not float(getattr(cached, "synced_at", 0.0) or 0.0)
     if never_compiled:
         return max(min_retry_s, empty_retry_s)
-    return max(min_retry_s, float(getattr(cfg, "sync_interval", 0) or empty_retry_s))
+    return next_sync_delay(cfg, cached, 0.0, min_retry_s)
 
 
 def next_sync_delay(cfg: Any, cached: Any, elapsed_s: float, min_retry_s: float) -> float:

@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import time
 from types import SimpleNamespace
 
 from _blackbox_loader import load_blackbox
@@ -825,9 +826,24 @@ def test_the_worker_refreshes_soon_when_nothing_was_ever_compiled():
     cfg = BlackboxConfig(sync_interval=3600)
     never = compiler.Ruleset()                                   # synced_at 0
     compiled = compiler.Ruleset()
-    compiled.synced_at = 1.0
+    compiled.synced_at = time.time()                          # compiled just now
     assert sync_timing.initial_sync_delay(cfg, never, 5.0, 10.0) == 10.0
-    assert sync_timing.initial_sync_delay(cfg, compiled, 5.0, 10.0) == 3600.0
+    assert 3590.0 <= sync_timing.initial_sync_delay(cfg, compiled, 5.0, 10.0) <= 3600.0
+
+
+def test_the_first_refresh_follows_the_rulesets_own_schedule(monkeypatch):
+    """KI-303: a dashboard started after the installer compiled the first asset
+    waited a full sync_interval although the ruleset asked for 2 minutes (the
+    graph still arriving) — 1,000 rules for an hour on a fresh node."""
+    from plugins.blackbox.dashboard import sync_timing
+    from plugins.blackbox.kernel.config import BlackboxConfig
+    from plugins.blackbox.ruleset import compiler
+    monkeypatch.setattr(sync_timing.time, "time", lambda: 1_000_000.0)
+    cfg = BlackboxConfig(sync_interval=3600)
+    catching_up = compiler.Ruleset()
+    catching_up.synced_at = 1_000_000.0 - 3600 + 120          # the refresh cycle asked for 120 s
+
+    assert sync_timing.initial_sync_delay(cfg, catching_up, 5.0, 10.0) == 120.0
 
 
 def test_the_worker_follows_the_rulesets_own_schedule_while_the_graph_is_arriving(monkeypatch):
