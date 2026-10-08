@@ -100,3 +100,51 @@ def read_durable_progress(
         "progress_percent": round((current / expected) * 100, 1),
         "snapshot_complete": safe_current >= expected,
     }
+
+
+_RECONCILE_PASS_RE = re.compile(
+    r'^(?P<logged_at>\S+ \S+) .*VM reconcile pass timing for "(?P<graph>[^"]+)".*\bpending=(?P<pending>\d+)',
+    re.MULTILINE,
+)
+# The node logs one reconcile pass every minute or two; the last megabyte of
+# its log always holds the newest one without reading a multi-GB file.
+_RECONCILE_TAIL_BYTES = 1_000_000
+
+
+@dataclass(frozen=True)
+class RecoveryBacklog:
+    """The node's own count of verified assets it knows exist on chain but
+    has not yet downloaded, from its newest reconcile pass.
+
+    ``pending`` — assets still to fetch; ``logged_at`` — the node's timestamp
+    of that pass (``YYYY-MM-DD HH:MM:SS``), so callers can show its age.
+    """
+
+    pending: int
+    logged_at: str
+
+
+def read_recovery_backlog(dkg_home: str, context_graph_id: str) -> Optional[RecoveryBacklog]:
+    """Return the newest reconcile pass's backlog for ``context_graph_id``.
+
+    DKG 10.0.21's native VM recovery logs ``VM reconcile pass timing for
+    "<graph>": … pending=N`` after each pass — the only place the node states
+    how many verified assets exist that it has not downloaded yet (no API
+    exposes the on-chain total). Downloaded + pending = the graph's full size.
+    None when the log is missing or holds no pass for this graph ("could not
+    tell" — never read as zero pending).
+    """
+    path = Path(dkg_home) / "daemon.log"
+    try:
+        with path.open("rb") as handle:
+            handle.seek(max(0, path.stat().st_size - _RECONCILE_TAIL_BYTES))
+            text = handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+    newest = None
+    for match in _RECONCILE_PASS_RE.finditer(text):
+        if match.group("graph") == context_graph_id:
+            newest = match
+    if newest is None:
+        return None
+    return RecoveryBacklog(pending=int(newest.group("pending")), logged_at=newest.group("logged_at"))

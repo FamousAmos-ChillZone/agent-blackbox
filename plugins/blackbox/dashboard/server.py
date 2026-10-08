@@ -30,7 +30,7 @@ from typing import Any, Dict, List, Set, Tuple
 
 from ..sync import state as sync_state
 from ..sync import read_durable_progress
-from . import community_routes, lifecycle, sync_timing
+from . import community_routes, lifecycle, sync_meter, sync_timing
 from .network_sync import network_sync_argv as _network_sync_argv
 from .node_probe import node_sync_probe
 from .sync_labels import _community_progress, _sync_label, not_subscribed_activity
@@ -1988,6 +1988,7 @@ def create_app(*, manage_blackbox: bool = False):
         return _swr("graph:" + tier, _load, {"tier": tier, "threats": []})
 
     community_endpoints = community_routes.register_community_routes(app, community_read=_community_read, node_reachable=_node_reachable)
+    sync_meter.register_sync_meter_routes(app, load_config=load_blackbox_config, node_reachable=_node_reachable, verified_rules=lambda cfg: _graph_source_count(ruleset.peek(cfg), "public"))
 
     @app.get("/api/threat")
     def threat(identifier: str = Query(..., min_length=1), tier: str = Query("public")) -> Any:

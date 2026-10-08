@@ -255,3 +255,29 @@ def catching_up(cg_id: str) -> bool:
         return True
     grew_at = done.get("total_grew_at")
     return isinstance(grew_at, (int, float)) and grew_at > 0 and time.time() - grew_at < GROWTH_QUIET_SECONDS
+
+
+@dataclass(frozen=True)
+class DownloadTotals:
+    """Verified assets this node holds confirmed, and their public triples."""
+
+    assets: int
+    triples: int
+
+
+def verified_download_totals(client: DkgClient, cg_id: str, *,
+                             timeout: Optional[float] = None) -> Optional[DownloadTotals]:
+    """How much of the verified graph the node has downloaded and confirmed —
+    one aggregate query on its _meta; None when the node cannot say (a failed
+    read is "could not tell", never zero — LES-011)."""
+    query = graph_queries._verified_partition_totals_sparql(cg_id)
+    if not query:
+        return None
+    rows = client.query(query, cg_id, view=None, on_error=None, timeout=timeout)
+    if not rows:
+        return None
+    try:
+        return DownloadTotals(assets=int(extract_binding(rows[0].get("assets")) or 0),
+                              triples=int(float(extract_binding(rows[0].get("triples")) or 0)))
+    except (TypeError, ValueError):
+        return None

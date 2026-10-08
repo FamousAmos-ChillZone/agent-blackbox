@@ -599,6 +599,46 @@
   .health-item .h-class { font-size: 9px; text-transform: uppercase; letter-spacing: .14em; margin-right: 8px; color: var(--muted); }
   .health-item.red .h-class { color: var(--signal); }
   .health-item .h-todo { color: var(--muted); }
+  /* Verified-sync meter: how much of the verified graph this node holds,
+     measured against the graph's real size (GET /api/verified-sync). */
+  .vs-section { margin-top: 32px; }
+  .vs-panel { display: flex; align-items: center; gap: 28px; padding: 22px 26px; }
+  .vs-ring { position: relative; flex: 0 0 132px; width: 132px; height: 132px; }
+  .vs-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .vs-track { fill: none; stroke: var(--border); stroke-width: 9; }
+  .vs-arc { fill: none; stroke: var(--signal); stroke-width: 9; stroke-linecap: round; transition: stroke-dashoffset .9s ease, stroke .4s ease; }
+  .vs-panel[data-state="synced"] .vs-arc { stroke: var(--graph-mint); }
+  .vs-ring-text { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+  .vs-pct { font-family: var(--mono-font); font-size: 26px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+  .vs-ring-label { font-family: var(--mono-font); font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  .vs-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+  .vs-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .vs-head h2 { margin: 0; }
+  .vs-chip { font-family: var(--mono-font); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--muted-strong); }
+  .vs-panel[data-state="syncing"] .vs-chip { border-color: var(--signal); color: var(--signal); background: var(--signal-soft); }
+  .vs-panel[data-state="synced"] .vs-chip { border-color: var(--graph-mint); color: var(--graph-mint); }
+  .vs-note { font-size: 13px; color: var(--muted-strong); overflow-wrap: anywhere; }
+  .vs-bar-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+  .vs-bar-label { font-family: var(--mono-font); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+  .vs-bar { height: 8px; border-radius: 999px; background: var(--elevated); border: 1px solid var(--border); overflow: hidden; }
+  .vs-fill { height: 100%; width: 0; border-radius: 999px; background: var(--signal); transition: width .9s ease; }
+  .vs-panel[data-state="syncing"] .vs-fill {
+    background: linear-gradient(90deg, var(--signal) 0%, var(--signal) 40%, var(--signal-soft) 50%, var(--signal) 60%, var(--signal) 100%);
+    background-size: 220% 100%; animation: vs-sweep 2.4s linear infinite;
+  }
+  .vs-panel[data-state="synced"] .vs-fill { background: var(--graph-mint); }
+  @keyframes vs-sweep { from { background-position: 100% 0; } to { background-position: -120% 0; } }
+  @media (prefers-reduced-motion: reduce) { .vs-arc, .vs-fill { transition: none; } .vs-panel[data-state="syncing"] .vs-fill { animation: none; } }
+  .vs-bar-val { font-family: var(--mono-font); font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .vs-facts { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 4px 0 0; }
+  .vs-facts dt { font-family: var(--mono-font); font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .vs-facts dd { margin: 2px 0 0; font-family: var(--mono-font); font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
+  @media (max-width: 640px) {
+    .vs-panel { flex-direction: column; align-items: stretch; padding: 18px 16px; gap: 18px; }
+    .vs-ring { align-self: center; }
+    .vs-bar-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .vs-bar-row .vs-bar { grid-column: 1 / -1; grid-row: 2; }
+  }
   /* Community Curation C10: the trust panel */
   .trust-authorities { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; padding: 14px; }
   .trust-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background: var(--panel); min-width: 0; }
@@ -2804,6 +2844,38 @@
 
   <div class="wrap">
 
+    <!-- Verified-sync meter: % of the verified threat graph's real size this node holds. -->
+    <section class="section vs-section" id="verified-sync" aria-label="Verified threat graph sync">
+      <div class="panel vs-panel" id="vs-panel" data-state="unknown">
+        <div class="vs-ring" role="img" id="vs-ring" aria-label="Verified threat graph sync progress">
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="vs-track" cx="60" cy="60" r="52"></circle>
+            <circle class="vs-arc" id="vs-arc" cx="60" cy="60" r="52" stroke-dasharray="326.73" stroke-dashoffset="326.73"></circle>
+          </svg>
+          <div class="vs-ring-text"><span class="vs-pct" id="vs-pct">&mdash;</span><span class="vs-ring-label">protected</span></div>
+        </div>
+        <div class="vs-body">
+          <div class="vs-head"><h2>Verified threat graph</h2><span class="vs-chip" id="vs-chip">checking</span></div>
+          <div class="vs-note" id="vs-note" aria-live="polite">Reading the node&hellip;</div>
+          <div class="vs-bar-row" title="Verified assets your node has downloaded and verified, of every asset in the graph right now.">
+            <span class="vs-bar-label">Downloaded</span>
+            <div class="vs-bar"><div class="vs-fill" id="vs-fill-downloaded"></div></div>
+            <span class="vs-bar-val" id="vs-val-downloaded">&mdash;</span>
+          </div>
+          <div class="vs-bar-row" title="Verified assets already turned into blocking rules on this machine.">
+            <span class="vs-bar-label">Compiled to rules</span>
+            <div class="vs-bar"><div class="vs-fill" id="vs-fill-compiled"></div></div>
+            <span class="vs-bar-val" id="vs-val-compiled">&mdash;</span>
+          </div>
+          <dl class="vs-facts">
+            <div><dt>Graph size</dt><dd id="vs-graph-assets">&mdash;</dd></div>
+            <div><dt>Triples held</dt><dd id="vs-triples">&mdash;</dd></div>
+            <div><dt>Verified rules</dt><dd id="vs-rules">&mdash;</dd></div>
+          </dl>
+        </div>
+      </div>
+    </section>
+
     <!-- Connected agents -->
     <section class="section" aria-label="Connected agents">
       <div class="section-head agents-head">
@@ -4009,6 +4081,54 @@
 
   function loadHealth() {
     return getJSON("/api/health").then(renderHealth, function () {});
+  }
+
+  // Verified-sync meter. Every number comes from the server; a number nobody
+  // could read stays "—", never 0. The ring shows the compiled share (what
+  // actually protects you); the bars show both stages against the graph size.
+  var VS_RING_LENGTH = 326.73;   // 2 * pi * r, r = 52 in the ring's SVG
+  var VS_STATE_TEXT = { synced: "synced", syncing: "syncing", unknown: "size unknown", unavailable: "node offline" };
+
+  function vsNumber(n) { return (typeof n === "number") ? n.toLocaleString() : "\u2014"; }
+  function vsSet(id, text) { var el = document.getElementById(id); if (el) el.textContent = text; }
+  function vsBar(stage, count, percent, total) {
+    var fill = document.getElementById("vs-fill-" + stage);
+    if (fill) fill.style.width = (typeof percent === "number" ? percent : 0) + "%";
+    vsSet("vs-val-" + stage, typeof percent === "number"
+      ? vsNumber(count) + " / " + vsNumber(total) + " \u00b7 " + percent.toFixed(1) + "%"
+      : vsNumber(count));
+  }
+
+  function vsNote(m) {
+    var checked = m.checked_at ? " (node checked " + String(m.checked_at).slice(11, 16) + ")" : "";
+    if (m.state === "unavailable") return "Your local DKG node is not answering \u2014 the meter resumes when it is back.";
+    if (m.state === "unknown") return "The node has not reported the graph's full size yet \u2014 showing what it holds so far.";
+    if (m.state === "synced") return "Caught up with every verified asset Umanitek has published" + checked + ". New assets are picked up automatically.";
+    var left = m.graph_assets - (m.downloaded_assets || 0);
+    if (left > 0) return "Downloading " + vsNumber(left) + " more verified asset" + (left === 1 ? "" : "s") + checked + ".";
+    return "Everything is downloaded \u2014 turning the last assets into rules" + checked + ".";
+  }
+
+  function renderSyncMeter(m) {
+    var panel = document.getElementById("vs-panel");
+    if (!panel || !m) return;
+    panel.setAttribute("data-state", m.state);
+    var pct = (typeof m.percent_compiled === "number") ? m.percent_compiled : null;
+    document.getElementById("vs-arc").style.strokeDashoffset = String(VS_RING_LENGTH * (1 - (pct || 0) / 100));
+    vsSet("vs-pct", pct === null ? "\u2014" : (pct >= 100 ? "100" : pct.toFixed(1)) + "%");
+    document.getElementById("vs-ring").setAttribute("aria-label", pct === null
+      ? "Verified threat graph sync progress unknown" : pct + "% of the verified threat graph compiled into rules");
+    vsSet("vs-chip", VS_STATE_TEXT[m.state] || m.state);
+    vsSet("vs-note", vsNote(m));
+    vsBar("downloaded", m.downloaded_assets, m.percent_downloaded, m.graph_assets);
+    vsBar("compiled", m.compiled_assets, m.percent_compiled, m.graph_assets);
+    vsSet("vs-graph-assets", typeof m.graph_assets === "number" ? vsNumber(m.graph_assets) + " assets" : "\u2014");
+    vsSet("vs-triples", vsNumber(m.downloaded_triples));
+    vsSet("vs-rules", vsNumber(m.verified_rules));
+  }
+
+  function loadSyncMeter() {
+    return getJSON("/api/verified-sync").then(renderSyncMeter, function () {});
   }
 
   // One line per threat: the stage every node computes, then what happened to
@@ -6876,6 +6996,7 @@
     loadAudit();   // full history refresh (independent of the fixed-index batch below)
     loadCommunityStatements();   // Refine R2 (independent too)
     loadHealth();                // Refine R10
+    loadSyncMeter();             // verified-sync meter
     loadTrust();                 // Community Curation C10
     loadMyReports();             // Refine R10
     loadCommunityStats();        // summary tiles + chips

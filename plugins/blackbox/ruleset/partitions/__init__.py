@@ -26,11 +26,12 @@ Usage::
     rows, progress = read.rows, (read.compiled, read.total)
 """
 
-from .reader import PartitionCache, PartitionRead, catching_up, progress, read_partition_triples, record_progress, verified_partition_rows
+from .reader import DownloadTotals, PartitionCache, PartitionRead, catching_up, progress, read_partition_triples, record_progress, verified_download_totals, verified_partition_rows
 from .rows import COLUMN_PREDICATES, THREAT_TYPES, rows_from_triples
 
 __all__ = [
     "COLUMN_PREDICATES",
+    "DownloadTotals",
     "PartitionCache",
     "PartitionRead",
     "THREAT_TYPES",
@@ -39,5 +40,6 @@ __all__ = [
     "read_partition_triples",
     "record_progress",
     "rows_from_triples",
+    "verified_download_totals",
     "verified_partition_rows",
 ]

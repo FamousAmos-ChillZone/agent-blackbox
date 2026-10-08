@@ -139,6 +139,13 @@ def fixture_app(monkeypatch, tmp_path):
     monkeypatch.setattr(ruleset_pkg, "peek", lambda cfg: rs)
     monkeypatch.setattr(ruleset_pkg, "get", lambda cfg=None: rs)
     monkeypatch.setattr(community, "read_verified_reports", lambda client, cfg: read)
+    # The verified-sync meter mid-sync: 137 of 564 assets downloaded, 124 compiled.
+    from plugins.blackbox.dashboard import sync_meter
+    from plugins.blackbox.sync.progress import RecoveryBacklog
+    monkeypatch.setattr(ruleset_pkg, "verified_download_totals",
+                        lambda client, graph, timeout=None: ruleset_pkg.DownloadTotals(assets=137, triples=1_531_200))
+    monkeypatch.setattr(ruleset_pkg, "verified_progress", lambda graph: {"assets_compiled": 124})
+    monkeypatch.setattr(sync_meter, "read_recovery_backlog", lambda home, graph: RecoveryBacklog(427, "2026-10-08 06:53:37"))
     from plugins.blackbox.dashboard import server
     return server.create_app()
 
@@ -198,3 +205,8 @@ def test_the_dashboard_renders_clean_at_desktop_and_phone_widths(served, tmp_pat
         assert sections["stat-sharing-state"] in {"on", "off", "paused"}, (width, sections["stat-sharing-state"])
         assert "threats" in sections["cg-summary"] and "sharing" in sections["cg-summary"], (width, sections["cg-summary"])
         assert view["spillingCells"] == [], (width, view["spillingCells"])
+        # The verified-sync meter is measured against the graph's real size (564 assets).
+        assert sections["vs-pct"] == "22.0%", (width, sections["vs-pct"])
+        assert sections["vs-chip"].lower() == "syncing", (width, sections["vs-chip"])
+        assert "137 / 564" in sections["vs-val-downloaded"], (width, sections["vs-val-downloaded"])
+        assert "427 more verified assets" in sections["vs-note"], (width, sections["vs-note"])

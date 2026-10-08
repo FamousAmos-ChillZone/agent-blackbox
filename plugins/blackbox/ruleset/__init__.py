@@ -10,6 +10,8 @@ and serves it to the hot path. Callers use this surface only:
 * :func:`refresh` — fetch + compile now (``blackbox sync``, the dashboard loop).
 * :func:`verified_progress` — how much of the verified graph the last refresh
   compiled (assets compiled of assets confirmed), for status and health.
+* :func:`verified_download_totals` — assets + triples the node has downloaded
+  and confirmed (one aggregate query), for the dashboard's sync meter.
 * :func:`build_from_rows`, :func:`verified_identifiers`, :func:`fetch_tier` —
   compile / proof / paging entry points used by the dashboard and tests.
 * ``RulesetRefresh*`` — refresh outcomes callers branch on.
@@ -29,11 +31,13 @@ from __future__ import annotations
 from .compiler import Ruleset, build_from_rows, verified_identifiers
 from .errors import RulesetRefreshIncomplete, RulesetRefreshLockUnavailable, RulesetRefreshUnavailable
 from .fetching import fetch_tier
+from .partitions import DownloadTotals, verified_download_totals
 from .partitions import progress as verified_progress
 from .pulse_beat import pulse
 from .refresh_cycle import get, peek, refresh
 
 __all__ = [
+    "DownloadTotals",
     "Ruleset",
     "RulesetRefreshIncomplete",
     "RulesetRefreshLockUnavailable",
@@ -44,6 +48,7 @@ __all__ = [
     "peek",
     "pulse",
     "refresh",
+    "verified_download_totals",
     "verified_identifiers",
     "verified_progress",
 ]

@@ -71,7 +71,8 @@ for (const vp of viewports) {
   const checks = [await overflow("landing")];
   const sections = {};
   for (const id of ["health-strip", "community-statements-body", "my-reports-body", "tab-community",
-                    "stat-community-count", "stat-sharing-state", "cg-summary"]) sections[id] = await sectionText(id);
+                    "stat-community-count", "stat-sharing-state", "cg-summary",
+                    "vs-pct", "vs-chip", "vs-val-downloaded", "vs-note"]) sections[id] = await sectionText(id);
   // The community panel's own tabs: each pane renders without page overflow.
   for (const pane of ["statements", "reports", "agents"]) {
     const tab = page.locator(`#cg-tab-${pane}`);

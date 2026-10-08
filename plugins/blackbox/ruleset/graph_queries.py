@@ -234,10 +234,7 @@ def _verified_partitions_sparql(cg_id: str) -> str:
     if not data_graph:
         return ""
     vm_prefix = f"{data_graph}/_verifiable_memory/"
-    owner = str(cg_id).split("/", 1)[0].lower()
-    pin = ""
-    if _WALLET_ADDRESS.fullmatch(owner):
-        pin = f"    ?ka dkg:kaUal ?kaUal .\n    FILTER(CONTAINS(LCASE(STR(?kaUal)), {json.dumps('/' + owner + '/')}))\n"
+    pin = _owner_pin(cg_id)
     return f"""PREFIX dkg: <http://dkg.io/ontology/>
 SELECT DISTINCT ?assertionGraph ?status WHERE {{
   GRAPH <{data_graph}/_meta> {{
@@ -247,6 +244,41 @@ SELECT DISTINCT ?assertionGraph ?status WHERE {{
   FILTER(STRSTARTS(STR(?assertionGraph), {json.dumps(vm_prefix)}))
 }}
 ORDER BY ?assertionGraph
+"""
+
+
+def _owner_pin(cg_id: str) -> str:
+    """The KI-106 owner pin as SPARQL lines (empty for a graph id that is not
+    wallet-namespaced) — shared by every read of the verified graph's _meta."""
+    owner = str(cg_id).split("/", 1)[0].lower()
+    if not _WALLET_ADDRESS.fullmatch(owner):
+        return ""
+    return f"    ?ka dkg:kaUal ?kaUal .\n    FILTER(CONTAINS(LCASE(STR(?kaUal)), {json.dumps('/' + owner + '/')}))\n"
+
+
+def _verified_partition_totals_sparql(cg_id: str) -> str:
+    """ONE aggregate row: how many verified assets this node holds CONFIRMED,
+    and their public triple count — for the dashboard's sync meter.
+
+    Same owner pin and prefix as :func:`_verified_partitions_sparql`; bounded
+    by construction (an aggregate, no listing — LES-013). The node's _meta
+    holds only assets it has already downloaded, so this is "downloaded",
+    never the graph's full size (that comes from the node's recovery backlog).
+    """
+    data_graph = _context_graph_data_uri(cg_id)
+    if not data_graph:
+        return ""
+    vm_prefix = f"{data_graph}/_verifiable_memory/"
+    return f"""PREFIX dkg: <http://dkg.io/ontology/>
+SELECT (COUNT(DISTINCT ?ka) AS ?assets) (SUM(?publicTriples) AS ?triples) WHERE {{
+  GRAPH <{data_graph}/_meta> {{
+    ?ka dkg:assertionGraph ?assertionGraph ;
+        dkg:status ?status .
+{_owner_pin(cg_id)}    OPTIONAL {{ ?ka dkg:publicTripleCount ?publicTriples . }}
+  }}
+  FILTER(STR(?status) = "confirmed")
+  FILTER(STRSTARTS(STR(?assertionGraph), {json.dumps(vm_prefix)}))
+}}
 """
 
 
