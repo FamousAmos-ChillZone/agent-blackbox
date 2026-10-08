@@ -31,6 +31,7 @@ from typing import Any, Dict, List, Set, Tuple
 from ..sync import state as sync_state
 from ..sync import read_durable_progress
 from . import community_routes, lifecycle, sync_timing
+from .network_sync import network_sync_argv as _network_sync_argv
 from .node_probe import node_sync_probe
 from .sync_labels import _community_progress, _sync_label, not_subscribed_activity
 from .safe_payloads import graph_tier_item, safe_identifier, safe_text
@@ -216,21 +217,6 @@ def _ruleset_sync_counts(rs: Any) -> Dict[str, int]:
         "public": public,
         "community": 0,
     }
-
-
-def _network_sync_argv(timeout: int = 3600) -> List[str]:
-    """Run the canonical verified graph sync in an isolated process."""
-    return [
-        sys.executable,
-        "-m",
-        "hermes_cli.main",
-        "blackbox",
-        "sync",
-        "--wait",
-        "--timeout",
-        str(max(1, int(timeout))),
-        "--require-rules",
-    ]
 
 
 def _network_sync_once(
