@@ -59,10 +59,17 @@ def test_powershell_installer_matches_checkout_contract() -> None:
     assert "Move-Item -LiteralPath $Path" in text
 
 
+# These run the installer's update path against throwaway git repos they
+# create under tmp_path (never the real checkout); the live-system guard
+# blocks any command mentioning a hermes update, so they carry its bypass mark.
+_THROWAWAY_REPO_UPDATE = pytest.mark.live_system_guard_bypass
+
+
 @pytest.mark.skipif(
     shutil.which("git") is None or shutil.which("bash") is None,
     reason="requires git and bash",
 )
+@_THROWAWAY_REPO_UPDATE
 def test_shell_installer_replaces_incomplete_checkout_with_real_clone(
     tmp_path: Path,
 ) -> None:
@@ -173,6 +180,7 @@ resolve_repo
     shutil.which("git") is None or shutil.which("bash") is None,
     reason="requires git and bash",
 )
+@_THROWAWAY_REPO_UPDATE
 def test_shell_installer_moves_an_existing_install_to_another_branch(tmp_path: Path) -> None:
     """KI-287: the installer clones one branch, shallow. Re-running it with
     BLACKBOX_REPO_BRANCH set to another branch fetched that branch only into
@@ -224,6 +232,7 @@ def _source_repo(tmp_path: Path) -> Path:
     shutil.which("git") is None or shutil.which("bash") is None,
     reason="requires git and bash",
 )
+@_THROWAWAY_REPO_UPDATE
 def test_shell_installer_updates_an_existing_install_when_its_branch_moved(tmp_path: Path) -> None:
     """KI-294: the install is a --depth 1 clone and the update fetched --depth 1
     too, so the new tip arrived without its parent; git saw no shared history
@@ -246,6 +255,7 @@ def test_shell_installer_updates_an_existing_install_when_its_branch_moved(tmp_p
     shutil.which("git") is None or shutil.which("bash") is None,
     reason="requires git and bash",
 )
+@_THROWAWAY_REPO_UPDATE
 def test_shell_installer_never_discards_a_local_commit_when_updating(tmp_path: Path) -> None:
     """The update moves the install to the new tip only when the install holds no
     work of its own; a local commit makes it stop with git's reason instead."""

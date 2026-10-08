@@ -28,6 +28,7 @@ _NON_MIRROR_DIRS = {
     "fakes", "fixtures", "honcho_plugin", "install", "integration", "manual",
     "monitoring", "openviking_plugin", "perf_guards", "scripts", "secret_sources",
     "security", "skills", "verify", "website", "computer_use", "hermes_state",
+    "parity",  # Blackbox cross-runtime fixtures shared by the Python plugin and the OpenClaw bridge
 }
 
 # Root-level modules whose tests sit directly in tests/ (no package to mirror).

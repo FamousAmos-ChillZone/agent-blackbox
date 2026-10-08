@@ -1996,13 +1996,11 @@ EOF
 #   Linux:  systemctl disable --now blackbox-dkg
 #   macOS:  launchctl unload ~/Library/LaunchAgents/ai.umanitek.blackbox-dkg.plist
 # ---------------------------------------------------------------------------
-# A value placed inside a launchd plist <string> must be XML text.
+# A value placed inside a launchd plist <string> must be XML text. sed, not
+# ${value//</&lt;}: bash 5.2+ reads "&" in that replacement as the matched text
+# (patsub_replacement), so it produced "<lt;" on Linux and Homebrew bash.
 xml_escape() {
-    local value="$1"
-    value="${value//&/&amp;}"
-    value="${value//</&lt;}"
-    value="${value//>/&gt;}"
-    printf '%s' "$value"
+    printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
 }
 
 register_boot_service() {

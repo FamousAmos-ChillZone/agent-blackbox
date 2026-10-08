@@ -3,9 +3,8 @@
 The dashboard runs ``blackbox sync`` in a child process so a long network
 transfer stays isolated from the web server (see ``server._network_sync_once``).
 
-Usage::
-
-    subprocess.run(network_sync_argv(3600), ...)
+Usage: pass ``network_sync_argv(3600)`` as the argv of the child process
+(the caller sets stdin, capture and timeout).
 """
 
 from __future__ import annotations
