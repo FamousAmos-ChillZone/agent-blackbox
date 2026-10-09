@@ -1,11 +1,17 @@
 """The DKG node's process limits: settings it can only get from its environment.
 
-DKG reads the V8 heap cap (``NODE_OPTIONS``), the store queue limit
-(``DKG_STORE_QUEUE_LIMIT``) and the graph-list projection switch
-(``DKG_LIST_CONTEXT_GRAPHS_PROJECTION``) from its process environment only; no
-config.json key exists for them (dkg-storage store-priority-scheduler.js,
-dkg-agent cg-resolve.js, 10.0.22). So whoever launches the node must pass them,
-or the node runs with Node's ~4 GB default heap and DKG's default queues.
+DKG reads the V8 heap cap (``NODE_OPTIONS``) and the store queue limit
+(``DKG_STORE_QUEUE_LIMIT``) from its process environment only; no config.json
+key exists for them (dkg-storage store-priority-scheduler.js, 10.0.22). So
+whoever launches the node must pass them, or the node runs with Node's ~4 GB
+default heap and DKG's default queue.
+
+The graph-list projection switch (``DKG_LIST_CONTEXT_GRAPHS_PROJECTION``) is
+deliberately NOT one of them: it stays an install-time setting. With it on, the
+node's context-graph listing leaves out the verified graph it is subscribed to
+(10.0.22, bench 2026-10-09: 36 rows without it vs 39 with subscribed=true), so
+a running node with it on reads as "not subscribed" — the dashboard says so
+and every sync re-subscribes.
 
 The installer chooses them once and records them with :func:`write_process_limits`
 (``blackbox-process-limits.json`` in the node's home); every node restart
@@ -152,7 +158,7 @@ DEFAULT_STORE_QUEUE_LIMIT = 512
 DEFAULT_HEAP_CEILING_MB = 8192
 #: The record of the limits the installer chose, inside the node's home.
 PROFILE_NAME = "blackbox-process-limits.json"
-_PROFILE_VERSION = 1
+_PROFILE_VERSION = 2   # 2: the projection switch left the record (install-time only)
 _MAX_PROFILE_BYTES = 4096
 _MAX_SETTING = 2_147_483_647
 _EXPLICIT_HEAP_RE = re.compile(r"--max[-_]old[-_]space[-_]size(?:=|\s+)([0-9]+)", re.IGNORECASE)
@@ -163,14 +169,12 @@ class ProcessLimits:
     """The node's environment-only limits.
 
     ``heap_mb`` — V8 old-space cap in MB; ``store_queue_limit`` — the store's
-    common queue limit; ``list_context_graphs_projection`` — DKG's faster
-    graph-list projection. All positive / boolean; build through
+    common queue limit. Both positive integers; build through
     :func:`default_process_limits` or :func:`read_process_limits`.
     """
 
     heap_mb: int
     store_queue_limit: int
-    list_context_graphs_projection: bool
 
 
 def _bounded_positive(value: object) -> bool:
@@ -186,16 +190,15 @@ def explicit_heap_mb(node_options: str) -> Optional[int]:
 
 def default_process_limits(node_options: str = "") -> ProcessLimits:
     """The installer's limits for this host: an explicit heap in *node_options*
-    wins, else 75% of RAM / cgroup capped at 8 GB; queue 512; projection on."""
+    wins, else 75% of RAM / cgroup capped at 8 GB; queue 512."""
     heap = explicit_heap_mb(node_options) or resolve_dkg_heap_mb(DEFAULT_HEAP_CEILING_MB)
-    return ProcessLimits(heap, DEFAULT_STORE_QUEUE_LIMIT, True)
+    return ProcessLimits(heap, DEFAULT_STORE_QUEUE_LIMIT)
 
 
 def write_process_limits(dkg_home: str, limits: ProcessLimits) -> Path:
     """Record *limits* in the node's home (atomic tmp + rename); returns the path."""
-    if not (_bounded_positive(limits.heap_mb) and _bounded_positive(limits.store_queue_limit)
-            and type(limits.list_context_graphs_projection) is bool):
-        raise ProcessLimitsError("process limits must be positive integers and a boolean")
+    if not (_bounded_positive(limits.heap_mb) and _bounded_positive(limits.store_queue_limit)):
+        raise ProcessLimitsError("process limits must be positive integers")
     home = Path(dkg_home).expanduser()
     home.mkdir(parents=True, exist_ok=True)
     path = home / PROFILE_NAME
@@ -228,16 +231,16 @@ def read_process_limits(dkg_home: str) -> Optional[ProcessLimits]:
     limits = data.get("limits")
     if type(limits) is not dict or set(limits) != set(ProcessLimits.__dataclass_fields__):
         return None
-    if not (_bounded_positive(limits["heap_mb"]) and _bounded_positive(limits["store_queue_limit"])
-            and type(limits["list_context_graphs_projection"]) is bool):
+    if not (_bounded_positive(limits["heap_mb"]) and _bounded_positive(limits["store_queue_limit"])):
         return None
     return ProcessLimits(**limits)
 
 
 def apply_process_limits(env: Dict[str, str], limits: ProcessLimits) -> None:
     """Put *limits* into the launch environment *env* (in place). A value the
-    environment already carries wins: an explicit heap in ``NODE_OPTIONS``, an
-    explicit queue limit or projection switch."""
+    environment already carries wins: an explicit heap in ``NODE_OPTIONS`` or an
+    explicit queue limit. The install-time projection switch is removed: the
+    running node must list the graphs it is subscribed to (see module doc)."""
     env["NODE_OPTIONS"] = merge_node_options(env.get("NODE_OPTIONS", ""), limits.heap_mb)
     env.setdefault("DKG_STORE_QUEUE_LIMIT", str(limits.store_queue_limit))
-    env.setdefault("DKG_LIST_CONTEXT_GRAPHS_PROJECTION", "1" if limits.list_context_graphs_projection else "0")
+    env.pop("DKG_LIST_CONTEXT_GRAPHS_PROJECTION", None)

@@ -51,7 +51,7 @@ def test_node_options_merge_preserves_flags_and_explicit_heap():
 
 
 def test_recorded_limits_read_back_exactly(tmp_path):
-    limits = LIMITS.ProcessLimits(heap_mb=6144, store_queue_limit=256, list_context_graphs_projection=False)
+    limits = LIMITS.ProcessLimits(heap_mb=6144, store_queue_limit=256)
 
     LIMITS.write_process_limits(str(tmp_path), limits)
 
@@ -60,11 +60,11 @@ def test_recorded_limits_read_back_exactly(tmp_path):
 
 @pytest.mark.parametrize("content", [
     "not json",
-    json.dumps({"version": 2, "limits": {"heap_mb": 1, "store_queue_limit": 1, "list_context_graphs_projection": True}}),
-    json.dumps({"version": 1, "limits": {"heap_mb": 0, "store_queue_limit": 1, "list_context_graphs_projection": True}}),
-    json.dumps({"version": 1, "limits": {"heap_mb": "4096", "store_queue_limit": 1, "list_context_graphs_projection": True}}),
-    json.dumps({"version": 1, "limits": {"heap_mb": 4096, "store_queue_limit": 1, "list_context_graphs_projection": 1}}),
-    json.dumps({"version": 1, "limits": {"heap_mb": 4096, "store_queue_limit": 1, "list_context_graphs_projection": True, "extra": 1}}),
+    json.dumps({"version": 1, "limits": {"heap_mb": 1, "store_queue_limit": 1, "list_context_graphs_projection": True}}),
+    json.dumps({"version": 2, "limits": {"heap_mb": 0, "store_queue_limit": 1}}),
+    json.dumps({"version": 2, "limits": {"heap_mb": "4096", "store_queue_limit": 1}}),
+    json.dumps({"version": 2, "limits": {"heap_mb": 4096, "store_queue_limit": True}}),
+    json.dumps({"version": 2, "limits": {"heap_mb": 4096, "store_queue_limit": 1, "extra": 1}}),
     "{" + " " * 5000 + "}",
 ])
 def test_a_record_that_is_not_exactly_well_formed_is_ignored(tmp_path, content):
@@ -79,34 +79,41 @@ def test_no_record_reads_as_none(tmp_path):
 
 def test_an_invalid_record_is_never_written(tmp_path):
     with pytest.raises(LIMITS.ProcessLimitsError):
-        LIMITS.write_process_limits(str(tmp_path), LIMITS.ProcessLimits(0, 512, True))
+        LIMITS.write_process_limits(str(tmp_path), LIMITS.ProcessLimits(0, 512))
     assert not (tmp_path / LIMITS.PROFILE_NAME).exists()
 
 
 def test_defaults_are_the_installers_and_an_explicit_heap_wins():
     with mock.patch.object(LIMITS, "resolve_dkg_heap_mb", return_value=6000):
-        assert LIMITS.default_process_limits() == LIMITS.ProcessLimits(6000, 512, True)
+        assert LIMITS.default_process_limits() == LIMITS.ProcessLimits(6000, 512)
         assert LIMITS.default_process_limits("--enable-source-maps --max-old-space-size=3000").heap_mb == 3000
 
 
 def test_applied_limits_fill_the_launch_environment():
     env = {"NODE_OPTIONS": "--enable-source-maps"}
 
-    LIMITS.apply_process_limits(env, LIMITS.ProcessLimits(4096, 256, False))
+    LIMITS.apply_process_limits(env, LIMITS.ProcessLimits(4096, 256))
 
     assert env["NODE_OPTIONS"] == "--enable-source-maps --max-old-space-size=4096"
     assert env["DKG_STORE_QUEUE_LIMIT"] == "256"
-    assert env["DKG_LIST_CONTEXT_GRAPHS_PROJECTION"] == "0"
+
+
+def test_the_running_node_never_gets_the_install_time_projection_switch():
+    """With projection on, the node's listing omits the verified graph it is
+    subscribed to (10.0.22, bench 2026-10-09) and Blackbox reads "not subscribed"."""
+    env = {"DKG_LIST_CONTEXT_GRAPHS_PROJECTION": "1"}   # e.g. inherited from an install-time shell
+
+    LIMITS.apply_process_limits(env, LIMITS.ProcessLimits(4096, 256))
+
+    assert "DKG_LIST_CONTEXT_GRAPHS_PROJECTION" not in env
 
 
 def test_values_the_environment_already_carries_win():
-    env = {"NODE_OPTIONS": "--max-old-space-size=2048", "DKG_STORE_QUEUE_LIMIT": "64",
-           "DKG_LIST_CONTEXT_GRAPHS_PROJECTION": "1"}
+    env = {"NODE_OPTIONS": "--max-old-space-size=2048", "DKG_STORE_QUEUE_LIMIT": "64"}
 
-    LIMITS.apply_process_limits(env, LIMITS.ProcessLimits(8192, 512, False))
+    LIMITS.apply_process_limits(env, LIMITS.ProcessLimits(8192, 512))
 
-    assert env == {"NODE_OPTIONS": "--max-old-space-size=2048", "DKG_STORE_QUEUE_LIMIT": "64",
-                   "DKG_LIST_CONTEXT_GRAPHS_PROJECTION": "1"}
+    assert env == {"NODE_OPTIONS": "--max-old-space-size=2048", "DKG_STORE_QUEUE_LIMIT": "64"}
 
 
 def _restart_environment(tmp_path, monkeypatch):
@@ -117,13 +124,13 @@ def _restart_environment(tmp_path, monkeypatch):
 
 
 def test_a_blackbox_restart_relaunches_the_node_with_its_recorded_limits(tmp_path, monkeypatch):
-    LIMITS.write_process_limits(str(tmp_path), LIMITS.ProcessLimits(3000, 256, False))
+    LIMITS.write_process_limits(str(tmp_path), LIMITS.ProcessLimits(3000, 256))
 
     env = _restart_environment(tmp_path, monkeypatch)
 
     assert "--max-old-space-size=3000" in env["NODE_OPTIONS"]
     assert env["DKG_STORE_QUEUE_LIMIT"] == "256"
-    assert env["DKG_LIST_CONTEXT_GRAPHS_PROJECTION"] == "0"
+    assert "DKG_LIST_CONTEXT_GRAPHS_PROJECTION" not in env
 
 
 def test_a_node_installed_before_the_record_restarts_with_the_installers_defaults(tmp_path, monkeypatch):
@@ -133,7 +140,6 @@ def test_a_node_installed_before_the_record_restarts_with_the_installers_default
 
     assert "--max-old-space-size=5000" in env["NODE_OPTIONS"]
     assert env["DKG_STORE_QUEUE_LIMIT"] == "512"
-    assert env["DKG_LIST_CONTEXT_GRAPHS_PROJECTION"] == "1"
 
 
 def test_an_unsizeable_host_restarts_without_limits_instead_of_failing(tmp_path, monkeypatch, caplog):

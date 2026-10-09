@@ -38,12 +38,10 @@ resolve_dkg_heap_mb = process_limits.resolve_dkg_heap_mb
 merge_node_options = process_limits.merge_node_options
 
 
-def write_limits(dkg_home: str, node_options: str, store_queue_limit: str, projection: str) -> Path:
+def write_limits(dkg_home: str, node_options: str, store_queue_limit: str) -> Path:
     """Record the installer's node limits for Blackbox's own restarts (process_limits)."""
-    if projection not in ("0", "1"):
-        raise ProcessLimitsError("graph-list projection must be 0 or 1")
     chosen = process_limits.default_process_limits(node_options)
-    limits = process_limits.ProcessLimits(chosen.heap_mb, int(store_queue_limit), projection == "1")
+    limits = process_limits.ProcessLimits(chosen.heap_mb, int(store_queue_limit))
     return process_limits.write_process_limits(dkg_home, limits)
 
 
@@ -249,8 +247,8 @@ def main(argv: list[str] | None = None) -> int:
             existing = args[2] if len(args) == 3 else ""
             print(merge_node_options(existing, int(args[1])))
             return 0
-        if len(args) == 5 and args[0] == "write-limits":
-            print(write_limits(args[1], args[2], args[3], args[4]))
+        if len(args) == 4 and args[0] == "write-limits":
+            print(write_limits(args[1], args[2], args[3]))
             return 0
         if len(args) == 2 and args[0] == "commit":
             print(installed_commit(Path(args[1])))
@@ -273,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
         "[<catchup-max-concurrent-peers> <store-queue-wait-timeout-ms>]]]\n"
         f"       {Path(sys.argv[0]).name} heap [<default-mb>]\n"
         f"       {Path(sys.argv[0]).name} node-options <heap-mb> [<existing-options>]\n"
-        f"       {Path(sys.argv[0]).name} write-limits <dkg-home> <node-options> <store-queue-limit> <0|1>\n"
+        f"       {Path(sys.argv[0]).name} write-limits <dkg-home> <node-options> <store-queue-limit>\n"
         f"       {Path(sys.argv[0]).name} commit <dkg-cli-dir>\n"
         f"       {Path(sys.argv[0]).name} record <marker> <sha256>\n"
         f"       {Path(sys.argv[0]).name} wait <daemon-url> <expected-commit> <timeout-seconds>",

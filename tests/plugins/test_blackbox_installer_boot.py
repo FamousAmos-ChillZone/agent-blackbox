@@ -274,7 +274,6 @@ def _expected_node_environment():
         "DKG_VM_RECOVERY_PREFETCH_ENABLED": "1",
         "NODE_OPTIONS": "--enable-source-maps --max-old-space-size=6144",
         "DKG_STORE_QUEUE_LIMIT": "512",
-        "DKG_LIST_CONTEXT_GRAPHS_PROJECTION": "1",
     }
 
 
@@ -291,6 +290,7 @@ def test_the_systemd_unit_starts_the_node_with_its_limits_and_switches(tmp_path)
 
     for key, value in _expected_node_environment().items():
         assert environment.get(key) == value, key
+    assert "DKG_LIST_CONTEXT_GRAPHS_PROJECTION" not in environment   # install-time only
 
 
 def test_the_macos_login_item_starts_the_node_with_its_limits_and_switches(tmp_path):
@@ -302,6 +302,7 @@ def test_the_macos_login_item_starts_the_node_with_its_limits_and_switches(tmp_p
     environment = plist["EnvironmentVariables"]
     for key, value in _expected_node_environment().items():
         assert environment.get(key) == value, key
+    assert "DKG_LIST_CONTEXT_GRAPHS_PROJECTION" not in environment   # install-time only
     assert environment["DKG_SYNC_ON_CONNECT_ENABLED"] == "1"
     assert environment["DKG_HOME"] == "/srv/bb/.dkg"
 
