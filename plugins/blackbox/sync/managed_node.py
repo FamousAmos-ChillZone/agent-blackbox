@@ -20,7 +20,7 @@ from typing import Dict, List, Optional
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, DkgError
-from . import process_limits
+from . import node_process, process_limits
 # The node's sync profile lives in node_profile. These names stay reachable as
 # managed_node.<name>: sync/command.py calls them through this module and tests
 # patch them here.
@@ -134,28 +134,13 @@ def _managed_dkg_node_executable(cfg: BlackboxConfig) -> Optional[Path]:
             if path not in candidates:
                 candidates.append(path)
 
-    try:
-        pid = int((Path(cfg.dkg_home) / "daemon.pid").read_text(encoding="utf-8").strip())
-        _candidate(psutil.Process(pid).exe())
-    except (OSError, TypeError, ValueError, psutil.Error):
-        pass
-
-    # Recent DKG supervisors do not always retain daemon.pid. Locate only a
-    # process running this exact installation, never an unrelated DKG node.
-    try:
-        dkg_cli = str(Path(cfg.dkg_bin).resolve())
-        for process in psutil.process_iter(["exe", "cmdline"]):
-            try:
-                command = [str(item) for item in (process.info.get("cmdline") or [])]
-                if dkg_cli not in command:
-                    continue
-                if not any(item in {"daemon-supervisor", "daemon-worker"} for item in command):
-                    continue
-                _candidate(process.info.get("exe") or process.exe())
-            except (OSError, TypeError, ValueError, psutil.Error):
-                continue
-    except (OSError, psutil.Error):
-        pass
+    # Only a process running this exact installation, never another DKG node
+    # (daemon.pid alone can name a dead auto-spawned daemon, KI-312).
+    for process in node_process.managed_daemons(cfg):
+        try:
+            _candidate((getattr(process, "info", None) or {}).get("exe") or process.exe())
+        except (OSError, psutil.Error):
+            continue
 
     marker = Path(cfg.dkg_home) / ".blackbox-node-path"
     try:
@@ -244,11 +229,8 @@ def expected_node_settings(cfg: BlackboxConfig) -> Dict[str, str]:
 
 
 def _daemon_pid(cfg: BlackboxConfig) -> Optional[int]:
-    """The managed node's PID from its pidfile, or None."""
-    try:
-        return int((Path(cfg.dkg_home) / "daemon.pid").read_text(encoding="utf-8").strip())
-    except (OSError, TypeError, ValueError):
-        return None
+    """The managed node's live daemon pid (never a stale daemon.pid, KI-312), or None."""
+    return node_process.managed_daemon_pid(cfg)
 
 
 def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
@@ -263,15 +245,7 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
     """
     env = _dkg_sync_environment(cfg)
     command = str(cfg.dkg_bin)
-    old_pid: Optional[int] = None
-    try:
-        old_pid = int(
-            (Path(cfg.dkg_home) / "daemon.pid")
-            .read_text(encoding="utf-8")
-            .strip()
-        )
-    except (OSError, TypeError, ValueError):
-        pass
+    old_pid = _daemon_pid(cfg)
     unit = _systemd_unit_of(old_pid) if old_pid is not None else None
     if unit is not None:
         try:
@@ -307,17 +281,7 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
         stopped = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
         stop_deadline = time.monotonic() + 45
         while time.monotonic() < stop_deadline:
-            pid_running = False
-            if old_pid is not None:
-                try:
-                    process = psutil.Process(old_pid)
-                    command_line = [str(item) for item in process.cmdline()]
-                    pid_running = process.is_running() and any(
-                        item in {"daemon-worker", "daemon-supervisor"}
-                        for item in command_line
-                    )
-                except (OSError, psutil.Error):
-                    pid_running = False
+            pid_running = old_pid is not None and node_process.is_managed_daemon(cfg, old_pid)
             if not pid_running and not stopped.reachable(timeout=0.5):
                 break
             time.sleep(0.5)
@@ -327,16 +291,7 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
         # A forced worker exit can leave its PID file behind. Remove it only
         # after proving that exact managed process is no longer alive.
         if old_pid is not None:
-            try:
-                process = psutil.Process(old_pid)
-                command_line = [str(item) for item in process.cmdline()]
-                still_managed = process.is_running() and any(
-                    item in {"daemon-worker", "daemon-supervisor"}
-                    for item in command_line
-                )
-            except (OSError, psutil.Error):
-                still_managed = False
-            if not still_managed:
+            if not node_process.is_managed_daemon(cfg, old_pid):
                 try:
                     (Path(cfg.dkg_home) / "daemon.pid").unlink()
                 except FileNotFoundError:
