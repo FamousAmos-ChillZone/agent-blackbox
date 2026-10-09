@@ -601,7 +601,8 @@
   .health-item .h-todo { color: var(--muted); }
   /* Verified-sync meter: how much of the verified graph this node holds,
      measured against the graph's real size (GET /api/verified-sync). */
-  .vs-section { margin-top: 32px; }
+  .vs-inset { border-bottom: 1px solid var(--border); }
+  .vs-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
   .vs-panel { display: flex; align-items: center; gap: 28px; padding: 22px 26px; }
   .vs-ring { position: relative; flex: 0 0 132px; width: 132px; height: 132px; }
   .vs-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
@@ -613,7 +614,6 @@
   .vs-ring-label { font-family: var(--mono-font); font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
   .vs-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
   .vs-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .vs-head h2 { margin: 0; }
   .vs-chip { font-family: var(--mono-font); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--muted-strong); }
   .vs-panel[data-state="syncing"] .vs-chip { border-color: var(--signal); color: var(--signal); background: var(--signal-soft); }
   .vs-panel[data-state="synced"] .vs-chip { border-color: var(--graph-mint); color: var(--graph-mint); }
@@ -2844,38 +2844,6 @@
 
   <div class="wrap">
 
-    <!-- Verified-sync meter: % of the verified threat graph's real size this node holds. -->
-    <section class="section vs-section" id="verified-sync" aria-label="Verified threat graph sync">
-      <div class="panel vs-panel" id="vs-panel" data-state="unknown">
-        <div class="vs-ring" role="img" id="vs-ring" aria-label="Verified threat graph sync progress">
-          <svg viewBox="0 0 120 120" aria-hidden="true">
-            <circle class="vs-track" cx="60" cy="60" r="52"></circle>
-            <circle class="vs-arc" id="vs-arc" cx="60" cy="60" r="52" stroke-dasharray="326.73" stroke-dashoffset="326.73"></circle>
-          </svg>
-          <div class="vs-ring-text"><span class="vs-pct" id="vs-pct">&mdash;</span><span class="vs-ring-label">protected</span></div>
-        </div>
-        <div class="vs-body">
-          <div class="vs-head"><h2>Verified threat graph</h2><span class="vs-chip" id="vs-chip">checking</span></div>
-          <div class="vs-note" id="vs-note" aria-live="polite">Reading the node&hellip;</div>
-          <div class="vs-bar-row" title="Verified assets your node has downloaded and verified, of every asset in the graph right now.">
-            <span class="vs-bar-label">Downloaded</span>
-            <div class="vs-bar"><div class="vs-fill" id="vs-fill-downloaded"></div></div>
-            <span class="vs-bar-val" id="vs-val-downloaded">&mdash;</span>
-          </div>
-          <div class="vs-bar-row" title="Verified assets already turned into blocking rules on this machine.">
-            <span class="vs-bar-label">Compiled to rules</span>
-            <div class="vs-bar"><div class="vs-fill" id="vs-fill-compiled"></div></div>
-            <span class="vs-bar-val" id="vs-val-compiled">&mdash;</span>
-          </div>
-          <dl class="vs-facts">
-            <div><dt>Graph size</dt><dd id="vs-graph-assets">&mdash;</dd></div>
-            <div><dt>Triples held</dt><dd id="vs-triples">&mdash;</dd></div>
-            <div><dt>Verified rules</dt><dd id="vs-rules">&mdash;</dd></div>
-          </dl>
-        </div>
-      </div>
-    </section>
-
     <!-- Connected agents -->
     <section class="section" aria-label="Connected agents">
       <div class="section-head agents-head">
@@ -2982,6 +2950,35 @@
         </div>
       </div>
       <div class="panel" id="graph-panel">
+        <!-- Verified-sync meter: % of the verified graph's real size this node holds; the one progress display. -->
+        <div class="vs-panel vs-inset" id="vs-panel" data-state="unknown" role="region" aria-label="Verified threat graph sync">
+          <div class="vs-ring" role="img" id="vs-ring" aria-label="Verified threat graph sync progress">
+            <svg viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="vs-track" cx="60" cy="60" r="52"></circle>
+              <circle class="vs-arc" id="vs-arc" cx="60" cy="60" r="52" stroke-dasharray="326.73" stroke-dashoffset="326.73"></circle>
+            </svg>
+            <div class="vs-ring-text"><span class="vs-pct" id="vs-pct">&mdash;</span><span class="vs-ring-label">protected</span></div>
+          </div>
+          <div class="vs-body">
+            <div class="vs-head"><h3>Verified graph sync</h3><span class="vs-chip" id="vs-chip">checking</span></div>
+            <div class="vs-note" id="vs-note" aria-live="polite">Reading the node&hellip;</div>
+            <div class="vs-bar-row" title="Verified assets your node has downloaded and verified, of every asset in the graph right now.">
+              <span class="vs-bar-label">Downloaded</span>
+              <div class="vs-bar"><div class="vs-fill" id="vs-fill-downloaded"></div></div>
+              <span class="vs-bar-val" id="vs-val-downloaded">&mdash;</span>
+            </div>
+            <div class="vs-bar-row" title="Verified assets already turned into blocking rules on this machine.">
+              <span class="vs-bar-label">Compiled to rules</span>
+              <div class="vs-bar"><div class="vs-fill" id="vs-fill-compiled"></div></div>
+              <span class="vs-bar-val" id="vs-val-compiled">&mdash;</span>
+            </div>
+            <dl class="vs-facts">
+              <div><dt>Graph size</dt><dd id="vs-graph-assets">&mdash;</dd></div>
+              <div><dt>Triples held</dt><dd id="vs-triples">&mdash;</dd></div>
+              <div><dt>Verified rules</dt><dd id="vs-rules">&mdash;</dd></div>
+            </dl>
+          </div>
+        </div>
         <div class="sync-progress indeterminate" id="sync-progress" aria-live="polite" hidden>
           <div class="sync-progress-head">
             <span class="sync-progress-title"><span class="bb-loader" id="sync-progress-loader"></span><span id="sync-progress-title">Syncing threat graph</span></span>
@@ -3441,9 +3438,12 @@
     // backend status intact, but prefer the count and graph already available
     // in this read-only dashboard. With no VM data, the error stays visible.
     var hasQueryableVm = Number(graphTotalForTier("public") || 0) > 0;
+    // Progress is the verified-sync meter's job; this panel now speaks only when
+    // something needs the operator: not subscribed, or failed/offline with no rules.
+    var meter = $("vs-panel");
+    if (meter) meter.hidden = activeTier !== "public";
     var visible = activeTier === "public" && (
-      status === "running" || status === "waiting" || status === "not-subscribed" ||
-      ((status === "failed" || status === "offline") && !hasQueryableVm)
+      status === "not-subscribed" || ((status === "failed" || status === "offline") && !hasQueryableVm)
     );
     panel.hidden = !visible;
     if (!visible) return;
