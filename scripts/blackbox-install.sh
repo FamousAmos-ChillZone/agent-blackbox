@@ -188,7 +188,7 @@ prepare_blackbox_dkg_process_environment() {
     # relaunch with the same limits (sync/process_limits.py). Not fatal: without
     # the record those restarts use the same defaults computed again.
     if ! "$VENV_DIR/bin/python" "$helper" write-limits "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_NODE_OPTIONS" \
-        "$BLACKBOX_DKG_STORE_QUEUE_LIMIT" "$BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION" >/dev/null; then
+        "$BLACKBOX_DKG_STORE_QUEUE_LIMIT" >/dev/null; then
         warn "Could not record the DKG node limits; Blackbox restarts will recompute them."
     fi
     ok "DKG safety limits: one large sync at a time; V8 heap ${heap_mb}MB"
@@ -1589,7 +1589,7 @@ dkg_manual_hint() {
     echo "      export BLACKBOX_DKG_STORE_URL=\"$BLACKBOX_DKG_STORE_URL\""
     echo "      export BLACKBOX_DKG_DAEMON_URL=\"$BLACKBOX_DKG_DAEMON_URL\""
     echo "      # create config.json/auth.token as in scripts/blackbox-install.sh, then:"
-    echo "      NODE_OPTIONS=\"$BLACKBOX_DKG_NODE_OPTIONS\" DKG_HOME=\"\$BLACKBOX_DKG_HOME\" DKG_SYNC_GLOBAL_MAX_INFLIGHT=\"$BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT\" DKG_STORE_QUEUE_LIMIT=\"$BLACKBOX_DKG_STORE_QUEUE_LIMIT\" DKG_LIST_CONTEXT_GRAPHS_PROJECTION=\"$BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION\" DKG_EXACT_BATCH_STREAM_ENABLED=\"$BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED\" DKG_VM_RECOVERY_PREFETCH_ENABLED=\"$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED\" \"\$BLACKBOX_DKG_BIN\" start"
+    echo "      NODE_OPTIONS=\"$BLACKBOX_DKG_NODE_OPTIONS\" DKG_HOME=\"\$BLACKBOX_DKG_HOME\" DKG_SYNC_GLOBAL_MAX_INFLIGHT=\"$BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT\" DKG_STORE_QUEUE_LIMIT=\"$BLACKBOX_DKG_STORE_QUEUE_LIMIT\" DKG_EXACT_BATCH_STREAM_ENABLED=\"$BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED\" DKG_VM_RECOVERY_PREFETCH_ENABLED=\"$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED\" \"\$BLACKBOX_DKG_BIN\" start"
     echo "      # then re-run:  blackbox sync --wait --require-rules"
 }
 
@@ -2042,11 +2042,12 @@ Environment=DKG_SYNC_ON_CONNECT_ENABLED=1
 Environment=DKG_EXACT_BATCH_STREAM_ENABLED=$BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED
 Environment=DKG_VM_RECOVERY_PREFETCH_ENABLED=$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED
 # The node's safety limits are ALSO environment-only (no config.json key): the
-# V8 heap cap, the store queue limit and the graph-list projection. Without
-# them a reboot brings the node back on Node's ~4 GB default heap (KI-308).
+# V8 heap cap and the store queue limit. Without them a reboot brings the node
+# back on Node's ~4 GB default heap (KI-308). The graph-list projection is NOT
+# set here: it is install-time only — with it on, the running node's listing
+# omits the verified graph and Blackbox reads it as "not subscribed".
 Environment="NODE_OPTIONS=$BLACKBOX_DKG_NODE_OPTIONS"
 Environment=DKG_STORE_QUEUE_LIMIT=$BLACKBOX_DKG_STORE_QUEUE_LIMIT
-Environment=DKG_LIST_CONTEXT_GRAPHS_PROJECTION=$BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION
 # Clear any orphaned daemon before starting: DKG CLI commands auto-spawn a
 # detached daemon when none is running; that orphan holds daemon.pid and
 # would crash-loop this unit forever ("Daemon already running", KI-045).
@@ -2089,7 +2090,6 @@ UNIT
     <key>DKG_VM_RECOVERY_PREFETCH_ENABLED</key><string>$(xml_escape "$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED")</string>
     <key>NODE_OPTIONS</key><string>$(xml_escape "$BLACKBOX_DKG_NODE_OPTIONS")</string>
     <key>DKG_STORE_QUEUE_LIMIT</key><string>$(xml_escape "$BLACKBOX_DKG_STORE_QUEUE_LIMIT")</string>
-    <key>DKG_LIST_CONTEXT_GRAPHS_PROJECTION</key><string>$(xml_escape "$BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION")</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>

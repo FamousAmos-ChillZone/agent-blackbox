@@ -255,7 +255,7 @@ function Initialize-BlackboxDkgProcessEnvironment {
     $script:DkgNodeOptions = "$($nodeOptionsOutput | Select-Object -Last 1)".Trim()
     # Record them so Blackbox's own node restarts relaunch with the same limits
     # (sync/process_limits.py). Not fatal: without the record they are recomputed.
-    $limitsOutput = @(& $script:VenvPython $helper write-limits $DkgHome $script:DkgNodeOptions "$DkgStoreQueueLimit" "$DkgListContextGraphsProjection" 2>&1)
+    $limitsOutput = @(& $script:VenvPython $helper write-limits $DkgHome $script:DkgNodeOptions "$DkgStoreQueueLimit" 2>&1)
     if ($LASTEXITCODE -ne 0) {
         if ($limitsOutput) { $limitsOutput | ForEach-Object { Write-Warn2 "$_" } }
         Write-Warn2 "Could not record the DKG node limits; Blackbox restarts will recompute them."
@@ -1235,7 +1235,6 @@ function Show-DkgManualHint {
     Write-Host "      `$env:NODE_OPTIONS = `"$($script:DkgNodeOptions)`""
     Write-Host "      `$env:DKG_SYNC_GLOBAL_MAX_INFLIGHT = `"$DkgSyncGlobalMaxInflight`""
     Write-Host "      `$env:DKG_STORE_QUEUE_LIMIT = `"$DkgStoreQueueLimit`""
-    Write-Host "      `$env:DKG_LIST_CONTEXT_GRAPHS_PROJECTION = `"$DkgListContextGraphsProjection`""
     Write-Host "      & `$env:BLACKBOX_DKG_BIN start"
     Write-Host "      # then re-run:  blackbox sync --wait --require-rules"
 }
@@ -1561,7 +1560,9 @@ function New-BlackboxDkgLauncherLines {
     # The node launcher's lines. Connection-time sync stays ON (it delivers
     # context-graph authority to subscribers, KI-044); the periodic reconciler is
     # left to config.json, as in the Linux unit; the stream/prefetch switches and
-    # the installer's safety limits ride along (KI-282).
+    # the installer's safety limits ride along (KI-282). The graph-list projection
+    # stays install-time only: with it on, the running node's listing omits the
+    # verified graph and Blackbox reads it as "not subscribed".
     param([string]$NodeDir = "")
     $lines = @(
         "# managed-by: agent-blackbox-installer -- starts the Blackbox DKG node at sign-in; rewritten on every install.",
@@ -1569,7 +1570,6 @@ function New-BlackboxDkgLauncherLines {
         "`$env:DKG_SYNC_ON_CONNECT_ENABLED = '1'",
         "`$env:DKG_DURABLE_SYNC_ENABLED = $(ConvertTo-PsLiteral $script:DkgDurableSyncEnabled)",
         "`$env:DKG_STORE_QUEUE_LIMIT = $(ConvertTo-PsLiteral "$DkgStoreQueueLimit")",
-        "`$env:DKG_LIST_CONTEXT_GRAPHS_PROJECTION = $(ConvertTo-PsLiteral "$DkgListContextGraphsProjection")",
         "`$env:DKG_EXACT_BATCH_STREAM_ENABLED = $(ConvertTo-PsLiteral "$DkgExactBatchStreamEnabled")",
         "`$env:DKG_VM_RECOVERY_PREFETCH_ENABLED = $(ConvertTo-PsLiteral "$DkgVmRecoveryPrefetchEnabled")"
     )
