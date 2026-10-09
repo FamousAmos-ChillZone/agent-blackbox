@@ -139,6 +139,9 @@ jobs:
           # Workers above the core count only add contention.
           # On the standard 4-core runner: one worker per core (fastest per the table above).
           HERMES_TEST_WORKERS: 4
+          # Per-file limit. The 300 s default is sized for the 96-core runner; on 4 cores
+          # tests/agent/test_run_agent.py (294 tests) was killed at 14% (PR #23 CI).
+          HERMES_TEST_FILE_TIMEOUT: 1200
           # Ensure tests don't accidentally call real APIs
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""
