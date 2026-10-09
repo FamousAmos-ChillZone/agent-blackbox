@@ -2,7 +2,7 @@
  * Cross-language identifier PARITY test.
  *
  * Asserts the TypeScript integration reproduces the canonical Python
- * `plugins/blackbox/quads.py` byte-for-byte, using the shared ground-truth
+ * `plugins/blackbox/kernel/threat_ids.py` + `detection/` (formerly `quads.py`) byte-for-byte, using the shared ground-truth
  * fixture `tests/parity/identifier_fixtures.json`. If any group fails the
  * cross-framework threat-graph flywheel would silently break (the same threat
  * seen by Hermes and OpenClaw would get different IDs → no correlation).
@@ -41,6 +41,8 @@ import {
 import { __resetRegistrationGuardForTests, register } from "../src/index.ts";
 import { RulesetCache, skillNameFromTitle } from "../src/ruleset.ts";
 import { DkgClient } from "../src/dkgClient.ts";
+import { evidenceFor } from "../src/reportEvidence.ts";
+import { normalizeIocValue as normalizeIocValueParity } from "../src/quads.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturePath = join(here, "../../../tests/parity/identifier_fixtures.json");
@@ -113,11 +115,32 @@ function eq(a, b) {
   report("identifiers", ok, mismatches.join("\n"));
 }
 
+// --- IOC value canonicalisation (KI-193: IPv6 joins IPv4) -------------------
+{
+  let ok = true;
+  const mismatches = [];
+  for (const c of fixture.iocValues || []) {
+    const got = normalizeIocValueParity(c.type, c.in);
+    if (got !== c.canonical) {
+      ok = false;
+      mismatches.push(`  ${c.type} ${JSON.stringify(c.in)} got=${got} want=${c.canonical}`);
+    }
+  }
+  report("iocValues", ok, mismatches.join("\n"));
+}
+
 // --- reportUris -------------------------------------------------------------
 {
   let ok = true;
   const mismatches = [];
   for (const c of fixture.reportUris) {
+    if (!c.reporter.trim()) {
+      // LES-003 (Refine R0, KI-182 port): a blank reporter is REFUSED in both runtimes — no "anonymous".
+      let threw = false;
+      try { reportUri(c.identifier, c.reporter); } catch { threw = true; }
+      if (!threw) { ok = false; mismatches.push(`  ${c.identifier} / "" was accepted; both runtimes must refuse a blank reporter`); }
+      continue;
+    }
     const got = reportUri(c.identifier, c.reporter);
     if (got !== c.reportUri) {
       ok = false;
@@ -446,10 +469,12 @@ report("dependencyParses", ok, mismatches.join("\n"));
 
 // --- routine visibility parsing -------------------------------------------
 {
+  // no-tmp: ok — parser input / expected output strings; nothing is written to /tmp
   const reads = parseShellReads("cat ~/.ssh/id_rsa ./notes.txt | head -n 2 /tmp/out.log");
   const downloads = parseDownloads("curl https://example.test/a.tgz && wget 'https://cdn.test/b.zip'");
   report(
     "activity visibility parses",
+    // no-tmp: ok — parser input / expected output strings; nothing is written to /tmp
     eq(reads, ["~/.ssh/id_rsa", "./notes.txt", "/tmp/out.log"]) &&
       eq(downloads, ["https://example.test/a.tgz", "https://cdn.test/b.zip"]),
     `reads=${JSON.stringify(reads)} downloads=${JSON.stringify(downloads)}`,
@@ -458,6 +483,7 @@ report("dependencyParses", ok, mismatches.join("\n"));
 
 // --- native OpenClaw file-tool aliases ------------------------------------
 {
+  // no-tmp: ok — parser input / expected output strings; nothing is written to /tmp
   const findings = detectFileaccess("read", { path: "/tmp/test/.env" }, emptyRuleset());
   const benign = ["~/.ssh/config", ".env.example", "src/components/Cookies"]
     .flatMap((path) => detectFileaccess("read", { path }, emptyRuleset()));
@@ -496,27 +522,10 @@ report("dependencyParses", ok, mismatches.join("\n"));
   const mismatches = [];
   for (const c of fixture.reportQuads) {
     const i = c.in;
-    const quads = buildReportQuads({
-      identifier: i.identifier,
-      category: i.category,
-      severity: i.severity,
-      reporter: i.reporter_address,
-      framework: i.framework,
-      candidate: {
-        pattern: i.pattern,
-        owaspCategory: i.owasp_category,
-        toolName: i.tool_name,
-        argShape: i.arg_shape,
-        packageName: i.package_name,
-        packageVersion: i.package_version,
-        packageEcosystem: i.ecosystem,
-        advisoryId: i.advisory_id,
-        fileCategory: i.file_category,
-        skillName: i.skill_name,
-        skillVersion: i.skill_version,
-        dangerShape: i.danger_shape,
-      },
-    });
+    // Refine R1 (KI-182 port): the fixture's `in` carries the Python builder keywords;
+    // everything but the core fields is R1 evidence.
+    const { identifier, category, severity, reporter_address, framework, ...evidence } = i;
+    const quads = buildReportQuads({ identifier, category, severity, reporter: reporter_address, framework, evidence });
     const got = sortQuads(quads);
     const want = sortQuads(c.quadsNoDate);
     if (!eq(got, want)) {
@@ -564,16 +573,18 @@ report("dependencyParses", ok, mismatches.join("\n"));
   let transportOk = false;
   try {
     if (findingA) {
+      // Refine R1 (KI-182 port): evidence comes from the hook (here: user text → in-user-prompt),
+      // never from the text; the pattern is dropped on the way. A real agent address is required.
       const quads = buildReportQuads({
         identifier: findingA.identifier,
         category: findingA.category,
         severity: findingA.severity,
-        reporter: "0xprivacytest",
+        reporter: "0x" + "ab".repeat(20),
         framework: "openclaw",
-        candidate: findingA.fields,
+        evidence: evidenceFor(findingA, "message_received"),
       });
       const client = new DkgClient({ url: "http://blackbox.test", token: "test-token" });
-      await client.shareKnowledgeAsset("privacy-test", "report-privacy-test", quads);
+      await client.shareReport("privacy-test", "report-privacy-test", quads);
       transportOk = true;
     }
   } finally {

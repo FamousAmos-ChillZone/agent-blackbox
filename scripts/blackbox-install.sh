@@ -71,9 +71,19 @@ BLACKBOX_DKG_DURABLE_SYNC_ENABLED="${BLACKBOX_DKG_DURABLE_SYNC_ENABLED:-1}"
 BLACKBOX_DKG_CATCHUP_MAX_CONCURRENT_PEERS="1"
 BLACKBOX_DKG_STORE_QUEUE_WAIT_TIMEOUT_MS="300000"
 BLACKBOX_DKG_NODE_OPTIONS=""
+# DKG 10.0.21+ recovery speed-ups (KI-282), both off by default in the node. The exact
+# batch stream is read ONLY from the environment, so every launch path below passes it.
+BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED="${BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED:-1}"
+BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED="${BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED:-1}"
 NODE_MAJOR="${BLACKBOX_NODE_MAJOR:-22}"
-BLACKBOX_CONTEXT_GRAPH_ID="${BLACKBOX_CONTEXT_GRAPH_ID:-0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm}"
+BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID="0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"
+BLACKBOX_CONTEXT_GRAPH_ID="${BLACKBOX_CONTEXT_GRAPH_ID:-$BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID}"
 BLACKBOX_GRAPH_PEER_ID="${BLACKBOX_GRAPH_PEER_ID:-12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyKndHXjZM}"
+# Community graph + the peer id of the node that OWNS it (its read authority).
+# Set as a PAIR: an unregistered public graph cannot be found by a fresh node
+# until it is connected to the owner (KI-216). Empty = community layer dormant.
+BLACKBOX_COMMUNITY_GRAPH_ID="${BLACKBOX_COMMUNITY_GRAPH_ID:-}"
+BLACKBOX_COMMUNITY_GRAPH_PEER_ID="${BLACKBOX_COMMUNITY_GRAPH_PEER_ID:-}"
 BLACKBOX_DKG_CATCHUP_TIMEOUT="${BLACKBOX_DKG_CATCHUP_TIMEOUT:-3600}"
 BLACKBOX_LLM_PROVIDER="${BLACKBOX_LLM_PROVIDER:-}"
 BLACKBOX_LLM_MODEL="${BLACKBOX_LLM_MODEL:-}"
@@ -174,6 +184,13 @@ prepare_blackbox_dkg_process_environment() {
         warn "Could not prepare Node.js options for the DKG daemon."
         return 1
     fi
+    # Record them so Blackbox's own node restarts (blackbox sync, the dashboard)
+    # relaunch with the same limits (sync/process_limits.py). Not fatal: without
+    # the record those restarts use the same defaults computed again.
+    if ! "$VENV_DIR/bin/python" "$helper" write-limits "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_NODE_OPTIONS" \
+        "$BLACKBOX_DKG_STORE_QUEUE_LIMIT" "$BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION" >/dev/null; then
+        warn "Could not record the DKG node limits; Blackbox restarts will recompute them."
+    fi
     ok "DKG safety limits: one large sync at a time; V8 heap ${heap_mb}MB"
 }
 
@@ -200,6 +217,8 @@ blackbox_dkg() {
     DKG_STORE_QUEUE_WAIT_TIMEOUT_MS="$BLACKBOX_DKG_STORE_QUEUE_WAIT_TIMEOUT_MS" \
     DKG_SYNC_TOTAL_TIMEOUT_MS="1800000" \
     DKG_SWM_RECOVERY_TIMEOUT_MS="3600000" \
+    DKG_EXACT_BATCH_STREAM_ENABLED="$BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED" \
+    DKG_VM_RECOVERY_PREFETCH_ENABLED="$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED" \
     NODE_OPTIONS="$BLACKBOX_DKG_NODE_OPTIONS" \
     "$BLACKBOX_DKG_BIN" "$@"
 }
@@ -666,7 +685,7 @@ reset_fresh_managed_blazegraph() {
 
 ensure_blackbox_dkg_config() {
     local config_state
-    config_state="$("$VENV_DIR/bin/python" - "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_PORT" "$BLACKBOX_DKG_SELECTED_STORE_BACKEND" "$BLACKBOX_DKG_STORE_URL" "$BLACKBOX_DKG_STORE_MANAGED_BY_DKG" "$BLACKBOX_CONTEXT_GRAPH_ID" <<'PYEOF'
+    config_state="$("$VENV_DIR/bin/python" - "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_PORT" "$BLACKBOX_DKG_SELECTED_STORE_BACKEND" "$BLACKBOX_DKG_STORE_URL" "$BLACKBOX_DKG_STORE_MANAGED_BY_DKG" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID" <<'PYEOF'
 import json
 import os
 import secrets
@@ -680,6 +699,9 @@ store_backend = sys.argv[3]
 store_url = sys.argv[4]
 store_managed = sys.argv[5].lower() == "true"
 context_graph_id = sys.argv[6]
+# Absent (an older caller): no graph is treated as the default, so the
+# steady profile stays exactly as before.
+default_context_graph_id = sys.argv[7] if len(sys.argv) > 7 else ""
 home.mkdir(parents=True, exist_ok=True)
 cfg_path = home / "config.json"
 original = None
@@ -716,8 +738,16 @@ data["relayReservationCount"] = int(data.get("relayReservationCount") or 4)
 # foreground pinned catch-up runs before a fresh install subscribes, while an
 # upgrade must not interrupt an existing checkpointed transfer.
 data["syncOnConnectEnabled"] = True
-data["syncReconcilerEnabled"] = True
 data["durableSyncEnabled"] = True
+# Umanitek's default graph uses the DKG 10.0.21 native profile (KI-282, the same
+# profile `blackbox sync` persists in sync/managed_node.py): the node's VM
+# reconciler recovers the graph and the older sync reconciler stays off so it
+# does not compete for the single sync slot. Any other graph keeps the steady one.
+native_profile = context_graph_id == default_context_graph_id
+data["syncReconcilerEnabled"] = not native_profile
+if native_profile:
+    data["vmReconcilerEnabled"] = True
+    data["vmRecoveryPrefetchEnabled"] = True
 data.pop("syncAgentsMeta", None)
 data["syncGlobalMaxInflight"] = 1
 data["syncGlobalQueueLimit"] = 0
@@ -813,6 +843,7 @@ Environment overrides:
   BLACKBOX_DKG_DAEMON_URL, BLACKBOX_DKG_CATCHUP_TIMEOUT,
   BLACKBOX_DKG_STORE_QUEUE_LIMIT, BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION,
   BLACKBOX_CONTEXT_GRAPH_ID, BLACKBOX_GRAPH_PEER_ID,
+  BLACKBOX_COMMUNITY_GRAPH_ID, BLACKBOX_COMMUNITY_GRAPH_PEER_ID (set as a pair),
   BLACKBOX_LLM_PROVIDER,
   BLACKBOX_LLM_MODEL, BLACKBOX_LLM_KEY_SOURCE, BLACKBOX_LLM_API_KEY,
   BLACKBOX_HERMES_SETUP=reuse|always|never, BLACKBOX_AUTO_DASHBOARD=0|1,
@@ -894,16 +925,41 @@ resolve_repo() {
     fi
     if blackbox_repo_is_valid "$REPO_DIR"; then
         step "Updating existing clone at $REPO_DIR"
+        # The clone is single-branch and shallow: its fetch rule names only the
+        # branch it was cloned from, so a DIFFERENT branch would land only in
+        # FETCH_HEAD and could be neither checked out nor tracked (KI-287).
+        # Adding the branch to the rule (once) makes it a normal remote branch.
+        local branch_rule="+refs/heads/$REPO_BRANCH:refs/remotes/origin/$REPO_BRANCH"
+        if ! git -C "$REPO_DIR" config --get-all remote.origin.fetch | grep -qxF -- "$branch_rule"; then
+            git -C "$REPO_DIR" remote set-branches --add origin "$REPO_BRANCH"
+        fi
+        # What this install last fetched: when HEAD still equals it, the install
+        # holds no commits of its own (KI-294).
+        local fetched_before=""
+        if git -C "$REPO_DIR" rev-parse -q --verify "refs/remotes/origin/$REPO_BRANCH" >/dev/null 2>&1; then
+            fetched_before="$(git -C "$REPO_DIR" rev-parse "refs/remotes/origin/$REPO_BRANCH")"
+        fi
         if ! git -C "$REPO_DIR" fetch --depth 1 origin "$REPO_BRANCH"; then
             err "Could not fetch $REPO_BRANCH from $REPO_URL."
             return 1
         fi
         if ! git -C "$REPO_DIR" checkout "$REPO_BRANCH"; then
-            err "Could not check out $REPO_BRANCH in $REPO_DIR. Resolve local changes and re-run."
+            err "Could not switch $REPO_DIR to $REPO_BRANCH (git's reason is above)."
             return 1
         fi
-        if ! git -C "$REPO_DIR" pull --ff-only origin "$REPO_BRANCH"; then
-            err "Could not fast-forward $REPO_DIR to origin/$REPO_BRANCH."
+        # A depth-1 fetch brings the new tip WITHOUT its parent, so git cannot
+        # see that it follows the installed commit and `pull --ff-only` refuses
+        # every update (KI-294). When the install holds no work of its own
+        # (HEAD is what it last fetched), move to the new tip; --keep still
+        # refuses to overwrite uncommitted changes. Otherwise keep the strict
+        # fast-forward, which stops with git's reason instead of losing work.
+        if [ -n "$fetched_before" ] && [ "$(git -C "$REPO_DIR" rev-parse HEAD)" = "$fetched_before" ]; then
+            if ! git -C "$REPO_DIR" reset -q --keep "refs/remotes/origin/$REPO_BRANCH"; then
+                err "Could not update $REPO_DIR to origin/$REPO_BRANCH: it has uncommitted changes (git's reason is above)."
+                return 1
+            fi
+        elif ! git -C "$REPO_DIR" pull --ff-only origin "$REPO_BRANCH"; then
+            err "Could not fast-forward $REPO_DIR to origin/$REPO_BRANCH: it holds local commits (git's reason is above)."
             return 1
         fi
     else
@@ -1059,11 +1115,11 @@ ensure_web_extra() {
         return 0
     fi
     step "Installing dashboard extras (.[web]) …"
-    local installed=false
-    if command -v uv >/dev/null 2>&1; then
-        ( cd "$REPO_DIR" && VIRTUAL_ENV="$VENV_DIR" uv pip install -e ".[web]" >/dev/null 2>&1 ) && installed=true
+    local installed=false uv_bin
+    if uv_bin="$(find_uv)"; then
+        ( cd "$REPO_DIR" && VIRTUAL_ENV="$VENV_DIR" "$uv_bin" pip install -e ".[web]" >/dev/null 2>&1 ) && installed=true
     fi
-    if [ "$installed" != true ]; then
+    if [ "$installed" != true ] && ensure_venv_pip "$VENV_DIR"; then
         ( cd "$REPO_DIR" && "$VENV_DIR/bin/python" -m pip install -e ".[web]" >/dev/null 2>&1 ) && installed=true
     fi
     if [ "$installed" = true ] && "$VENV_DIR/bin/python" -c "import fastapi, uvicorn" >/dev/null 2>&1; then
@@ -1071,6 +1127,27 @@ ensure_web_extra() {
     else
         warn "Dashboard extras unavailable — 'blackbox dashboard' may not start. Retry: (cd $REPO_DIR && uv pip install -e '.[web]')"
     fi
+}
+
+# uv as setup-hermes.sh installs it: on PATH, or in ~/.local/bin / ~/.cargo/bin,
+# which the installer's own PATH may not include yet (KI-042). Prints the path.
+find_uv() {
+    if command -v uv >/dev/null 2>&1; then command -v uv; return 0; fi
+    local candidate
+    for candidate in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do
+        if [ -x "$candidate" ]; then printf '%s\n' "$candidate"; return 0; fi
+    done
+    return 1
+}
+
+# A uv-built venv ships no pip, so `python -m pip` fails with "No module named
+# pip" and the install stops (KI-042, every fresh Ubuntu 24.04 bench). Bootstrap
+# pip from the interpreter's own bundled copy (offline) before using it.
+ensure_venv_pip() {
+    local venv="$1"
+    if "$venv/bin/python" -m pip --version >/dev/null 2>&1; then return 0; fi
+    step "This environment has no pip yet; bootstrapping it (ensurepip) ..."
+    "$venv/bin/python" -m ensurepip --upgrade >/dev/null
 }
 
 minimal_python_env() {
@@ -1090,9 +1167,11 @@ minimal_python_env() {
     fi
     step "Installing Hermes + Agent Blackbox (web extras, editable) ..."
     # A uv-built venv ships no pip, so install with uv when it's available.
-    if command -v uv >/dev/null 2>&1; then
-        ( cd "$REPO_DIR" && VIRTUAL_ENV="$VENV_DIR" uv pip install -e ".[web]" )
+    local uv_bin
+    if uv_bin="$(find_uv)"; then
+        ( cd "$REPO_DIR" && VIRTUAL_ENV="$VENV_DIR" "$uv_bin" pip install -e ".[web]" )
     else
+        ensure_venv_pip "$VENV_DIR"
         "$VENV_DIR/bin/python" -m pip install --upgrade pip >/dev/null
         ( cd "$REPO_DIR" && "$VENV_DIR/bin/python" -m pip install -e ".[web]" )
     fi
@@ -1327,7 +1406,7 @@ install_blackbox_dkg_package() {
         warn "Could not determine the installed DKG package version."
         return 1
     fi
-    if ! "$VENV_DIR/bin/python" -m plugins.blackbox.dkg_version "$installed_version"; then
+    if ! "$VENV_DIR/bin/python" -m plugins.blackbox.kernel.dkg_version "$installed_version"; then
         warn "DKG $installed_version is too old for direct verified Blackbox recovery; version 10.0.9+ is required."
         return 1
     fi
@@ -1510,7 +1589,7 @@ dkg_manual_hint() {
     echo "      export BLACKBOX_DKG_STORE_URL=\"$BLACKBOX_DKG_STORE_URL\""
     echo "      export BLACKBOX_DKG_DAEMON_URL=\"$BLACKBOX_DKG_DAEMON_URL\""
     echo "      # create config.json/auth.token as in scripts/blackbox-install.sh, then:"
-    echo "      NODE_OPTIONS=\"$BLACKBOX_DKG_NODE_OPTIONS\" DKG_HOME=\"\$BLACKBOX_DKG_HOME\" DKG_SYNC_GLOBAL_MAX_INFLIGHT=\"$BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT\" DKG_STORE_QUEUE_LIMIT=\"$BLACKBOX_DKG_STORE_QUEUE_LIMIT\" DKG_LIST_CONTEXT_GRAPHS_PROJECTION=\"$BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION\" \"\$BLACKBOX_DKG_BIN\" start"
+    echo "      NODE_OPTIONS=\"$BLACKBOX_DKG_NODE_OPTIONS\" DKG_HOME=\"\$BLACKBOX_DKG_HOME\" DKG_SYNC_GLOBAL_MAX_INFLIGHT=\"$BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT\" DKG_STORE_QUEUE_LIMIT=\"$BLACKBOX_DKG_STORE_QUEUE_LIMIT\" DKG_LIST_CONTEXT_GRAPHS_PROJECTION=\"$BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION\" DKG_EXACT_BATCH_STREAM_ENABLED=\"$BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED\" DKG_VM_RECOVERY_PREFETCH_ENABLED=\"$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED\" \"\$BLACKBOX_DKG_BIN\" start"
     echo "      # then re-run:  blackbox sync --wait --require-rules"
 }
 
@@ -1527,9 +1606,11 @@ enable_and_configure() {
     fi
 
     step "Writing plugins.entries.blackbox defaults to $HERMES_HOME/config.yaml ..."
-    if "$VENV_DIR/bin/python" - "$HERMES_HOME/config.yaml" "$DKG_NETWORK" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_GRAPH_PEER_ID" "$BLACKBOX_DKG_DAEMON_URL" "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_BIN" <<'PYEOF'
+    if "$VENV_DIR/bin/python" - "$HERMES_HOME/config.yaml" "$DKG_NETWORK" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_GRAPH_PEER_ID" "$BLACKBOX_DKG_DAEMON_URL" "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_BIN" "$BLACKBOX_COMMUNITY_GRAPH_ID" "$BLACKBOX_COMMUNITY_GRAPH_PEER_ID" "$REPO_DIR" <<'PYEOF'
 import sys, os
 cfg_path, network, context_graph_id, graph_peer_id, dkg_url, dkg_home, dkg_bin = sys.argv[1:8]
+# Optional (older callers pass seven arguments): the community graph + its owner peer id, and the checkout.
+community_graph_id, community_graph_peer_id, repo_dir = (sys.argv[8:11] + ["", "", ""])[:3]
 try:
     import yaml
 except Exception:
@@ -1598,16 +1679,24 @@ if current_graph in legacy_graphs:
 if not blackbox.get("graph_peer_id") or str(blackbox.get("graph_peer_id")) in legacy_peers:
     blackbox["graph_peer_id"] = graph_peer_id
     added.append("graph_peer_id")
+# The community graph and its owner's peer id travel as a pair (KI-216): the
+# installer env names them explicitly, so an explicit value always wins.
+if community_graph_id:
+    for key, value in (("community_graph_id", community_graph_id),
+                       ("community_graph_peer_id", community_graph_peer_id)):
+        if str(blackbox.get(key) or "") != value:
+            blackbox[key] = value
+            added.append(key)
 defaults = {
     "mode": "audit",
     "context_graph_id": context_graph_id,
     "graph_peer_id": graph_peer_id,
     "sync_interval": 3600,
-    # Community sharing has not shipped.  Keep fresh installs private, and
-    # make the obsolete outbound-report allowance inert for compatibility
-    # with older readers that still expect the key to exist.
+    # Community sharing has not shipped.  Keep fresh installs private.  The
+    # daily cap is the plugin's default bound (20): 0 used to mean NO cap,
+    # and the plugin no longer accepts it (Refine R1).
     "report": False,
-    "daily_report_limit": 0,
+    "daily_report_limit": 20,
     "report_min_severity": "high",
     "block_severity": "critical",
     "dashboard_port": 9700,
@@ -1618,12 +1707,27 @@ for k, v in defaults.items():
     if k not in blackbox:
         blackbox[k] = v
         added.append(k)
-# Migrate stale pre-release sharing settings too. The feature is closed at
-# runtime, so leaving an old opt-in in config is misleading even if inert.
-for k, v in {"report": False, "daily_report_limit": 0}.items():
-    if blackbox.get(k) != v:
-        blackbox[k] = v
-        added.append(k)
+# KI-184: an opt-in backed by a sharing-consent record (R13) SURVIVES every
+# re-run and upgrade. Only a pre-release opt-in — `report: true` with no consent
+# record in force — is migrated off, because sharing without consent is invalid
+# anyway. The product's own consent code decides (one implementation); if it
+# cannot be imported the answer is "no consent" (fail closed = sharing off).
+def _consent_in_force(checkout):
+    try:
+        if checkout:
+            sys.path.insert(0, checkout)
+        from plugins.blackbox.community import consent
+        return bool(consent.in_force())
+    except Exception:
+        return False
+if blackbox.get("report") is True and not _consent_in_force(repo_dir):
+    blackbox["report"] = False
+    added.append("report")
+# `daily_report_limit: 0` was the pre-R1 "no cap" and the plugin refuses it;
+# any other operator-chosen cap is kept.
+if blackbox.get("daily_report_limit") in (0, "0"):
+    blackbox["daily_report_limit"] = 20
+    added.append("daily_report_limit")
 with open(cfg_path, "w") as f:
     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 if added:
@@ -1767,14 +1871,28 @@ start_dashboard() {
     local log_file="$log_dir/blackbox-dashboard-install.log"
     mkdir -p "$log_dir"
 
+    # The code revision the running dashboard was started from (KI-300): a
+    # dashboard keeps the code it loaded, so after an update the installer must
+    # launch it again — `blackbox dashboard` replaces the one on its port.
+    local revision_file="$HERMES_HOME/blackbox/.dashboard-revision"
+    local revision=""
+    if git -C "$REPO_DIR" rev-parse -q --verify HEAD >/dev/null 2>&1; then
+        revision="$(git -C "$REPO_DIR" rev-parse HEAD)"
+    fi
     if command -v curl >/dev/null 2>&1 && curl -fsS "$url/" >/dev/null 2>&1; then
-        ok "Dashboard already running at $url"
-        return 0
+        if [ -z "$revision" ] || [ "$(cat "$revision_file" 2>/dev/null)" = "$revision" ]; then
+            ok "Dashboard already running at $url"
+            return 0
+        fi
+        step "Blackbox was updated: restarting the dashboard so the new code runs"
     fi
 
     step "Launching: blackbox dashboard"
     run_detached "$log_file" "$HERMES_BIN" blackbox dashboard
     sleep 2
+    if [ -n "$revision" ]; then
+        mkdir -p "$(dirname "$revision_file")" && printf '%s\n' "$revision" > "$revision_file"
+    fi
 
     if command -v curl >/dev/null 2>&1 && ! curl -fsS "$url/" >/dev/null 2>&1; then
         warn "Dashboard process started, but $url did not respond yet."
@@ -1869,6 +1987,289 @@ EOF
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Boot persistence (B10 / KI-022): the DKG node must survive a reboot, or
+# "install once -> always protected and contributing" is only true until the
+# machine restarts (fail-open would hide the dead node). Registers a system
+# service on Linux (systemd) and a LaunchAgent on macOS. Idempotent: re-runs
+# overwrite the unit in place. Disable anytime:
+#   Linux:  systemctl disable --now blackbox-dkg
+#   macOS:  launchctl unload ~/Library/LaunchAgents/ai.umanitek.blackbox-dkg.plist
+# ---------------------------------------------------------------------------
+# A value placed inside a launchd plist <string> must be XML text. sed, not
+# ${value//</&lt;}: bash 5.2+ reads "&" in that replacement as the matched text
+# (patsub_replacement), so it produced "<lt;" on Linux and Homebrew bash.
+xml_escape() {
+    printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+register_boot_service() {
+    heading "Registering the DKG node to start on boot"
+    local node_bin_dir
+    node_bin_dir="$(dirname "$(command -v node)")"
+    secure_dkg_token_perms
+    case "$(uname -s)" in
+        Linux)
+            if ! command -v systemctl >/dev/null 2>&1; then
+                warn "systemd not found — the DKG node will NOT auto-start after a reboot."
+                warn "Start it manually after reboots: DKG_HOME=\"$BLACKBOX_DKG_HOME\" \"$BLACKBOX_DKG_BIN\" start"
+                return 0
+            fi
+            local unit=/etc/systemd/system/blackbox-dkg.service
+            if [ ! -w /etc/systemd/system ] && [ "$(id -u)" != 0 ]; then
+                unit="$HOME/.config/systemd/user/blackbox-dkg.service"
+                mkdir -p "$(dirname "$unit")"
+            fi
+            cat > "$unit" <<UNIT
+[Unit]
+Description=Agent Blackbox DKG node (threat-graph sync + community sharing)
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=PATH=$node_bin_dir:/usr/local/bin:/usr/bin:/bin
+Environment=DKG_HOME=$BLACKBOX_DKG_HOME
+# Connection-time sync stays ON: the meta sync on connect is what delivers
+# context-graph authority to subscribers — with it off, community-graph
+# subscribes fail closed (KI-044). The =0 values used during install bootstrap
+# are for that one supervised transfer only and must never leak into the boot
+# service. The periodic sync reconciler is NOT set here: config.json decides it
+# per graph (sync/managed_node.py), and an environment value would override it.
+Environment=DKG_SYNC_ON_CONNECT_ENABLED=1
+# DKG 10.0.21+ recovery speed-ups (KI-282). The exact batch stream is read ONLY
+# from the environment: without this line a service-started node recovers the
+# graph about 8x slower. The reconciler choice itself lives in config.json.
+Environment=DKG_EXACT_BATCH_STREAM_ENABLED=$BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED
+Environment=DKG_VM_RECOVERY_PREFETCH_ENABLED=$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED
+# The node's safety limits are ALSO environment-only (no config.json key): the
+# V8 heap cap, the store queue limit and the graph-list projection. Without
+# them a reboot brings the node back on Node's ~4 GB default heap (KI-308).
+Environment="NODE_OPTIONS=$BLACKBOX_DKG_NODE_OPTIONS"
+Environment=DKG_STORE_QUEUE_LIMIT=$BLACKBOX_DKG_STORE_QUEUE_LIMIT
+Environment=DKG_LIST_CONTEXT_GRAPHS_PROJECTION=$BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION
+# Clear any orphaned daemon before starting: DKG CLI commands auto-spawn a
+# detached daemon when none is running; that orphan holds daemon.pid and
+# would crash-loop this unit forever ("Daemon already running", KI-045).
+ExecStartPre=-/bin/sh -c 'PATH=$node_bin_dir:/usr/bin:/bin DKG_HOME=$BLACKBOX_DKG_HOME $BLACKBOX_DKG_BIN stop >/dev/null 2>&1; sleep 2'
+ExecStart=$BLACKBOX_DKG_BIN start --foreground
+ExecStop=$BLACKBOX_DKG_BIN stop
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target default.target
+UNIT
+            if [ "$unit" = /etc/systemd/system/blackbox-dkg.service ]; then
+                systemctl daemon-reload && systemctl enable blackbox-dkg >/dev/null 2>&1 \
+                    && ok "systemd service registered (blackbox-dkg) — the node survives reboots" \
+                    || warn "could not enable blackbox-dkg service; enable manually: systemctl enable blackbox-dkg"
+            else
+                systemctl --user daemon-reload && systemctl --user enable blackbox-dkg >/dev/null 2>&1 \
+                    && ok "systemd user service registered — the node survives reboots (of your session)" \
+                    || warn "could not enable the user service; enable manually: systemctl --user enable blackbox-dkg"
+            fi
+            ;;
+        Darwin)
+            local plist="$HOME/Library/LaunchAgents/ai.umanitek.blackbox-dkg.plist"
+            mkdir -p "$HOME/Library/LaunchAgents"
+            cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.umanitek.blackbox-dkg</string>
+  <key>ProgramArguments</key><array>
+    <string>$BLACKBOX_DKG_BIN</string><string>start</string><string>--foreground</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>$(xml_escape "$node_bin_dir:/usr/local/bin:/usr/bin:/bin")</string>
+    <key>DKG_HOME</key><string>$(xml_escape "$BLACKBOX_DKG_HOME")</string>
+    <key>DKG_SYNC_ON_CONNECT_ENABLED</key><string>1</string>
+    <key>DKG_EXACT_BATCH_STREAM_ENABLED</key><string>$(xml_escape "$BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED")</string>
+    <key>DKG_VM_RECOVERY_PREFETCH_ENABLED</key><string>$(xml_escape "$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED")</string>
+    <key>NODE_OPTIONS</key><string>$(xml_escape "$BLACKBOX_DKG_NODE_OPTIONS")</string>
+    <key>DKG_STORE_QUEUE_LIMIT</key><string>$(xml_escape "$BLACKBOX_DKG_STORE_QUEUE_LIMIT")</string>
+    <key>DKG_LIST_CONTEXT_GRAPHS_PROJECTION</key><string>$(xml_escape "$BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION")</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+</dict></plist>
+PLIST
+            launchctl unload "$plist" >/dev/null 2>&1 || true
+            launchctl load "$plist" >/dev/null 2>&1 \
+                && ok "LaunchAgent registered — the node survives reboots" \
+                || warn "could not load the LaunchAgent; load manually: launchctl load $plist"
+            ;;
+        *)
+            warn "Unknown OS — boot persistence not configured; start the node manually after reboots."
+            ;;
+    esac
+}
+
+# Boot persistence for the DASHBOARD (KI-296). The dashboard is what keeps a
+# node's protection current: its worker refreshes the verified rules and its
+# health poll drives the community pulse. Registering only the DKG node meant a
+# rebooted machine came back with the node running but Blackbox frozen until an
+# agent happened to run (bench swm21-b, 2026-10-07). Same shape as the node's
+# service; it starts after the node. Skipped when dashboard auto-start is off.
+# Disable anytime:
+#   Linux:  systemctl disable --now blackbox-dashboard
+#   macOS:  launchctl unload ~/Library/LaunchAgents/ai.umanitek.blackbox-dashboard.plist
+register_dashboard_service() {
+    case "$BLACKBOX_AUTO_DASHBOARD" in
+        0|false|never|no) return 0 ;;
+    esac
+    if [ -z "${HERMES_BIN:-}" ] || [ ! -x "$HERMES_BIN" ]; then
+        warn "hermes not found — the dashboard will NOT restart after a reboot; start it with: blackbox dashboard"
+        return 0
+    fi
+    local node_bin_dir
+    node_bin_dir="$(dirname "$(command -v node)")"
+    case "$(uname -s)" in
+        Linux)
+            command -v systemctl >/dev/null 2>&1 || return 0   # register_boot_service already warned
+            local unit=/etc/systemd/system/blackbox-dashboard.service
+            if [ ! -w /etc/systemd/system ] && [ "$(id -u)" != 0 ]; then
+                unit="$HOME/.config/systemd/user/blackbox-dashboard.service"
+                mkdir -p "$(dirname "$unit")"
+            fi
+            cat > "$unit" <<DASHUNIT
+[Unit]
+Description=Agent Blackbox dashboard (rule refresh + community pulse)
+After=network-online.target blackbox-dkg.service
+Wants=blackbox-dkg.service
+
+[Service]
+Type=simple
+Environment=HOME=$HOME
+Environment=HERMES_HOME=$HERMES_HOME
+Environment=PATH=$HOME/.local/bin:$node_bin_dir:/usr/local/bin:/usr/bin:/bin
+ExecStart=$HERMES_BIN blackbox dashboard
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target default.target
+DASHUNIT
+            if [ "$unit" = /etc/systemd/system/blackbox-dashboard.service ]; then
+                # --now: the dashboard runs under systemd from this moment (restarted
+                # on a crash), not only after the next reboot; it replaces the one
+                # the installer just launched on the same port.
+                systemctl daemon-reload && systemctl enable --now blackbox-dashboard >/dev/null 2>&1 \
+                    && ok "systemd service registered (blackbox-dashboard) — protection stays current after reboots" \
+                    || warn "could not enable blackbox-dashboard; enable manually: systemctl enable blackbox-dashboard"
+            else
+                systemctl --user daemon-reload && systemctl --user enable --now blackbox-dashboard >/dev/null 2>&1 \
+                    && ok "systemd user service registered (blackbox-dashboard)" \
+                    || warn "could not enable the dashboard user service; enable manually: systemctl --user enable blackbox-dashboard"
+            fi
+            ;;
+        Darwin)
+            local plist="$HOME/Library/LaunchAgents/ai.umanitek.blackbox-dashboard.plist"
+            mkdir -p "$HOME/Library/LaunchAgents"
+            cat > "$plist" <<DASHPLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.umanitek.blackbox-dashboard</string>
+  <key>ProgramArguments</key><array>
+    <string>$HERMES_BIN</string><string>blackbox</string><string>dashboard</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>$HOME/.local/bin:$node_bin_dir:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HERMES_HOME</key><string>$HERMES_HOME</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+</dict></plist>
+DASHPLIST
+            # Registered for the next login only: the dashboard started above keeps
+            # running now, and loading the agent here would start a second one.
+            ok "LaunchAgent registered (blackbox-dashboard) — starts at your next login"
+            ;;
+    esac
+}
+
+# KI-032: any local process that can read the DKG auth token can bypass every
+# Blackbox gate at the node. The token must be owner-only.
+secure_dkg_token_perms() {
+    local token
+    for token in "$BLACKBOX_DKG_HOME/auth.token" "$BLACKBOX_DKG_HOME"/auth*.token; do
+        if [ -f "$token" ]; then
+            chmod 600 "$token" 2>/dev/null \
+                && step "  auth token permissions: 600 ($token)" \
+                || warn "could not tighten $token permissions — check ownership"
+        fi
+    done
+}
+
+# ---------------------------------------------------------------------------
+# The curator service (Community Curation C9) — OPT-IN, curator nodes only.
+# An ordinary protected agent never runs it; nothing here is registered unless
+# the installer is told this machine is a curator node:
+#   BLACKBOX_CURATOR_SERVICE=1 BLACKBOX_CURATOR_PEERS="peer-a,peer-b" bash blackbox-install.sh
+# The service runs `blackbox curate run` as its own process (never inside an
+# agent). It SIGNS NOTHING until the operator has read and accepted the
+# automation policy on this machine:
+#   blackbox curate policy                    (read it)
+#   blackbox curate policy --accept --code <code shown under the text>
+# Linux (systemd) only. Disable anytime:  systemctl disable --now blackbox-curator
+# ---------------------------------------------------------------------------
+register_curator_service() {
+    [ "${BLACKBOX_CURATOR_SERVICE:-0}" = 1 ] || return 0
+    heading "Registering the curator service (this machine is a curator node)"
+    local peer peer_args="" old_ifs="$IFS"
+    IFS=','
+    for peer in ${BLACKBOX_CURATOR_PEERS:-}; do
+        IFS="$old_ifs"
+        case "$peer" in
+            ""|*[!A-Za-z0-9._:-]*)
+                warn "ignoring curator peer '$peer' (letters, digits, . _ : - only)" ;;
+            *) peer_args="$peer_args --peer $peer" ;;
+        esac
+        IFS=','
+    done
+    IFS="$old_ifs"
+    [ -n "$peer_args" ] || warn "no curator peers given (BLACKBOX_CURATOR_PEERS): proposals will wait until a peer is configured"
+    if [ "$(uname -s)" != Linux ] || ! command -v systemctl >/dev/null 2>&1; then
+        warn "the curator service unit is provided for Linux with systemd only."
+        warn "Start it yourself on this machine:  blackbox curate run$peer_args"
+        return 0
+    fi
+    local unit=/etc/systemd/system/blackbox-curator.service
+    if [ ! -w /etc/systemd/system ] && [ "$(id -u)" != 0 ]; then
+        unit="$HOME/.config/systemd/user/blackbox-curator.service"
+        mkdir -p "$(dirname "$unit")"
+    fi
+    cat > "$unit" <<CURATOR_UNIT
+[Unit]
+Description=Agent Blackbox curator service (routine curation for the community graph)
+After=network-online.target blackbox-dkg.service
+Wants=blackbox-dkg.service
+
+[Service]
+Type=simple
+Environment=HERMES_HOME=$HERMES_HOME
+Environment=BLACKBOX_HOME=$BLACKBOX_HOME
+ExecStart=$HERMES_BIN blackbox curate run$peer_args
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target default.target
+CURATOR_UNIT
+    if [ "$unit" = /etc/systemd/system/blackbox-curator.service ]; then
+        systemctl daemon-reload && systemctl enable --now blackbox-curator >/dev/null 2>&1 \
+            && ok "curator service registered (blackbox-curator)" \
+            || warn "could not enable the curator service; enable manually: systemctl enable --now blackbox-curator"
+    else
+        systemctl --user daemon-reload && systemctl --user enable --now blackbox-curator >/dev/null 2>&1 \
+            && ok "curator user service registered (blackbox-curator)" \
+            || warn "could not enable the user service; enable manually: systemctl --user enable --now blackbox-curator"
+    fi
+    step "  It signs nothing until you accept the automation policy:  blackbox curate policy"
+}
+
 main() {
     banner
     heading "Checking your system"
@@ -1889,6 +2290,9 @@ main() {
     setup_llm
     sync_ruleset
     start_dashboard
+    register_boot_service
+    register_dashboard_service
+    register_curator_service
     next_steps
     if [ "$BLACKBOX_INSTALL_INCOMPLETE" = true ]; then
         exit 1

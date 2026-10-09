@@ -30,7 +30,7 @@ def main() -> int:
         dest = home / "plugins" / "blackbox"
         if not dest.exists():
             continue  # blackbox isn't installed in this home; `attach` handles that
-        attach._copy_plugin_tree(src, dest)
+        attach.copy_plugin_tree(src, dest)
         print(f"synced → {dest}")
     print(f"\nRefreshed the plugin from {src}. Restart any running agent to pick it up.")
     return 0

@@ -6,8 +6,8 @@ from _blackbox_loader import load_blackbox
 
 
 cli = load_blackbox("cli")
-constants = load_blackbox("constants")
-quads = load_blackbox("quads")
+constants = load_blackbox("kernel.constants")
+anchors = load_blackbox("ruleset.anchors")
 ruleset = load_blackbox("ruleset")
 
 
@@ -19,32 +19,32 @@ def _row(identifier, subject=None, **fields):
 
 
 def _proof_for(rows):
-    hashes = quads.anchor_hashes_from_rows(rows)
-    root = quads.anchor_root(hashes.items())
+    hashes = anchors.anchor_hashes_from_rows(rows)
+    root = anchors.anchor_root(hashes.items())
     return {"root": root, "members": set(hashes)}
 
 
 class TestAnchorHash:
     def test_ignores_key_order_and_extra_fields(self):
-        a = quads.threat_anchor_hash({"identifier": "dep:npm:evil@1.0.0", "severity": "critical", "name": "evil"})
-        b = quads.threat_anchor_hash({"name": "evil", "severity": "critical", "identifier": "dep:npm:evil@1.0.0", "unrelated": "x"})
+        a = anchors.threat_anchor_hash({"identifier": "dep:npm:evil@1.0.0", "severity": "critical", "name": "evil"})
+        b = anchors.threat_anchor_hash({"name": "evil", "severity": "critical", "identifier": "dep:npm:evil@1.0.0", "unrelated": "x"})
         assert a == b
 
     def test_detection_field_change_breaks_hash(self):
         base = {"identifier": "injection:abc", "pattern": "rm -rf", "severity": "high"}
-        assert quads.threat_anchor_hash(base) != quads.threat_anchor_hash({**base, "severity": "low"})
-        assert quads.threat_anchor_hash(base) != quads.threat_anchor_hash({**base, "pattern": "sudo"})
+        assert anchors.threat_anchor_hash(base) != anchors.threat_anchor_hash({**base, "severity": "low"})
+        assert anchors.threat_anchor_hash(base) != anchors.threat_anchor_hash({**base, "pattern": "sudo"})
 
     def test_duplicate_rows_converge_deterministically(self):
         rows = [
             {"identifier": "dep:npm:a@1", "severity": "low"},
             {"identifier": "dep:npm:a@1", "severity": "high"},
         ]
-        assert quads.anchor_hashes_from_rows(rows) == quads.anchor_hashes_from_rows(list(reversed(rows)))
+        assert anchors.anchor_hashes_from_rows(rows) == anchors.anchor_hashes_from_rows(list(reversed(rows)))
 
     def test_root_is_order_independent(self):
         pairs = [("a", "h1"), ("b", "h2"), ("c", "h3")]
-        assert quads.anchor_root(pairs) == quads.anchor_root(reversed(pairs))
+        assert anchors.anchor_root(pairs) == anchors.anchor_root(reversed(pairs))
 
 
 class TestVerification:

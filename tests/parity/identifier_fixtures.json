@@ -1,6 +1,16 @@
 {
-  "note": "Ground truth generated from plugins/blackbox/quads.py by tests/parity/generate.py. The OpenClaw TypeScript plugin must reproduce these exactly. Guarded by tests/plugins/test_blackbox_parity.py (Python) and integrations/openclaw/test/parity.mjs (TypeScript).",
+  "note": "Ground truth generated from plugins/blackbox (kernel/threat_ids.py, detection/, community/report_builder.py) by tests/parity/generate.py. The OpenClaw TypeScript plugin must reproduce these exactly. Guarded by tests/plugins/test_blackbox_parity.py (Python) and integrations/openclaw/test/parity.mjs (TypeScript).",
   "identifiers": [
+    {
+      "kind": "dependency",
+      "in": {
+        "ecosystem": "pypi",
+        "name": "Foo_Bar.Baz",
+        "version": "2.0"
+      },
+      "identifier": "dep:pypi:foo-bar-baz@2.0",
+      "threatUri": "urn:guardian:threat:dep-pypi-foo-bar-baz-2.0"
+    },
     {
       "kind": "dependency",
       "in": {
@@ -124,7 +134,7 @@
     {
       "identifier": "escalation:shell:remote-script-pipe",
       "reporter": "",
-      "reportUri": "urn:guardian:report:anonymous:e9bb7427fbd038b5"
+      "reportUri": ""
     }
   ],
   "argShapes": [
@@ -295,7 +305,9 @@
         "ecosystem": "npm",
         "package_name": "evil-pkg",
         "package_version": "6.6.6",
-        "advisory_id": "OSV-2026-0001"
+        "advisory_id": "OSV-2026-0001",
+        "kind": "malware",
+        "reason": "advisory:OSV-2026-0001"
       },
       "quadsNoDate": [
         {
@@ -315,6 +327,11 @@
         },
         {
           "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:3d12917cfd10ef77",
+          "predicate": "http://umanitek.ai/ontology/guardian/kind",
+          "object": "\"malware\""
+        },
+        {
+          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:3d12917cfd10ef77",
           "predicate": "http://umanitek.ai/ontology/guardian/packageEcosystem",
           "object": "\"npm\""
         },
@@ -327,6 +344,11 @@
           "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:3d12917cfd10ef77",
           "predicate": "http://umanitek.ai/ontology/guardian/packageVersion",
           "object": "\"6.6.6\""
+        },
+        {
+          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:3d12917cfd10ef77",
+          "predicate": "http://umanitek.ai/ontology/guardian/reportReason",
+          "object": "\"advisory:OSV-2026-0001\""
         },
         {
           "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:3d12917cfd10ef77",
@@ -405,62 +427,129 @@
     },
     {
       "in": {
-        "identifier": "skill:sneaky-skill:shell-exec",
+        "identifier": "skill:sneaky-skill@1.0.0",
         "category": "skill",
         "severity": "high",
         "reporter_address": "0xABCdef0000000000000000000000000000000001",
         "framework": "hermes",
+        "registry": "clawhub",
         "skill_name": "sneaky-skill",
-        "skill_version": "1.0.0",
-        "danger_shape": "shell-exec"
+        "skill_version": "1.0.0"
       },
       "quadsNoDate": [
         {
-          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:8029fd5b1b143d12",
-          "predicate": "http://umanitek.ai/ontology/guardian/dangerShape",
-          "object": "\"shell-exec\""
-        },
-        {
-          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:8029fd5b1b143d12",
+          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:d1f2471f1868025b",
           "predicate": "http://umanitek.ai/ontology/guardian/framework",
           "object": "\"hermes\""
         },
         {
-          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:8029fd5b1b143d12",
+          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:d1f2471f1868025b",
           "predicate": "http://umanitek.ai/ontology/guardian/identifier",
-          "object": "\"skill:sneaky-skill:shell-exec\""
+          "object": "\"skill:sneaky-skill@1.0.0\""
         },
         {
-          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:8029fd5b1b143d12",
+          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:d1f2471f1868025b",
           "predicate": "http://umanitek.ai/ontology/guardian/reporter",
           "object": "\"0xabcdef0000000000000000000000000000000001\""
         },
         {
-          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:8029fd5b1b143d12",
+          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:d1f2471f1868025b",
           "predicate": "http://umanitek.ai/ontology/guardian/reportsThreat",
-          "object": "urn:guardian:threat:skill-sneaky-skill-shell-exec"
+          "object": "urn:guardian:threat:skill-sneaky-skill-1.0.0"
         },
         {
-          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:8029fd5b1b143d12",
+          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:d1f2471f1868025b",
           "predicate": "http://umanitek.ai/ontology/guardian/severity",
           "object": "\"high\""
         },
         {
-          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:8029fd5b1b143d12",
+          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:d1f2471f1868025b",
           "predicate": "http://umanitek.ai/ontology/guardian/skillName",
           "object": "\"sneaky-skill\""
         },
         {
-          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:8029fd5b1b143d12",
+          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:d1f2471f1868025b",
+          "predicate": "http://umanitek.ai/ontology/guardian/skillRegistry",
+          "object": "\"clawhub\""
+        },
+        {
+          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:d1f2471f1868025b",
           "predicate": "http://umanitek.ai/ontology/guardian/skillVersion",
           "object": "\"1.0.0\""
         },
         {
-          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:8029fd5b1b143d12",
+          "subject": "urn:guardian:report:0xabcdef0000000000000000000000000000000001:d1f2471f1868025b",
           "predicate": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
           "object": "http://umanitek.ai/ontology/guardian/ThreatReport"
         }
       ]
+    }
+  ],
+  "iocValues": [
+    {
+      "type": "ip",
+      "in": "203.0.113.7:8080",
+      "canonical": "203.0.113.7"
+    },
+    {
+      "type": "ip",
+      "in": "203.0.113.7",
+      "canonical": "203.0.113.7"
+    },
+    {
+      "type": "ip",
+      "in": "2001:DB8:0:0:0:0:0:1",
+      "canonical": "2001:db8::1"
+    },
+    {
+      "type": "ip",
+      "in": "2001:db8::1",
+      "canonical": "2001:db8::1"
+    },
+    {
+      "type": "ip",
+      "in": "[2001:db8::1]:8443",
+      "canonical": "2001:db8::1"
+    },
+    {
+      "type": "ip",
+      "in": "2001:db8::1%eth0",
+      "canonical": "2001:db8::1"
+    },
+    {
+      "type": "ip",
+      "in": "::1",
+      "canonical": "::1"
+    },
+    {
+      "type": "ip",
+      "in": "::ffff:192.0.2.128",
+      "canonical": "::ffff:c000:280"
+    },
+    {
+      "type": "ip",
+      "in": "fe80::1:0:0:0",
+      "canonical": "fe80::1:0:0:0"
+    },
+    {
+      "type": "ip",
+      "in": "2001:db8::zz",
+      "canonical": "2001:db8::zz"
+    },
+    {
+      "type": "domain",
+      "in": "Evil.Example.",
+      "canonical": "evil.example"
+    },
+    {
+      "type": "url",
+      "in": "HTTPS://Evil.Example/Path/",
+      "canonical": "https://evil.example/Path"
+    },
+    {
+      "type": "hash",
+      "in": "ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEF",
+      "canonical": "abcdefabcdefabcdefabcdefabcdefabcdef"
     }
   ]
 }

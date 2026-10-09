@@ -15,6 +15,12 @@
  *
  * Fail-open: any handler error is swallowed and the agent loop proceeds.
  */
+import { sharingConsentInForce } from "./consent.js";
+import { ensureCommunitySubscription, type MembershipState } from "./membership.js";
+import { evidenceFor } from "./reportEvidence.js";
+import { validateReport } from "./reportSchema.js";
+import { loadOrCreateReporterKey } from "./reporterKey.js";
+import { ReportSigner } from "./signing.js";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 import type {
@@ -26,7 +32,7 @@ import type {
   PluginHookMessageReceivedEvent,
   PluginHookSessionEndEvent,
   PluginHookSessionStartEvent,
-} from "openclaw/plugin-sdk/types";
+} from "./hookTypes.js";
 import {
   Finding,
   Ruleset,
@@ -48,7 +54,14 @@ import { DkgClient, DkgError } from "./dkgClient.js";
 import { recordEvent, recordFinding, type ConvTurn, type FindingContext } from "./audit.js";
 import { BlackboxConfig, categoryAllows, resolveConfig } from "./config.js";
 import { RulesetCache } from "./ruleset.js";
-import { BlackboxSeverity, KIND_VULNERABILITY, SEVERITY_RANK, buildReportQuads, stableHash } from "./quads.js";
+import {
+  BlackboxSeverity,
+  KIND_VULNERABILITY,
+  SEVERITY_RANK,
+  buildReportQuads,
+  isAgentAddress,
+  stableHash,
+} from "./quads.js";
 import { lookup as osvLookup } from "./osv.js";
 import { sanitizeText } from "./redact.js";
 
@@ -72,6 +85,10 @@ interface BlackboxRuntime {
   dailyReports: { date: string; count: number };
   /** Per-identifier cooldown stamps (identifier → epoch ms of last sighting). Mirrors Python `audit.allow_report`. */
   recentReports: Map<string, number>;
+  /** This node's report signer (reporter key + network id + community graph), resolved lazily; null = cannot sign. */
+  signer?: ReportSigner | null;
+  /** Community-graph subscription bookkeeping (connect owner → subscribe; FIX-0039). */
+  membership: MembershipState;
   /**
    * Per-session conversation transcript (last N turns) so a tool-call finding —
    * which has no conversation access at `before_tool_call` — can still show the
@@ -279,14 +296,15 @@ function recordToolActivity(
  * fails open to "node". NOT derived from the auth token — the node's true agent
  * address namespaces the per-submitter report URI.
  */
-async function resolveReporter(rt: BlackboxRuntime): Promise<string> {
-  if (rt.reporterAddress !== undefined) return rt.reporterAddress;
+async function resolveReporter(rt: BlackboxRuntime): Promise<string | undefined> {
+  if (rt.reporterAddress !== undefined) return rt.reporterAddress || undefined;
   try {
-    rt.reporterAddress = await rt.client.reporterAddress();
+    const addr = await rt.client.reporterAddress();
+    rt.reporterAddress = isAgentAddress(addr) ? addr : "";   // LES-003: a fallback identity is no identity
   } catch {
-    rt.reporterAddress = "node";
+    rt.reporterAddress = "";
   }
-  return rt.reporterAddress;
+  return rt.reporterAddress || undefined;
 }
 
 function today(): string {
@@ -301,15 +319,63 @@ function underDailyCap(rt: BlackboxRuntime): boolean {
   return rt.dailyReports.count < rt.cfg.dailyReportLimit;
 }
 
+/** Sources whose findings never leave the machine (Python `NEVER_SHARED_SOURCES`). */
+const NEVER_SHARED_SOURCES = new Set(["custom", "llm", "secret"]);
+
 /**
- * Report a sighting to the SWM (one-shot KA share). Deterministic HTTP, fully
- * fail-open, rate-limited by daily cap + per-identifier cooldown. Reports
- * carry NO observed content.
+ * The outbound gate chain for ONE finding — mirror of Python `CommunitySharePolicy.decide`
+ * (first refusal wins; the reason goes to the debug log). Pure: no I/O but the consent file.
  */
-async function reportSighting(rt: BlackboxRuntime, finding: Finding): Promise<void> {
-  // Custom rules stay local — NEVER shared. Mirrors Python `_report_and_audit`.
-  if (finding.source === "custom") return;
-  if (!rt.cfg.report) return;
+function shareDecision(rt: BlackboxRuntime, finding: Finding, reporter: string | undefined,
+                       evidence: Record<string, string | undefined>): [boolean, string] {
+  if (!rt.cfg.report || !rt.cfg.communityGraphId) return [false, "community sharing disabled"];
+  if (!sharingConsentInForce(rt.cfg.blackboxHome)) return [false, "no sharing consent recorded for the current reporter terms (`blackbox report --consent`)"];
+  if (NEVER_SHARED_SOURCES.has(finding.source)) return [false, `source ${finding.source} never leaves the machine`];
+  if ((finding.kind ?? finding.fields.kind) === "vulnerability" || (finding.category === "dependency" && (finding.kind ?? finding.fields.kind) !== "malware")) {
+    return [false, "vulnerability findings stay in the local audit (decision 22)"];
+  }
+  if (finding.source === "community") return [false, "community-only match: flagged here, shared only by an explicit report"];
+  if (!finding.identifier.trim()) return [false, "no identifier"];
+  if (!reporter || !isAgentAddress(reporter)) return [false, "no resolved reporter identity"]; // LES-003: never a fallback
+  try {
+    validateReport({ identifier: finding.identifier, category: finding.category, severity: finding.severity, framework: FRAMEWORK, evidence });
+  } catch (err) {
+    return [false, `not a valid report, stays local: ${(err as Error).message}`];
+  }
+  return [true, "ok"];
+}
+
+/** This node's signer for the community graph, or null when it cannot sign (then it does not share — R0b). */
+async function resolveSigner(rt: BlackboxRuntime): Promise<ReportSigner | null> {
+  if (rt.signer !== undefined) return rt.signer;
+  try {
+    const network = await rt.client.networkId();
+    if (!network) {
+      rt.log("warn", "blackbox: cannot sign reports — the node reports no network id");
+      return (rt.signer = null);
+    }
+    rt.signer = new ReportSigner(loadOrCreateReporterKey(rt.cfg.blackboxHome), network, rt.cfg.communityGraphId);
+  } catch (err) {
+    rt.log("warn", `blackbox: cannot sign reports — reporter key unusable: ${(err as Error).message}`);
+    rt.signer = null;
+  }
+  return rt.signer;
+}
+
+/**
+ * Report a sighting to the COMMUNITY graph (Refine R0/R1, KI-182 port): the Python
+ * share policy, the R1 schema, the signed envelope, the explicit share lifecycle.
+ * Fail-open, rate-limited by the daily cap + per-identifier cooldown. Reports carry
+ * NO observed content. `event`/`toolName` say where the finding was met (its context).
+ */
+async function reportSighting(rt: BlackboxRuntime, finding: Finding, event: string, toolName?: string): Promise<void> {
+  const reporter = await resolveReporter(rt);
+  const evidence = evidenceFor(finding, event, toolName);
+  const [ok, why] = shareDecision(rt, finding, reporter, evidence);
+  if (!ok || reporter === undefined) {
+    if (rt.cfg.report) rt.log("debug", `blackbox: not sharing ${finding.identifier}: ${why}`);
+    return;
+  }
   // Per-threat cooldown: skip a re-fire within the window. Mirrors Python `audit.allow_report`.
   const now = Date.now();
   const last = rt.recentReports.get(finding.identifier);
@@ -325,26 +391,30 @@ async function reportSighting(rt: BlackboxRuntime, finding: Finding): Promise<vo
   rt.recentReports.set(finding.identifier, now);
   pruneRecentReports(rt, now);
   try {
-    const reporter = await resolveReporter(rt);
-    // Forward privacy-safe candidate fields for independent review. `fields`
-    // only ever holds signatures (pattern/category/shape/...), never raw prompts,
-    // paths, or file/skill source. Mirrors Python `_share_sighting`.
+    const signer = await resolveSigner(rt);
+    if (!signer) return; // a node that cannot sign does not share (R0b)
+    await ensureCommunitySubscription(rt.client, rt.cfg.communityGraphId, rt.cfg.communityGraphPeerId, rt.membership,
+                                      (msg) => rt.log("debug", msg));
     const quads = buildReportQuads({
       identifier: finding.identifier,
       category: finding.category,
       severity: finding.severity,
       reporter,
       framework: FRAMEWORK,
-      candidate: finding.fields,
+      evidence,
+      signer,
     });
-    // KA name matches Python hooks._share_sighting: hashing in the reporter keeps
-    // two reporters of one threat from colliding, stable per (identifier, reporter).
+    // KA name matches Python `_share_sighting`: stable per (identifier, reporter).
     const name = `report-${stableHash(finding.identifier + reporter, 16)}`;
-    await rt.client.shareKnowledgeAsset(rt.cfg.contextGraphId, name, quads);
+    const result = await rt.client.shareReport(rt.cfg.communityGraphId, name, quads);
+    if (result.idempotent) {
+      rt.log("debug", `blackbox: report ${name} was already on the network (not re-sent)`);
+      return;
+    }
     rt.dailyReports.count += 1;
   } catch (err) {
     if (err instanceof DkgError) {
-      rt.log("debug", `blackbox: sighting report failed (node unreachable): ${err.message}`);
+      rt.log("debug", `blackbox: sighting report failed (node): ${err.message}`);
       return;
     }
     rt.log("debug", `blackbox: sighting report error: ${(err as Error).message}`);
@@ -397,7 +467,7 @@ function observe(
   } catch {
     /* fail-open — local logging must never break the loop */
   }
-  void reportSighting(rt, finding);
+  void reportSighting(rt, finding, event, toolName);
 }
 
 // --- Hook handlers ---------------------------------------------------------
@@ -632,6 +702,7 @@ function buildRuntime(api: OpenClawPluginApi): BlackboxRuntime {
     log,
     dailyReports: { date: today(), count: 0 },
     recentReports: new Map<string, number>(),
+    membership: {},
     transcript: new Map<string, ConvTurn[]>(),
   };
 }

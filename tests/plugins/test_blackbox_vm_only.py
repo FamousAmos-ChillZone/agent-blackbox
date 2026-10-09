@@ -6,8 +6,17 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from plugins.blackbox import cli, config, constants, detection, hooks, ruleset
+from plugins.blackbox import cli, detection, ruleset
+from plugins.blackbox.community.report_cli import report_command as report_command
+from plugins.blackbox.sync import command as sync_command
+from plugins.blackbox.guard import hooks
+from plugins.blackbox.guard import reporting as guard_reporting
+from plugins.blackbox.ruleset import disk_cache as ruleset_disk_cache
+from plugins.blackbox.ruleset import fetching as ruleset_fetching
+from plugins.blackbox.ruleset import refresh_cycle as ruleset_refresh
+from plugins.blackbox.kernel import config, constants
 from plugins.blackbox.dashboard import server
+from _vm_partitions import answer_partition_query, is_partition_query
 
 
 DASHBOARD_HTML = (
@@ -30,7 +39,7 @@ def test_refresh_queries_only_verifiable_memory(monkeypatch, tmp_path):
             return []
 
     monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
-    monkeypatch.setattr(ruleset, "_memory_cache", None)
+    monkeypatch.setattr(ruleset_refresh, "_memory", ruleset_refresh._new_memory())
     cfg = config.BlackboxConfig()
     ruleset.refresh(cfg, Client())
 
@@ -56,29 +65,44 @@ def test_cached_community_rules_are_discarded():
         ],
     }
 
-    restored = ruleset._deserialize(cached)
+    restored = ruleset_disk_cache._deserialize(cached)
 
     assert [r["identifier"] for r in restored.injection] == ["public"]
     assert [r["identifier"] for r in restored.graph_threats] == ["public"]
 
 
-def test_config_cannot_enable_threat_sharing(monkeypatch):
+def test_sharing_stays_dormant_without_a_community_graph_address(monkeypatch):
+    """Contract update (community-graph build B2): the `report` key is LIVE,
+    but community sharing remains dormant by construction until a community
+    graph address exists — the shipped default is empty until Umanitek mints
+    the production graph (KI-035). This replaces the old VM-only contract
+    where BLACKBOX_REPORT was inert."""
     monkeypatch.setenv("BLACKBOX_REPORT", "true")
+    monkeypatch.delenv("BLACKBOX_COMMUNITY_GRAPH_ID", raising=False)
     cfg = config.load_blackbox_config()
-    assert cfg.report is False
-    assert cfg.daily_report_limit == 0
+    assert cfg.report is True  # the switch is real now
+    assert cfg.community_graph_id == ""  # shipped default: no address
+    assert cfg.community_enabled is False  # → every community path dormant
+    assert cfg.daily_report_limit > 0  # the cap exists the moment sharing can
 
 
-def test_dashboard_settings_fallback_keeps_community_sharing_off():
+def test_dashboard_settings_sharing_defaults_off_and_requires_explicit_true():
+    """Contract update (community-graph build B7): the sharing toggle is real.
+    The fallback default remains OFF, and only an explicit server `true` can
+    turn the UI state on — a missing/stale/None value must never opt in."""
     html = DASHBOARD_HTML.read_text(encoding="utf-8")
 
-    assert 'report: false, report_min_severity: "high"' in html
-    assert "out.report = false;" in html
+    assert 'report: false, report_min_severity: "high"' in html  # default OFF
+    assert "out.report = data.report === true;" in html  # explicit opt-in only
     assert 'report: true, report_min_severity: "high"' not in html
-    assert "out.report = data.report !== false;" not in html
+    assert "out.report = data.report !== false;" not in html  # permissive form banned
 
 
-def test_openclaw_runtime_is_vm_only_and_reporting_cannot_be_reenabled():
+def test_openclaw_runtime_reads_vm_only_and_reporting_is_opt_in():
+    """The bridge READS only the verified graph (its enforcement tier never comes
+    from shared memory). Reporting is opt-in, defaults OFF, and 0 is never "no
+    cap" — the switch exists since the KI-182 port (FIX-0044) but needs a
+    community graph id AND a consent record before anything leaves."""
     ruleset_src = (OPENCLAW_DIR / "src" / "ruleset.ts").read_text(encoding="utf-8")
     config_src = (OPENCLAW_DIR / "src" / "config.ts").read_text(encoding="utf-8")
     client_src = (OPENCLAW_DIR / "src" / "dkgClient.ts").read_text(encoding="utf-8")
@@ -87,19 +111,29 @@ def test_openclaw_runtime_is_vm_only_and_reporting_cannot_be_reenabled():
     assert '["verifiable-memory", "public"]' in tiers
     assert "shared-working-memory" not in tiers
     assert 'view: DkgView = "verifiable-memory"' in client_src
-    assert "report: false" in config_src
-    assert "dailyReportLimit: 0" in config_src
-    assert "report: bool(env.BLACKBOX_REPORT)" not in config_src
+    assert "report: false," in config_src                      # the DEFAULT stays off
+    assert "dailyReportLimit: 0" not in config_src             # 0 was "no cap" (Refine R1)
+    assert "effectiveDailyReportLimit(" in config_src
+    assert 'communityGraphId: "",' in config_src               # dormant until a graph is named
     assert 'row.source !== "community"' in ruleset_src
 
 
-def test_report_command_submits_nothing(monkeypatch, capsys):
-    monkeypatch.setattr(cli, "DkgClient", lambda *a, **k: (_ for _ in ()).throw(
-        AssertionError("report must not create a DKG client")
+def test_report_command_submits_nothing_when_community_dormant(monkeypatch, capsys):
+    """Contract update (community-graph build B6): the command is REAL now,
+    but with no community graph configured (the shipped default) it must
+    refuse loudly, submit nothing, and never even create a DKG client."""
+    monkeypatch.setattr(sync_command, "DkgClient", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("report must not create a DKG client while dormant")
     ))
+    monkeypatch.delenv("BLACKBOX_COMMUNITY_GRAPH_ID", raising=False)
+    monkeypatch.delenv("BLACKBOX_REPORT", raising=False)
 
-    assert cli._cmd_report(Namespace()) == 2
-    assert "coming soon" in capsys.readouterr().out.lower()
+    args = Namespace(status=False, type="ioc", ioc_type="domain", value="evil.example",
+                     false_positive=None, severity="high")
+    assert report_command.cmd_report(args) == 2
+    out = capsys.readouterr().out
+    assert "Nothing was submitted" in out
+    assert "dormant" in out
 
 
 def test_detection_audit_never_shares(monkeypatch):
@@ -112,8 +146,8 @@ def test_detection_audit_never_shares(monkeypatch):
     monkeypatch.setattr(hooks.audit, "recently_reported", lambda _identifier: False)
     monkeypatch.setattr(hooks.audit, "mark_reported", lambda _identifier: None)
     monkeypatch.setattr(hooks.audit, "write_private_audit_ka", lambda *args: None)
-    monkeypatch.setattr(hooks, "DkgClient", lambda *args, **kwargs: Client())
-    hooks._report_and_audit(
+    monkeypatch.setattr(guard_reporting, "DkgClient", lambda *args, **kwargs: Client())
+    guard_reporting._report_and_audit(
         config.BlackboxConfig(report=True),
         "pre_tool_call",
         [detection.Finding(
@@ -370,21 +404,103 @@ def test_dashboard_reuses_fresh_large_ruleset_without_querying_blazegraph(monkey
     }
 
 
-def test_dashboard_community_surfaces_are_static_coming_soon(monkeypatch):
+def test_dashboard_community_surfaces_live_but_dormant_without_graph(monkeypatch):
+    """Contract update (community-graph build B7): the community surfaces are
+    LIVE endpoints now. With no community graph configured (the shipped
+    default) they serve honest empty states — never 'coming soon'."""
+    monkeypatch.delenv("BLACKBOX_COMMUNITY_GRAPH_ID", raising=False)
+    monkeypatch.delenv("BLACKBOX_REPORT", raising=False)
     app = server.create_app()
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://127.0.0.1") as client:
         graph = client.get("/api/graph?tier=community&limit=17&offset=3").json()
         reports = client.get("/api/reports").json()
         threat = client.get("/api/threat?tier=community&identifier=x").json()
+        stats = client.get("/api/community-stats").json()
 
     assert graph["tier"] == "community"
     assert graph["threats"] == []
-    assert graph["total"] == 0
-    assert graph["offset"] == 3
-    assert graph["limit"] == 17
-    assert graph["partial"] is False
-    assert graph["category_totals"] == {}
-    assert graph["ecosystem_totals"] == {}
-    assert graph["coming_soon"] is True
-    assert reports == {"reports": [], "coming_soon": True, "sharing_enabled": False}
-    assert threat["coming_soon"] is True
+    assert "coming_soon" not in graph
+    assert reports["reports"] == []
+    assert reports["sharing_enabled"] is False
+    assert "coming_soon" not in reports
+    assert threat["found"] is False
+    assert "coming_soon" not in threat
+    assert stats["configured"] is False
+    assert stats["community_threats"] == 0
+
+
+def test_a_refused_partition_keeps_the_last_good_tier_and_never_reads_the_broad_view(monkeypatch):
+    """KI-288: a partition the node refuses (a store deadline) is deferred to the
+    next refresh. With nothing cached yet the tier is None, so the caller keeps
+    its last-good rules — and nothing falls back to the daemon's broad
+    verified-view lanes, which leaked partial lanes and never succeeded under
+    load (bench v21, 2026-10-06)."""
+    cg = "0xC/agent-blackbox-vm"
+    partition = f"did:dkg:context-graph:{cg}/_verifiable_memory/0xc/1"
+    views = []
+
+    class Client:
+        def query(self, sparql, _cg, on_error=None, view="unset", **kwargs):
+            views.append(view)
+            if "dkg:assertionGraph" in sparql:
+                return [{"assertionGraph": partition, "status": "confirmed"}]
+            return on_error  # every partition read refused
+
+    assert ruleset_fetching.fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY) is None
+    assert constants.VIEW_VERIFIABLE_MEMORY not in views
+
+
+def test_a_readable_partition_is_read_as_triples_never_through_the_verified_view(monkeypatch):
+    """The confirmed-partition trust path, now one plain triple read per asset."""
+    cg = "0xC/agent-blackbox-vm"
+    data_graph = f"did:dkg:context-graph:{cg}"
+    partition = f"{data_graph}/_verifiable_memory/0xc/1"
+    rows_by_partition = {partition: [{
+        "threat": "urn:guardian:threat:z", "rdfType": "urn:defender:IocSignal",
+        "severity": "high", "category": "domain", "iocValue": "bad.example",
+    }]}
+    views = []
+
+    class Client:
+        def query(self, sparql, _cg, on_error=None, view="unset", **kwargs):
+            views.append(view)
+            if "dkg:assertionGraph" in sparql:
+                return [{"assertionGraph": partition, "status": "confirmed"}]
+            if is_partition_query(sparql):
+                return answer_partition_query(sparql, rows_by_partition)
+            return []
+
+    rows = ruleset_fetching.fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
+    assert rows and any(r.get("iocValue") == "bad.example" for r in rows)
+    assert constants.VIEW_VERIFIABLE_MEMORY not in views
+
+
+def test_lane_pager_survives_daemon_row_cap(monkeypatch):
+    """KI-052: a daemon may cap a response below the requested LIMIT (measured
+    on 10.0.19: 5,000 requested -> 1,000 returned). The lane pager — which
+    still reads the root data graph — keeps paging until an EMPTY page."""
+    cg = "0xC/agent-blackbox-vm"
+    all_subjects = [f"urn:guardian:threat:{i:05d}" for i in range(2500)]
+
+    class Client:
+        def query(self, sparql, _cg, on_error=None, view="unset", **kwargs):
+            if "dkg:assertionGraph" in sparql:
+                return []  # no partitions: the root data graph holds the threats
+            if "IocSignal" in sparql and "defender:DependencySignal" not in sparql:
+                after = ""
+                if "FILTER(STR(?threat) >" in sparql:
+                    after = sparql.split('FILTER(STR(?threat) > "')[1].split('"')[0]
+                remaining = [s for s in all_subjects if s > after]
+                return [
+                    {"threat": s, "rdfType": "urn:defender:IocSignal", "severity": "high",
+                     "category": "ip", "iocValue": f"10.0.{i // 250}.{i % 250}"}
+                    for i, s in enumerate(remaining[:1000])  # daemon row cap
+                ]
+            return []
+
+    rows = ruleset_fetching.fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
+    assert rows is not None
+    got = {r["threat"] for r in rows if "threat" in r}
+    assert len(got) == 2500, f"pager truncated at the daemon row cap: {len(got)}"
+
+

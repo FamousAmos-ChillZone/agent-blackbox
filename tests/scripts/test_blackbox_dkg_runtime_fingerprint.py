@@ -135,32 +135,6 @@ def test_fingerprint_forces_restart_when_store_backend_changes(tmp_path):
     assert blazegraph != oxigraph
 
 
-def test_dkg_heap_uses_smallest_host_or_cgroup_limit():
-    gb = 1024**3
-    with (
-        mock.patch.object(FINGERPRINTER, "read_cgroup_memory_limit", return_value=4 * gb),
-        mock.patch.object(FINGERPRINTER, "read_physical_memory", return_value=48 * gb),
-    ):
-        assert FINGERPRINTER.resolve_dkg_heap_mb() == 3072
-
-    with (
-        mock.patch.object(FINGERPRINTER, "read_cgroup_memory_limit", return_value=None),
-        mock.patch.object(FINGERPRINTER, "read_physical_memory", return_value=48 * gb),
-    ):
-        assert FINGERPRINTER.resolve_dkg_heap_mb() == 8192
-
-
-def test_node_options_merge_preserves_flags_and_explicit_heap():
-    assert FINGERPRINTER.merge_node_options("--enable-source-maps", 8192) == (
-        "--enable-source-maps --max-old-space-size=8192"
-    )
-    assert FINGERPRINTER.merge_node_options("--max-old-space-size=12288", 8192) == (
-        "--max-old-space-size=12288"
-    )
-    assert FINGERPRINTER.merge_node_options("--max_old_space_size 6144", 8192) == (
-        "--max_old_space_size 6144"
-    )
-
 def test_interrupted_restart_stays_stale_across_next_invocation(tmp_path):
     runtime = _make_runtime(tmp_path)
     marker = runtime[1] / ".blackbox-runtime.sha256"
@@ -196,8 +170,8 @@ def test_cli_compute_and_atomic_record(tmp_path, capsys):
 
 def test_cli_heap_reports_resolved_limit(capsys):
     with (
-        mock.patch.object(FINGERPRINTER, "read_cgroup_memory_limit", return_value=None),
-        mock.patch.object(FINGERPRINTER, "read_physical_memory", return_value=None),
+        mock.patch.object(FINGERPRINTER.process_limits, "read_cgroup_memory_limit", return_value=None),
+        mock.patch.object(FINGERPRINTER.process_limits, "read_physical_memory", return_value=None),
     ):
         assert FINGERPRINTER.main(["heap", "6144"]) == 0
     assert capsys.readouterr().out.strip() == "6144"
@@ -286,3 +260,14 @@ def test_removed_snapshot_overrides_do_not_change_runtime_fingerprint(tmp_path, 
     first = FINGERPRINTER.compute_fingerprint(*runtime)
     monkeypatch.setenv("DKG_SYNC_RESPONDER_GLOBAL_SNAPSHOT_ROW_LIMIT", "1600000")
     assert FINGERPRINTER.compute_fingerprint(*runtime) == first
+
+
+def test_cli_write_limits_records_the_installers_choice(tmp_path, capsys):
+    """The installer records its node limits for Blackbox's own restarts (process_limits)."""
+    with mock.patch.object(FINGERPRINTER.process_limits, "resolve_dkg_heap_mb", return_value=7000):
+        assert FINGERPRINTER.main(["write-limits", str(tmp_path), "--enable-source-maps", "256", "0"]) == 0
+    limits = FINGERPRINTER.process_limits.read_process_limits(str(tmp_path))
+    assert limits == FINGERPRINTER.process_limits.ProcessLimits(7000, 256, False)
+    assert FINGERPRINTER.main(["write-limits", str(tmp_path), "--max-old-space-size=3000", "512", "1"]) == 0
+    assert FINGERPRINTER.process_limits.read_process_limits(str(tmp_path)).heap_mb == 3000
+    assert FINGERPRINTER.main(["write-limits", str(tmp_path), "", "512", "yes"]) == 1

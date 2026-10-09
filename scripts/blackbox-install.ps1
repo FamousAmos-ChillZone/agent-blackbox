@@ -82,7 +82,12 @@ $DkgCatchupMaxConcurrentPeers = "1"
 $DkgStoreQueueWaitTimeoutMs = "300000"
 $script:DkgNodeOptions = ""
 $NodeMajor   = if ($env:BLACKBOX_NODE_MAJOR)  { [int]$env:BLACKBOX_NODE_MAJOR } else { 22 }
-$ContextGraphId = if ($env:BLACKBOX_CONTEXT_GRAPH_ID) { $env:BLACKBOX_CONTEXT_GRAPH_ID } else { "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm" }
+$DefaultContextGraphId = "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"
+$ContextGraphId = if ($env:BLACKBOX_CONTEXT_GRAPH_ID) { $env:BLACKBOX_CONTEXT_GRAPH_ID } else { $DefaultContextGraphId }
+# DKG 10.0.21+ recovery speed-ups (KI-282), both off by default in the node. The exact
+# batch stream is read ONLY from the environment, so the node launch below passes it.
+$DkgExactBatchStreamEnabled = if ($env:BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED) { $env:BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED } else { "1" }
+$DkgVmRecoveryPrefetchEnabled = if ($env:BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED) { $env:BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED } else { "1" }
 $GraphPeerId = if ($env:BLACKBOX_GRAPH_PEER_ID) { $env:BLACKBOX_GRAPH_PEER_ID } else { "12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyKndHXjZM" }
 $CatchupTimeout = if ($env:BLACKBOX_DKG_CATCHUP_TIMEOUT) { [int]$env:BLACKBOX_DKG_CATCHUP_TIMEOUT } else { 3600 }
 $script:InstallIncomplete = $false
@@ -248,6 +253,13 @@ function Initialize-BlackboxDkgProcessEnvironment {
         return $false
     }
     $script:DkgNodeOptions = "$($nodeOptionsOutput | Select-Object -Last 1)".Trim()
+    # Record them so Blackbox's own node restarts relaunch with the same limits
+    # (sync/process_limits.py). Not fatal: without the record they are recomputed.
+    $limitsOutput = @(& $script:VenvPython $helper write-limits $DkgHome $script:DkgNodeOptions "$DkgStoreQueueLimit" "$DkgListContextGraphsProjection" 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        if ($limitsOutput) { $limitsOutput | ForEach-Object { Write-Warn2 "$_" } }
+        Write-Warn2 "Could not record the DKG node limits; Blackbox restarts will recompute them."
+    }
     Write-Ok "DKG safety limits: one large sync at a time; V8 heap ${heapMb}MB"
     return $true
 }
@@ -270,6 +282,8 @@ function Invoke-BlackboxDkg {
         "DKG_STORE_QUEUE_WAIT_TIMEOUT_MS",
         "DKG_SYNC_TOTAL_TIMEOUT_MS",
         "DKG_SWM_RECOVERY_TIMEOUT_MS",
+        "DKG_EXACT_BATCH_STREAM_ENABLED",
+        "DKG_VM_RECOVERY_PREFETCH_ENABLED",
         "NODE_OPTIONS",
         "Path"
     )
@@ -297,6 +311,8 @@ function Invoke-BlackboxDkg {
         $env:DKG_STORE_QUEUE_WAIT_TIMEOUT_MS = "$DkgStoreQueueWaitTimeoutMs"
         $env:DKG_SYNC_TOTAL_TIMEOUT_MS = "1800000"
         $env:DKG_SWM_RECOVERY_TIMEOUT_MS = "3600000"
+        $env:DKG_EXACT_BATCH_STREAM_ENABLED = "$DkgExactBatchStreamEnabled"
+        $env:DKG_VM_RECOVERY_PREFETCH_ENABLED = "$DkgVmRecoveryPrefetchEnabled"
         $env:NODE_OPTIONS = $script:DkgNodeOptions
         & $DkgBin @Args
     } finally {
@@ -751,6 +767,9 @@ store_backend = sys.argv[3]
 store_url = sys.argv[4]
 store_managed = sys.argv[5].lower() == "true"
 context_graph_id = sys.argv[6]
+# Absent (an older caller): no graph is treated as the default, so the
+# steady profile stays exactly as before.
+default_context_graph_id = sys.argv[7] if len(sys.argv) > 7 else ""
 home.mkdir(parents=True, exist_ok=True)
 cfg_path = home / "config.json"
 original = None
@@ -784,8 +803,16 @@ data["relayReservationCount"] = int(data.get("relayReservationCount") or 4)
 # foreground pinned catch-up runs before a fresh install subscribes, while an
 # upgrade must not interrupt an existing checkpointed transfer.
 data["syncOnConnectEnabled"] = True
-data["syncReconcilerEnabled"] = True
 data["durableSyncEnabled"] = True
+# Umanitek's default graph uses the DKG 10.0.21 native profile (KI-282, the same
+# profile `blackbox sync` persists in sync/managed_node.py): the node's VM
+# reconciler recovers the graph and the older sync reconciler stays off so it
+# does not compete for the single sync slot. Any other graph keeps the steady one.
+native_profile = context_graph_id == default_context_graph_id
+data["syncReconcilerEnabled"] = not native_profile
+if native_profile:
+    data["vmReconcilerEnabled"] = True
+    data["vmRecoveryPrefetchEnabled"] = True
 data.pop("syncAgentsMeta", None)
 data["syncGlobalMaxInflight"] = 1
 data["syncGlobalQueueLimit"] = 0
@@ -845,7 +872,7 @@ print("switched" if switched else ("changed" if changed else "unchanged"))
     $writerFile = Join-Path $env:TEMP "blackbox_dkg_config.py"
     Set-Content -Path $writerFile -Value $writer -Encoding UTF8
     try {
-        $configState = & $VenvPython $writerFile $DkgHome $DkgPort $script:DkgSelectedStoreBackend $DkgStoreUrl $DkgStoreManagedByDkg $ContextGraphId
+        $configState = & $VenvPython $writerFile $DkgHome $DkgPort $script:DkgSelectedStoreBackend $DkgStoreUrl $DkgStoreManagedByDkg $ContextGraphId $DefaultContextGraphId
         if ($LASTEXITCODE -ne 0) { throw "dkg config exit $LASTEXITCODE" }
         $configResult = $configState | Select-Object -Last 1
         if ($configResult -eq "switched") {
@@ -904,12 +931,28 @@ function Resolve-Repo {
     }
     if (Test-BlackboxRepoCheckout $RepoDir) {
         Write-Step "Updating existing clone at $RepoDir"
+        # Single-branch shallow clone: add the branch to the fetch rule once, so a
+        # DIFFERENT branch becomes a normal remote branch to check out (KI-287).
+        $branchRule = "+refs/heads/${RepoBranch}:refs/remotes/origin/${RepoBranch}"
+        $fetchRules = @(& git -C $RepoDir config --get-all remote.origin.fetch)
+        if ($fetchRules -notcontains $branchRule) { & git -C $RepoDir remote set-branches --add origin $RepoBranch }
+        # What this install last fetched: HEAD equal to it = no local commits (KI-294).
+        $fetchedBefore = (& git -C $RepoDir rev-parse -q --verify "refs/remotes/origin/$RepoBranch" 2>$null)
         & git -C $RepoDir fetch --depth 1 origin $RepoBranch
         if ($LASTEXITCODE -ne 0) { throw "Could not fetch $RepoBranch from $RepoUrl" }
         & git -C $RepoDir checkout $RepoBranch
-        if ($LASTEXITCODE -ne 0) { throw "Could not check out $RepoBranch in $RepoDir" }
-        & git -C $RepoDir pull --ff-only origin $RepoBranch
-        if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward $RepoDir to origin/$RepoBranch" }
+        if ($LASTEXITCODE -ne 0) { throw "Could not switch $RepoDir to $RepoBranch (git's reason is above)" }
+        # A depth-1 fetch brings the new tip without its parent, so `pull --ff-only`
+        # refuses every update (KI-294): move to the new tip when the install holds
+        # no work of its own (--keep still refuses uncommitted changes).
+        $head = (& git -C $RepoDir rev-parse HEAD)
+        if ($fetchedBefore -and $head -eq $fetchedBefore) {
+            & git -C $RepoDir reset -q --keep "refs/remotes/origin/$RepoBranch"
+            if ($LASTEXITCODE -ne 0) { throw "Could not update $RepoDir to origin/${RepoBranch}: it has uncommitted changes (git's reason is above)" }
+        } else {
+            & git -C $RepoDir pull --ff-only origin $RepoBranch
+            if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward $RepoDir to origin/${RepoBranch}: it holds local commits (git's reason is above)" }
+        }
     } else {
         Write-Step "Cloning $RepoUrl -> $RepoDir"
         & git clone --depth 1 --branch $RepoBranch $RepoUrl $RepoDir
@@ -1037,7 +1080,7 @@ function Install-BlackboxDkgPackage {
         Write-Warn2 "Could not determine the installed DKG package version."
         return $false
     }
-    & $script:VenvPython -m plugins.blackbox.dkg_version $installedVersion
+    & $script:VenvPython -m plugins.blackbox.kernel.dkg_version $installedVersion
     if ($LASTEXITCODE -ne 0) {
         Write-Warn2 "DKG $installedVersion is too old for direct verified Blackbox recovery; version 10.0.9+ is required."
         return $false
@@ -1284,11 +1327,11 @@ defaults = {
     "context_graph_id": context_graph_id,
     "graph_peer_id": graph_peer_id,
     "sync_interval": 3600,
-    # Community sharing has not shipped.  Keep fresh installs private, and
-    # make the obsolete outbound-report allowance inert for compatibility
-    # with older readers that still expect the key to exist.
+    # Community sharing has not shipped.  Keep fresh installs private.  The
+    # daily cap is the plugin's default bound (20): 0 used to mean NO cap,
+    # and the plugin no longer accepts it (Refine R1).
     "report": False,
-    "daily_report_limit": 0,
+    "daily_report_limit": 20,
     "report_min_severity": "high",
     "block_severity": "critical",
     "dashboard_port": 9700,
@@ -1299,12 +1342,25 @@ for k, v in defaults.items():
     if k not in blackbox:
         blackbox[k] = v
         added.append(k)
-# Migrate stale pre-release sharing settings too. The feature is closed at
-# runtime, so leaving an old opt-in in config is misleading even if inert.
-for k, v in {"report": False, "daily_report_limit": 0}.items():
-    if blackbox.get(k) != v:
-        blackbox[k] = v
-        added.append(k)
+# KI-184: an opt-in backed by a sharing-consent record (R13) survives every
+# re-run and upgrade; only a pre-release opt-in (no consent record in force) is
+# migrated off. The product's own consent code decides; if it cannot be
+# imported the answer is "no consent" (fail closed = sharing off).
+repo_dir = sys.argv[7] if len(sys.argv) > 7 else ""
+def _consent_in_force(checkout):
+    try:
+        if checkout:
+            sys.path.insert(0, checkout)
+        from plugins.blackbox.community import consent
+        return bool(consent.in_force())
+    except Exception:
+        return False
+if blackbox.get("report") is True and not _consent_in_force(repo_dir):
+    blackbox["report"] = False
+    added.append("report")
+if blackbox.get("daily_report_limit") in (0, "0"):   # the pre-R1 "no cap"; the plugin refuses it
+    blackbox["daily_report_limit"] = 20
+    added.append("daily_report_limit")
 with open(cfg_path, "w") as f:
     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 print("  configured: " + ", ".join(added) if added else "  already configured - no changes")
@@ -1312,7 +1368,7 @@ print("  configured: " + ", ".join(added) if added else "  already configured - 
     $configFile = Join-Path $env:TEMP "blackbox_configure.py"
     Set-Content -Path $configFile -Value $configWriter -Encoding UTF8
     try {
-        & $VenvPython $configFile "$HermesHome\config.yaml" $DkgDaemonUrl $DkgHome $DkgBin $ContextGraphId $GraphPeerId
+        & $VenvPython $configFile "$HermesHome\config.yaml" $DkgDaemonUrl $DkgHome $DkgBin $ContextGraphId $GraphPeerId $RepoDir
         if ($LASTEXITCODE -ne 0) { throw "config update exit $LASTEXITCODE" }
         Write-Ok "Config defaults written (audit mode - blocking is opt-in)"
     } catch {
@@ -1487,6 +1543,95 @@ function Show-NextSteps {
     Write-Host ""
 }
 
+# ── Start on sign-in (Windows parity with the Linux/macOS boot services) ────
+# The Linux/macOS installer registers the DKG node and the dashboard as boot
+# services (KI-022, KI-296: the dashboard refreshes the rules and drives the
+# community pulse). On Windows nothing came back after a restart or sign-out.
+# Two per-user Scheduled Tasks at sign-in, no admin rights: the node (through
+# a generated launcher carrying the same steady-state settings as the Linux
+# service) and, 30 s later, the dashboard. Remove with:
+#   Unregister-ScheduledTask -TaskName 'Agent Blackbox DKG node' -Confirm:$false
+#   Unregister-ScheduledTask -TaskName 'Agent Blackbox dashboard' -Confirm:$false
+function ConvertTo-PsLiteral {
+    param([string]$Value)
+    "'" + ($Value -replace "'", "''") + "'"
+}
+
+function New-BlackboxDkgLauncherLines {
+    # The node launcher's lines. Connection-time sync stays ON (it delivers
+    # context-graph authority to subscribers, KI-044); the periodic reconciler is
+    # left to config.json, as in the Linux unit; the stream/prefetch switches and
+    # the installer's safety limits ride along (KI-282).
+    param([string]$NodeDir = "")
+    $lines = @(
+        "# managed-by: agent-blackbox-installer -- starts the Blackbox DKG node at sign-in; rewritten on every install.",
+        "`$env:DKG_HOME = $(ConvertTo-PsLiteral $DkgHome)",
+        "`$env:DKG_SYNC_ON_CONNECT_ENABLED = '1'",
+        "`$env:DKG_DURABLE_SYNC_ENABLED = $(ConvertTo-PsLiteral $script:DkgDurableSyncEnabled)",
+        "`$env:DKG_STORE_QUEUE_LIMIT = $(ConvertTo-PsLiteral "$DkgStoreQueueLimit")",
+        "`$env:DKG_LIST_CONTEXT_GRAPHS_PROJECTION = $(ConvertTo-PsLiteral "$DkgListContextGraphsProjection")",
+        "`$env:DKG_EXACT_BATCH_STREAM_ENABLED = $(ConvertTo-PsLiteral "$DkgExactBatchStreamEnabled")",
+        "`$env:DKG_VM_RECOVERY_PREFETCH_ENABLED = $(ConvertTo-PsLiteral "$DkgVmRecoveryPrefetchEnabled")"
+    )
+    if ($script:DkgNodeOptions) { $lines += "`$env:NODE_OPTIONS = $(ConvertTo-PsLiteral $script:DkgNodeOptions)" }
+    if ($NodeDir) { $lines += "`$env:Path = $(ConvertTo-PsLiteral "$NodeDir;") + `$env:Path" }
+    $lines += "& $(ConvertTo-PsLiteral $DkgBin) start --foreground"
+    return $lines
+}
+
+function Register-BlackboxStartupTasks {
+    Write-Heading "Starting Blackbox when you sign in"
+    if (-not (Get-Command Register-ScheduledTask -ErrorAction SilentlyContinue)) {
+        Write-Warn2 "Scheduled Tasks are unavailable: after a restart, start the node and run 'blackbox dashboard' yourself."
+        return
+    }
+    if (-not (Test-Path $DkgBin)) {
+        Write-Warn2 "The DKG node is not installed; nothing to start at sign-in."
+        return
+    }
+    $nodeDir = ""
+    $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+    if ($nodeCommand -and $nodeCommand.Source) { $nodeDir = Split-Path -Parent $nodeCommand.Source }
+    New-Item -ItemType Directory -Force -Path $DkgHome | Out-Null
+    $nodeLauncher = Join-Path $DkgHome "start-blackbox-dkg.ps1"
+    Set-Content -Path $nodeLauncher -Value (New-BlackboxDkgLauncherLines -NodeDir $nodeDir) -Encoding UTF8
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+    $hidden = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File"
+    try {
+        $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "$hidden `"$nodeLauncher`""
+        Register-ScheduledTask -TaskName "Agent Blackbox DKG node" -Action $action -Trigger $trigger `
+            -Principal $principal -Settings $settings -Force | Out-Null
+        Write-Ok "The DKG node starts when you sign in (task 'Agent Blackbox DKG node')"
+    } catch {
+        Write-Warn2 "Could not register the DKG node task: $($_.Exception.Message)"
+        return
+    }
+    if (-not ($script:HermesBin -and (Test-Path $script:HermesBin))) {
+        Write-Warn2 "hermes was not found; run 'blackbox dashboard' yourself after a restart."
+        return
+    }
+    New-Item -ItemType Directory -Force -Path $BlackboxHome | Out-Null
+    $dashLauncher = Join-Path $BlackboxHome "start-blackbox-dashboard.ps1"
+    Set-Content -Path $dashLauncher -Encoding UTF8 -Value @(
+        "# managed-by: agent-blackbox-installer -- starts the Blackbox dashboard at sign-in (rule refresh + community pulse).",
+        "`$env:HERMES_HOME = $(ConvertTo-PsLiteral $HermesHome)",
+        "& $(ConvertTo-PsLiteral $script:HermesBin) blackbox dashboard"
+    )
+    try {
+        $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+        $trigger.Delay = "PT30S"   # after the node
+        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "$hidden `"$dashLauncher`""
+        Register-ScheduledTask -TaskName "Agent Blackbox dashboard" -Action $action -Trigger $trigger `
+            -Principal $principal -Settings $settings -Force | Out-Null
+        Write-Ok "The dashboard starts when you sign in (task 'Agent Blackbox dashboard')"
+    } catch {
+        Write-Warn2 "Could not register the dashboard task: $($_.Exception.Message)"
+    }
+}
+
 # ── Main ────────────────────────────────────────────────────────────────────
 function Main {
     Write-Banner
@@ -1504,6 +1649,7 @@ function Main {
     Configure-BlackboxMode
     Protect-AllAgents
     Sync-Ruleset
+    Register-BlackboxStartupTasks
     Show-NextSteps
     if ($script:InstallIncomplete) {
         exit 1

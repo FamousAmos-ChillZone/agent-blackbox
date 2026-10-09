@@ -9,19 +9,7 @@ import pytest
 from _blackbox_loader import load_blackbox
 
 
-dkg_client = load_blackbox("dkg_client")
-
-
-def test_structured_terminal_failure_beats_backpressure_wording():
-    assert dkg_client.classify_catchup_error({
-        "errorCode": "RFC64_CATALOG_PROVIDER_INCOMPATIBLE",
-        "error": "The publisher cannot supply this protocol after a timeout",
-        "retryable": False,
-    }) == "terminal"
-    assert dkg_client.classify_catchup_error({
-        "error": "Store scheduler backpressure",
-        "retryable": False,
-    }) == "terminal"
+dkg_client = load_blackbox("kernel.dkg_client")
 
 
 class _FakeResponse:
@@ -222,8 +210,6 @@ def test_authoritative_catchup_pins_publisher_for_durable_vm_recovery(monkeypatc
     assert cap["timeout"] == dkg_client.constants.GRAPH_SYNC_SETTLEMENT_TIMEOUT_S
 
 
-
-
 def test_context_graph_has_agent_uses_local_participants_metadata(monkeypatch):
     cap = _capture(
         monkeypatch,
@@ -245,7 +231,7 @@ def test_request_join_publishes_encryption_profile_before_signing(monkeypatch):
         monkeypatch,
         [
             '{"ok":true}',
-            '{"delegation":{"agentAddress":"0xabc","signature":"sig"}}',
+            '{"delegation":{"agentAddress":"0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a","signature":"sig"}}',
             '{"delivered":1}',
         ],
     )
@@ -261,7 +247,7 @@ def test_request_join_publishes_encryption_profile_before_signing(monkeypatch):
     ]
     assert json.loads(cap["calls"][0]["body"]) == {}
     assert json.loads(cap["calls"][2]["body"]) == {
-        "delegation": {"agentAddress": "0xabc", "signature": "sig"},
+        "delegation": {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a", "signature": "sig"},
         "curatorPeerId": "curator-peer",
         "agentName": "agent-blackbox",
     }
@@ -281,7 +267,7 @@ def test_request_join_tolerates_older_daemon_without_profile_endpoint(monkeypatc
                 io.BytesIO(b'{"error":"not found"}'),
             )
         if req.full_url.endswith("/sign-join"):
-            return _FakeResponse('{"delegation":{"agentAddress":"0xabc"}}')
+            return _FakeResponse('{"delegation":{"agentAddress":"0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}}')
         return _FakeResponse('{"delivered":1}')
 
     monkeypatch.setattr(dkg_client.urllib.request, "urlopen", fake_urlopen)
@@ -373,14 +359,14 @@ def test_working_memory_query_sends_agent_address(monkeypatch):
         "SELECT * WHERE {?s ?p ?o}",
         "cg",
         view="working-memory",
-        agent_address="0xabc",
+        agent_address="0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a",
     )
 
     assert json.loads(cap["body"]) == {
         "sparql": "SELECT * WHERE {?s ?p ?o}",
         "contextGraphId": "cg",
         "view": "working-memory",
-        "agentAddress": "0xabc",
+        "agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a",
     }
 
 
@@ -403,75 +389,6 @@ def test_write_path_raises_dkg_error_on_http_error(monkeypatch):
     with pytest.raises(dkg_client.DkgError) as exc_info:
         client.share_knowledge_asset("cg", "n", [])
     assert exc_info.value.status_code == 403
-
-
-def test_catchup_keeps_structured_failure_beyond_old_error_body_limit(monkeypatch):
-    payload = {
-        "errorCode": "DURABLE_CATCHUP_ALL_PEERS_FAILED",
-        "retryable": True,
-        "diagnostics": "x" * 2_000,
-        "perContextGraph": [{"durableFailure": {
-            "code": "RFC64_CATALOG_VERIFICATION_FAILED",
-            "message": "Authenticated catalog head did not match the applied closure",
-            "retryable": False,
-        }}],
-    }
-
-    def raise_http(req, timeout=None):
-        raise urllib.error.HTTPError(
-            req.full_url, 503, "unavailable", {},
-            io.BytesIO(json.dumps(payload).encode()),
-        )
-
-    monkeypatch.setattr(dkg_client.urllib.request, "urlopen", raise_http)
-    client = dkg_client.DkgClient(url="http://node", token="t")
-    with pytest.raises(dkg_client.DkgError) as exc_info:
-        client.catchup_from_peer("owner/graph", "publisher")
-    error = exc_info.value
-    assert error.response == payload
-    assert "RFC64_CATALOG_VERIFICATION_FAILED" in str(error)
-    assert dkg_client.classify_catchup_error(error) == "terminal"
-
-
-def test_http_error_body_is_bounded_when_daemon_returns_oversized_response(monkeypatch):
-    def raise_http(req, timeout=None):
-        raise urllib.error.HTTPError(
-            req.full_url, 503, "unavailable", {},
-            io.BytesIO(b"x" * (dkg_client._ERROR_BODY_LIMIT + 100)),
-        )
-
-    monkeypatch.setattr(dkg_client.urllib.request, "urlopen", raise_http)
-    client = dkg_client.DkgClient(url="http://node", token="t")
-    with pytest.raises(dkg_client.DkgError) as exc_info:
-        client.catchup_from_peer("owner/graph", "publisher")
-    assert exc_info.value.response is None
-    assert str(exc_info.value).endswith(" [response truncated]")
-    assert len(str(exc_info.value)) < dkg_client._ERROR_BODY_LIMIT + 100
-
-
-@pytest.mark.parametrize("payload, expected", [
-    ({"retryable": False, "error": "Store scheduler queue wait timeout"}, "terminal"),
-    ({"retryable": True, "errorCode": "SYNC_BACKPRESSURE"}, "capacity"),
-    ({"retryable": True, "errorCode": "DURABLE_CATCHUP_ALL_PEERS_FAILED"}, "retryable"),
-    ({"retryable": True, "errorCode": "RFC64_CATALOG_PROVIDER_UNAVAILABLE",
-      "error": "provider timed out"}, "retryable"),
-    ({"retryable": True, "errorCode": "RFC64_CATALOG_SUBSCRIPTION_REQUIRED"}, "terminal"),
-    ({"retryable": True, "errorCode": "VM_CHAIN_RECOVERY_INCOMPLETE",
-      "error": "Chain VM inventory recovery did not complete",
-      "results": [{"durableDiagnostics": {
-          "deferredBackpressure": 0, "backoffWorthyFailures": 0,
-      }}]}, "retryable"),
-    ({"retryable": True, "errorCode": "VM_CHAIN_RECOVERY_INCOMPLETE",
-      "error": "Store scheduler backpressure rejected recovery",
-      "results": [{"durableDiagnostics": {"deferredBackpressure": 1}}]}, "capacity"),
-])
-def test_catchup_failure_classification_preserves_structured_retry_authority(payload, expected):
-    error = dkg_client.DkgError(
-        "POST /api/shared-memory/catchup -> 503: " + json.dumps(payload),
-        status_code=503, response=payload,
-    )
-    assert dkg_client.classify_catchup_error(error) == expected
-    assert dkg_client.classify_catchup_error(str(error)) == expected
 
 
 def test_share_is_idempotent_on_already_finalized(monkeypatch):
@@ -537,6 +454,104 @@ def test_extract_binding_shapes():
     assert dkg_client.extract_binding(None) == ""
 
 
+@pytest.mark.parametrize("term, value", [
+    (r'"say \"hi\""', 'say "hi"'),
+    (r'"a\\"', "a\\"),                       # escaped backslash right before the closing quote
+    (r'"tab\there\nline"', "tab\there\nline"),
+    (r'"\u00e9t\U000000E9"', "été"),
+    (r'"{\"v\":1,\"sig\":\"ab\"}"', '{"v":1,"sig":"ab"}'),   # a signed envelope as the daemon returns it
+    (r'"x\"y"^^<http://www.w3.org/2001/XMLSchema#string>', 'x"y'),
+    ('"unterminated', '"unterminated'),
+])
+def test_extract_binding_decodes_ntriples_escapes(term, value):
+    """Regression (2026-10-01, Refine R0c): the daemon returns literals in raw
+    N-Triples form; without decoding, any value containing a quote or a
+    backslash — e.g. a signed report envelope — came back still escaped, and
+    a literal ending in an escaped backslash was not even cut at the right quote."""
+    assert dkg_client.extract_binding(term) == value
+
+
+def test_malformed_query_reply_is_a_failure_for_sentinel_callers(monkeypatch):
+    """R0 tri-state: an unrecognized reply ({}) must not read as an empty graph
+    for a caller that asked to tell failure from empty; default callers still get []."""
+    client = dkg_client.DkgClient(url="http://127.0.0.1:1", dkg_home="/nonexistent")
+    monkeypatch.setattr(client, "request", lambda *a, **k: {})
+    sentinel = object()
+    assert client.query("SELECT ?x WHERE {}", "g", on_error=sentinel) is sentinel
+    assert client.query("SELECT ?x WHERE {}", "g") == []
+    monkeypatch.setattr(client, "request", lambda *a, **k: {"bindings": []})
+    assert client.query("SELECT ?x WHERE {}", "g", on_error=sentinel) == []
+
+
 def test_normalize_bindings_nested_shape():
     result = {"results": {"bindings": [{"n": {"value": "3"}}]}}
     assert dkg_client.normalize_bindings(result) == [{"n": {"value": "3"}}]
+
+
+# ---------------------------------------------------------------------------
+# Signed requests (DKG >= 10.0.19 spec §18) — KI-061 regression guards
+# ---------------------------------------------------------------------------
+
+def _header(headers, name):
+    """Case-insensitive header lookup (urllib normalizes capitalization)."""
+    for k, v in headers.items():
+        if k.lower() == name.lower():
+            return v
+    return None
+
+
+def test_signed_request_headers_hmac_shape():
+    """The signature is HMAC-SHA256(token, METHOD\\nPATH\\nTS\\nNONCE\\nsha256(body))."""
+    import hashlib
+    import hmac as hmac_mod
+
+    headers = dkg_client.signed_request_headers("tok", "post", "/api/query?x=1", b'{"a":1}')
+    assert set(headers) == {"x-dkg-timestamp", "x-dkg-nonce", "x-dkg-signature"}
+    payload = "\n".join([
+        "POST",                       # method uppercased
+        "/api/query?x=1",             # pathname+search, exactly as sent
+        headers["x-dkg-timestamp"],
+        headers["x-dkg-nonce"],
+        hashlib.sha256(b'{"a":1}').hexdigest(),
+    ])
+    expected = hmac_mod.new(b"tok", payload.encode(), hashlib.sha256).hexdigest()
+    assert headers["x-dkg-signature"] == expected
+
+
+def test_request_sends_valid_signature_when_token_present():
+    """Every authed request carries a signature the daemon can verify (KI-061:
+    a bearer token alone gets an empty 400 from DKG 10.0.19)."""
+    import hashlib
+    import hmac as hmac_mod
+
+    pytest_mp = pytest.MonkeyPatch()
+    try:
+        captured = _capture(pytest_mp)
+        client = dkg_client.DkgClient(url="http://node", token="secret")
+        client.query("SELECT 1", "cg")
+        headers = captured["headers"]
+        ts = _header(headers, "x-dkg-timestamp")
+        nonce = _header(headers, "x-dkg-nonce")
+        sig = _header(headers, "x-dkg-signature")
+        assert ts and nonce and sig
+        payload = "\n".join([
+            "POST", "/api/query", ts, nonce,
+            hashlib.sha256(captured["body"].encode()).hexdigest(),
+        ])
+        assert sig == hmac_mod.new(b"secret", payload.encode(), hashlib.sha256).hexdigest()
+    finally:
+        pytest_mp.undo()
+
+
+def test_request_omits_signature_without_token():
+    """No token → no Authorization and no signing headers (public routes)."""
+    pytest_mp = pytest.MonkeyPatch()
+    try:
+        captured = _capture(pytest_mp)
+        client = dkg_client.DkgClient(url="http://node", token="")
+        client.status()
+        headers = captured["headers"]
+        assert _header(headers, "x-dkg-signature") is None
+        assert _header(headers, "Authorization") is None
+    finally:
+        pytest_mp.undo()

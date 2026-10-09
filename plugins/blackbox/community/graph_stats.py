@@ -1,0 +1,115 @@
+"""Graph-wide statistics over the community graph — the dashboard's read model.
+
+Pure functions over VERIFIED reports (:func:`.reader.read_verified_reports`):
+how many distinct agents have reported, what each reporting agent contributed
+(the "Community graph — connected agents" section), and which threats the most
+distinct agents reported. Every count keys on the report's verified SIGNER
+(``VerifiedReport.author``), never on the self-described ``g:reporter``
+string, which is display-only (LES-014, KI-067/110) — so one node posing as
+ten addresses is one agent here, exactly as in the ruleset.
+
+The dashboard owns HTTP, caching and sanitization; strings returned here are
+unsanitized community data that the caller escapes.
+
+Usage (through the package)::
+
+    from .. import community
+    reports = community.read_verified_reports(client, cfg) or []
+    count = community.contributing_agent_count(reports)
+    agents = community.community_agents(reports, own_author)
+    threats = community.most_reported_threats(reports, limit=50)
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from dataclasses import dataclass, field
+from typing import Dict, Iterable, List, Sequence, Set, TypedDict
+
+from ..kernel import constants
+from .verification import VerifiedReport
+
+
+class CommunityAgent(TypedDict):
+    """One signer on the community graph and what it reported.
+
+    ``author`` — the verified signer key (the identity); ``address`` — the
+    reporter address it most often claims (display only); ``frameworks`` —
+    sorted, distinct; ``reports`` — report subjects it signed; ``is_self`` —
+    the signer is this node's own reporter key.
+    """
+
+    author: str
+    address: str
+    frameworks: List[str]
+    reports: int
+    is_self: bool
+
+
+class ReportedThreat(TypedDict):
+    """One threat identifier and how many distinct signers reported it."""
+
+    identifier: str
+    reporters: int
+    severity: str   # the highest severity any verified report gave it
+
+
+def contributing_agent_count(reports: Iterable[VerifiedReport]) -> int:
+    """Distinct verified signers across all reports."""
+    return len({report.author for report in reports})
+
+
+@dataclass
+class _SignerTally:
+    """What one signer contributed, accumulated while folding reports."""
+
+    addresses: "Counter[str]" = field(default_factory=Counter)
+    frameworks: Set[str] = field(default_factory=set)
+    subjects: Set[str] = field(default_factory=set)
+
+
+def community_agents(reports: Iterable[VerifiedReport], own_author: str = "") -> List[CommunityAgent]:
+    """One entry per verified signer.
+
+    Ordered: this node first, then most reports, then signer key — stable
+    across refreshes so the section does not reshuffle on every poll.
+    """
+    tallies: Dict[str, _SignerTally] = {}
+    for report in reports:
+        tally = tallies.setdefault(report.author, _SignerTally())
+        tally.addresses[report.reporter] += 1
+        if report.framework:
+            tally.frameworks.add(report.framework.lower())
+        tally.subjects.add(report.subject)
+    agents: List[CommunityAgent] = [
+        {
+            "author": author,
+            "address": tally.addresses.most_common(1)[0][0],
+            "frameworks": sorted(tally.frameworks),
+            "reports": len(tally.subjects),
+            "is_self": bool(own_author) and author == own_author,
+        }
+        for author, tally in tallies.items()
+    ]
+    return sorted(agents, key=lambda a: (not a["is_self"], -a["reports"], a["author"]))
+
+
+def most_reported_threats(reports: Sequence[VerifiedReport], limit: int) -> List[ReportedThreat]:
+    """The *limit* threats with the most distinct verified signers."""
+    authors: Dict[str, Set[str]] = {}
+    severity: Dict[str, str] = {}
+    for report in reports:
+        authors.setdefault(report.identifier, set()).add(report.author)
+        current = severity.get(report.identifier, "info")
+        if constants.SEVERITY_RANK.get(report.severity, 0) > constants.SEVERITY_RANK.get(current, 0):
+            current = report.severity
+        severity[report.identifier] = current
+    ranked = sorted(authors, key=lambda ident: (-len(authors[ident]), ident))[: max(0, int(limit))]
+    return [{"identifier": ident, "reporters": len(authors[ident]), "severity": severity[ident]} for ident in ranked]
+
+
+def reports_signed_by(reports: Iterable[VerifiedReport], author: str) -> int:
+    """How many report subjects *author* signed (``blackbox report --status``)."""
+    if not author:
+        return 0
+    return len({report.subject for report in reports if report.author == author})

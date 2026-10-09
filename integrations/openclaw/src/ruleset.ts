@@ -2,7 +2,7 @@
  * Graph-synced rule cache.
  *
  * The ruleset is the ONLY source of detection truth (mirrors Python
- * `ruleset.py`):
+ * `ruleset/` package):
  *
  *   - `verifiable-memory` (the curated public threat graph) → rules tagged
  *     `source: "public"`. The source of truth: matches are CONFIRMED and, in

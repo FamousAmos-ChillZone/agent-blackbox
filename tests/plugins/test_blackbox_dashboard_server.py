@@ -1,14 +1,14 @@
 from pathlib import Path
 import re
+import time
 from types import SimpleNamespace
 
 from _blackbox_loader import load_blackbox
 
 
 server = load_blackbox("dashboard.server")
-sync_state = load_blackbox("sync_state")
+sync_state = load_blackbox("sync.state")
 detection = load_blackbox("detection")
-quads = load_blackbox("quads")
 
 
 def test_dashboard_theme_setting_is_persistent_and_applied_before_paint():
@@ -671,7 +671,7 @@ def test_sync_activity_does_not_hide_failure_behind_stale_syncing_state():
     assert activity["detail"] == "protocol negotiation failed"
 
 
-def test_sync_activity_keeps_verified_partial_vm_available_after_swm_failure():
+def test_sync_activity_hides_known_swm_failure_when_verified_vm_is_ready():
     activity = server._sync_activity(
         public=52_000,
         community=0,
@@ -684,137 +684,18 @@ def test_sync_activity_keeps_verified_partial_vm_available_after_swm_failure():
         transfer={},
     )
 
-    assert activity["status"] == "waiting"
-    assert activity["phase"] == "partial-verifiable-memory"
-    assert activity["label"] == "Verified rules are available"
-    assert activity["detail"] == "52,000 verified public threats are queryable; full graph sync is incomplete."
-    assert activity["percent"] is None
+    assert activity["status"] == "ready"
+    assert activity["phase"] == "verifiable-memory-ready"
+    assert activity["label"] == "Verified threat graph is ready"
+    assert activity["detail"] == "52,000 verified public threats are queryable."
+    assert activity["percent"] == 100.0
 
 
-def test_sync_activity_keeps_native_provider_timeout_waiting_with_partial_graph():
-    raw_error = (
-        "POST /api/shared-memory/catchup -> 503: "
-        '{"ok":false,"errorCode":"RFC64_CATALOG_PROVIDER_UNAVAILABLE",'
-        '"retryable":true,"error":"Catalog provider request timed out"}'
-    )
-    activity = server._sync_activity(
-        public=52_000,
-        community=0,
-        node_reachable=True,
-        catchup={"status": "failed", "error": raw_error},
-        connection={"state": "subscribed"},
-        transfer={
-            "status": "failed",
-            "phase": "recovering-verifiable-memory",
-            "current_triples": 250,
-            "expected_triples": 1_000,
-        },
-    )
-
-    assert activity["status"] == "waiting"
-    assert activity["phase"] == "waiting-for-sync-source"
-    assert activity["label"] == "Waiting for graph sync source"
-    assert activity["current"] == 250
-    assert activity["expected"] == 1_000
-    assert activity["percent"] == 25.0
-    assert "source is temporarily unavailable" in activity["detail"]
-    assert "publisher is temporarily busy" not in activity["detail"]
-
-
-def test_sync_activity_never_marks_incomplete_durable_timeout_ready():
-    for indicator in (
-        '"includeDurable":true',
-        '"includeSharedMemory":false',
-        '"durableComplete":false',
-    ):
-        raw_error = (
-            "POST /api/shared-memory/catchup -> 503: "
-            '{"ok":false,"retryable":true,"error":"Recovery timed out",'
-            + indicator + "}"
-        )
-        activity = server._sync_activity(
-            public=52_000,
-            community=0,
-            node_reachable=True,
-            catchup={"status": "failed", "error": raw_error},
-            connection={"state": "subscribed"},
-            transfer={
-                "status": "failed",
-                "phase": "recovering-verifiable-memory",
-                "current_triples": 250,
-                "expected_triples": 1_000,
-            },
-        )
-
-        assert activity["status"] == "waiting"
-        assert activity["phase"] == "waiting-for-sync-source"
-        assert activity["percent"] == 25.0
-        assert "checkpointed" in activity["detail"]
-
-
-def test_sync_activity_treats_retryable_durable_503_as_source_wait():
+def test_sync_activity_treats_retryable_durable_503_as_resumable_wait():
     raw_error = (
         "POST /api/shared-memory/catchup -> 503: "
         '{"ok":false,"errorCode":"DURABLE_CATCHUP_ALL_PEERS_FAILED",'
         '"retryable":true,"error":"Durable catchup failed for every selected peer"}'
-    )
-    activity = server._sync_activity(
-        public=52_000,
-        community=0,
-        node_reachable=True,
-        catchup={"status": "failed", "error": raw_error},
-        connection={"state": "subscribed"},
-        transfer={
-            "status": "failed",
-            "phase": "recovering-verifiable-memory",
-            "current_triples": 51_642,
-            "expected_triples": 6_117_721,
-        },
-    )
-
-    assert activity["status"] == "waiting"
-    assert activity["phase"] == "waiting-for-sync-source"
-    assert activity["label"] == "Waiting for graph sync source"
-    assert activity["current"] == 51_642
-    assert activity["expected"] == 6_117_721
-    assert activity["indeterminate"] is False
-    assert "retry and resume automatically" in activity["detail"]
-    assert "source is temporarily unavailable" in activity["detail"]
-    assert "busy" not in activity["detail"]
-    assert "POST" not in activity["detail"]
-    assert "503" not in activity["detail"]
-
-
-def test_sync_activity_surfaces_structural_failure_inside_retryable_wrapper():
-    raw_error = (
-        "POST /api/shared-memory/catchup -> 503: "
-        '{"ok":false,"errorCode":"DURABLE_CATCHUP_ALL_PEERS_FAILED",'
-        '"retryable":true,"error":"Durable catchup failed for every selected peer",'
-        '"peerErrors":[{"errorCode":"RFC64_CATALOG_SUBSCRIPTION_REQUIRED",'
-        '"retryable":false,"error":"Catalog subscription is required for recovery"}]}'
-    )
-    activity = server._sync_activity(
-        public=0,
-        community=0,
-        node_reachable=True,
-        catchup={"status": "failed", "error": raw_error},
-        connection={"state": "subscribed"},
-        transfer={},
-    )
-
-    assert activity["status"] == "failed"
-    assert activity["label"] == "Graph sync needs attention"
-    assert "Catalog subscription is required" in activity["detail"]
-    assert "temporarily busy" not in activity["detail"]
-    assert activity["percent"] is None
-    assert server._graph_sync_state(0, True, "failed") == "incomplete"
-
-
-def test_sync_activity_displays_proven_capacity_with_preserved_checkpoint():
-    raw_error = (
-        "POST /api/shared-memory/catchup -> 503: "
-        '{"ok":false,"errorCode":"SYNC_BACKPRESSURE","retryable":true,'
-        '"error":"Global sync queue is full"}'
     )
     activity = server._sync_activity(
         public=52_000,
@@ -836,74 +717,9 @@ def test_sync_activity_displays_proven_capacity_with_preserved_checkpoint():
     assert activity["current"] == 51_642
     assert activity["expected"] == 6_117_721
     assert activity["indeterminate"] is False
-    assert "publisher is temporarily busy" in activity["detail"]
     assert "retry and resume automatically" in activity["detail"]
-
-
-def test_sync_activity_displays_running_wait_phases_with_actual_progress():
-    for phase, expected_phase, expected_label, reason in (
-        (
-            "waiting-for-dkg-capacity",
-            "waiting-for-publisher-capacity",
-            "Waiting for publisher sync capacity",
-            "publisher is temporarily busy",
-        ),
-        (
-            "waiting-for-sync-source",
-            "waiting-for-sync-source",
-            "Waiting for graph sync source",
-            "source is temporarily unavailable",
-        ),
-    ):
-        activity = server._sync_activity(
-            public=5,
-            community=0,
-            node_reachable=True,
-            catchup={"status": "running"},
-            connection={"state": "subscribed"},
-            transfer={
-                "status": "running",
-                "phase": phase,
-                "current_triples": 250,
-                "expected_triples": 1_000,
-                "started_at": 100.0,
-                "updated_at": 200.0,
-            },
-        )
-
-        assert activity["status"] == "waiting"
-        assert activity["phase"] == expected_phase
-        assert activity["label"] == expected_label
-        assert activity["current"] == 250
-        assert activity["expected"] == 1_000
-        assert activity["percent"] == 25.0
-        assert activity["started_at"] == 100.0
-        assert activity["updated_at"] == 200.0
-        assert reason in activity["detail"]
-        assert "retry and resume automatically" in activity["detail"]
-
-
-def test_sync_activity_preserves_active_transfer_over_stale_terminal_catchup():
-    activity = server._sync_activity(
-        public=5,
-        community=0,
-        node_reachable=True,
-        catchup={
-            "status": "failed",
-            "error": '{"errorCode":"RFC64_CATALOG_SUBSCRIPTION_REQUIRED","retryable":false}',
-        },
-        connection={"state": "subscribed"},
-        transfer={
-            "status": "running",
-            "phase": "recovering-verifiable-memory",
-            "current_triples": 250,
-            "expected_triples": 1_000,
-        },
-    )
-
-    assert activity["status"] == "running"
-    assert activity["label"] == "Receiving publisher VM"
-    assert activity["percent"] == 25.0
+    assert "POST" not in activity["detail"]
+    assert "503" not in activity["detail"]
 
 
 def test_sync_activity_keeps_unrelated_catchup_failures_visible():
@@ -1000,3 +816,119 @@ def test_sync_activity_keeps_new_catchup_visible_after_authoritative_transfer():
 
     assert activity["status"] == "running"
     assert activity["phase"] == "network-catchup"
+
+
+def test_the_worker_refreshes_soon_when_nothing_was_ever_compiled():
+    """KI-205: a never-compiled home does not wait a full sync interval for its first refresh."""
+    from plugins.blackbox.dashboard import sync_timing
+    from plugins.blackbox.kernel.config import BlackboxConfig
+    from plugins.blackbox.ruleset import compiler
+    cfg = BlackboxConfig(sync_interval=3600)
+    never = compiler.Ruleset()                                   # synced_at 0
+    compiled = compiler.Ruleset()
+    compiled.synced_at = time.time()                          # compiled just now
+    assert sync_timing.initial_sync_delay(cfg, never, 5.0, 10.0) == 10.0
+    assert 3590.0 <= sync_timing.initial_sync_delay(cfg, compiled, 5.0, 10.0) <= 3600.0
+
+
+def test_the_first_refresh_follows_the_rulesets_own_schedule(monkeypatch):
+    """KI-303: a dashboard started after the installer compiled the first asset
+    waited a full sync_interval although the ruleset asked for 2 minutes (the
+    graph still arriving) — 1,000 rules for an hour on a fresh node."""
+    from plugins.blackbox.dashboard import sync_timing
+    from plugins.blackbox.kernel.config import BlackboxConfig
+    from plugins.blackbox.ruleset import compiler
+    monkeypatch.setattr(sync_timing.time, "time", lambda: 1_000_000.0)
+    cfg = BlackboxConfig(sync_interval=3600)
+    catching_up = compiler.Ruleset()
+    catching_up.synced_at = 1_000_000.0 - 3600 + 120          # the refresh cycle asked for 120 s
+
+    assert sync_timing.initial_sync_delay(cfg, catching_up, 5.0, 10.0) == 120.0
+
+
+def test_the_worker_follows_the_rulesets_own_schedule_while_the_graph_is_arriving(monkeypatch):
+    """KI-288, bench native-b 2026-10-06: the worker slept a full hour after the first
+    compile (6 assets) while the node kept downloading; the ruleset had asked for 2 minutes."""
+    from plugins.blackbox.dashboard import sync_timing
+    from plugins.blackbox.kernel.config import BlackboxConfig
+    from plugins.blackbox.ruleset import compiler
+    monkeypatch.setattr(sync_timing.time, "time", lambda: 1_000_000.0)
+    cfg = BlackboxConfig(sync_interval=3600)
+    catching_up = compiler.Ruleset()
+    catching_up.synced_at = 1_000_000.0 - 3600 + 120                # the refresh cycle asked for 120 s
+
+    assert sync_timing.next_sync_delay(cfg, catching_up, 40.0, 5.0) == 120.0
+
+
+def test_the_worker_keeps_its_period_when_the_ruleset_asks_for_nothing_sooner(monkeypatch):
+    from plugins.blackbox.dashboard import sync_timing
+    from plugins.blackbox.kernel.config import BlackboxConfig
+    from plugins.blackbox.ruleset import compiler
+    monkeypatch.setattr(sync_timing.time, "time", lambda: 1_000_000.0)
+    cfg = BlackboxConfig(sync_interval=3600)
+    fresh = compiler.Ruleset()
+    fresh.synced_at = 1_000_000.0
+
+    assert sync_timing.next_sync_delay(cfg, fresh, 40.0, 5.0) == 3560.0   # period counted from the refresh start
+    assert sync_timing.next_sync_delay(cfg, compiler.Ruleset(), 40.0, 5.0) == 3560.0
+
+
+# ---------------------------------------------------------------------------
+# KI-215: a node that does not follow the verified graph says so, no clock
+# ---------------------------------------------------------------------------
+
+
+def test_not_subscribed_activity_has_no_clock_and_names_the_fix():
+    from plugins.blackbox.dashboard.sync_labels import not_subscribed_activity
+
+    activity = not_subscribed_activity()
+    assert activity["status"] == "not-subscribed"
+    assert activity["started_at"] is None and activity["percent"] is None
+    assert "blackbox sync --wait" in activity["detail"]
+
+
+def test_node_sync_probe_reports_subscription_from_the_listing(monkeypatch):
+    class _Client:
+        def __init__(self, **kw):
+            pass
+        def catchup_status(self, graph):
+            return {"status": "running"}
+        def context_graphs(self):
+            return [{"id": "0xowner/other", "subscribed": True}]
+    from plugins.blackbox.dashboard import node_probe
+
+    monkeypatch.setattr(node_probe, "DkgClient", _Client)
+    cfg = SimpleNamespace(dkg_url="http://127.0.0.1:9200", dkg_home="/tmp/x", context_graph_id="0xowner/vm")
+    probe = node_probe.node_sync_probe(cfg, reachable=True)
+    assert probe["subscribed"] is False and probe["catchup"] == {"status": "running"}
+
+
+def test_node_sync_probe_treats_an_unreadable_listing_as_unknown(monkeypatch):
+    class _Client:
+        def __init__(self, **kw):
+            pass
+        def catchup_status(self, graph):
+            return {}
+        def context_graphs(self):
+            raise RuntimeError("listing unavailable")
+    from plugins.blackbox.dashboard import node_probe
+
+    monkeypatch.setattr(node_probe, "DkgClient", _Client)
+    cfg = SimpleNamespace(dkg_url="http://127.0.0.1:9200", dkg_home="/tmp/x", context_graph_id="0xowner/vm")
+    assert node_probe.node_sync_probe(cfg, reachable=True)["subscribed"] is None
+
+
+def test_node_sync_probe_is_none_for_an_unreachable_node():
+    from plugins.blackbox.dashboard import node_probe
+
+    cfg = SimpleNamespace(dkg_url="http://127.0.0.1:9200", dkg_home="/tmp/x", context_graph_id="0xowner/vm")
+    assert node_probe.node_sync_probe(cfg, reachable=False) is None
+
+
+def test_dashboard_page_shows_the_not_subscribed_panel():
+    from pathlib import Path
+
+    from plugins.blackbox import dashboard as dashboard_pkg
+
+    page = (Path(dashboard_pkg.__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'status === "not-subscribed"' in page

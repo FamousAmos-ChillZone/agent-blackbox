@@ -1,7 +1,8 @@
 /**
  * Ruleset-driven matcher — a faithful port of the canonical Python
- * `plugins/blackbox/quads.py` (arg-shape + dependency parsing) and
- * `plugins/blackbox/detection.py` (the matchers).
+ * `plugins/blackbox/detection/` — shell_shapes.py (arg-shape),
+ * action_parsing.py (dependency/file/skill parsing), content_scanners.py
+ * (injection/secret/skill-danger/IOC scans) and detectors.py (the matchers).
  *
  * Detection rules come ONLY from the synced threat graph (see ruleset.ts), in
  * two trust tiers: `source: "public"` (verifiable-memory, the curated source of
@@ -20,6 +21,7 @@
  * shapes stay consistent. It returns the SINGLE top-priority shape (or null),
  * exactly like Python's `normalize_arg_shape`.
  */
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -166,6 +168,12 @@ export interface FindingFields {
   skillVersion?: string;
   dangerShape?: string;
   iocType?: string;
+  // Refine R1 report evidence (KI-182 port): the dependency's kind and malware reason, a named
+  // skill's public registry, and a local skill's code hash (reported by hash, never by name).
+  kind?: string;
+  reason?: string;
+  registry?: string;
+  artifactHash?: string;
 }
 
 export interface Finding {
@@ -392,7 +400,7 @@ export function detectDependency(
 }
 
 // ---------------------------------------------------------------------------
-// Arg-shape normalization — port of quads.py
+// Arg-shape normalization — port of detection/shell_shapes.py
 // ---------------------------------------------------------------------------
 
 // A remote-download-piped-to-interpreter shape: `curl ... | sh`, `wget ... | bash`.
@@ -428,7 +436,9 @@ const SHELL_SHAPE_RULES: ReadonlyArray<readonly [string, RegExp]> = [
 ];
 
 // Tool names whose payload is treated as a shell command string.
-const SHELL_TOOLS = new Set(["terminal", "shell", "bash", "run_command", "exec", "command"]);
+export const SHELL_TOOLS = new Set(["terminal", "shell", "bash", "run_command", "exec", "command"]);
+/** The escalation arg shapes a report may name (Python `shell_shapes.ESCALATION_SHAPES`). */
+export const ESCALATION_SHAPES: ReadonlySet<string> = new Set(SHELL_SHAPE_RULES.map(([shape]) => shape));
 const COMMAND_KEYS = ["command", "cmd", "shell", "script", "input"] as const;
 
 const MAX_SHAPE_SCAN = 8000;
@@ -490,7 +500,7 @@ export function normalizeArgShape(toolName: string, args: unknown): string | nul
 
 // ---------------------------------------------------------------------------
 // Built-in injection heuristics (discovery layer — OWASP LLM01/LLM06)
-// Port of quads.py `_INJECTION_HEURISTICS` / `scan_injection_heuristics`.
+// Port of detection/content_scanners.py `_INJECTION_HEURISTICS` / `scan_injection_heuristics`.
 // ---------------------------------------------------------------------------
 
 // Each entry is [severity, owasp, regex]. The DISCOVERY nomination layer: a
@@ -501,7 +511,7 @@ const INJECTION_HEURISTICS: ReadonlyArray<readonly [BlackboxSeverity, string, Re
   // OpenClaw replaces model-control delimiters in external content with this
   // marker before plugins see the result. Preserve the security signal.
   ["high", "LLM01", /\[REMOVED_SPECIAL_TOKEN\]/],
-  // "ignore all previous instructions" and close variants (see quads.py).
+  // "ignore all previous instructions" and close variants (see detection/content_scanners.py).
   ["high", "LLM01", /(?:ignore|disregard|forget|skip|override)\s+(?:all\s+|any\s+|the\s+|these\s+)?(?:previous|prior|above|earlier|preceding|prior\s+)\s*(?:instruction|message|prompt|rule|context|direction|directive|command|guideline)s?/i],
   // Exfiltrate the system prompt / instructions.
   ["high", "LLM06", /(?:reveal|show|print|repeat|disclose|give|tell|share|send|output|expose|leak|what(?:'s|\s+is|\s+are)?|display)\b[\s\S]{0,40}\b(?:system\s+prompt|system\s+message|initial\s+(?:instruction|prompt)s?|your\s+(?:instructions|prompt|system\s+prompt|guidelines))/i],
@@ -591,8 +601,8 @@ export function discoverInjection(text: string, ruleset: Ruleset): Finding[] {
 
 // ---------------------------------------------------------------------------
 // Sensitive file-access categories (discovery layer)
-// Port of quads.py `_SENSITIVE_PATH_RULES` / `file_access_arg` /
-// `sensitive_path_category` + detection.py `detect_fileaccess`.
+// Port of detection/action_parsing.py `_SENSITIVE_PATH_RULES` / `file_access_arg` /
+// `sensitive_path_category` + detection/detectors.py `detect_fileaccess`.
 // ---------------------------------------------------------------------------
 
 // [category, severity, path-regex]. Matched against the accessed path only; the
@@ -652,6 +662,9 @@ export interface FileAccess {
  * Extract `{tool, path, mode}` for a file-access tool call, or `null`.
  * Port of Python `file_access_arg`.
  */
+/** The sensitive-path categories a report may name (Python `action_parsing.SENSITIVE_PATH_CATEGORIES`). */
+export const SENSITIVE_PATH_CATEGORIES: ReadonlySet<string> = new Set(SENSITIVE_PATH_RULES.map(([category]) => category));
+
 export function fileAccessArg(toolName: string, args: unknown): FileAccess | null {
   const tool = (toolName || "").trim().toLowerCase();
   const mode = FILE_ACCESS_TOOLS[tool];
@@ -741,8 +754,8 @@ export function detectFileaccess(toolName: string, args: unknown, ruleset: Rules
 
 // ---------------------------------------------------------------------------
 // Suspicious-skill danger-shape scanning (discovery layer)
-// Port of quads.py `_SKILL_CODE_RULES` / `_SKILL_PERMISSION_RULES` /
-// `skill_install_arg` / `scan_skill_dangers` + detection.py `detect_skill`.
+// Port of detection/content_scanners.py `_SKILL_CODE_RULES` / `_SKILL_PERMISSION_RULES` /
+// `scan_skill_dangers`, action_parsing.py `skill_install_arg` + detectors.py `detect_skill`.
 // ---------------------------------------------------------------------------
 
 // [dangerShape, severity, regex] over the skill's declared code/content.
@@ -774,6 +787,9 @@ const SKILL_PERMISSION_RULES: ReadonlyArray<readonly [string, BlackboxSeverity, 
 ];
 
 // Tools that install/modify a skill.
+/** The skill danger shapes a report may name (Python `content_scanners.SKILL_DANGER_SHAPES`). */
+export const SKILL_DANGER_SHAPES: ReadonlySet<string> = new Set([...SKILL_CODE_RULES, ...SKILL_PERMISSION_RULES].map(([shape]) => shape));
+
 const SKILL_TOOLS = new Set([
   "skill_manage",
   "skill_install",
@@ -968,7 +984,8 @@ export function detectSkill(toolName: string, args: unknown, ruleset: Ruleset): 
       evidence: `skill ${name}: ${shape}`,
       confirmed: false,
       source: "heuristic",
-      fields: { skillName: name, skillVersion: version, dangerShape: shape },
+      fields: { skillName: name, skillVersion: version, dangerShape: shape,
+                artifactHash: createHash("sha256").update(skill.code ?? "", "utf8").digest("hex") },
     });
   }
   return out;
@@ -1302,8 +1319,8 @@ function sampleAround(text: string, re: RegExp): string {
 }
 
 // ---------------------------------------------------------------------------
-// OSV dependency auto-discovery (discovery layer) — port of detection.py
-// `discover_dependency_candidates` + osv.py `lookup`.
+// OSV dependency auto-discovery (discovery layer) — port of detection/detectors.py
+// `discover_dependency_candidates` + detection/osv.py `lookup`.
 // ---------------------------------------------------------------------------
 
 /** `{advisoryId, severity}` when OSV knows a package@version vulnerable. */
@@ -1378,7 +1395,7 @@ export async function discoverDependencyCandidates(
 
 // ---------------------------------------------------------------------------
 // Custom (user-configured) protected-path detection
-// Port of detection.py `_protected_path_match` / `detect_custom_fileaccess`.
+// Port of detection/detectors.py `_protected_path_match` / `detect_custom_fileaccess`.
 // ---------------------------------------------------------------------------
 
 /**
@@ -1513,7 +1530,7 @@ export function detectCustomFileAccess(
 }
 
 // ---------------------------------------------------------------------------
-// Orchestrator — port of detection.py `detect_all` / `_graph_escalation`.
+// Orchestrator — port of detection/detectors.py `detect_all` / `_graph_escalation`.
 // ---------------------------------------------------------------------------
 
 /**

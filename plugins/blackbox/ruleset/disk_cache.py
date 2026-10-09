@@ -1,0 +1,127 @@
+"""The on-disk ruleset cache (``ruleset.json``) and its lock-file path.
+
+Atomic tmp+rename writes; :func:`_deserialize` re-normalizes injection
+patterns so a cache written by an older version still compiles safely.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from pathlib import Path
+from typing import Any, Dict, Optional
+from ..kernel import constants
+from . import compiler
+from . import safe_regex
+from . import row_adapters
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Cache persistence
+# ---------------------------------------------------------------------------
+
+
+def _cache_path() -> Path:
+    return constants.blackbox_home() / "ruleset.json"
+
+
+def _lock_path() -> Path:
+    return constants.blackbox_home() / "ruleset.lock"
+
+
+def _serialize(rs: compiler.Ruleset) -> Dict[str, Any]:
+    return {
+        "synced_at": rs.synced_at,
+        "refresh_due_at": rs.refresh_due_at,
+        "context_graph_id": rs.context_graph_id,
+        "injection": [
+            {k: v for k, v in rule.items() if k != "pattern"} for rule in rs.injection
+        ],
+        "escalation": rs.escalation,
+        "dependency": rs.dependency,
+        "fileaccess": rs.fileaccess,
+        "skill": rs.skill,
+        "ioc": rs.ioc,
+        "graph_threats": rs.graph_threats,
+        "community": rs.community,
+        "community_paused": rs.community_paused,
+        "community_fingerprint": rs.community_fingerprint,
+        "community_empty_since": rs.community_empty_since,
+        "kill_list": rs.kill_list,
+        "kill_list_refused": rs.kill_list_refused,
+        "curator_manifest_state": rs.curator_manifest_state,
+    }
+
+
+def _deserialize(data: Dict[str, Any]) -> compiler.Ruleset:
+    rs = compiler.Ruleset(
+        synced_at=float(data.get("synced_at", 0.0)),
+        refresh_due_at=float(data.get("refresh_due_at", 0.0)),
+        context_graph_id=str(data.get("context_graph_id") or ""),
+    )
+    for rule in data.get("injection", []):
+        src = row_adapters._normalize_injection_pattern(str(rule.get("pattern_src") or ""))
+        if not src:
+            continue
+        try:
+            compiled = safe_regex.compile_bounded(src, re.IGNORECASE)   # G6: the same gate as the graph read
+        except safe_regex.UnsafePattern:
+            continue
+        if rule.get("source", "public") == "public":
+            rs.injection.append({**rule, "pattern_src": src, "pattern": compiled})
+    # KI-001: community rules SURVIVE the cache round-trip. The scan lists
+    # (injection/escalation/fileaccess/skill) stay public-only — community
+    # content never enters a scanned/compiled structure (KI-004); the
+    # identifier-keyed lookup dicts (dependency/ioc) keep both tiers, and the
+    # community store reloads verbatim so corroboration outlives restarts.
+    rs.escalation = [r for r in data.get("escalation", []) if r.get("source", "public") == "public"]
+    rs.dependency = {
+        k: r
+        for k, r in data.get("dependency", {}).items()
+        if r.get("source", "public") in ("public", "community")
+    }
+    rs.fileaccess = [r for r in data.get("fileaccess", []) if r.get("source", "public") == "public"]
+    rs.skill = [r for r in data.get("skill", []) if r.get("source", "public") == "public"]
+    rs.ioc = {
+        k: r
+        for k, r in data.get("ioc", {}).items()
+        if r.get("source", "public") in ("public", "community")
+    }
+    rs.graph_threats = [r for r in data.get("graph_threats", []) if r.get("source", "public") == "public"]
+    community = data.get("community")
+    rs.community = {
+        str(k): dict(v)
+        for k, v in (community or {}).items()
+        if isinstance(v, dict)
+    } if isinstance(community, dict) else {}
+    rs.community_paused = bool(data.get("community_paused", False))
+    rs.community_fingerprint = str(data.get("community_fingerprint") or "")
+    rs.community_empty_since = float(data.get("community_empty_since") or 0.0)
+    rs.kill_list = dict(data.get("kill_list") or {}) if isinstance(data.get("kill_list"), dict) else {}
+    rs.kill_list_refused = str(data.get("kill_list_refused") or "")
+    rs.curator_manifest_state = str(data.get("curator_manifest_state") or "")
+    return rs
+
+
+def _write_cache(rs: compiler.Ruleset) -> None:
+    try:
+        home = constants.blackbox_home()
+        home.mkdir(parents=True, exist_ok=True)
+        tmp = _cache_path().with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(_serialize(rs)), encoding="utf-8")
+        tmp.replace(_cache_path())
+    except Exception as exc:  # pragma: no cover - fail open
+        logger.debug("blackbox: ruleset cache write failed: %s", exc)
+
+
+def _read_cache() -> Optional[compiler.Ruleset]:
+    path = _cache_path()
+    if not path.exists():
+        return None
+    try:
+        return _deserialize(json.loads(path.read_text(encoding="utf-8")))
+    except Exception as exc:  # pragma: no cover - fail open
+        logger.debug("blackbox: ruleset cache read failed: %s", exc)
+        return None

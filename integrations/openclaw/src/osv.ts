@@ -7,7 +7,7 @@
  * graph ruleset, `lookup` asks OSV whether that exact `package@version` is
  * known-vulnerable. If so, the caller auto-submits a candidate dependency threat.
  *
- * Faithful port of `plugins/blackbox/osv.py`. Design constraints:
+ * Faithful port of `plugins/blackbox/detection/osv.py`. Design constraints:
  *   - global `fetch` only — no new runtime dependency.
  *   - fail-open — any transport/parse error resolves to null (no finding).
  *   - short timeout — never delays the agent loop meaningfully.

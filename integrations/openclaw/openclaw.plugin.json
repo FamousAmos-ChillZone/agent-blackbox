@@ -1,7 +1,7 @@
 {
   "id": "blackbox",
   "name": "Agent Blackbox",
-  "description": "Detects prompt-injection, escalation, dependency, file-access, and skill threats from the curated Verifiable Memory graph. Findings stay local; sharing is coming soon.",
+  "description": "Detects prompt-injection, escalation, dependency, file-access, and skill threats from the curated Verifiable Memory graph. Findings stay local; sharing to the community graph is opt-in (`report: true` plus a recorded consent) and carries signed, privacy-safe statements only.",
   "activation": {
     "onStartup": true
   },

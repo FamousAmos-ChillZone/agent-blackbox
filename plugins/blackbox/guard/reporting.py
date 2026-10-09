@@ -1,0 +1,91 @@
+"""What happens to findings once detection fires: filter, record, share.
+
+:func:`_flag_worthy` keeps the findings worth surfacing under the current
+config; :func:`_report_and_audit` records them locally and fans each one out
+(Observer-style) to the private audit record and — when the community share
+policy allows — the community graph. Called by the hooks and the background
+discovery tasks alike.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict, List, Optional
+from .. import audit, detection
+from .. import community
+from ..kernel import identity
+from ..kernel.config import BlackboxConfig
+from ..kernel.dkg_client import DkgClient
+
+logger = logging.getLogger(__name__)
+
+def _flag_worthy(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List[detection.Finding]:
+    """Apply the user's detection policy to raw findings.
+
+    * Per-category policy (``detection.<category>.{enabled,min_severity}``):
+      disabled categories never flag; the floor drops anything below it.
+    * Heuristic gate: discovery candidates additionally need
+      ``report_min_severity`` — they are nominations, not confirmed threats.
+
+    Custom rules (``source == "custom"``) bypass the category policy.
+    """
+    out: List[detection.Finding] = []
+    for f in findings:
+        if f.source == "custom":
+            out.append(f)
+            continue
+        if not cfg.category_allows(f.category, f.severity):
+            continue
+        if f.source == "heuristic" and not cfg.meets_report_threshold(f.severity):
+            continue
+        out.append(f)
+    return out
+
+
+def _report_and_audit(cfg: BlackboxConfig, event: str, findings: List[detection.Finding], detail: Dict[str, Any]) -> None:
+    """Audit findings locally, then fan out (Observer-style) per finding:
+    private WM audit KA always; community share when the policy allows.
+
+    The community share itself runs on a background daemon thread (KI-033) —
+    a slow or down node must never stall the agent's tool call. Only the
+    policy decision (microseconds, no I/O) happens inline.
+    """
+    finding_dicts = [f.to_dict() for f in findings]
+    audit.record(event=event, findings=finding_dicts or None, detail=detail)
+    if not findings:
+        return
+    client: Optional[DkgClient] = None
+    try:
+        client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
+    except Exception:
+        client = None
+    policy = community.CommunitySharePolicy(cfg)
+    reporter = identity.reporter_address(client) if client is not None else None
+    for finding in finding_dicts:
+        # Custom rules, LLM opinions, and secret findings stay local — no private
+        # KA, no sighting. Secret values must never risk reaching the shared graph.
+        if finding.get("source") in community.NEVER_SHARED_SOURCES:
+            continue
+        identifier = str(finding.get("identifier") or "")
+        # R2b: a VERIFIED-tier match counts in the weekly sighting tally — repeats
+        # too, which the report cooldown below refuses. Community-only matches never do.
+        if finding.get("source") == "public":
+            community.record_verified_sighting(identifier)
+        # Per-threat cooldown: a re-fire within the window adds no signal.
+        # Stamped BEFORE the share attempt, so a failed share waits out the
+        # window too (KI-020, accepted v1 tradeoff — the ledger records the
+        # failure so it is never invisible).
+        if audit.recently_reported(identifier):
+            continue
+        # Private WM audit KA (observed evidence stays local). Stamp the cooldown
+        # here so it bounds the KA independently of whether a sighting is sent.
+        if client is not None:
+            audit.mark_reported(identifier)
+            audit.write_private_audit_ka(client, cfg.context_graph_id, event, finding)
+        allowed, why = policy.decide(finding, reporter)
+        if not allowed:
+            logger.debug("blackbox: community share skipped (%s): %s", why, identifier)
+            continue
+        if client is None or not audit.allow_report(cfg.daily_report_limit):
+            continue
+        community.spawn_community_share(client, cfg, finding, reporter)

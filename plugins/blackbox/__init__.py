@@ -7,14 +7,15 @@ and shares anonymized sightings; in block mode it refuses tool calls that match
 a threat at or above the configured severity.
 
 This module is intentionally thin: it wires the five hooks and the ``blackbox``
-CLI, delegating all behaviour to the submodules (:mod:`hooks`, :mod:`cli`).
+CLI, delegating all behaviour to the feature packages (:mod:`guard` for the hooks,
+:mod:`cli` for the command). The package map is ARCHITECTURE.md.
 """
 
 from __future__ import annotations
 
 from . import cli as _cli
-from . import hooks as _hooks
-from .constants import __version__
+from . import guard as _hooks
+from .kernel.constants import __version__
 
 __all__ = ["register", "__version__"]
 

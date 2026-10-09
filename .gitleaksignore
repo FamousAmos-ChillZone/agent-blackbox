@@ -1,0 +1,152 @@
+# Reviewed false positives (2026-10-01) — already-pushed commits that cannot change without
+# rewriting history. None is a real secret: two are Python type annotations
+# (a key variable typed as an Ed25519 private key), the rest are deliberately fake secrets in redaction tests.
+# Those tests now build their fakes at runtime, so no new commit carries such literals.
+# Format: commit:file:rule:line (gitleaks fingerprint).
+41d3acb03efad08cd5d39df97399bec54fcac966:plugins/blackbox/community/report_signer.py:generic-api-key:50
+9ad0c7f47210bea7d11ff6d15489af832cca372b:tests/plugins/test_blackbox_kernel_redaction.py:generic-api-key:15
+9ad0c7f47210bea7d11ff6d15489af832cca372b:tests/plugins/test_blackbox_kernel_redaction.py:generic-api-key:32
+9ad0c7f47210bea7d11ff6d15489af832cca372b:tests/plugins/test_blackbox_kernel_redaction.py:private-key:16
+9ad0c7f47210bea7d11ff6d15489af832cca372b:tests/plugins/test_blackbox_llm.py:generic-api-key:126
+bf9047579d3c9f7e8109eee4c265e0f0a5cf072e:tests/plugins/test_blackbox_ki178_redaction.py:generic-api-key:14
+bf9047579d3c9f7e8109eee4c265e0f0a5cf072e:tests/plugins/test_blackbox_ki178_redaction.py:generic-api-key:29
+bf9047579d3c9f7e8109eee4c265e0f0a5cf072e:tests/plugins/test_blackbox_ki178_redaction.py:private-key:15
+e7d0fd58976017b9850b18c52eae9894480bbce6:tests/plugins/test_blackbox_ki178_redaction.py:generic-api-key:14
+e7d0fd58976017b9850b18c52eae9894480bbce6:tests/plugins/test_blackbox_ki178_redaction.py:generic-api-key:29
+e7d0fd58976017b9850b18c52eae9894480bbce6:tests/plugins/test_blackbox_ki178_redaction.py:private-key:15
+fe2fa1bb1b6bb07024a50f6412e5e09bbb609b25:tests/plugins/_community_rows.py:generic-api-key:28
+# 2026-10-03 reviewed false positives: a test assertion that compared two tuples of PUBLIC curator
+# identifiers, and (second line) this file's own first note, which quoted that assertion. No secret in
+# either. Both lines were reworded; quote flagged code in a commit message, never here.
+b5b0cdd2711429bc8e52b7cd1abfc10eedf845df:tests/plugins/test_blackbox_trust_store.py:generic-api-key:316
+5fbd4954f9921984d985662f3eed9122d55aee07:.gitleaksignore:generic-api-key:19
+
+# Reviewed false positives (2026-10-08) — Hermes upstream history carried in by the 0.21.4 re-port
+# (commits 2026-07-31 .. 2026-09-21, none authored by Blackbox maintainers, none in plugins/blackbox).
+# They surface only when a scan covers the whole range from umanitek main to this branch (the
+# upstream landing PR). Reviewed one by one: redaction/approval test fixtures (every GitHub-token-shaped
+# value fails GitHub's own CRC32 checksum, so none is a real token), public OAuth client ids,
+# the docs site's public search key, a sha256 pin, and keyword arguments the generic rule mistakes for keys.
+0640fe71194c9df82234e1295d45b5a916b423f5:tests/test_tui_gateway_server.py:generic-api-key:5314
+0997a23e5719e2e40127276c0c0b398d84c79566:tests/agent/test_redact.py:generic-api-key:981
+0a9a449a32e7dc244ae5e7809050162bf47f93f1:tests/tui_gateway/test_diagnostics_share_nous.py:generic-api-key:83
+10f0d2278bf7ea7dd005e5c8b1b9dc47d108a1ec:tests/tools/test_voice_client_config.py:generic-api-key:132
+126a6ffa4d62726ff0595f25e5d1ccef2b00840b:tests/run_agent/test_thinking_prefill_trailing_turn.py:generic-api-key:39
+12be763de09f6baa25c2e8a2dbe3db38aeda2246:agent/context_compressor.py:generic-api-key:3998
+1e8f6a04913a08fa69918917b103c90955a95501:tests/run_agent/test_preflight_timeout_typed_result.py:generic-api-key:27
+1f08821bd0e49da747f3db1c44bf21503174b0b0:tests/hermes_cli/test_approvals_suggest.py:github-pat:245
+210cdb0ed35d4f7ef0957182312baaaa9e19bfbc:tests/run_agent/test_steer.py:generic-api-key:734
+226df89f74c15ad89fdc41b33746c79c8addf72c:tests/agent/test_redact.py:curl-auth-header:1196
+2b9da1f2525f9e2cf21f6e1bd5ac655bd2b5da75:tests/run_agent/test_compression_budget_rearm.py:generic-api-key:95
+2f44998353b7ad28278be52bf7bd9822ac7730d1:tests/plugins/dashboard_auth/test_opaque_bearer_not_unreachable.py:generic-api-key:36
+37f42713ef73a817b95f1fa1f84c4287f6325c41:tests/run_agent/test_export_current_turn_boundary.py:generic-api-key:87
+37f5f1ff982680efcd83d0c5d4e1c652ec89b575:tests/agent/test_redact.py:generic-api-key:1147
+37f5f1ff982680efcd83d0c5d4e1c652ec89b575:tests/agent/test_redact.py:generic-api-key:1148
+37f5f1ff982680efcd83d0c5d4e1c652ec89b575:tests/agent/test_redact.py:generic-api-key:1151
+37f5f1ff982680efcd83d0c5d4e1c652ec89b575:tests/agent/test_redact.py:generic-api-key:1152
+3b3ad958d7ecdd4ebbbe304c5695853699d77b79:tests/run_agent/test_primary_runtime_restore.py:generic-api-key:820
+3cbdc32565cb1b77b1b6edefdf9cf0638807d654:tests/agent/test_memory_user_id.py:generic-api-key:126
+3e5e4c5d20006e0f29f5389224ee0265e444dd3f:tests/tui_gateway/test_composite_carrier_rewind.py:generic-api-key:511
+3e5e4c5d20006e0f29f5389224ee0265e444dd3f:tests/tui_gateway/test_composite_carrier_rewind.py:generic-api-key:562
+4202a508fdd977df1601ec90e578a850cf28be97:tests/run_agent/test_background_review_input_budget.py:generic-api-key:85
+44ba32a5650ebc1d6b44183ec2ad70670e48d5ff:tests/agent/test_memory_user_id.py:generic-api-key:170
+53c0df6de92fd696a4c3b023ae70116d9002d9c2:tests/run_agent/test_compression_timeout_terminal.py:generic-api-key:40
+5444f6853b6ab0ed675896d65412cc10a808dfd2:tests/agent/test_redact.py:generic-api-key:130
+56e7fd2adf094f2f0c8db1aaa9ca31ba2f126a5d:tests/run_agent/test_92450_outer_error_retry_bound.py:generic-api-key:50
+5a0c2fb89ec14efd013a5dadee3e637fccad9228:tests/tools/test_plugin_guard.py:generic-api-key:508
+5a4c3b32d0cb32be851df01c374399b90df801d7:ui-tui/src/__tests__/useSessionLifecycleStoredSid.test.ts:generic-api-key:66
+60942fc786da19ef57dd891474b0fb825e60db48:website/docusaurus.config.ts:generic-api-key:105
+61d8be5cb0a20602621114cefa166fbe204110dd:apps/desktop/electron/native-token-store.test.ts:generic-api-key:105
+61d8be5cb0a20602621114cefa166fbe204110dd:apps/desktop/electron/native-token-store.test.ts:generic-api-key:106
+61d8be5cb0a20602621114cefa166fbe204110dd:apps/desktop/electron/native-token-store.test.ts:generic-api-key:186
+61d8be5cb0a20602621114cefa166fbe204110dd:apps/desktop/electron/native-token-store.test.ts:generic-api-key:29
+61d8be5cb0a20602621114cefa166fbe204110dd:apps/desktop/electron/native-token-store.test.ts:generic-api-key:30
+64576a34f86e5d381ae0c064f19a7c4a61988f23:agent/context_compressor.py:generic-api-key:3833
+6549a8bfb6d46d91d2265d328150b2690b0bcd15:agent/context_compressor.py:generic-api-key:3651
+6611d87003505c6895940a6cb446eaa70ac6778d:tests/run_agent/test_reset_aware_primary_restore.py:generic-api-key:104
+6611d87003505c6895940a6cb446eaa70ac6778d:tests/run_agent/test_reset_aware_primary_restore.py:generic-api-key:49
+668396c2e10fa639bc14e9a932e504639e3f090c:tests/tools/test_process_registry.py:generic-api-key:2307
+668396c2e10fa639bc14e9a932e504639e3f090c:tests/tools/test_process_registry.py:generic-api-key:2331
+668396c2e10fa639bc14e9a932e504639e3f090c:tests/tools/test_process_registry.py:generic-api-key:2346
+68bc4b216e2b9657ac4790b2588a43e4cf94d3f5:tests/agent/test_length_continuation_window_headroom.py:generic-api-key:29
+6c2c77efba051cd26b2a587c18484bf96cbe24ab:tests/run_agent/test_81641_text_turn_incremental_persistence.py:generic-api-key:47
+6cb1085d3d8b7af6849ff902dc58a88b7408da0c:tests/gateway/test_multiplex_toolsets_profile_isolation.py:generic-api-key:32
+6cb1085d3d8b7af6849ff902dc58a88b7408da0c:tests/gateway/test_multiplex_toolsets_profile_isolation.py:generic-api-key:33
+6dc961e5f535dc2101a3b0fb6771ef365f798d07:website/docusaurus.config.ts:generic-api-key:111
+6de6e6da992682f55587458a950485aa1389ca12:tests/agent/test_anthropic_model_cooldowns.py:generic-api-key:41
+6e7ea9cbdccd21514ec6037497544f466f78342d:tests/agent/test_redact.py:generic-api-key:1035
+71e2924c5f45339cfbf281c3822bf43f1ddfd6c9:apps/desktop/electron/backend-ready.test.ts:generic-api-key:267
+71e2924c5f45339cfbf281c3822bf43f1ddfd6c9:apps/desktop/electron/backend-ready.test.ts:generic-api-key:268
+72c828ca2cc6e4255aec460d32420be83c21b046:tests/run_agent/test_compression_budget_refund.py:generic-api-key:146
+73eadd54f5048367cabdd1e4389f15ed6bd33986:tests/gateway/test_standalone_send_redaction.py:stripe-access-token:17
+73eadd54f5048367cabdd1e4389f15ed6bd33986:tests/gateway/test_standalone_send_redaction.py:stripe-access-token:31
+73eadd54f5048367cabdd1e4389f15ed6bd33986:tests/gateway/test_standalone_send_redaction.py:stripe-access-token:57
+79d1c4b22539d7375d836daa32e2289d19897af2:tests/agent/test_steer.py:generic-api-key:748
+7a17a1b8a6fb3e46965a05e654cdca9ad673cd11:tests/tools/test_stage2_hook_api_server_keygen.py:generic-api-key:112
+7a17a1b8a6fb3e46965a05e654cdca9ad673cd11:tests/tools/test_stage2_hook_api_server_keygen.py:generic-api-key:116
+7a17a1b8a6fb3e46965a05e654cdca9ad673cd11:tests/tools/test_stage2_hook_api_server_keygen.py:generic-api-key:142
+7a17a1b8a6fb3e46965a05e654cdca9ad673cd11:tests/tools/test_stage2_hook_api_server_keygen.py:generic-api-key:157
+7a17a1b8a6fb3e46965a05e654cdca9ad673cd11:tests/tools/test_stage2_hook_api_server_keygen.py:generic-api-key:177
+7cbffdd125477fb1628cfeb9f299ad3fec02d924:agent/anthropic_credentials.py:generic-api-key:680
+7cefa87ea7ee711f677efeed6b978a51866283ba:tests/run_agent/test_gemini_native_reservation.py:generic-api-key:46
+8039bb1e619e81646c3c1a522e93b9140418a033:tests/tui_gateway/test_cross_process_orphan_ownership.py:generic-api-key:589
+834752615751325ed5732546727b6d4dc155209f:tests/tui_gateway/test_multi_profile_hosting_fail_closed.py:generic-api-key:25
+834752615751325ed5732546727b6d4dc155209f:tests/tui_gateway/test_multi_profile_hosting_fail_closed.py:generic-api-key:26
+8563fe34359381a100d13b3d62b17a9a89df402e:tests/agent/test_redact.py:generic-api-key:121
+8563fe34359381a100d13b3d62b17a9a89df402e:tests/agent/test_redact.py:generic-api-key:127
+8563fe34359381a100d13b3d62b17a9a89df402e:tests/agent/test_redact.py:generic-api-key:132
+8563fe34359381a100d13b3d62b17a9a89df402e:tests/agent/test_redact.py:generic-api-key:170
+8563fe34359381a100d13b3d62b17a9a89df402e:tests/agent/test_redact.py:generic-api-key:171
+8563fe34359381a100d13b3d62b17a9a89df402e:tests/agent/test_redact.py:github-pat:149
+8563fe34359381a100d13b3d62b17a9a89df402e:tests/agent/test_redact.py:github-pat:155
+8563fe34359381a100d13b3d62b17a9a89df402e:tests/agent/test_redact.py:github-pat:161
+8563fe34359381a100d13b3d62b17a9a89df402e:tests/tools/test_process_registry.py:curl-auth-header:1428
+8669e47a60c761ec3aee95fe9f70f16e61a2627a:tests/hermes_cli/test_api_key_providers.py:generic-api-key:748
+867e4158f0c16a563ba48c1570d0e63617d9f543:tests/gateway/test_env_override_explicit_disable_48820.py:generic-api-key:21
+87e7f41c096c9fa6f3f38668c8d134f553eb9c24:hermes_cli/auth_constants.py:generic-api-key:103
+87e7f41c096c9fa6f3f38668c8d134f553eb9c24:hermes_cli/auth_constants.py:generic-api-key:112
+87e7f41c096c9fa6f3f38668c8d134f553eb9c24:hermes_cli/auth_constants.py:generic-api-key:77
+8969ebac1cb326e60cd7314de469b1e499e34574:tests/tools/test_process_registry.py:generic-api-key:913
+8ab9e79d0a737925a4de827555005159f0469c63:tests/agent/test_redact.py:generic-api-key:1000
+8ab9e79d0a737925a4de827555005159f0469c63:tests/agent/test_redact.py:generic-api-key:1005
+8f30e9c77a9e7a7b5c8ab445a85062777c821491:tests/tui_gateway/test_diagnostics_share_nous.py:generic-api-key:66
+8f30e9c77a9e7a7b5c8ab445a85062777c821491:tests/tui_gateway/test_diagnostics_share_nous.py:generic-api-key:80
+9128bb561010c0bd57bdc5b5af3e2994b71966c0:hermes_cli/setup_migration.py:generic-api-key:112
+950fe236d0e08d0739d6a2bd90290c30ebcf5272:tests/agent/test_redact.py:gitlab-pat:58
+952d1cef18af4880e9aa5ed2ca4a76c9765199bd:gateway/run.py:generic-api-key:974
+a6ee31f55aad08cc51ba348db2febacd541eec01:hermes_wisdom/contract.py:generic-api-key:34
+a779f527fa4c29f26f64e8aeb0724590fbdd3fec:tests/run_agent/test_sanitiser_escalation.py:generic-api-key:141
+a8a2faab642c009cece86afc3409cb1e27128abe:tests/gateway/test_startup_launch_profile_hooks_scope.py:generic-api-key:35
+a8a2faab642c009cece86afc3409cb1e27128abe:tests/gateway/test_startup_launch_profile_hooks_scope.py:generic-api-key:54
+a9db7ed5a8a55d1f48c7a38ad9deb00e2eafd3aa:tests/hermes_cli/test_approvals_suggest.py:github-pat:210
+a9db7ed5a8a55d1f48c7a38ad9deb00e2eafd3aa:tests/hermes_cli/test_approvals_suggest.py:github-pat:231
+a9db7ed5a8a55d1f48c7a38ad9deb00e2eafd3aa:tests/hermes_cli/test_approvals_suggest.py:github-pat:246
+b48ab1b4ad0371c7e2527e384d8611a51005c521:tests/run_agent/test_continuation_repetition_guard.py:generic-api-key:33
+c5c040cb351bdcbf80f87a1296bb1649d31f1fcc:tests/run_agent/test_continuation_ceiling_wedge.py:generic-api-key:28
+c9b9b5e6c79836a32ee384fb96b3bafaca918090:tests/gateway/test_agent_cache.py:generic-api-key:75
+ced8e302174c1ef393061a7a941f0607b6863ce2:scripts/toolperf_abeval/ab_eval.py:generic-api-key:117
+cf755f5c4232ddf5841c33ae3f2a0f07b49e45fa:tests/agent/test_redact.py:generic-api-key:752
+cfd752e6f7a007454da30d9a1392eca22f03930f:tests/agent/test_token_guard_session_source.py:generic-api-key:37
+d1b283f4a93341ff9de8526c074727346f38470b:tests/agent/test_codex_soft_failure_pool_rotation.py:generic-api-key:102
+d1b283f4a93341ff9de8526c074727346f38470b:tests/agent/test_codex_soft_failure_pool_rotation.py:generic-api-key:89
+d3bfd2e9b19ef2d9f6001be2707922a21a24e0c3:tests/tools/test_delegate_request_overrides.py:generic-api-key:21
+d762ed9b3c79326cee1cfcd357cdc5aabbc523bf:tests/run_agent/test_run_agent.py:generic-api-key:1120
+d90c3ad40a0b9d5a39071e891d12eea803871db9:apps/desktop/src/plugins/hermes-bots/group-activity.test.ts:generic-api-key:170
+dd522d0f77020482e90a2f0098cf28d632e73488:agent/anthropic_credentials.py:generic-api-key:39
+ddd8065232586d404fcb4285f46d6a29504dfb43:tests/run_agent/test_first_chunk_at_hook.py:generic-api-key:60
+e253ea0233444949311d32d9429e13b90d52eea0:tests/gateway/test_multiplex_endpoint_identity_scope.py:generic-api-key:36
+e4bda3ff776bdfe45a23d31a52d9589ece7765c3:apps/desktop/src/lib/preview-annotate/in-page.test.ts:generic-api-key:150
+e665300d6b1edb94adcbae23b8d3ba4410ecafa1:tests/plugins/test_langfuse_plugin.py:generic-api-key:1721
+e729055a56b98d2e99cc58f35af57b9b5b45bdd6:tests/tools/test_delegate_cron_sync_fallback.py:generic-api-key:56
+e730deedd143b1fb63017b1e226ebd2bdf88e451:tests/gateway/test_hosted_room_replicas.py:generic-api-key:206
+e730deedd143b1fb63017b1e226ebd2bdf88e451:tests/gateway/test_hosted_room_replicas.py:generic-api-key:233
+e730deedd143b1fb63017b1e226ebd2bdf88e451:tests/gateway/test_hosted_room_replicas.py:generic-api-key:244
+e7433910e96c097ddf34352ea28653e83d951fbb:tests/tui_gateway/test_groups_methods.py:generic-api-key:247
+e9a54c48f2676a471a15bd40d66382327d33036d:tests/hermes_cli/test_runtime_provider_resolution.py:generic-api-key:792
+eb11e7eac932b33b804a90a524825be93cbb0e64:tests/agent/test_reasoning_only_stop_persistence.py:generic-api-key:30
+eec6d3efde7a9e71dd0f95a7358a7a55b5922349:tests/gateway/test_teams_dotenv_isolation.py:generic-api-key:214
+f0b88402dc8f9ebc9b360c94e2cd62fb268bbeb9:tests/agent/test_degenerate_final_recovery.py:generic-api-key:34
+f4a866b484679ccae191de8749f0ca2936dde456:tests/cli/test_show_config_credential.py:generic-api-key:40
+f4a866b484679ccae191de8749f0ca2936dde456:tests/cli/test_show_config_credential.py:generic-api-key:48
+fb76fb05265dda87baa6519bb78e6d65ca5009f6:tests/run_agent/test_length_continuation_thinking_exhaustion.py:generic-api-key:82
+ff3c9848d44877da80b3c644b0066df923d7634f:tests/run_agent/test_overflow_overhead_aware_tokens.py:generic-api-key:74

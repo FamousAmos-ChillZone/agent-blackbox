@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from plugins.blackbox import dkg_version
+from plugins.blackbox.kernel import dkg_version
 
 
 @pytest.mark.parametrize(

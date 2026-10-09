@@ -17,19 +17,25 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 import shutil
 import socket
 import subprocess
 import sys
 import threading
 import time
-from collections import deque
+from collections import Counter, deque
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
-from .. import sync_state
-from ..dkg_client import classify_catchup_error
-from ..dkg_progress import read_durable_progress
+from ..sync import state as sync_state
+from ..sync import read_durable_progress
+from . import community_routes, lifecycle, sync_meter, sync_timing
+from .network_sync import network_sync_argv as _network_sync_argv
+from .node_probe import node_sync_probe
+from .sync_labels import _community_progress, _sync_label, not_subscribed_activity
+from .threat_detail_fields import DETAIL_FIELDS
+from .safe_payloads import graph_tier_item, safe_identifier, safe_text
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +43,6 @@ _RESCAN_INTERVAL_SEC = 5.0
 _RECONCILE_INTERVAL_SEC = 60.0
 _RULESET_EMPTY_RETRY_SEC = 10.0
 _RULESET_MIN_RETRY_SEC = 5.0
-_RULESET_CATCHUP_POLL_SEC = 4.0
 # A complete VM refresh pages through every curated rule. On a large graph it
 # can take several minutes and saturate Blazegraph, so never repeat it on the
 # dashboard's short status-poll interval. Manual sync remains available.
@@ -215,21 +220,6 @@ def _ruleset_sync_counts(rs: Any) -> Dict[str, int]:
     }
 
 
-def _network_sync_argv(timeout: int = 3600) -> List[str]:
-    """Run the canonical verified graph sync in an isolated process."""
-    return [
-        sys.executable,
-        "-m",
-        "hermes_cli.main",
-        "blackbox",
-        "sync",
-        "--wait",
-        "--timeout",
-        str(max(1, int(timeout))),
-        "--require-rules",
-    ]
-
-
 def _network_sync_once(
     load_config: Any,
     ruleset_mod: Any,
@@ -257,17 +247,15 @@ def _network_sync_once(
         output = "\n".join(
             part.strip() for part in (completed.stdout, completed.stderr) if part.strip()
         )
-        cfg = load_config()
         if completed.returncode != 0:
             logger.warning(
                 "blackbox automatic graph sync exited %d: %s",
                 completed.returncode,
                 output[-2000:] or "no output",
             )
-        elif sync_state.read_for_graph(cfg.context_graph_id).get("status") == "partial":
-            logger.info("blackbox verified rules are available; full graph sync is incomplete")
         else:
             logger.info("blackbox automatic graph sync completed")
+        cfg = load_config()
         counts = _ruleset_sync_counts(ruleset_mod.peek(cfg))
         return {
             "ok": completed.returncode == 0,
@@ -288,13 +276,7 @@ def _network_sync_once(
         _network_sync_lock.release()
 
 
-def _sync_ruleset_once(
-    load_config: Any,
-    dkg_client_cls: Any,
-    ruleset_mod: Any,
-    *,
-    refresh_after_catchup: bool = False,
-) -> Dict[str, int]:
+def _sync_ruleset_once(load_config: Any, dkg_client_cls: Any, ruleset_mod: Any) -> Dict[str, int]:
     """Ensure one public-graph subscription and refresh curated VM rules."""
     cfg = load_config()
     transfer = sync_state.read_for_graph(cfg.context_graph_id)
@@ -312,21 +294,15 @@ def _sync_ruleset_once(
                 )
                 cached_counts["total"] += verified - cached_counts["public"]
                 cached_counts["public"] = verified
-                return {
-                    **cached_counts,
-                    **({"refresh_deferred": True} if refresh_after_catchup else {}),
-                }
+                return cached_counts
         public = int(transfer.get("public_entries") or 0)
-        return {
-            "total": public, "public": public, "community": 0,
-            **({"refresh_deferred": True} if refresh_after_catchup else {}),
-        }
+        return {"total": public, "public": public, "community": 0}
     client = dkg_client_cls(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
     try:
         catchup = client.catchup_status(cfg.context_graph_id)
     except Exception:
         catchup = {}
-    catchup_state = str(catchup.get("jobStatus") or catchup.get("status") or "").lower()
+    catchup_state = str(catchup.get("status") or "").lower()
     catchup_job_id = str(
         catchup.get("jobId") or catchup.get("job_id") or catchup.get("id") or ""
     )
@@ -343,22 +319,14 @@ def _sync_ruleset_once(
         # last-good cache until DKG reports a terminal state.
         peek = getattr(ruleset_mod, "peek", None)
         rs = peek(cfg) if callable(peek) else ruleset_mod.refresh(cfg, client)
-        return {
-            **_ruleset_sync_counts(rs),
-            **({"refresh_deferred": True} if refresh_after_catchup else {}),
-        }
+        return _ruleset_sync_counts(rs)
     peek = getattr(ruleset_mod, "peek", None)
     if callable(peek):
         cached = peek(cfg)
         counts = _ruleset_sync_counts(cached)
-        synced_at = float(getattr(cached, "synced_at", 0.0) or 0.0)
         configured_interval = float(getattr(cfg, "sync_interval", 0.0) or 0.0)
         refresh_interval = max(_RULESET_HEAVY_REFRESH_MIN_SEC, configured_interval)
-        if (
-            not refresh_after_catchup
-            and counts["public"]
-            and time.time() - synced_at < refresh_interval
-        ):
+        if counts["public"] and time.time() < cached.refresh_due(refresh_interval):
             with _join_lock:
                 _connection_states[cfg.context_graph_id] = {
                     "state": "subscribed",
@@ -376,79 +344,18 @@ def _sync_ruleset_once(
     return counts
 
 
-class _RulesetSyncWake:
-    """Wake the existing rule worker once for each scoped completed job.
-
-    A job's completion only says that local verified rows may have changed.
-    It never establishes that the entire public graph has been recovered.
-    """
-
-    def __init__(self) -> None:
-        self.event = threading.Event()
-        self._lock = threading.Lock()
-        self._last_key: Any = None
-        self._pending = False
-
-    def observe(self, context_graph_id: str, catchup: Any) -> bool:
-        if not isinstance(catchup, dict):
-            return False
-        if catchup.get("contextGraphId") != context_graph_id:
-            return False
-        state = str(catchup.get("jobStatus") or catchup.get("status") or "").lower()
-        job_id = catchup.get("jobId")
-        finished_at = catchup.get("finishedAt")
-        if (
-            state != "done"
-            or not isinstance(job_id, str)
-            or not job_id
-            or len(job_id) > 256
-            or type(finished_at) not in (int, float, str)
-            or not str(finished_at)
-            or len(str(finished_at)) > 128
-        ):
-            return False
-        key = (context_graph_id, job_id, str(finished_at))
-        with self._lock:
-            if key == self._last_key:
-                return False
-            self._last_key = key
-            self._pending = True
-            self.event.set()
-        return True
-
-    def consume(self) -> bool:
-        with self._lock:
-            pending = self._pending
-            self._pending = False
-            self.event.clear()
-            return pending
-
-
-def _poll_ruleset_sync_wake(load_config: Any, dkg_client_cls: Any, wake: Any) -> None:
-    """Read only the cheap catch-up ledger, independently of dashboard polls."""
-    cfg = load_config()
-    if sync_state.read_for_graph(cfg.context_graph_id).get("status") == "running":
-        return
-    client = dkg_client_cls(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-    try:
-        catchup = client.catchup_status(cfg.context_graph_id)
-    except Exception:
-        return
-    wake.observe(cfg.context_graph_id, catchup)
-
-
 def _graph_sync_state(
     count: int,
     node_reachable: bool,
     catchup_status: str,
     *,
-    settled: bool = False,
+    settled: bool = False, still_arriving: bool = False,
 ) -> str:
-    """Map queryable rows + DKG recovery state to an honest UI state."""
+    """Map queryable rows + DKG recovery state to an honest UI state; rules over a graph still arriving are "syncing", never "ready"."""
     if settled:
         # An authoritative snapshot can legitimately settle a tier at zero.
         return "ready"
-    if node_reachable and str(catchup_status or "").lower() in {"queued", "running"}:
+    if node_reachable and (still_arriving or str(catchup_status or "").lower() in {"queued", "running"}):
         return "syncing"
     if str(catchup_status or "").lower() in {
         "failed",
@@ -456,11 +363,10 @@ def _graph_sync_state(
         "denied",
         "unreachable",
         "deferred",
-        "partial",
     }:
         return "incomplete"
     if int(count or 0) > 0:
-        return "incomplete"
+        return "ready"
     if not node_reachable:
         return "unreachable"
     return "empty"
@@ -469,21 +375,19 @@ def _graph_sync_state(
 def _is_hidden_swm_catchup_error(value: Any) -> bool:
     """Temporarily suppress the known DKG SWM catch-up UI failure."""
     text = str(value or "").lower()
-    compact = "".join(text.split()).replace('"', "").replace("'", "")
-    # The historical shared-memory route also carries durable/catalog
-    # recovery. Its timeouts cannot establish a verified graph is complete.
-    if any(
-        marker in compact
-        for marker in (
-            "includedurable:true",
-            "includesharedmemory:false",
-            "durablecomplete:false",
-            "rfc64_catalog_",
-        )
-    ):
-        return False
     return "/api/shared-memory/catchup" in text and (
         "transport error" in text or "timed out" in text or "timeout" in text
+    )
+
+
+def _is_retryable_durable_catchup_error(value: Any) -> bool:
+    """Recognize DKG's explicit transient durable-catchup response."""
+    text = str(value or "").lower()
+    compact = "".join(text.split())
+    return (
+        "/api/shared-memory/catchup" in text
+        and "durable_catchup_all_peers_failed" in text
+        and '"retryable":true' in compact
     )
 
 
@@ -496,7 +400,7 @@ def _sync_activity(
     connection: Dict[str, Any],
     transfer: Dict[str, Any],
 ) -> Dict[str, Any]:
-    catchup_status = str(catchup.get("jobStatus") or catchup.get("status") or "").lower()
+    catchup_status = str(catchup.get("status") or "").lower()
     connection_state = str(connection.get("state") or "").lower()
     transfer_status = str(transfer.get("status") or "").lower()
     phase = str(transfer.get("phase") or "").lower()
@@ -504,16 +408,6 @@ def _sync_activity(
     expected = int(transfer.get("expected_public_entries") or 0)
     current_triples = int(transfer.get("current_triples") or 0)
     expected_triples = int(transfer.get("expected_triples") or 0)
-    catchup_result = catchup.get("result") if isinstance(catchup.get("result"), dict) else {}
-    error_value = (
-        transfer.get("error")
-        or connection.get("error")
-        or catchup.get("error")
-        or catchup_result.get("error")
-        or ""
-    )
-    error = str(error_value)
-    error_class = classify_catchup_error(error_value)
     progress: Dict[str, Any] = {
         "status": "idle",
         "phase": "idle",
@@ -526,64 +420,6 @@ def _sync_activity(
         "percent": None,
         "indeterminate": True,
     }
-
-    def wait_for_source(*, capacity: bool) -> Dict[str, Any]:
-        reason = (
-            "The publisher is temporarily busy"
-            if capacity
-            else "The graph sync source is temporarily unavailable"
-        )
-        detail = (
-            f"{reason}. Blackbox will retry automatically and resume "
-            "from its durable checkpoint."
-        )
-        progress.update(
-            status="waiting",
-            phase="waiting-for-publisher-capacity" if capacity else "waiting-for-sync-source",
-            label="Waiting for publisher sync capacity" if capacity else "Waiting for graph sync source",
-            detail=detail,
-            started_at=transfer.get("started_at") or catchup.get("startedAt"),
-            updated_at=transfer.get("updated_at") or catchup.get("finishedAt"),
-        )
-        if expected_triples > 0:
-            bounded_triples = max(0, min(current_triples, expected_triples))
-            progress.update(
-                detail=(
-                    f"{bounded_triples:,} of {expected_triples:,} graph triples "
-                    f"are checkpointed. {reason}; Blackbox will retry and "
-                    "resume automatically."
-                ),
-                current=bounded_triples,
-                expected=expected_triples,
-                percent=round((bounded_triples / expected_triples) * 100, 1),
-                indeterminate=False,
-            )
-        elif public > 0:
-            progress["detail"] = (
-                f"{public:,} verified public threats remain available. "
-                f"{reason}; Blackbox will retry and resume automatically."
-            )
-        return progress
-
-    if transfer_status == "running" and phase in {
-        "waiting-for-dkg-capacity",
-        "waiting-for-sync-source",
-    }:
-        transfer_error_class = classify_catchup_error(transfer.get("error"))
-        if transfer_error_class == "terminal":
-            progress.update(
-                status="failed",
-                phase=phase,
-                label="Graph sync needs attention",
-                detail=str(transfer.get("error")),
-                started_at=transfer.get("started_at"),
-                updated_at=transfer.get("updated_at"),
-            )
-            return progress
-        return wait_for_source(
-            capacity=transfer_error_class == "capacity"
-            or (transfer_error_class == "unknown" and phase == "waiting-for-dkg-capacity")
-        )
 
     if transfer_status == "running":
         labels = {
@@ -679,6 +515,15 @@ def _sync_activity(
         )
         return progress
 
+    catchup_result = catchup.get("result") if isinstance(catchup.get("result"), dict) else {}
+    error = str(
+        transfer.get("error")
+        or connection.get("error")
+        or catchup.get("error")
+        or catchup_result.get("error")
+        or ""
+    )
+
     # The source-pinned transfer is the authoritative result for this graph.
     # A generic catch-up job may still retain an older failure after that
     # transfer completed successfully; do not turn verified local data into a
@@ -699,21 +544,59 @@ def _sync_activity(
         )
         return progress
 
+    # A retryable all-peers failure means the selected publisher did not have
+    # capacity for this pass; it is not a corrupt graph or a terminal client
+    # error. Keep the full response in sync-state/logs for diagnosis, but show
+    # users the automatic durable-resume behavior instead of raw HTTP JSON.
+    if node_reachable and _is_retryable_durable_catchup_error(error):
+        detail = (
+            "The sync-capable publisher is temporarily busy or unavailable. "
+            "Blackbox will retry automatically and resume from its durable checkpoint."
+        )
+        progress.update(
+            status="waiting",
+            phase="waiting-for-publisher-capacity",
+            label="Waiting for publisher sync capacity",
+            detail=detail,
+            started_at=transfer.get("started_at") or catchup.get("startedAt"),
+            updated_at=transfer.get("updated_at") or catchup.get("finishedAt"),
+        )
+        if expected_triples > 0:
+            bounded_triples = max(0, min(current_triples, expected_triples))
+            progress.update(
+                detail=(
+                    f"{bounded_triples:,} of {expected_triples:,} graph triples "
+                    "are checkpointed. The publisher is temporarily busy; "
+                    "Blackbox will retry and resume automatically."
+                ),
+                current=bounded_triples,
+                expected=expected_triples,
+                percent=round((bounded_triples / expected_triples) * 100, 1),
+                indeterminate=False,
+            )
+        elif public > 0:
+            progress["detail"] = (
+                f"{public:,} verified public threats remain available. The "
+                "publisher is temporarily busy; Blackbox will retry and resume "
+                "automatically."
+            )
+        return progress
+
     # DKG currently reports an SWM catch-up transport failure even while the
     # independently verified VM remains usable. Do not cover that ready graph
     # with a false failure banner; keep unrelated VM and node errors visible.
-    if error_class != "terminal" and _is_hidden_swm_catchup_error(error):
+    if _is_hidden_swm_catchup_error(error):
         if public > 0:
             progress.update(
-                status="waiting",
-                phase="partial-verifiable-memory",
-                label="Verified rules are available",
-                detail=f"{public:,} verified public threats are queryable; full graph sync is incomplete.",
+                status="ready",
+                phase="verifiable-memory-ready",
+                label="Verified threat graph is ready",
+                detail=f"{public:,} verified public threats are queryable.",
                 updated_at=transfer.get("updated_at") or connection.get("updated_at"),
                 current=public,
-                expected=None,
-                percent=None,
-                indeterminate=True,
+                expected=public,
+                percent=100.0,
+                indeterminate=False,
             )
         return progress
 
@@ -738,15 +621,8 @@ def _sync_activity(
         )
         return progress
 
-    # All selected peers failing does not establish a capacity problem. Only
-    # explicit backpressure uses the busy-publisher label; other transient
-    # failures wait for a sync source, while structural failures stay visible.
-    if node_reachable and error_class in {"capacity", "retryable"}:
-        return wait_for_source(capacity=error_class == "capacity")
-
     if (
-        error_class == "terminal"
-        or transfer_status == "failed"
+        transfer_status == "failed"
         or catchup_status in {"failed", "cancelled", "denied"}
         or connection_state in {"connection-error", "sync-envelope-error"}
     ):
@@ -771,12 +647,12 @@ def _sync_activity(
 
     if public > 0 or community > 0:
         progress.update(
-            status="waiting",
-            phase="partial-verifiable-memory",
-            label="Verified rules are available",
-            detail=f"{public:,} public and {community:,} community threats are queryable; full graph sync is incomplete.",
+            status="ready",
+            phase="complete",
+            label="Threat graphs are ready",
+            detail=f"{public:,} public and {community:,} community threats are queryable.",
             updated_at=transfer.get("updated_at") or connection.get("updated_at"),
-            indeterminate=True,
+            indeterminate=False,
         )
     else:
         progress.update(
@@ -791,7 +667,6 @@ def _sync_activity(
 def _blackbox_sync_health(
     *,
     public: int,
-    actionable_public: Any = None,
     sync_interval: Any,
     activity: Dict[str, Any],
     transfer: Dict[str, Any],
@@ -806,7 +681,6 @@ def _blackbox_sync_health(
     use the authoritative cross-process result and its age.
     """
     current_time = float(time.time() if now is None else now)
-    protective_rules = int(public if actionable_public is None else actionable_public)
     interval = max(1.0, float(sync_interval or 1.0))
     overdue_after = max(_BLACKBOX_MIN_OVERDUE_SEC, interval * 2.0)
     activity_status = str(activity.get("status") or "idle").lower()
@@ -821,8 +695,7 @@ def _blackbox_sync_health(
         "out_of_sync": False,
         "state": "ready",
         "reason": "fresh",
-        "protection_available": protective_rules > 0,
-        "actionable_public_entries": protective_rules,
+        "protection_available": int(public or 0) > 0,
         "coverage_percent": percent,
         "ready_percent": _BLACKBOX_READY_PERCENT,
         "overdue_after_seconds": int(overdue_after),
@@ -835,7 +708,7 @@ def _blackbox_sync_health(
     if not node_reachable:
         return {
             **base,
-            "out_of_sync": protective_rules <= 0,
+            "out_of_sync": int(public or 0) <= 0,
             "state": "node-offline",
             "reason": "local-node-offline",
         }
@@ -853,12 +726,12 @@ def _blackbox_sync_health(
             below_threshold = percent is not None and percent < _BLACKBOX_READY_PERCENT
             return {
                 **base,
-                "out_of_sync": bool(below_threshold or protective_rules <= 0),
+                "out_of_sync": bool(below_threshold or int(public or 0) <= 0),
                 "state": "sync-stalled",
                 "reason": "sync-stalled",
             }
         below_threshold = percent is not None and percent < _BLACKBOX_READY_PERCENT
-        no_protection_yet = protective_rules <= 0
+        no_protection_yet = int(public or 0) <= 0
         return {
             **base,
             "out_of_sync": bool(below_threshold or no_protection_yet),
@@ -866,7 +739,7 @@ def _blackbox_sync_health(
             "reason": "sync-progress",
         }
 
-    if protective_rules <= 0:
+    if int(public or 0) <= 0:
         return {
             **base,
             "out_of_sync": True,
@@ -977,16 +850,67 @@ def _profile_activity_state(
     return states
 
 
+
+
 def create_app(*, manage_blackbox: bool = False):
     """Build and return the FastAPI application."""
     from fastapi import Body, FastAPI, Query
     from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 
-    from .. import attach, audit, constants, ruleset, settings, sync_state
-    from ..config import load_blackbox_config
-    from ..dkg_client import DkgClient, extract_binding
+    from .. import attach, audit, community, ruleset
+    from ..kernel import settings
+    from ..sync import state as sync_state
+    from ..kernel import constants
+    from ..kernel.config import load_blackbox_config
+    from ..kernel.dkg_client import DkgClient, extract_binding
 
     app = FastAPI(title="Agent Blackbox", docs_url=None, redoc_url=None)
+
+    # ------------------------------------------------------------------
+    # Browser-boundary hardening (KI-028 / LES-006). Loopback binding keeps
+    # the network out, but the operator's BROWSER is on loopback too: a
+    # malicious webpage can fire cross-origin POSTs at localhost, and DNS
+    # rebinding makes an attacker page look same-origin. Two structural
+    # gates, enforced in ONE middleware:
+    #   1. Host + Origin allowlist — only genuine local origins pass.
+    #   2. A per-process session token required on every state-changing
+    #      request. The UI receives it via /api/session (same-origin only,
+    #      unreachable through DNS rebinding thanks to gate 1).
+    # ------------------------------------------------------------------
+    _session_token = secrets.token_urlsafe(32)
+    _ALLOWED_HOST_NAMES = {"127.0.0.1", "localhost", "[::1]"}
+
+    def _local_host(value: str) -> bool:
+        host = (value or "").split(":", 1)[0].strip().lower()
+        return host in _ALLOWED_HOST_NAMES
+
+    @app.middleware("http")
+    async def _browser_boundary(request, call_next):
+        host = request.headers.get("host", "")
+        if not _local_host(host):
+            return JSONResponse({"error": "forbidden host"}, status_code=403)
+        origin = request.headers.get("origin", "")
+        if origin:
+            # An Origin is present on cross-site and fetch() requests; only
+            # our own loopback origins may pass. Same-origin UI requests
+            # always carry a loopback origin or none at all.
+            from urllib.parse import urlsplit
+
+            if not _local_host(urlsplit(origin).netloc):
+                return JSONResponse({"error": "forbidden origin"}, status_code=403)
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            token = request.headers.get("x-blackbox-token", "")
+            if not secrets.compare_digest(token, _session_token):
+                return JSONResponse(
+                    {"error": "missing or invalid session token"}, status_code=403
+                )
+        return await call_next(request)
+
+    @app.get("/api/session")
+    def session():
+        """Hand the UI its mutation token. Reachable only by genuine local
+        origins (the middleware rejects rebound/foreign hosts first)."""
+        return {"token": _session_token}
 
     _rescan_state: Dict[str, Any] = {
         "stop": False,
@@ -994,7 +918,6 @@ def create_app(*, manage_blackbox: bool = False):
         "last_reconcile": 0.0,
         "lock": threading.Lock(),
     }
-    _ruleset_wake = _RulesetSyncWake()
     _blackbox_stop = threading.Event()
     _blackbox_state: Dict[str, Any] = {
         "process": None,
@@ -1060,7 +983,7 @@ def create_app(*, manage_blackbox: bool = False):
                 with log_path.open("a", encoding="utf-8") as log_handle:
                     process = subprocess.Popen(
                         _blackbox_runtime_argv(),
-                        cwd=str(attach._repo_root()),
+                        cwd=str(attach.repo_root()),
                         env=_blackbox_runtime_env(),
                         stdin=subprocess.DEVNULL,
                         stdout=log_handle,
@@ -1170,59 +1093,32 @@ def create_app(*, manage_blackbox: bool = False):
                 time.sleep(0.1)
 
     def _ruleset_sync_loop() -> None:
-        """Load settled verified rows promptly and retain periodic network sync.
+        """Keep verified VM threat rows network-synced while the dashboard runs.
 
-        Completion wakes refresh the local confirmed VM cache. They do not
-        start another transfer or certify global completion. Periodic canonical
-        command maintains the subscription and reports its recovery status.
-        """
+        ``sync_interval`` is a period, not a post-sync sleep: the sync's own
+        duration is deducted from the wait so a refresh *starts* every
+        ``sync_interval`` seconds even when the sync itself is slow."""
         last_total: Any = None
-        pending_completion_hint = False
-        initial_interval = max(
-            _RULESET_MIN_RETRY_SEC,
-            float(load_blackbox_config().sync_interval or _RULESET_EMPTY_RETRY_SEC),
-        )
-        next_network_sync = time.monotonic() + initial_interval
-        next_local_refresh = time.monotonic() + _RULESET_MIN_RETRY_SEC
+        first_cfg = load_blackbox_config()   # KI-205: a never-compiled home refreshes soon, not in an hour
+        initial_interval = sync_timing.initial_sync_delay(first_cfg, ruleset.peek(first_cfg), _RULESET_MIN_RETRY_SEC, _RULESET_EMPTY_RETRY_SEC)
+        for _ in range(int(initial_interval * 10)):
+            if _rescan_state["stop"]:
+                return
+            time.sleep(0.1)
         while not _rescan_state["stop"]:
-            new_completion_hint = _ruleset_wake.consume()
-            pending_completion_hint = pending_completion_hint or new_completion_hint
-            now = time.monotonic()
-            if not new_completion_hint and now < min(next_local_refresh, next_network_sync):
-                _ruleset_wake.event.wait(
-                    min(_RULESET_CATCHUP_POLL_SEC, min(next_local_refresh, next_network_sync) - now)
-                )
-                continue
+            wait = _RULESET_EMPTY_RETRY_SEC
             started = time.monotonic()
             try:
                 cfg = load_blackbox_config()
-                # A partial verified snapshot can be usable even if the
-                # full graph's foreground recovery failed. Never make the
-                # local cache depend on that larger transfer succeeding.
-                result = _sync_ruleset_once(
-                    lambda: cfg,
-                    DkgClient,
-                    ruleset,
-                    refresh_after_catchup=pending_completion_hint,
-                )
-                # A new foreground sync can start between seeing completion
-                # and this guarded read. Keep the hint across that busy period
-                # instead of letting a fresh positive cache hide the update.
-                pending_completion_hint = (
-                    pending_completion_hint and result.get("refresh_deferred") is True
-                )
-                if time.monotonic() >= next_network_sync:
-                    result = _network_sync_once(lambda: cfg, ruleset)
-                    next_network_sync = max(
-                        time.monotonic() + _RULESET_MIN_RETRY_SEC,
-                        started + max(_RULESET_MIN_RETRY_SEC, float(cfg.sync_interval or _RULESET_EMPTY_RETRY_SEC)),
-                    )
+                result = _network_sync_once(lambda: cfg, ruleset)
                 counts = result
                 total = int(counts.get("total") or 0)
                 public = int(counts.get("public") or 0)
                 community = int(counts.get("community") or 0)
-                wait = _RECONCILE_INTERVAL_SEC if public else _RULESET_EMPTY_RETRY_SEC
-                next_local_refresh = time.monotonic() + wait
+                elapsed = time.monotonic() - started
+                wait = sync_timing.next_sync_delay(cfg, ruleset.peek(cfg), elapsed, _RULESET_MIN_RETRY_SEC)
+                if public == 0:
+                    wait = min(_RULESET_EMPTY_RETRY_SEC, wait)
                 if total != last_total:
                     logger.info(
                         "blackbox automatic graph sync: %d rule(s), %d public, %d community; next sync in %.0fs",
@@ -1242,20 +1138,13 @@ def create_app(*, manage_blackbox: bool = False):
                     )
             except Exception as exc:  # pragma: no cover - fail open
                 logger.debug("blackbox automatic graph sync: iteration failed: %s", exc)
-                next_local_refresh = time.monotonic() + _RULESET_EMPTY_RETRY_SEC
-
-    def _ruleset_catchup_watch_loop() -> None:
-        while not _rescan_state["stop"]:
-            try:
-                _poll_ruleset_sync_wake(load_blackbox_config, DkgClient, _ruleset_wake)
-            except Exception as exc:  # pragma: no cover - fail open
-                logger.debug("blackbox catch-up watcher: %s", exc)
-            for _ in range(int(_RULESET_CATCHUP_POLL_SEC * 10)):
+                wait = _RULESET_EMPTY_RETRY_SEC
+            for _ in range(int(wait * 10)):
                 if _rescan_state["stop"]:
                     return
                 time.sleep(0.1)
 
-    @app.on_event("startup")
+    @lifecycle.on_startup(app)
     def _start_rescanner() -> None:
         # Do NOT pre-seed ``known``: attach is idempotent, so the first
         # iteration walks every workspace and self-heals anything the
@@ -1264,7 +1153,6 @@ def create_app(*, manage_blackbox: bool = False):
         t.start()
         logger.info("blackbox rescan: background thread started (interval %.1fs)", _RESCAN_INTERVAL_SEC)
         threading.Thread(target=_ruleset_sync_loop, name="blackbox-ruleset-sync", daemon=True).start()
-        threading.Thread(target=_ruleset_catchup_watch_loop, name="blackbox-catchup-watch", daemon=True).start()
         logger.info("blackbox automatic graph sync: background thread started")
         if manage_blackbox:
             blackbox_thread = threading.Thread(
@@ -1276,10 +1164,9 @@ def create_app(*, manage_blackbox: bool = False):
             blackbox_thread.start()
             logger.info("agent blackbox runtime: supervisor started")
 
-    @app.on_event("shutdown")
+    @lifecycle.on_shutdown(app)
     def _stop_rescanner() -> None:
         _rescan_state["stop"] = True
-        _ruleset_wake.event.set()
         _blackbox_stop.set()
         with _blackbox_state["lock"]:
             blackbox_process = _blackbox_state.get("process")
@@ -1376,6 +1263,25 @@ def create_app(*, manage_blackbox: bool = False):
             threading.Thread(target=_run, name="blackbox-swr", daemon=True).start()
         return cur
 
+    def _community_read(cfg: Any) -> Any:
+        """THE community read behind every dashboard statistic (R0d): the whole verified
+        CommunityRead (reports counted by signer; disputes, curator view, budget — R2), or
+        None before the first lands; stale-while-revalidate, so it never blocks a request."""
+        def _load() -> Any:
+            if not getattr(cfg, "community_graph_id", "") or not _node_reachable(cfg):
+                return None   # keep the cached value; retry next poll
+            try:
+                read = community.read_verified_reports(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home), cfg)
+                return read if read.available else None  # unavailable: keep cached
+            except Exception as exc:  # pragma: no cover - fail open
+                logger.debug("blackbox dashboard: community read failed: %s", exc)
+                return None
+        return _swr("community:verified", _load, None)
+
+    def _verified_reports(cfg: Any) -> List[Any]:
+        read = _community_read(cfg)
+        return list(read.reports) if read is not None else []
+
     @app.get("/", response_class=HTMLResponse)
     def index() -> Any:
         html = _STATIC_DIR / "index.html"
@@ -1448,7 +1354,7 @@ def create_app(*, manage_blackbox: bool = False):
         malformed body can't corrupt config.
         """
         try:
-            result = settings.write_settings(payload)
+            result = settings.write_settings(payload, sharing_consent=community.consent.in_force())   # R13: opt-in
             return JSONResponse(result, status_code=200 if result.get("ok") else 400)
         except Exception as exc:  # pragma: no cover - fail open
             logger.debug("blackbox dashboard: write settings failed: %s", exc)
@@ -1490,7 +1396,7 @@ def create_app(*, manage_blackbox: bool = False):
         try:
             proc = subprocess.run(
                 argv,
-                cwd=str(attach._repo_root()),
+                cwd=str(attach.repo_root()),
                 text=True,
                 capture_output=True,
                 timeout=120,
@@ -1549,35 +1455,21 @@ def create_app(*, manage_blackbox: bool = False):
         # rows are complete threats, and ruleset.refresh also promotes any
         # still-unmigrated legacy proof rows.
         public = _graph_source_count(rs, "public")
-        community = 0
+        community = len(getattr(rs, "community", {}) or {})
 
         # Catch-up state must stay independent from the potentially expensive
         # SWM sightings COUNT. Otherwise a busy store can hide the live
         # queued/running state (and therefore the dashboard loader) for minutes.
-        def _node_sync() -> Any:
-            if not _node_reachable(cfg):
-                return None
-            client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-            try:
-                catchup = client.catchup_status(cfg.context_graph_id)
-            except Exception:
-                # No job is normal on an already-settled node.
-                catchup = {}
-            return {
-                "node_reachable": True,
-                "catchup": catchup,
-            }
-
         g = _swr(
             "graph-sync-status",
-            _node_sync,
-            {"node_reachable": False, "catchup": {}},
+            lambda: node_sync_probe(cfg, reachable=_node_reachable(cfg)),
+            {"node_reachable": False, "catchup": {}, "subscribed": True},
             ttl=4.0,
         )
         sightings = 0
         total_rules = sum(int(v or 0) for v in counts.values())
         catchup = g.get("catchup") if isinstance(g.get("catchup"), dict) else {}
-        node_catchup_state = str(catchup.get("jobStatus") or catchup.get("status") or "")
+        node_catchup_state = str(catchup.get("status") or "")
         catchup_result = catchup.get("result") if isinstance(catchup.get("result"), dict) else {}
         catchup_error = catchup.get("error") or catchup_result.get("error") or ""
         public_catchup_state = (
@@ -1616,7 +1508,7 @@ def create_app(*, manage_blackbox: bool = False):
             else _graph_sync_state(
                 public,
                 g["node_reachable"],
-                public_catchup_state,
+                public_catchup_state, still_arriving=sync_meter.verified_graph_still_arriving(cfg),
                 settled=(
                     authoritative_done
                     and public
@@ -1624,13 +1516,15 @@ def create_app(*, manage_blackbox: bool = False):
                 ),
             )
         )
-        community_state = "coming-soon"
         with _join_lock:
             connection = dict(_connection_states.get(cfg.context_graph_id) or {})
         if connection.get("state") in {"pending-approval", "pending-encryption-profile", "joining"}:
             if not public:
                 public_state = connection["state"]
-        activity = _sync_activity(
+        unsubscribed = bool(g["node_reachable"]) and g.get("subscribed") is False and not authoritative_running
+        if unsubscribed:   # KI-215: never count minutes on a graph this node does not follow
+            public_state = "not-subscribed"
+        activity = not_subscribed_activity() if unsubscribed else _sync_activity(
             public=public,
             community=community,
             node_reachable=bool(g["node_reachable"]),
@@ -1640,7 +1534,6 @@ def create_app(*, manage_blackbox: bool = False):
         )
         blackbox_health = _blackbox_sync_health(
             public=public,
-            actionable_public=rs.source_count("public"),
             sync_interval=cfg.sync_interval,
             activity=activity,
             transfer=authoritative_sync,
@@ -1650,20 +1543,6 @@ def create_app(*, manage_blackbox: bool = False):
             if public_state == "empty":
                 public_state = "syncing"
 
-        def _sync_label(tier: str, state: str) -> str:
-            suffix = {
-                "ready": "synced",
-                "syncing": "syncing",
-                "unreachable": "offline",
-                "empty": "empty",
-                "incomplete": "incomplete",
-                "pending-approval": "curator approval pending",
-                "pending-encryption-profile": "waiting for workspace encryption profile",
-                "joining": "joining private graph",
-                "coming-soon": "coming soon",
-                "sync-envelope-error": "peer sync handshake malformed",
-            }.get(state, state)
-            return f"{tier} {suffix}"
         return {
             "mode": cfg.mode,
             "context_graph_id": cfg.context_graph_id,
@@ -1673,6 +1552,8 @@ def create_app(*, manage_blackbox: bool = False):
             "node_reachable": g["node_reachable"],
             "sync_interval": cfg.sync_interval,
             "last_sync": rs.synced_at or None,
+            # moves on a pulse (not a VM sync): the page reloads the Community tab on it (FIX-0038)
+            "community_version": getattr(rs, "community_fingerprint", "") or None,
             "ruleset": counts,
             "curated": public,
             "community": community,
@@ -1685,11 +1566,7 @@ def create_app(*, manage_blackbox: bool = False):
                     "state": public_state,
                     "label": _sync_label("VM", public_state),
                 },
-                "community": {
-                    "count": int(community or 0),
-                    "state": community_state,
-                    "label": "Community graph coming soon",
-                },
+                "community": _community_progress(cfg, rs, community),
                 "catchup": {
                     "status": catchup_state or "idle",
                     "started_at": (
@@ -1709,7 +1586,8 @@ def create_app(*, manage_blackbox: bool = False):
 
     @app.get("/api/agents")
     def agents() -> Any:
-        """Local protected agents + distinct threat reporters in SWM.
+        """Local protected agents (``agents``) + community-graph reporters
+        (``community_agents``, see :mod:`..community.graph_stats`).
 
         A "protected agent" is any framework that has written findings into this
         shared blackbox home. Each is shown separately even when several share
@@ -1758,13 +1636,16 @@ def create_app(*, manage_blackbox: bool = False):
             local_fw = audit.local_active_frameworks()
         except Exception:  # pragma: no cover - fail open
             local_fw = []
+        # KI-031: bounded reads — the logs are size-capped on disk (~an order
+        # of 20k lines max after trim), so 50k covers the whole file without
+        # ever inviting a hostile/huge log to occupy request memory.
         try:
-            audit_rows = audit.read_audit(limit=1_000_000)
+            audit_rows = audit.read_audit(limit=50_000)
         except Exception:  # pragma: no cover - fail open
             audit_rows = []
         counts_by_fw: "Dict[str, int]" = {}
         try:
-            finding_rows = audit.read_findings(limit=1_000_000)
+            finding_rows = audit.read_findings(limit=50_000)
             for row in finding_rows:
                 fw = (row.get("framework") or "hermes").lower()
                 counts_by_fw[fw] = counts_by_fw.get(fw, 0) + 1
@@ -1793,54 +1674,19 @@ def create_app(*, manage_blackbox: bool = False):
                 "is_active": True,
             }
 
-        # Distinct threat reporters from the shared graph (may include remote
-        # agents). Groups over the slow shared-working-memory view, so served
-        # stale-while-revalidate; rows are cached raw and merged fresh below.
-        def _load_reporters() -> Any:
-            if not _node_reachable(cfg):
-                return None   # keep default cached briefly; retry next poll
-            try:
-                client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-                sparql = (
-                    "PREFIX g: <http://umanitek.ai/ontology/guardian/> "
-                    "SELECT ?reporter ?framework (COUNT(?r) AS ?n) WHERE { "
-                    "?r a g:ThreatReport . "
-                    "OPTIONAL { ?r g:reporter ?reporter } "
-                    "OPTIONAL { ?r g:framework ?framework } "
-                    "} GROUP BY ?reporter ?framework"
-                )
-                rows = client.query(
-                    sparql,
-                    cfg.context_graph_id,
-                    view=constants.VIEW_SHARED_WORKING_MEMORY,
-                    on_error=None,
-                )
-                if rows is None:
-                    return None
-            except Exception as exc:  # pragma: no cover - fail open
-                logger.debug("blackbox dashboard: agents query failed: %s", exc)
-                return None  # transient failure — keep the last cached reporters
-            reporters: List[Dict[str, Any]] = []
-            for row in rows:
-                addr = extract_binding(row.get("reporter"))
-                if not addr:
-                    continue
-                fw = (extract_binding(row.get("framework")) or "").lower() or "unknown"
-                try:
-                    n = int(extract_binding(row.get("n")) or "0")
-                except (TypeError, ValueError):
-                    n = 0
-                reporters.append({"framework": fw, "address": str(addr), "count": n})
-            return reporters
-
-        # Remote SWM reporters are not part of the VM-only release.
-        for rep in []:
-            fw, addr, n = rep["framework"], rep["address"], rep["count"]
-            key = (fw, addr.lower())
-            if key in found:
-                found[key]["reports"] = max(found[key].get("reports", 0), n)
-            else:
-                found[key] = {"framework": fw, "address": addr, "reports": n}
+        # Community-graph agents (R0d): verified signers, never the reporter
+        # field. They feed the separate `community_agents` list — a remote
+        # reporter is NOT an agent connected to this Blackbox.
+        reports = _verified_reports(cfg)
+        own_author = community_routes.own_reporter_author()
+        own_by_framework = Counter(r.framework.lower() for r in reports if own_author and r.author == own_author)
+        for (fw, _addr), row in found.items():  # local agents' own (verified) report counts
+            row["reports"] = max(row.get("reports", 0), own_by_framework.get(fw, 0))
+        community_out = [
+            {**agent, "address": safe_text(agent["address"], 128),
+             "frameworks": [safe_text(fw, 32) for fw in agent["frameworks"]]}
+            for agent in community.community_agents(reports, own_author)
+        ]
 
         # Attached local workspaces — one card per protected workspace, so two
         # OpenClaw profiles on one node wallet render as two agents. Local-wallet
@@ -1900,6 +1746,7 @@ def create_app(*, manage_blackbox: bool = False):
         )
         return {
             "agents": agents_out,
+            "community_agents": community_out,
             "connected_count": connected_count,
             "protected_profile_count": protected_profile_count,
             "blackbox_runtime": blackbox_runtime,
@@ -2027,7 +1874,7 @@ def create_app(*, manage_blackbox: bool = False):
         """Map a UI tier name to a DKG SPARQL view.
 
         ``public`` → verifiable-memory (the curated source of truth),
-        ``community`` → coming soon (never queried),
+        ``community`` → shared-working-memory (the community graph; flag-only),
         ``local`` → working-memory (this node's own private graph).
         """
         tier = (tier or default).lower()
@@ -2051,40 +1898,15 @@ def create_app(*, manage_blackbox: bool = False):
     ) -> Any:
         """Threats from one graph tier: ``public`` | ``community`` | ``local``."""
         tier, view = _tier_view(tier)
-        if tier == "community":
-            return {
-                "tier": "community", "threats": [], "total": 0,
-                "offset": offset, "limit": limit, "partial": False,
-                "category_totals": {}, "ecosystem_totals": {},
-                "coming_soon": True,
-            }
         cfg = load_blackbox_config()
-
-        def _category(identifier: str) -> str:
-            ident = str(identifier or "")
-            prefix = ident.split(":", 1)[0].lower() if ":" in ident else ""
-            return {
-                "dep": "dependency",
-                "injection": "injection",
-                "escalation": "escalation",
-                "fileaccess": "fileaccess",
-                "skill": "skill",
-                "ioc": "ioc",
-            }.get(prefix, "other")
 
         # The ruleset merges complete public VM threats with community SWM rows
         # and retains a compatibility join for any legacy CurationProof assets.
         if tier in {"public", "community"}:
             rs = ruleset.peek(cfg)
-            all_threats = [
-                {
-                    "identifier": item.get("identifier"),
-                    "category": item.get("category") or "other",
-                    "severity": str(item.get("severity") or "info").lower(),
-                    "name": item.get("name") or "",
-                }
-                for item in _graph_entries(rs, tier)
-            ]
+            # One shaping function: category from the identifier, community
+            # strings sanitized, R3 stage fields carried (KI-197 / KI-198).
+            all_threats = [graph_tier_item(item, community=tier == "community") for item in _graph_entries(rs, tier)]
             needle = str(q or "").strip().casefold()
             wanted_category = str(category or "").strip().casefold()
             wanted_ecosystem = str(ecosystem or "").strip().casefold()
@@ -2142,7 +1964,7 @@ def create_app(*, manage_blackbox: bool = False):
                 client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
                 identity = client.agent_identity()
                 agent_address = str(identity.get("agentAddress") or "")
-                rows = ruleset._fetch_tier(
+                rows = ruleset.fetch_tier(
                     client,
                     cfg.context_graph_id,
                     view,
@@ -2164,77 +1986,8 @@ def create_app(*, manage_blackbox: bool = False):
 
         return _swr("graph:" + tier, _load, {"tier": tier, "threats": []})
 
-    @app.get("/api/reports")
-    def reports(limit: int = Query(50, ge=1, le=200)) -> Any:
-        return {"reports": [], "coming_soon": True, "sharing_enabled": False}
-
-        # Community reports are deliberately not queried in the VM-only release.
-        cfg = load_blackbox_config()
-
-        # Node-backed sightings list, served stale-while-revalidate.
-        def _load() -> Any:
-            if not _node_reachable(cfg):
-                return None   # keep the default (empty) cached briefly; retry next poll
-            out: List[Dict[str, Any]] = []
-            try:
-                client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-                sparql = (
-                    "PREFIX g: <http://umanitek.ai/ontology/guardian/> "
-                    "SELECT ?identifier (COUNT(DISTINCT ?reporter) AS ?reporters) "
-                    "(SAMPLE(?severity) AS ?sev) WHERE { "
-                    "?r a g:ThreatReport . ?r g:identifier ?identifier . ?r g:reporter ?reporter . "
-                    "OPTIONAL { ?r g:severity ?severity . } } "
-                    f"GROUP BY ?identifier ORDER BY DESC(?reporters) LIMIT {int(limit)}"
-                )
-                rows = client.query(
-                    sparql,
-                    cfg.context_graph_id,
-                    view=constants.VIEW_SHARED_WORKING_MEMORY,
-                    on_error=[],
-                ) or []
-                for row in rows:
-                    out.append({
-                        "identifier": extract_binding(row.get("identifier")),
-                        "reporters": int(extract_binding(row.get("reporters")) or "0"),
-                        "severity": extract_binding(row.get("sev")) or "info",
-                    })
-            except Exception as exc:  # pragma: no cover - fail open
-                logger.debug("blackbox dashboard: reports query failed: %s", exc)
-            return {"reports": out}
-
-        return _swr(f"reports:{limit}", _load, {"reports": []})
-
-    # Predicate IRI -> friendly detail key, for the single-threat lookup.
-    _DETAIL_FIELDS = {
-        constants.SEVERITY_PRED: "severity",
-        constants.KIND_PRED: "kind",
-        constants.SCHEMA_NAME_PRED: "name",
-        constants.SCHEMA_DESCRIPTION_PRED: "description",
-        constants.OWASP_CATEGORY_PRED: "owasp",
-        constants.PACKAGE_ECOSYSTEM_PRED: "ecosystem",
-        constants.PACKAGE_NAME_PRED: "package",
-        constants.PACKAGE_VERSION_PRED: "version",
-        constants.FIXED_VERSION_PRED: "fixed_version",
-        constants.TOOL_NAME_PRED: "tool",
-        constants.ARG_SHAPE_PRED: "arg_shape",
-        constants.CATEGORY_PRED: "file_category",
-        constants.SKILL_NAME_PRED: "skill",
-        constants.SKILL_VERSION_PRED: "skill_version",
-        constants.DANGER_SHAPE_PRED: "danger_shape",
-        constants.PATTERN_PRED: "pattern",
-        constants.CURATED_PRED: "curated",
-        constants.SCHEMA_DATE_MODIFIED_PRED: "modified",
-        constants.SCHEMA_CONTRIBUTOR_PRED: "contributor",
-        "urn:defender:p:severity": "severity",
-        "urn:defender:p:kind": "kind",
-        "urn:defender:p:pattern": "pattern",
-        "urn:defender:p:ecosystem": "ecosystem",
-        "urn:defender:p:package": "package",
-        "urn:defender:p:version": "version",
-        "urn:defender:p:advisoryId": "advisory_id",
-        "urn:defender:p:iocType": "ioc_type",
-        "urn:defender:p:value": "value",
-    }
+    community_endpoints = community_routes.register_community_routes(app, community_read=_community_read, node_reachable=_node_reachable)
+    sync_meter.register_sync_meter_routes(app, load_config=load_blackbox_config, node_reachable=_node_reachable, verified_rules=lambda cfg: _graph_source_count(ruleset.peek(cfg), "public"))
 
     @app.get("/api/threat")
     def threat(identifier: str = Query(..., min_length=1), tier: str = Query("public")) -> Any:
@@ -2242,12 +1995,24 @@ def create_app(*, manage_blackbox: bool = False):
 
         ``tier`` ∈ public | community | local. Fail-open."""
         tier, view = _tier_view(tier, default="public")
-        if tier == "community":
-            return {
-                "identifier": identifier, "tier": "community", "found": False,
-                "coming_soon": True,
-            }
         cfg = load_blackbox_config()
+        if tier == "community":
+            # Serve straight from the aggregated community store (sanitized).
+            rs = ruleset.peek(cfg)
+            rule = (getattr(rs, "community", {}) or {}).get(identifier)
+            if not rule:
+                return {"identifier": safe_identifier(identifier), "tier": "community", "found": False}
+            detail = {
+                safe_text(k, 64): (safe_text(v) if isinstance(v, str) else v)
+                for k, v in rule.items()
+            }
+            detail.update({
+                "identifier": safe_identifier(identifier),
+                "tier": "community",
+                "found": True,
+                "reporters": int(rule.get("reporterCount") or 0),
+            })
+            return detail
         prefix = identifier.split(":", 1)[0].lower() if ":" in identifier else ""
         category = prefix if prefix in ("dep", "injection", "escalation", "fileaccess", "skill", "ioc") else "other"
         if category == "dep":
@@ -2339,14 +2104,14 @@ def create_app(*, manage_blackbox: bool = False):
                             detail["sources"].append(obj)
                     elif pred == "urn:defender:p:contributor":
                         detail["contributor"] = obj
-                    elif pred in _DETAIL_FIELDS:
-                        detail[_DETAIL_FIELDS[pred]] = obj
+                    elif pred in DETAIL_FIELDS:
+                        detail[DETAIL_FIELDS[pred]] = obj
             detail["reporters"] = len(reporters)
         except Exception as exc:  # pragma: no cover - fail open
             logger.debug("blackbox dashboard: threat detail query failed: %s", exc)
         return detail
 
-    @app.on_event("startup")
+    @lifecycle.on_startup(app)
     def _warm_node_caches() -> None:
         """Prime the SWR node caches at boot so the first load shows data
         instead of a "Loading…" window. Off-thread, fail-open."""
@@ -2368,7 +2133,7 @@ def create_app(*, manage_blackbox: bool = False):
                 for _ in range(2):
                     graph_status()
                     graph("public")
-                    reports(50)
+                    community_endpoints.reports(50)
                     agents()
                     time.sleep(2.5)
             except Exception as exc:  # pragma: no cover - best effort

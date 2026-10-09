@@ -25,7 +25,7 @@ export function metaBadges(n: StarmapNode): string[] {
 
     if (n.context || (n.source === 'base' && !n.learned)) {
       out.push('related')
-    } else if (n.learned || n.createdBy === 'agent') {
+    } else if (n.learned || n.createdBy === 'agent' || n.createdBy === 'learn') {
       out.push('learned')
     }
 

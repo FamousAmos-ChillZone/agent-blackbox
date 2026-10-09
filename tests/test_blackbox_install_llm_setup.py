@@ -80,6 +80,9 @@ def _run_unix_blackbox_config_writer(
     dkg_url: str,
     dkg_home: Path,
     dkg_bin: Path,
+    community: tuple[str, str] = (),
+    repo_dir: str = "",
+    env: dict | None = None,
 ) -> dict:
     subprocess.run(
         [
@@ -93,10 +96,13 @@ def _run_unix_blackbox_config_writer(
             dkg_url,
             str(dkg_home),
             str(dkg_bin),
+            *community,   # optional: (community graph id, owner peer id) — KI-216
+            *([repo_dir] if repo_dir else []),   # optional: the checkout, for the consent check — KI-184
         ],
         check=True,
         capture_output=True,
         text=True,
+        env={**os.environ, **(env or {})},
     )
     import yaml
 
@@ -405,14 +411,14 @@ def test_unix_installer_fresh_config_keeps_community_sharing_off(
     blackbox = configured["plugins"]["entries"]["blackbox"]
 
     assert blackbox["report"] is False
-    assert blackbox["daily_report_limit"] == 0
+    assert blackbox["daily_report_limit"] == 20   # the plugin default; 0 meant "no cap" (Refine R1)
 
 
 def test_windows_installer_fresh_config_keeps_community_sharing_off() -> None:
     writer = _extract_powershell_function_body("Enable-AndConfigure")
 
     assert '"report": False' in writer
-    assert '"daily_report_limit": 0' in writer
+    assert '"daily_report_limit": 20' in writer
     assert '"report": True' not in writer
     assert '"daily_report_limit": 9999' not in writer
 
@@ -436,14 +442,20 @@ def test_unix_installer_migrates_stale_community_sharing_opt_in(
     blackbox = configured["plugins"]["entries"]["blackbox"]
 
     assert blackbox["report"] is False
-    assert blackbox["daily_report_limit"] == 0
+    # KI-184: an operator-chosen cap is kept (the plugin clamps it at runtime);
+    # only the invalid pre-R1 value 0 ("no cap") is repaired to the default.
+    assert blackbox["daily_report_limit"] == 9999
 
 
 def test_windows_installer_migrates_stale_community_sharing_opt_in() -> None:
     writer = INSTALL_PS1.read_text(encoding="utf-8")
 
-    assert 'for k, v in {"report": False, "daily_report_limit": 0}.items()' in writer
-    assert "if blackbox.get(k) != v:" in writer
+    # KI-184: the forced migration is gone on Windows too — sharing stays on for a
+    # consenting node (the product's consent code decides), only 0 is repaired.
+    assert 'for k, v in {"report": False, "daily_report_limit": 20}.items()' not in writer
+    assert 'if blackbox.get("report") is True and not _consent_in_force(repo_dir):' in writer
+    assert 'if blackbox.get("daily_report_limit") in (0, "0")' in writer
+    assert "$GraphPeerId $RepoDir" in writer
 
 
 def test_hermes_setup_defaults_to_reuse_without_prompting() -> None:
@@ -814,6 +826,44 @@ def test_dkg_config_writer_reports_only_real_runtime_changes(tmp_path: Path) -> 
     assert first.stdout.strip() == "changed"
     assert second.stdout.strip() == "unchanged"
     assert config.stat().st_mtime_ns == first_mtime
+
+
+DEFAULT_GRAPH = "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"
+
+
+def _write_dkg_config(home: Path, context_graph_id: str, default_graph: str) -> dict:
+    command = [sys.executable, "-c", _extract_unix_config_writer(), str(home), "9320", "blazegraph",
+               BLAZEGRAPH_URL, "true", context_graph_id, default_graph]
+    subprocess.run(command, check=True, capture_output=True, text=True)
+    return json.loads((home / "config.json").read_text(encoding="utf-8"))
+
+
+def test_dkg_config_writer_gives_the_default_graph_the_native_profile(tmp_path: Path) -> None:
+    """KI-282: on DKG 10.0.21 the default graph is recovered by the node's VM
+    reconciler with recovery prefetch on and the older sync reconciler off."""
+    data = _write_dkg_config(tmp_path / "dkg", DEFAULT_GRAPH, DEFAULT_GRAPH)
+
+    assert data["syncReconcilerEnabled"] is False
+    assert data["vmReconcilerEnabled"] is True
+    assert data["vmRecoveryPrefetchEnabled"] is True
+    assert data["syncOnConnectEnabled"] is True     # KI-044: authority still reaches subscribers
+
+
+def test_dkg_config_writer_keeps_the_steady_profile_for_another_graph(tmp_path: Path) -> None:
+    data = _write_dkg_config(tmp_path / "dkg", "umanitek/blackbox-threats-staging", DEFAULT_GRAPH)
+
+    assert data["syncReconcilerEnabled"] is True
+    assert "vmRecoveryPrefetchEnabled" not in data
+
+
+def test_dkg_config_writer_called_without_the_default_keeps_the_steady_profile(tmp_path: Path) -> None:
+    """An older caller passes six arguments; it must neither crash nor switch profile."""
+    home = tmp_path / "dkg"
+    command = [sys.executable, "-c", _extract_unix_config_writer(), str(home), "9320", "blazegraph",
+               BLAZEGRAPH_URL, "true", DEFAULT_GRAPH]
+    subprocess.run(command, check=True, capture_output=True, text=True)
+
+    assert json.loads((home / "config.json").read_text(encoding="utf-8"))["syncReconcilerEnabled"] is True
 
 
 def test_dkg_config_writer_preserves_oxigraph_config_during_switch(tmp_path: Path) -> None:
@@ -1470,7 +1520,9 @@ def test_installers_use_native_dkg_membership_without_sync_overrides() -> None:
         assert "DKG daemon is ready on npm build" in text
         assert "autoApproveJoinRequests" not in text
         assert 'data["syncOnConnectEnabled"] = True' in text
-        assert 'data["syncReconcilerEnabled"] = True' in text
+        assert 'data["syncReconcilerEnabled"] = not native_profile' in text   # KI-282
+        assert "DKG_EXACT_BATCH_STREAM_ENABLED" in text
+        assert "DKG_VM_RECOVERY_PREFETCH_ENABLED" in text
         assert 'data["durableSyncEnabled"] = True' in text
         assert 'data["syncGlobalMaxInflight"] = 1' in text
         assert 'data["syncGlobalQueueLimit"] = 0' in text
@@ -1784,3 +1836,87 @@ def test_windows_dkg_npm_failure_is_fatal_to_dkg_setup() -> None:
     assert install_body.index(failure_guard) < install_body.index(
         "New-Item -ItemType Directory -Force -Path $DkgHome"
     )
+
+
+def test_unix_installer_writes_the_community_graph_and_its_owner_peer_as_a_pair(
+    tmp_path: Path,
+) -> None:
+    """KI-216: a fresh node cannot find an unregistered public graph until it is
+    connected to the graph owner, so the installer writes the owner's peer id
+    next to the graph id (both from env), and an explicit value always wins."""
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "plugins:\n  entries:\n    blackbox:\n      community_graph_peer_id: stale-peer\n",
+        encoding="utf-8",
+    )
+    configured = _run_unix_blackbox_config_writer(
+        config_path,
+        dkg_url="http://127.0.0.1:9320",
+        dkg_home=tmp_path / ".dkg",
+        dkg_bin=tmp_path / "dkg" / "node_modules" / ".bin" / "dkg",
+        community=("0xowner/community-graph", "12D3KooWowner"),
+    )
+    blackbox = configured["plugins"]["entries"]["blackbox"]
+    assert blackbox["community_graph_id"] == "0xowner/community-graph"
+    assert blackbox["community_graph_peer_id"] == "12D3KooWowner"
+
+
+def test_unix_installer_leaves_community_keys_alone_when_no_pair_is_given(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    configured = _run_unix_blackbox_config_writer(
+        config_path,
+        dkg_url="http://127.0.0.1:9320",
+        dkg_home=tmp_path / ".dkg",
+        dkg_bin=tmp_path / "dkg" / "node_modules" / ".bin" / "dkg",
+    )
+    blackbox = configured["plugins"]["entries"]["blackbox"]
+    assert "community_graph_id" not in blackbox and "community_graph_peer_id" not in blackbox
+
+
+def test_unix_installer_keeps_sharing_on_when_a_consent_record_is_in_force(tmp_path: Path) -> None:
+    """KI-184: a re-run or upgrade must not switch a consenting node's sharing off.
+    The installer asks the product's own consent code (one implementation)."""
+    import json
+
+    from plugins.blackbox.community import consent
+
+    home = tmp_path / "bbhome"
+    home.mkdir()
+    (home / "sharing_consent.json").write_text(json.dumps({
+        "terms_hash": consent.terms_hash(consent.terms_text()),
+        "terms_version": "1.0", "accepted_at": "2026-10-03T00:00:00Z", "withdrawn_at": "",
+    }), encoding="utf-8")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "plugins:\n  entries:\n    blackbox:\n      report: true\n      daily_report_limit: 500\n",
+        encoding="utf-8",
+    )
+    configured = _run_unix_blackbox_config_writer(
+        config_path,
+        dkg_url="http://127.0.0.1:9320",
+        dkg_home=tmp_path / ".dkg",
+        dkg_bin=tmp_path / "dkg" / "node_modules" / ".bin" / "dkg",
+        repo_dir=str(Path(__file__).resolve().parents[1]),
+        env={"BLACKBOX_HOME": str(home)},
+    )
+    blackbox = configured["plugins"]["entries"]["blackbox"]
+    assert blackbox["report"] is True
+    assert blackbox["daily_report_limit"] == 500   # an operator-chosen cap is kept
+
+
+def test_unix_installer_still_migrates_an_opt_in_without_consent_off(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("plugins:\n  entries:\n    blackbox:\n      report: true\n      daily_report_limit: 0\n", encoding="utf-8")
+    configured = _run_unix_blackbox_config_writer(
+        config_path,
+        dkg_url="http://127.0.0.1:9320",
+        dkg_home=tmp_path / ".dkg",
+        dkg_bin=tmp_path / "dkg" / "node_modules" / ".bin" / "dkg",
+        repo_dir=str(Path(__file__).resolve().parents[1]),
+        env={"BLACKBOX_HOME": str(tmp_path / "empty-home")},
+    )
+    blackbox = configured["plugins"]["entries"]["blackbox"]
+    assert blackbox["report"] is False
+    assert blackbox["daily_report_limit"] == 20   # the invalid pre-R1 "no cap" is repaired

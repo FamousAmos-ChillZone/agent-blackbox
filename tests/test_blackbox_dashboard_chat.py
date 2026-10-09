@@ -6,11 +6,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from plugins.blackbox import attach
+from plugins.blackbox.attach import plugin_copy as attach_plugin_copy
 from plugins.blackbox.dashboard import server
 
 
 def test_dashboard_public_graph_uses_vm_verified_ruleset_rows(monkeypatch):
-    from plugins.blackbox import audit, config, dkg_client, ruleset
+    from plugins.blackbox import audit, ruleset
+    from plugins.blackbox.kernel import config, dkg_client
 
     cfg = SimpleNamespace(
         mode="audit",
@@ -63,14 +65,14 @@ def test_dashboard_public_graph_uses_vm_verified_ruleset_rows(monkeypatch):
         ),
     )
 
-    client = TestClient(server.create_app())
+    client = TestClient(server.create_app(), base_url="http://127.0.0.1")
 
     status = client.get("/api/graph-status").json()
     assert status["curated"] == 2
     assert status["sync_progress"]["public"] == {
         "count": 2,
-        "state": "incomplete",
-        "label": "VM incomplete",
+        "state": "ready",
+        "label": "VM synced",
     }
 
     public = client.get("/api/graph?tier=public&limit=1&offset=1").json()
@@ -92,7 +94,9 @@ def test_dashboard_public_graph_uses_vm_verified_ruleset_rows(monkeypatch):
 
 
 def test_dashboard_keeps_partial_vm_count_loading_during_curator_transfer(monkeypatch):
-    from plugins.blackbox import audit, config, dkg_client, ruleset, sync_state
+    from plugins.blackbox import audit, ruleset
+    from plugins.blackbox.sync import state as sync_state
+    from plugins.blackbox.kernel import config, dkg_client
 
     cfg = SimpleNamespace(
         mode="audit",
@@ -132,7 +136,7 @@ def test_dashboard_keeps_partial_vm_count_loading_during_curator_transfer(monkey
     )
     monkeypatch.setattr(dkg_client.DkgClient, "query", lambda *args, **kwargs: [])
 
-    status = TestClient(server.create_app()).get("/api/graph-status").json()
+    status = TestClient(server.create_app(), base_url="http://127.0.0.1").get("/api/graph-status").json()
 
     assert status["curated"] == 460
     assert status["sync_progress"]["public"] == {
@@ -149,7 +153,7 @@ def test_dashboard_keeps_partial_vm_count_loading_during_curator_transfer(monkey
 
 
 def test_running_sync_state_keeps_latest_committed_count(monkeypatch, tmp_path):
-    from plugins.blackbox import sync_state
+    from plugins.blackbox.sync import state as sync_state
 
     state_path = tmp_path / "authoritative-sync.json"
     monkeypatch.setattr(sync_state, "_path", lambda: state_path)
@@ -233,7 +237,8 @@ def test_dashboard_automatic_sync_runs_canonical_verified_cli(monkeypatch):
 
 
 def test_dashboard_lists_more_than_five_thousand_vm_threats_with_exact_totals(monkeypatch):
-    from plugins.blackbox import config, ruleset
+    from plugins.blackbox.kernel import config
+    from plugins.blackbox import ruleset
 
     cfg = SimpleNamespace(
         mode="audit",
@@ -259,7 +264,7 @@ def test_dashboard_lists_more_than_five_thousand_vm_threats_with_exact_totals(mo
     monkeypatch.setattr(config, "load_blackbox_config", lambda: cfg)
     monkeypatch.setattr(ruleset, "peek", lambda _cfg=None: LargeThreatGraph())
 
-    result = TestClient(server.create_app()).get("/api/graph?tier=public&limit=6001").json()
+    result = TestClient(server.create_app(), base_url="http://127.0.0.1").get("/api/graph?tier=public&limit=6001").json()
 
     assert result["total"] == 6001
     assert result["category_totals"] == {"dependency": 6001}
@@ -269,7 +274,8 @@ def test_dashboard_lists_more_than_five_thousand_vm_threats_with_exact_totals(mo
 
 
 def test_dashboard_graph_search_filters_the_full_verified_cache(monkeypatch):
-    from plugins.blackbox import config, ruleset
+    from plugins.blackbox.kernel import config
+    from plugins.blackbox import ruleset
 
     cfg = SimpleNamespace(
         mode="audit",
@@ -300,7 +306,7 @@ def test_dashboard_graph_search_filters_the_full_verified_cache(monkeypatch):
     monkeypatch.setattr(config, "load_blackbox_config", lambda: cfg)
     monkeypatch.setattr(ruleset, "peek", lambda _cfg=None: SearchableThreats())
 
-    client = TestClient(server.create_app())
+    client = TestClient(server.create_app(), base_url="http://127.0.0.1")
     result = client.get(
         "/api/graph?tier=public&limit=100&q=needle"
     ).json()
@@ -446,7 +452,7 @@ def test_dashboard_does_not_position_private_storage_as_normal_product_behavior(
         assert unwanted not in html
 
     assert "Record findings without blocking agent actions." in html
-    assert "Network threat distribution is in development." in html
+    assert "Share privacy-safe threat signatures with the community graph. Your prompts and files never leave this machine." in html
 
 
 def test_dashboard_more_node_is_a_display_only_marker():
@@ -495,6 +501,30 @@ def test_dashboard_refetches_empty_graph_when_first_verified_threats_arrive():
     assert 'resetEmptyGraphOnFirstVerifiedThreats("public", previousPublicTotal);' in render_status
 
 
+def test_dashboard_reloads_live_community_tier_when_ruleset_changes():
+    """Regression: the community list was loaded once and never refreshed, so a
+    tab cached while empty showed "No reports yet" under a live count of 4."""
+    html = (
+        Path(__file__).resolve().parents[1]
+        / "plugins"
+        / "blackbox"
+        / "dashboard"
+        / "static"
+        / "index.html"
+    ).read_text(encoding="utf-8")
+    render_status = html[html.index("function renderGraphStatus(data)"):]
+    render_status = render_status[:render_status.index("\n  // ---------- Poll loop")]
+
+    assert render_status.index('var previousCommunityTotal = graphTotalForTier("community");') < (
+        render_status.index("lastStatus = data;")
+    )
+    assert 'resetEmptyGraphOnFirstVerifiedThreats("community", previousCommunityTotal);' in render_status
+    # FIX-0038: the community tier is keyed on its OWN version first (a pulse moves it,
+    # last_sync does not), with the ruleset version as the fallback key.
+    assert 'resetGraphOnVersionChange("community", previousCommunityVersion, communityVersion(data))' in render_status
+    assert 'resetGraphOnVersionChange("community", previousRulesetVersion, rulesetVersion(data))' in render_status
+
+
 @pytest.mark.skip(reason="dashboard never joins private graphs")
 def test_ruleset_sync_once_uses_official_join_then_subscribe():
     class Cfg:
@@ -513,7 +543,7 @@ def test_ruleset_sync_once_uses_official_join_then_subscribe():
             events.append(("client", url, dkg_home))
 
         def agent_identity(self):
-            return {"agentAddress": "0xabc"}
+            return {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}
 
         def context_graph_has_agent(self, cg_id, agent_address):
             nonlocal membership_checks
@@ -553,10 +583,10 @@ def test_ruleset_sync_once_uses_official_join_then_subscribe():
     assert second == {"total": 5, "public": 0, "community": 0}
     assert events == [
         ("client", "http://127.0.0.1:9320", "/tmp/blackbox-dkg"),
-        ("membership", "umanitek/guardian-threats-staging", "0xabc"),
+        ("membership", "umanitek/guardian-threats-staging", "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"),
         ("join", "umanitek/guardian-threats-staging", "graph-peer"),
         ("client", "http://127.0.0.1:9320", "/tmp/blackbox-dkg"),
-        ("membership", "umanitek/guardian-threats-staging", "0xabc"),
+        ("membership", "umanitek/guardian-threats-staging", "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"),
         ("subscribe", "umanitek/guardian-threats-staging"),
         ("refresh", "umanitek/guardian-threats-staging", "http://127.0.0.1:9320", "/tmp/blackbox-dkg"),
     ]
@@ -608,7 +638,7 @@ def test_dashboard_marks_subscribed_only_after_public_graph_arrives():
             pass
 
         def agent_identity(self):
-            return {"agentAddress": "0xabc"}
+            return {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}
 
         def context_graph_has_agent(self, cg_id, agent_address):
             return True
@@ -653,7 +683,7 @@ def test_dashboard_restarts_stale_empty_completed_catchup():
             pass
 
         def agent_identity(self):
-            return {"agentAddress": "0xabc"}
+            return {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}
 
         def context_graph_has_agent(self, cg_id, agent_address):
             return True
@@ -703,7 +733,7 @@ def test_dashboard_restarts_completed_catchup_when_only_community_synced():
             pass
 
         def agent_identity(self):
-            return {"agentAddress": "0xabc"}
+            return {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}
 
         def context_graph_has_agent(self, cg_id, agent_address):
             return True
@@ -755,7 +785,7 @@ def test_dashboard_clears_stale_pending_approval_once_catchup_is_running():
             pass
 
         def agent_identity(self):
-            return {"agentAddress": "0xabc"}
+            return {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}
 
         def context_graph_has_agent(self, cg_id, agent_address):
             return True
@@ -805,7 +835,7 @@ def test_dashboard_failed_catchup_with_stale_public_rows_refreshes_join_before_r
             pass
 
         def agent_identity(self):
-            return {"agentAddress": "0xabc"}
+            return {"agentAddress": "0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a"}
 
         def context_graph_has_agent(self, cg_id, agent_address):
             return True  # stale allowlist entry; the new peer binding is missing
@@ -868,7 +898,7 @@ def test_dashboard_graph_has_fullscreen_control():
 
 
 def test_dashboard_serves_only_allowlisted_brand_fonts():
-    client = TestClient(server.create_app())
+    client = TestClient(server.create_app(), base_url="http://127.0.0.1")
 
     font = client.get("/fonts/archivo-latin.woff2")
     assert font.status_code == 200
@@ -901,10 +931,11 @@ def test_blackbox_dashboard_chat_starts_session(monkeypatch):
 
     monkeypatch.setattr(server.shutil, "which", lambda name: "/bin/hermes")
     monkeypatch.setattr(server.subprocess, "run", fake_run)
-    monkeypatch.setattr(attach, "_repo_root", lambda: Path("/tmp/repo"))
+    monkeypatch.setattr(attach_plugin_copy, "repo_root", lambda: Path("/tmp/repo"))
 
-    client = TestClient(server.create_app())
-    res = client.post("/api/blackbox-chat", json={"message": "hi"})
+    client = TestClient(server.create_app(), base_url="http://127.0.0.1")
+    token = client.get("/api/session").json()["token"]
+    res = client.post("/api/blackbox-chat", json={"message": "hi"}, headers={"X-Blackbox-Token": token})
 
     assert res.status_code == 200
     assert res.json() == {"ok": True, "answer": "hello", "session_id": "sid-1"}
@@ -920,10 +951,11 @@ def test_blackbox_dashboard_chat_resumes_session(monkeypatch):
 
     monkeypatch.setattr(server.shutil, "which", lambda name: "/bin/hermes")
     monkeypatch.setattr(server.subprocess, "run", fake_run)
-    monkeypatch.setattr(attach, "_repo_root", lambda: Path("/tmp/repo"))
+    monkeypatch.setattr(attach_plugin_copy, "repo_root", lambda: Path("/tmp/repo"))
 
-    client = TestClient(server.create_app())
-    res = client.post("/api/blackbox-chat", json={"message": "which of these?", "session_id": "sid-1"})
+    client = TestClient(server.create_app(), base_url="http://127.0.0.1")
+    token = client.get("/api/session").json()["token"]
+    res = client.post("/api/blackbox-chat", json={"message": "which of these?", "session_id": "sid-1"}, headers={"X-Blackbox-Token": token})
 
     assert res.status_code == 200
     assert res.json() == {"ok": True, "answer": "follow-up", "session_id": "sid-1"}
@@ -960,7 +992,7 @@ def test_attach_targets_include_unavailable_supported_agents(monkeypatch):
 
     monkeypatch.setattr(attach, "attach_all", fake_attach_all)
 
-    client = TestClient(server.create_app())
+    client = TestClient(server.create_app(), base_url="http://127.0.0.1")
     res = client.get("/api/attach-targets")
 
     assert res.status_code == 200
@@ -991,7 +1023,7 @@ def test_attach_targets_do_not_duplicate_errored_supported_agents(monkeypatch):
 
     monkeypatch.setattr(attach, "attach_all", fake_attach_all)
 
-    client = TestClient(server.create_app())
+    client = TestClient(server.create_app(), base_url="http://127.0.0.1")
     res = client.get("/api/attach-targets")
 
     assert res.status_code == 200
@@ -1002,7 +1034,8 @@ def test_attach_targets_do_not_duplicate_errored_supported_agents(monkeypatch):
 
 
 def test_agent_cards_distinguish_attached_from_active(monkeypatch):
-    from plugins.blackbox import audit, config, constants, dkg_client
+    from plugins.blackbox import audit
+    from plugins.blackbox.kernel import config, constants, dkg_client
 
     cfg = SimpleNamespace(
         dkg_url="http://127.0.0.1:9320",
@@ -1029,7 +1062,7 @@ def test_agent_cards_distinguish_attached_from_active(monkeypatch):
         },
     )
 
-    agents = TestClient(server.create_app()).get("/api/agents").json()["agents"]
+    agents = TestClient(server.create_app(), base_url="http://127.0.0.1").get("/api/agents").json()["agents"]
     by_framework = {row["framework"]: row for row in agents}
 
     assert by_framework["hermes"]["is_active"] is True

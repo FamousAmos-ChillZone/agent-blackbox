@@ -21,11 +21,12 @@
       "minGatewayVersion": "2026.6.11"
     },
     "build": {
-      "openclawVersion": "2026.6.11"
+      "openclawVersion": "2026.9.8"
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:sdk": "npm install --no-save --no-audit --no-fund --ignore-scripts openclaw@latest && tsc --noEmit && npx tsx test/parity.mjs && npx tsx test/report.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.0"
