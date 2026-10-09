@@ -65,7 +65,7 @@ BLACKBOX_DKG_PACKAGE="${BLACKBOX_DKG_PACKAGE:-@origintrail-official/dkg@latest}"
 BLACKBOX_DKG_DAEMON_URL="http://127.0.0.1:$BLACKBOX_DKG_PORT"
 BLACKBOX_DKG_STORE_QUEUE_LIMIT="${BLACKBOX_DKG_STORE_QUEUE_LIMIT:-512}"
 BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION="${BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION:-1}"
-BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT="1"
+BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT="3"   # EXPERIMENT: three sync slots (was 1)
 BLACKBOX_DKG_SYNC_GLOBAL_QUEUE_LIMIT="1"
 BLACKBOX_DKG_DURABLE_SYNC_ENABLED="${BLACKBOX_DKG_DURABLE_SYNC_ENABLED:-1}"
 BLACKBOX_DKG_CATCHUP_MAX_CONCURRENT_PEERS="1"
@@ -749,7 +749,7 @@ if native_profile:
     data["vmReconcilerEnabled"] = True
     data["vmRecoveryPrefetchEnabled"] = True
 data.pop("syncAgentsMeta", None)
-data["syncGlobalMaxInflight"] = 1
+data["syncGlobalMaxInflight"] = 3  # EXPERIMENT (was 1)
 data["syncGlobalQueueLimit"] = 0
 data.pop("restrictAutoSubscribeContextGraphs", None)
 data["syncSharedMemoryOnConnect"] = False
