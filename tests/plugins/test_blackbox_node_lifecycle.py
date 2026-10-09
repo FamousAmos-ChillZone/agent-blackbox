@@ -28,9 +28,14 @@ _STEADY_CONFIG = {
 
 
 @pytest.fixture
-def dkg_home(tmp_path):
-    """A DKG home with a live-worker pid file and steady persisted config."""
+def dkg_home(tmp_path, monkeypatch):
+    """A DKG home with a live-worker pid file and steady persisted config.
+
+    "Live" is stated, not assumed: node_process only trusts daemon.pid when it
+    names a live daemon of this installation (KI-312), so pid 4242 is declared one.
+    """
     (tmp_path / "daemon.pid").write_text("4242", encoding="utf-8")
+    monkeypatch.setattr(managed_node.node_process, "is_managed_daemon", lambda _cfg, pid: pid == 4242)
     (tmp_path / "config.json").write_text(json.dumps(_STEADY_CONFIG), encoding="utf-8")
     return tmp_path
 

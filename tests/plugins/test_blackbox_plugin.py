@@ -419,8 +419,11 @@ def test_managed_sync_repairs_interrupted_upgrade_and_preserves_checkpoint(
 def test_managed_dkg_sync_environment_keeps_native_reconciliation_enabled(
     tmp_path, monkeypatch
 ):
-    (tmp_path / "daemon.pid").write_text(str(os.getpid()), encoding="utf-8")
     cfg = config_mod.BlackboxConfig(dkg_home=str(tmp_path))
+    # The running node's own Node runtime goes first on PATH (a live daemon of
+    # this installation, found the way node_process finds it, KI-312).
+    running_node = argparse.Namespace(info={"exe": str(Path(sys.executable).resolve())})
+    monkeypatch.setattr(managed_node.node_process, "managed_daemons", lambda _cfg: iter([running_node]))
     monkeypatch.setattr(managed_node, "_node_runtime_matches_dkg", lambda *_args: True)
     env = managed_node._dkg_sync_environment(cfg)
 
@@ -471,6 +474,12 @@ def test_managed_dkg_sync_mode_detects_interrupted_transition(tmp_path, monkeypa
         def __init__(self, pid):
             assert pid == 4242
 
+        def is_running(self):
+            return True
+
+        def cmdline(self):   # a live daemon of this installation (node_process checks it, KI-312)
+            return ["node", str(Path(cfg.dkg_bin).expanduser().resolve()), "daemon-worker"]
+
         def environ(self):
             return dict(managed_node._DKG_STEADY_SYNC_SETTINGS)
 
@@ -502,14 +511,16 @@ def test_managed_dkg_restart_waits_for_draining_worker_before_start(tmp_path, mo
 
     class Process:
         def cmdline(self):
-            return ["node", "dkg", "daemon-worker"]
+            return ["node", str(Path(cfg.dkg_bin).resolve()), "daemon-worker"]
 
         def is_running(self):
             return True
 
     def process(_pid):
+        # Alive for the restart's own lookup (node_process, KI-312) and the first
+        # drain check, then gone.
         process_checks["count"] += 1
-        if process_checks["count"] == 1:
+        if process_checks["count"] <= 2:
             return Process()
         raise managed_node.psutil.NoSuchProcess(pid)
 

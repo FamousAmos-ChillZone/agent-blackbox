@@ -45,8 +45,8 @@
     "ruleset/row_adapters.py::_row_to_rule": 120,
     "sync/command.py::_catchup_authoritative_vm": 468,
     "sync/command.py::_cmd_sync_impl": 624,
-    "sync/managed_node.py::_managed_dkg_node_executable": 55,
-    "sync/managed_node.py::_restart_managed_dkg": 109,
+    "sync/managed_node.py::_managed_dkg_node_executable": 40,
+    "sync/managed_node.py::_restart_managed_dkg": 82,
     "sync/progress.py::read_durable_progress": 62
   }
 }

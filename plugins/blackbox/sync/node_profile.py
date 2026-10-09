@@ -125,14 +125,14 @@ def _managed_dkg_sync_mode_matches(
     "hourly self-exit". A variable that IS set still overrides config, so a
     worker launched with a stale bootstrap override is still detected.
     """
+    from .node_process import managed_daemon_pid   # lazy: node_profile stays importable alone
+
+    pid = managed_daemon_pid(cfg)   # never a stale daemon.pid (KI-312)
+    if pid is None:
+        return False
     try:
-        pid = int(
-            (Path(cfg.dkg_home) / "daemon.pid")
-            .read_text(encoding="utf-8")
-            .strip()
-        )
         process_env = psutil.Process(pid).environ()
-    except (OSError, TypeError, ValueError, psutil.Error):
+    except (OSError, psutil.Error):
         return False
     persisted = _persisted_dkg_sync_settings(cfg)
     for name, value in expected.items():
