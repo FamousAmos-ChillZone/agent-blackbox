@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from . import action_parsing
 from . import content_scanners
-from .finding import Finding, _rule_source
+from .finding import Finding, _rule_source, mark_answered_by
 from .injection_detection import injection_scan_text
 
 
@@ -38,7 +38,7 @@ def ioc_rules(ruleset: Any, identifiers: List[str]) -> Dict[str, Dict[str, Any]]
         return {}
     ask = getattr(ruleset, "ioc_rules", None)
     if callable(ask):
-        return ask(identifiers).rules
+        return mark_answered_by(ask(identifiers))
     compiled = getattr(ruleset, "ioc", {}) or {}
     return {ident: compiled[ident] for ident in identifiers if ident in compiled}
 
@@ -83,7 +83,8 @@ def detect_ioc(tool_name: str, args: Any, ruleset: Any, context: Optional[str] =
                 confirmed=src == "public",
                 source=src,
                 kind=rule.get("kind"),
-                fields={"ioc_type": ioc_type, "ioc_context": context},
+                fields={"ioc_type": ioc_type, "ioc_context": context,
+                        **({"answered_by": rule["answered_by"]} if rule.get("answered_by") else {})},
             )
         )
     return out

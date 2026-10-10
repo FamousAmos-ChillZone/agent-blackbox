@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Dict, Optional
 
 from .. import ruleset
@@ -70,6 +70,9 @@ class SyncMeter:
     percent_downloaded: Optional[float]
     percent_compiled: Optional[float]
     checked_at: str
+    #: DKG-lookup: where verified answers come from right now — ``state`` ∈ live |
+    #: fallback | paused | not-live, ``text`` the sentence the panel shows (see :func:`lookup_status`).
+    lookups: Dict[str, str] = field(default_factory=dict)
 
 
 def _percent(part: int, whole: int) -> float:
@@ -110,6 +113,27 @@ def build_sync_meter(*, downloaded: Optional[ruleset.DownloadTotals], pending: O
     )
 
 
+def lookup_status(scope: Any, health: Any, now: Optional[float] = None) -> Dict[str, str]:
+    """Where a verified check's answer comes from, for the panel and the status line (pure).
+
+    *scope* — the generation's VerifiedScope (or None); *health* — ``live.HEALTH.read()``.
+    live: the store answers. fallback: the store is down and the opt-in local index answers
+    (hits only until it covers every asset). paused: the store is down and nothing answers —
+    actions pass unchecked by the verified graph. not-live: no scope yet (compiled rules only).
+    """
+    if scope is None or not getattr(scope, "ready", False):
+        return {"state": "not-live", "text": "Verified lookups are not live yet: the node has not reported its store."}
+    if not getattr(health, "degraded", False):
+        return {"state": "live", "text": "Verified checks are answered live from the graph on this node."}
+    since = time.strftime("%H:%M UTC", time.gmtime(float(getattr(health, "since", 0) or 0)))
+    reason = getattr(health, "reason", "") or "the store did not answer"
+    if getattr(scope, "fallback", "off") == "index":
+        return {"state": "fallback", "text": f"Graph store down since {since} ({reason}); verified checks are answered "
+                                             "from the local index until it is back."}
+    return {"state": "paused", "text": f"Graph store down since {since} ({reason}); verified checks are PAUSED — "
+                                       "actions pass unchecked by the verified graph until it answers again."}
+
+
 def verified_graph_still_arriving(cfg: Any) -> bool:
     """True while Umanitek's graph is still arriving on this node: its newest
     reconcile pass reported assets left to download, or the rules cover fewer
@@ -137,13 +161,15 @@ def read_sync_meter(cfg: Any, *, node_reachable: bool, verified_rules: int) -> S
         downloaded = ruleset.verified_download_totals(client, graph_id, timeout=QUERY_TIMEOUT_SECONDS)
     backlog = read_recovery_backlog(cfg.dkg_home, graph_id)
     compiled = (ruleset.verified_progress(graph_id) or {}).get("assets_compiled")
-    return build_sync_meter(
+    meter = build_sync_meter(
         downloaded=downloaded,
         pending=backlog.pending if backlog else None,
         compiled_assets=compiled if isinstance(compiled, int) else None,
         verified_rules=verified_rules,
         checked_at=backlog.logged_at if backlog else "",
     )
+    meter.lookups.update(lookup_status(getattr(ruleset.peek(cfg), "verified_scope", None), ruleset.live.HEALTH.read()))
+    return meter
 
 
 def register_sync_meter_routes(app: Any, *, load_config: Callable[[], Any],

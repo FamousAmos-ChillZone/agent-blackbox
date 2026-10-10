@@ -29,6 +29,7 @@ from .content_scanners import SKILL_DANGER_SHAPES
 from .osv import DEPENDENCY_ECOSYSTEMS, advisory_kind
 from .reviewer_setup import cmd_setup_llm
 from .detectors import (
+    ANSWERED_BY_FALLBACK,
     Finding,
     detect_all,
     detect_custom_fileaccess,
@@ -53,6 +54,7 @@ __all__ = [
     "SENSITIVE_PATH_CATEGORIES",
     "SHELL_TOOLS",
     "SKILL_DANGER_SHAPES",
+    "ANSWERED_BY_FALLBACK",
     "Finding",
     "skill_install_arg",
     "cmd_setup_llm",

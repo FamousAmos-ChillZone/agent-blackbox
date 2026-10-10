@@ -162,7 +162,10 @@ def _verified_lookups_text(rs: Any) -> str:
         return "not live yet (no verified scope — compiled rules only)"
     state = ruleset.live.HEALTH.read()
     where = f"live against {scope.store_url} ({len(scope.assertion_graphs)} verified assets)"
-    return f"{where} — DEGRADED: {state.problem()}" if state.degraded else where
+    if not state.degraded:
+        return where
+    answering = "answering from the LOCAL INDEX" if scope.fallback == "index" else "verified checks PAUSED (actions pass unchecked)"
+    return f"{where} — DEGRADED: {state.problem()} — {answering}"
 
 
 def _print_verified_progress(cfg: Any) -> None:

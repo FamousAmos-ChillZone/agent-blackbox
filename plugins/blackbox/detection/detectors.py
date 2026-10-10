@@ -26,7 +26,7 @@ from . import action_parsing
 from . import content_scanners
 from . import osv
 from . import shell_shapes
-from .finding import Finding, _rule_source
+from .finding import ANSWERED_BY_FALLBACK, FALLBACK_REASON, Finding, _rule_source, mark_answered_by  # noqa: F401 — re-exported for callers
 from .injection_detection import detect_injection, discover_injection, injection_scan_text
 from .ioc_detection import detect_ioc, ioc_context
 from .skill_detection import detect_skill
@@ -48,12 +48,13 @@ def dependency_rules(ruleset: Any, candidates: List[Any]) -> Dict[str, Dict[str,
     """The dependency rules for ``(ecosystem, name, version)`` *candidates*, keyed
     by ``dependency_key``. A :class:`~..ruleset.Ruleset` answers through
     ``dependency_rules()`` (live verified lookup first, compiled dict after);
-    a bare object with a ``dependency`` dict (tests, older callers) is indexed."""
+    a bare object with a ``dependency`` dict (tests, older callers) is indexed.
+    A rule the fallback index answered carries ``answered_by`` (see :func:`mark_answered_by`)."""
     if not candidates:
         return {}
     ask = getattr(ruleset, "dependency_rules", None)
     if callable(ask):
-        return ask(candidates).rules
+        return mark_answered_by(ask(candidates))
     compiled = getattr(ruleset, "dependency", {}) or {}
     keys = (threat_ids.dependency_key(ecosystem, name, version) for ecosystem, name, version in candidates)
     return {key: compiled[key] for key in keys if key in compiled}
@@ -164,8 +165,8 @@ def detect_dependency(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
                     "package_name": name,
                     "package_version": key.rsplit("@", 1)[1],   # the matched rule's version (or "*")
                     "advisory_id": rule.get("advisoryId"),
-                    "kind": rule.get("kind"),
-                    "reason": osv.advisory_reason(rule.get("advisoryId")),
+                    "kind": rule.get("kind"), "reason": osv.advisory_reason(rule.get("advisoryId")),
+                    **({"answered_by": rule["answered_by"]} if rule.get("answered_by") else {}),
                 },
             )
         )

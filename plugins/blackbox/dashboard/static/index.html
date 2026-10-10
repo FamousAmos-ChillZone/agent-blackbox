@@ -618,6 +618,13 @@
   .vs-panel[data-state="syncing"] .vs-chip { border-color: var(--signal); color: var(--signal); background: var(--signal-soft); }
   .vs-panel[data-state="synced"] .vs-chip { border-color: var(--graph-mint); color: var(--graph-mint); }
   .vs-note { font-size: 13px; color: var(--muted-strong); overflow-wrap: anywhere; }
+  .vs-lookups { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--muted-strong); overflow-wrap: anywhere; }
+  .vs-lookups-mark { font-weight: 700; flex: 0 0 auto; }
+  .vs-lookups[data-state="live"] .vs-lookups-mark { color: var(--graph-mint); }
+  .vs-lookups[data-state="fallback"] { color: var(--text); }
+  .vs-lookups[data-state="fallback"] .vs-lookups-mark { color: var(--signal); }
+  .vs-lookups[data-state="paused"] { color: var(--text); }
+  .vs-lookups[data-state="paused"] .vs-lookups-mark { color: var(--red, #e5484d); }
   .vs-bar-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; align-items: center; gap: 12px; }
   .vs-bar-label { font-family: var(--mono-font); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
   .vs-bar { height: 8px; border-radius: 999px; background: var(--elevated); border: 1px solid var(--border); overflow: hidden; }
@@ -1940,6 +1947,21 @@
     font-family: var(--mono-font); font-size: 11.5px;
   }
 
+  /* ---------- Community details window (reuses .modal-overlay / .modal) ---------- */
+  .cg-details-btn {
+    display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto;
+    height: 32px; padding: 0 12px; border-radius: 2px;
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  }
+  .cg-details-btn:hover { background: var(--wash-9); border-color: var(--border-strong); }
+  .cg-details-btn svg { width: 15px; height: 15px; flex: 0 0 auto; opacity: .8; }
+  .cg-details-btn .cg-details-sub { color: var(--muted); font-weight: 400; }
+  @media (max-width: 720px) { .cg-details-btn .cg-details-sub { display: none; } }
+  .modal.cg-modal { max-width: 960px; border-top: 1px solid var(--border); }
+  .cg-modal-body { padding: 0 16px 16px; }
+  .cg-modal-body .cg-panel { border: 0; background: transparent; }
+
   /* ---------- Settings panel (reuses .modal-overlay / .modal) ---------- */
   /* Wider than the threat modal — the policy form needs the room. */
   .modal.settings-modal {
@@ -2872,58 +2894,77 @@
           <h2>Community graph</h2>
           <div class="section-note">Threats shared between Blackbox nodes through the DKG. Community reports flag; they never block. <span id="community-agents-note"></span></div>
         </div>
+        <button type="button" class="cg-details-btn" id="cg-details-open" aria-haspopup="dialog" aria-controls="cg-modal" title="Who reported, what was said, what this node shared, who is trusted">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          <span>Details</span><span class="cg-details-sub">agents · statements · my reports · trust</span>
+        </button>
       </div>
       <div class="cg-summary" id="cg-summary" aria-live="polite"></div>
-      <div class="panel cg-panel">
-        <div class="tabs cg-tabs" role="tablist" aria-label="Community graph views">
-          <button class="tab active" id="cg-tab-agents" role="tab" aria-selected="true" aria-controls="cg-pane-agents" data-cg="agents">Agents<span class="tab-count" id="cg-count-agents">&middot;</span></button>
-          <button class="tab" id="cg-tab-statements" role="tab" aria-selected="false" aria-controls="cg-pane-statements" data-cg="statements">Statements<span class="tab-count" id="cg-count-statements">&middot;</span></button>
-          <button class="tab" id="cg-tab-reports" role="tab" aria-selected="false" aria-controls="cg-pane-reports" data-cg="reports">My reports<span class="tab-count" id="cg-count-reports">&middot;</span></button>
-          <button class="tab" id="cg-tab-trust" role="tab" aria-selected="false" aria-controls="cg-pane-trust" data-cg="trust">Trust</button>
-        </div>
-        <div class="cg-pane" id="cg-pane-agents" role="tabpanel" aria-labelledby="cg-tab-agents">
-          <div class="cg-note">Agents that have reported into the shared community graph, reached through the DKG. They are not connected to this Blackbox.</div>
-          <div class="agents-strip" id="community-agents-strip">
-            <div class="empty" style="padding:28px 20px; width:100%;">Loading community graph agents&hellip;</div>
+    </section>
+    <!-- Community graph details (Agents / Statements / My reports / Trust): a window, not a
+         section — the summary strip above already says what matters at a glance. -->
+    <div class="modal-overlay" id="cg-modal" aria-hidden="true">
+      <div class="modal cg-modal" role="dialog" aria-modal="true" aria-labelledby="cg-modal-title">
+        <button class="modal-close" id="cg-close" aria-label="Close community details">&#10005;</button>
+        <div class="set-head">
+          <div class="set-htext">
+            <div class="set-title" id="cg-modal-title">Community graph details</div>
+            <div class="set-sub">Who reported, what was said, what this node shared, who is trusted.</div>
           </div>
         </div>
-        <div class="cg-pane" id="cg-pane-statements" role="tabpanel" aria-labelledby="cg-tab-statements" hidden>
-          <div class="cg-note">What reporters and the curator said about community threats: who, when and why. Only statements this node could verify are shown. A dispute never changes what blocks. <span id="community-statements-note"></span></div>
-          <div class="cg-list" id="community-statements-body"><div class="empty">Loading community statements&hellip;</div></div>
-        </div>
-        <div class="cg-pane" id="cg-pane-reports" role="tabpanel" aria-labelledby="cg-tab-reports" hidden>
-          <div class="cg-note">What this node shared, one line per threat: its current stage (the same on every node) and what happened to each send. <span id="my-reports-note"></span></div>
-          <div class="cg-list" id="my-reports-body"><div class="empty">Loading your reports&hellip;</div></div>
-        </div>
-        <!-- Community Curation C10: trust — who curates, who is trusted, what is confirmed -->
-        <div class="cg-pane" id="cg-pane-trust" role="tabpanel" aria-labelledby="cg-tab-trust" hidden>
-          <div class="cg-note">Who may vouch for community threats on this network, whom they trust, and what they confirmed with evidence. Community curators can only flag; blocking stays with the verified graph. <span id="trust-note"></span></div>
-          <div class="trust-authorities" id="trust-authorities">
-            <div class="empty" style="padding:20px; width:100%;">Loading the trust layer&hellip;</div>
-          </div>
-          <div class="table-scroll">
-            <table aria-label="Trusted reporters">
-              <thead>
-                <tr><th>Trusted reporter</th><th>Class</th><th>Listed by</th><th>Until</th></tr>
-              </thead>
-              <tbody id="trust-reporters-body">
-                <tr><td colspan="4"><div class="empty">Loading trusted reporters&hellip;</div></td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="table-scroll">
-            <table aria-label="Confirmed pool">
-              <thead>
-                <tr><th>Confirmed threat</th><th>Evidence the curators checked</th><th>When</th><th>Curator keys</th><th>Reporters</th></tr>
-              </thead>
-              <tbody id="trust-confirmed-body">
-                <tr><td colspan="5"><div class="empty">Loading the confirmed pool&hellip;</div></td></tr>
-              </tbody>
-            </table>
+        <div class="cg-modal-body">
+          <div class="panel cg-panel">
+            <div class="tabs cg-tabs" role="tablist" aria-label="Community graph views">
+              <button class="tab active" id="cg-tab-agents" role="tab" aria-selected="true" aria-controls="cg-pane-agents" data-cg="agents">Agents<span class="tab-count" id="cg-count-agents">&middot;</span></button>
+              <button class="tab" id="cg-tab-statements" role="tab" aria-selected="false" aria-controls="cg-pane-statements" data-cg="statements">Statements<span class="tab-count" id="cg-count-statements">&middot;</span></button>
+              <button class="tab" id="cg-tab-reports" role="tab" aria-selected="false" aria-controls="cg-pane-reports" data-cg="reports">My reports<span class="tab-count" id="cg-count-reports">&middot;</span></button>
+              <button class="tab" id="cg-tab-trust" role="tab" aria-selected="false" aria-controls="cg-pane-trust" data-cg="trust">Trust</button>
+            </div>
+            <div class="cg-pane" id="cg-pane-agents" role="tabpanel" aria-labelledby="cg-tab-agents">
+              <div class="cg-note">Agents that have reported into the shared community graph, reached through the DKG. They are not connected to this Blackbox.</div>
+              <div class="agents-strip" id="community-agents-strip">
+                <div class="empty" style="padding:28px 20px; width:100%;">Loading community graph agents&hellip;</div>
+              </div>
+            </div>
+            <div class="cg-pane" id="cg-pane-statements" role="tabpanel" aria-labelledby="cg-tab-statements" hidden>
+              <div class="cg-note">What reporters and the curator said about community threats: who, when and why. Only statements this node could verify are shown. A dispute never changes what blocks. <span id="community-statements-note"></span></div>
+              <div class="cg-list" id="community-statements-body"><div class="empty">Loading community statements&hellip;</div></div>
+            </div>
+            <div class="cg-pane" id="cg-pane-reports" role="tabpanel" aria-labelledby="cg-tab-reports" hidden>
+              <div class="cg-note">What this node shared, one line per threat: its current stage (the same on every node) and what happened to each send. <span id="my-reports-note"></span></div>
+              <div class="cg-list" id="my-reports-body"><div class="empty">Loading your reports&hellip;</div></div>
+            </div>
+            <!-- Community Curation C10: trust — who curates, who is trusted, what is confirmed -->
+            <div class="cg-pane" id="cg-pane-trust" role="tabpanel" aria-labelledby="cg-tab-trust" hidden>
+              <div class="cg-note">Who may vouch for community threats on this network, whom they trust, and what they confirmed with evidence. Community curators can only flag; blocking stays with the verified graph. <span id="trust-note"></span></div>
+              <div class="trust-authorities" id="trust-authorities">
+                <div class="empty" style="padding:20px; width:100%;">Loading the trust layer&hellip;</div>
+              </div>
+              <div class="table-scroll">
+                <table aria-label="Trusted reporters">
+                  <thead>
+                    <tr><th>Trusted reporter</th><th>Class</th><th>Listed by</th><th>Until</th></tr>
+                  </thead>
+                  <tbody id="trust-reporters-body">
+                    <tr><td colspan="4"><div class="empty">Loading trusted reporters&hellip;</div></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="table-scroll">
+                <table aria-label="Confirmed pool">
+                  <thead>
+                    <tr><th>Confirmed threat</th><th>Evidence the curators checked</th><th>When</th><th>Curator keys</th><th>Reporters</th></tr>
+                  </thead>
+                  <tbody id="trust-confirmed-body">
+                    <tr><td colspan="5"><div class="empty">Loading the confirmed pool&hellip;</div></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </section>
+    </div>
 
     <!-- Threat graph (tabbed) -->
     <section class="section" aria-label="Threat graph">
@@ -2962,6 +3003,9 @@
           <div class="vs-body">
             <div class="vs-head"><h3>Verified graph sync</h3><span class="vs-chip" id="vs-chip">checking</span></div>
             <div class="vs-note" id="vs-note" aria-live="polite">Reading the node&hellip;</div>
+            <!-- DKG-lookup: WHERE each check's verified answer came from — the graph store, the opt-in
+                 local index while the store is down, or nowhere (checks paused). Never silent. -->
+            <div class="vs-lookups" id="vs-lookups" data-state="unknown" aria-live="polite"><span class="vs-lookups-mark" aria-hidden="true">&middot;</span><span id="vs-lookups-text">Checking where verified lookups are answered&hellip;</span></div>
             <div class="vs-bar-row" title="Verified assets your node has downloaded and verified, of every asset in the graph right now.">
               <span class="vs-bar-label">Downloaded</span>
               <div class="vs-bar"><div class="vs-fill" id="vs-fill-downloaded"></div></div>
@@ -4120,11 +4164,24 @@
       ? "Verified threat graph sync progress unknown" : pct + "% of the verified threat graph compiled into rules");
     vsSet("vs-chip", VS_STATE_TEXT[m.state] || m.state);
     vsSet("vs-note", vsNote(m));
+    renderLookups(m.lookups);
     vsBar("downloaded", m.downloaded_assets, m.percent_downloaded, m.graph_assets);
     vsBar("compiled", m.compiled_assets, m.percent_compiled, m.graph_assets);
     vsSet("vs-graph-assets", typeof m.graph_assets === "number" ? vsNumber(m.graph_assets) + " assets" : "\u2014");
     vsSet("vs-triples", vsNumber(m.downloaded_triples));
     vsSet("vs-rules", vsNumber(m.verified_rules));
+  }
+
+  // Where verified answers come from right now: live (the graph store), fallback (the
+  // local index while the store is down), paused (store down, no fallback), not-live.
+  var LOOKUP_MARKS = { live: "\u2713", fallback: "\u26A0", paused: "\u2715", "not-live": "\u00B7", unknown: "\u00B7" };
+  function renderLookups(lk) {
+    var box = document.getElementById("vs-lookups");
+    if (!box) return;
+    var state = (lk && lk.state) || "unknown";
+    box.setAttribute("data-state", state);
+    box.querySelector(".vs-lookups-mark").textContent = LOOKUP_MARKS[state] || "\u00B7";
+    vsSet("vs-lookups-text", (lk && lk.text) || "Checking where verified lookups are answered\u2026");
   }
 
   function loadSyncMeter() {
@@ -7586,6 +7643,37 @@
     document.body.style.removeProperty("--settings-scrollbar-width");
     window.scrollTo(0, settingsPageScrollY);
   }
+  // Community graph details window: the four tabs live in a modal (the summary strip is the section).
+  function openCgDetails() {
+    var overlay = $("cg-modal");
+    if (!overlay) return;
+    lockSettingsPageScroll();
+    overlay.classList.add("open");
+    overlay.setAttribute("aria-hidden", "false");
+    var close = $("cg-close");
+    if (close) close.focus();
+  }
+  function closeCgDetails() {
+    var overlay = $("cg-modal");
+    if (!overlay || !overlay.classList.contains("open")) return;
+    overlay.classList.remove("open");
+    overlay.setAttribute("aria-hidden", "true");
+    unlockSettingsPageScroll();
+    var trigger = $("cg-details-open");
+    if (trigger) trigger.focus();
+  }
+  function wireCgDetails() {
+    var overlay = $("cg-modal"), trigger = $("cg-details-open"), close = $("cg-close");
+    if (!overlay || !trigger || !close || overlay.__wired) return;
+    overlay.__wired = true;
+    trigger.addEventListener("click", openCgDetails);
+    close.addEventListener("click", closeCgDetails);
+    overlay.addEventListener("click", function (e) { if (e.target === overlay) closeCgDetails(); });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && overlay.classList.contains("open")) closeCgDetails();
+    });
+  }
+
   function openSettings() {
     var overlay = $("settings-modal");
     if (!overlay) return;
@@ -7614,6 +7702,7 @@
   }
 
   function wireSettings() {
+    wireCgDetails();   // the community details window shares the modal styling and this init
     var overlay = $("settings-modal");
     if (!overlay || overlay.__wired) return;
     overlay.__wired = true;

@@ -197,7 +197,9 @@ def test_the_dashboard_renders_clean_at_desktop_and_phone_widths(served, tmp_pat
             assert not check["horizontalOverflow"], (width, check)
         sections = view["sections"]
         assert "REVOKED" in sections["health-strip"] and "BACKLOG" in sections["health-strip"], (width, sections["health-strip"])
-        assert "dispute" in sections["community-statements-body"] and "retraction" in sections["community-statements-body"]
+        # read with the details window OPEN, so the rendered text carries the labels' uppercase styling
+        statements = sections["community-statements-body"].lower()
+        assert "dispute" in statements and "retraction" in statements
         assert "accepted" in sections["my-reports-body"] and "reported" in sections["my-reports-body"], (width, sections["my-reports-body"])
         assert sections["tab-community"] and sections["tab-community"].split()[-1].isdigit()
         # The summary tiles are filled from /api/community-stats (they sat on "—" before).

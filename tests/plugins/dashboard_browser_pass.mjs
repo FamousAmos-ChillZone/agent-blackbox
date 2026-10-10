@@ -70,14 +70,21 @@ for (const vp of viewports) {
 
   const checks = [await overflow("landing")];
   const sections = {};
-  for (const id of ["health-strip", "community-statements-body", "my-reports-body", "tab-community",
-                    "stat-community-count", "stat-sharing-state", "cg-summary",
-                    "vs-pct", "vs-chip", "vs-val-downloaded", "vs-note"]) sections[id] = await sectionText(id);
-  // The community panel's own tabs: each pane renders without page overflow.
+  for (const id of ["health-strip", "tab-community", "stat-community-count", "stat-sharing-state", "cg-summary",
+                    "vs-pct", "vs-chip", "vs-val-downloaded", "vs-note", "vs-lookups"]) sections[id] = await sectionText(id);
+  // The community details (agents / statements / my reports / trust) open in a window; each
+  // pane renders without page overflow, and the statements / my-reports text is read open.
+  await page.click("#cg-details-open");
+  await page.waitForTimeout(400);
+  checks.push(await overflow("community-details"));
   for (const pane of ["statements", "reports", "agents"]) {
     const tab = page.locator(`#cg-tab-${pane}`);
     if (await tab.count()) { await tab.click(); await page.waitForTimeout(300); checks.push(await overflow(`community-${pane}`)); }
+    if (pane === "statements") sections["community-statements-body"] = await sectionText("community-statements-body");
+    if (pane === "reports") sections["my-reports-body"] = await sectionText("my-reports-body");
   }
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
   const spillingCells = await cellSqueeze();
   const communityTab = page.locator("#tab-community");
   if (await communityTab.count()) {
