@@ -1,7 +1,7 @@
 {
   "_comment": "Baselined when the structure guard landed (2026-10-01). Numbers may only shrink: lower them in the commit that shrinks the code; delete an entry once it is under the alarm. Never raise one.",
   "files": {
-    "dashboard/server.py": 2155,
+    "dashboard/server.py": 2064,
     "kernel/config.py": 428,
     "kernel/dkg_client.py": 641,
     "sync/command.py": 1405
@@ -22,13 +22,13 @@
     "dashboard/server.py::_profile_activity_state": 61,
     "dashboard/server.py::_sync_activity": 271,
     "dashboard/server.py::_sync_ruleset_once": 66,
-    "dashboard/server.py::create_app": 1289,
+    "dashboard/server.py::create_app": 1252,
     "dashboard/server.py::create_app._blackbox_runtime_loop": 87,
     "dashboard/server.py::create_app._ruleset_sync_loop": 51,
     "dashboard/server.py::create_app.agents": 166,
-    "dashboard/server.py::create_app.graph": 97,
+    "dashboard/server.py::create_app.graph": 76,
     "dashboard/server.py::create_app.graph_status": 138,
-    "dashboard/server.py::create_app.threat": 120,
+    "dashboard/server.py::create_app.threat": 104,
     "detection/detectors.py::detect_dependency": 51,
     "detection/detectors.py::detect_escalation": 58,
     "detection/skill_detection.py::detect_skill": 51,

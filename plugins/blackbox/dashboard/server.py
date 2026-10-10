@@ -30,7 +30,8 @@ from typing import Any, Dict, List, Set, Tuple
 
 from ..sync import state as sync_state
 from ..sync import read_durable_progress
-from . import community_routes, lifecycle, sync_meter, sync_timing
+from . import community_routes, graph_pages, lifecycle, sync_meter, sync_timing
+from .graph_pages import _balanced_graph_entries, _graph_entries  # noqa: F401 — moved there; tests reach them here
 from .network_sync import network_sync_argv as _network_sync_argv
 from .node_probe import node_sync_probe
 from .sync_labels import _community_progress, _sync_label, not_subscribed_activity
@@ -154,61 +155,6 @@ def _graph_source_count(rs: Any, source: str) -> int:
     if callable(counter):
         return int(counter(source) or 0)
     return int(rs.source_count(source) or 0)
-
-
-def _graph_entries(rs: Any, source: str) -> List[Dict[str, Any]]:
-    getter = getattr(rs, "graph_entries", None)
-    if callable(getter):
-        entries = getter(source) or []
-        return entries if isinstance(entries, list) else list(entries)
-    return [
-        {
-            "identifier": rule.get("identifier"),
-            "category": category,
-            "severity": str(rule.get("severity") or "info").lower(),
-            "name": rule.get("name") or "",
-            "subject": rule.get("subject") or "",
-            "source": source,
-        }
-        for category, rule in rs.iter_rules()
-        if rule.get("source") == source
-    ]
-
-
-def _balanced_graph_entries(
-    entries: List[Dict[str, Any]], minimum_per_category: int = 24
-) -> List[Dict[str, Any]]:
-    """Front-load a small sample of every populated threat category."""
-    category_order = (
-        "dependency", "injection", "escalation", "fileaccess",
-        "skill", "secret", "ioc", "other",
-    )
-    buckets: Dict[str, List[Dict[str, Any]]] = {key: [] for key in category_order}
-    for entry in entries:
-        key = str(entry.get("category") or "other").lower()
-        buckets.setdefault(key, []).append(entry)
-
-    front: List[Dict[str, Any]] = []
-    skipped: Dict[str, int] = {}
-    ordered_keys = category_order + tuple(k for k in buckets if k not in category_order)
-    for key in ordered_keys:
-        skipped[key] = min(len(buckets.get(key, [])), minimum_per_category)
-    for index in range(minimum_per_category):
-        for key in ordered_keys:
-            bucket = buckets.get(key, [])
-            if index < len(bucket):
-                front.append(bucket[index])
-
-    rest: List[Dict[str, Any]] = []
-    consumed: Dict[str, int] = {}
-    for entry in entries:
-        key = str(entry.get("category") or "other").lower()
-        used = consumed.get(key, 0)
-        if used < skipped.get(key, 0):
-            consumed[key] = used + 1
-            continue
-        rest.append(entry)
-    return front + rest
 
 
 def _ruleset_sync_counts(rs: Any) -> Dict[str, int]:
@@ -1931,28 +1877,7 @@ def create_app(*, manage_blackbox: bool = False):
                 ]
             elif not wanted_category and not wanted_ecosystem:
                 all_threats = _balanced_graph_entries(all_threats)
-            # Counts describe the complete filtered result, never the rendered
-            # page.  The dashboard can therefore show the real threat magnitude
-            # on category/ecosystem hubs while progressively loading leaves.
-            category_totals: Dict[str, int] = {}
-            ecosystem_totals: Dict[str, int] = {}
-            for item in all_threats:
-                item_category = str(item.get("category") or "other").lower()
-                category_totals[item_category] = category_totals.get(item_category, 0) + 1
-                if item_category == "dependency":
-                    parts = str(item.get("identifier") or "").split(":")
-                    ecosystem_name = (parts[1] if len(parts) > 1 else "other").lower()
-                    ecosystem_totals[ecosystem_name] = ecosystem_totals.get(ecosystem_name, 0) + 1
-            return {
-                "tier": tier,
-                "threats": all_threats[offset:offset + limit],
-                "total": len(all_threats),
-                "category_totals": category_totals,
-                "ecosystem_totals": ecosystem_totals,
-                "offset": offset,
-                "limit": limit,
-                "partial": offset + limit < len(all_threats),
-            }
+            return graph_pages.tier_response(tier, all_threats, offset, limit)
 
         # The local tier reads the live working-memory view and is served
         # stale-while-revalidate.
@@ -2025,23 +1950,7 @@ def create_app(*, manage_blackbox: bool = False):
             "references": [],
             "found": False,
         }
-        cached_rule: Dict[str, Any] = {}
-        try:
-            for _cat, rule in ruleset.peek(cfg).iter_rules():
-                if rule.get("source") == tier and rule.get("identifier") == identifier:
-                    cached_rule = rule
-                    break
-        except Exception:
-            pass
-        if not cached_rule:
-            try:
-                cached_rule = next(
-                    item
-                    for item in _graph_entries(ruleset.peek(cfg), tier)
-                    if item.get("identifier") == identifier
-                )
-            except Exception:
-                cached_rule = {}
+        cached_rule = graph_pages.compiled_rule(ruleset.peek(cfg), tier, identifier)
         if cached_rule:
             detail.update({
                 key: value
