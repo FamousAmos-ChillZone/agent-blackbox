@@ -292,3 +292,57 @@ def test_scope_for_generation_reuses_the_listing_the_refresh_already_read(monkey
     scope = live.scope_for_generation(_Node({"storeUrl": "http://127.0.0.1:7878/query"}), CG, previous=None,
                                       suppressed=set(), revoked=set(), listing=listing)
     assert scope is not None and scope.assertion_graphs == {PART_A}
+
+
+# ------------------------------------------------------- verified counts travel in the scope (B6)
+
+
+def test_refresh_scope_counts_the_live_tiers_over_the_scope_graphs_only():
+    answers = {
+        "DependencySignal": [{"g": PART_A, "n": '"3"'}, {"g": PART_B, "n": '"2"'}, {"g": FOREIGN, "n": '"99"'}],
+        "IocSignal": [{"g": PART_A, "n": '"5"'}],
+        "SourceObservation": [{"g": PART_B, "n": '"4"^^<http://www.w3.org/2001/XMLSchema#integer>'}],
+    }
+
+    class CountingStore(FakeStore):
+        def select(self, sparql, *, timeout=None):
+            self.queries.append(sparql)
+            if "package" in sparql:
+                return StoreAnswer([])                     # the alias read
+            kind = next(k for k in answers if k in sparql)
+            return StoreAnswer(answers[kind])
+
+    store = CountingStore({})
+    scope = live.refresh_scope(_Node({"storeUrl": "http://127.0.0.1:7878/query"}), CG, previous=None,
+                               confirmed=[PART_A, PART_B], suppressed=set(), revoked=set(), store=store)
+    assert scope.verified_counts == {"dependency": 5, "ioc": 9}
+    assert all("GROUP BY ?g" in q and "LIMIT" not in q for q in store.queries if "COUNT" in q)
+
+
+def test_a_failed_count_keeps_the_previous_counts():
+    class HalfStore(FakeStore):
+        def select(self, sparql, *, timeout=None):
+            return StoreAnswer(None, "timeout") if "IocSignal" in sparql else StoreAnswer([])
+
+    previous = live.VerifiedScope(verified_counts={"dependency": 7, "ioc": 8})
+    scope = live.refresh_scope(_Node({"storeUrl": "http://127.0.0.1:7878/query"}), CG, previous=previous,
+                               confirmed=[PART_A], suppressed=set(), revoked=set(), store=HalfStore({}))
+    assert scope.verified_counts == {"dependency": 7, "ioc": 8}
+
+
+def test_ruleset_counts_add_the_live_tiers_to_the_compiled_rules():
+    scope = live.VerifiedScope(store_url="http://127.0.0.1:7878/query", assertion_graphs=frozenset({PART_A}),
+                               verified_counts={"dependency": 252_860, "ioc": 303_765})
+    rs = compiler.Ruleset(
+        verified_scope=scope,
+        injection=[{"identifier": "injection:1", "source": "public", "pattern": None}],
+        dependency={"npm:community-pkg@*": {"identifier": "dep:npm:community-pkg@*", "source": "community"}},
+    )
+    counts = rs.counts()
+    assert (counts["dependency"], counts["ioc"], counts["injection"]) == (252_861, 303_765, 1)
+    assert rs.source_count("public") == 1 + 252_860 + 303_765
+    assert rs.source_count("community") == 1
+    assert rs.graph_count("public") == 1 + 252_860 + 303_765
+    back = disk_cache._deserialize(json.loads(json.dumps(disk_cache._serialize(rs))))
+    assert back.verified_scope.verified_counts == scope.verified_counts
+    assert compiler.Ruleset().counts()["dependency"] == 0 and compiler.Ruleset().live_counts() == {}

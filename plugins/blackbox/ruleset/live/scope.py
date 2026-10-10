@@ -27,10 +27,14 @@ logger = logging.getLogger(__name__)
 #: The alias read is a refresh-time scan over every package literal, not a
 #: hot-path lookup: it took 7.9 s on a node busy downloading the graph.
 ALIAS_READ_TIMEOUT_SECONDS = 60.0
+#: The three aggregate counts are GROUP BY summaries (LES-013); 0.4 s on the bench.
+COUNT_READ_TIMEOUT_SECONDS = 60.0
 #: Bounded by construction (LES-013): 117 aliases exist today.
 ALIAS_READ_LIMIT = 50_000
 
 _DP = "urn:defender:p:"
+_BP = "urn:blackbox:p:"
+_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
 
 @dataclass(frozen=True)
@@ -44,7 +48,9 @@ class VerifiedScope:
     ``revoked_identifiers`` — rules the curator revoked (reduction: always applies).
     ``package_aliases`` — ``"eco:canonical-name"`` → the spellings the graph
     actually stores (117 npm names carry capitals; the compiler lowercased
-    them, so the lookup must ask for every spelling). ``built_at`` — epoch seconds.
+    them, so the lookup must ask for every spelling). ``verified_counts`` — rules
+    per live tier (``dependency``, ``ioc``) for status, health and the dashboard.
+    ``built_at`` — epoch seconds.
     """
 
     context_graph_id: str = ""
@@ -53,6 +59,9 @@ class VerifiedScope:
     suppressed_subjects: FrozenSet[str] = frozenset()
     revoked_identifiers: FrozenSet[str] = frozenset()
     package_aliases: Mapping[str, Tuple[str, ...]] = field(default_factory=dict)
+    #: How many verified rules the live tiers hold (``dependency``, ``ioc``) — the
+    #: counts the compile used to produce, now three aggregate queries per refresh.
+    verified_counts: Mapping[str, int] = field(default_factory=dict)
     built_at: float = 0.0
 
     @property
@@ -74,6 +83,7 @@ class VerifiedScope:
             "suppressed_subjects": sorted(self.suppressed_subjects),
             "revoked_identifiers": sorted(self.revoked_identifiers),
             "package_aliases": {key: list(values) for key, values in sorted(self.package_aliases.items())},
+            "verified_counts": dict(self.verified_counts),
             "built_at": self.built_at,
         }
 
@@ -91,6 +101,8 @@ class VerifiedScope:
             revoked_identifiers=_strings(data.get("revoked_identifiers")),
             package_aliases={str(k): tuple(str(v) for v in vs) for k, vs in aliases.items()
                              if isinstance(vs, list)} if isinstance(aliases, dict) else {},
+            verified_counts={str(k): int(v) for k, v in counts.items() if isinstance(v, (int, float))}
+            if isinstance(counts := data.get("verified_counts"), dict) else {},
             built_at=float(data.get("built_at") or 0.0),
         )
 
@@ -118,11 +130,15 @@ def refresh_scope(
     previous = previous or VerifiedScope()
     store_url = _store_url(client) or previous.store_url
     graphs = frozenset(confirmed) if confirmed is not None else previous.assertion_graphs
-    aliases = previous.package_aliases
+    aliases, counts = previous.package_aliases, previous.verified_counts
     if store_url and graphs:
-        read = _read_aliases(store or StoreClient(store_url), graphs)
+        store = store or StoreClient(store_url)
+        read = _read_aliases(store, graphs)
         if read is not None:
             aliases = read
+        counted = _read_counts(store, graphs)
+        if counted is not None:
+            counts = counted
     return VerifiedScope(
         context_graph_id=context_graph_id,
         store_url=store_url,
@@ -130,6 +146,7 @@ def refresh_scope(
         suppressed_subjects=frozenset(suppressed) if suppressed is not None else previous.suppressed_subjects,
         revoked_identifiers=frozenset(revoked),
         package_aliases=aliases,
+        verified_counts=counts,
         built_at=time.time(),
     )
 
@@ -193,3 +210,34 @@ def scope_for_generation(
     except Exception as exc:  # pragma: no cover - fail open (an outer boundary)
         logger.warning("blackbox: verified scope not refreshed: %s", exc)
         return previous
+
+
+#: The live tiers and the triple pattern that counts one rule of each.
+_COUNTED_TIERS = (
+    ("dependency", f"?t <{_TYPE}> <urn:defender:DependencySignal> ."),
+    ("ioc", f"?t <{_TYPE}> <urn:defender:IocSignal> ."),
+    ("ioc", f'?t <{_TYPE}> <urn:blackbox:SourceObservation> ; <{_BP}lifecycleStatus> "active" .'),
+)
+
+
+def _count_sparql(pattern: str) -> str:
+    return f"SELECT ?g (COUNT(DISTINCT ?t) AS ?n) WHERE {{ GRAPH ?g {{ {pattern} }} }} GROUP BY ?g"
+
+
+def _read_counts(store: StoreClient, graphs: FrozenSet[str]) -> Optional[Dict[str, int]]:
+    """Verified rules per live tier, summed over the scope's graphs only (an IOC
+    is an IocSignal or an ACTIVE SourceObservation, as the compile counted them);
+    None when any count could not be read (the caller keeps the previous counts)."""
+    counts: Dict[str, int] = {"dependency": 0, "ioc": 0}
+    for tier, pattern in _COUNTED_TIERS:
+        answer = store.select(_count_sparql(pattern), timeout=COUNT_READ_TIMEOUT_SECONDS)
+        if not answer.known:
+            logger.warning("blackbox: verified %s count not refreshed (%s); keeping the previous one", tier, answer.reason)
+            return None
+        for row in answer.rows or []:
+            if extract_binding(row.get("g")) in graphs:
+                try:
+                    counts[tier] += int(float(extract_binding(row.get("n")) or 0))
+                except ValueError:
+                    continue
+    return counts

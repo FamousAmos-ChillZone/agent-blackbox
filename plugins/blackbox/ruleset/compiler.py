@@ -180,14 +180,23 @@ class Ruleset:
         due = self.synced_at + interval
         return min(due, self.refresh_due_at) if self.refresh_due_at else due
 
+    def live_counts(self) -> Dict[str, int]:
+        """Verified rules held in the live tiers (``dependency``, ``ioc``), from the
+        scope's aggregate counts; {} when this generation has no scope."""
+        return dict(self.verified_scope.verified_counts) if self.verified_scope is not None else {}
+
     def counts(self) -> Dict[str, int]:
+        """Rules per category: the compiled lists / dicts plus the live tiers'
+        verified counts (a compiled dict holds community-materialised rules once a
+        scope exists, so the two never count the same rule twice)."""
+        live_counts = self.live_counts()
         return {
             "injection": len(self.injection),
             "escalation": len(self.escalation),
-            "dependency": len(self.dependency),
+            "dependency": len(self.dependency) + live_counts.get("dependency", 0),
             "fileaccess": len(self.fileaccess),
             "skill": len(self.skill),
-            "ioc": len(self.ioc),
+            "ioc": len(self.ioc) + live_counts.get("ioc", 0),
             "community": len(self.community),
         }
 
@@ -224,8 +233,10 @@ class Ruleset:
         return before - sum(1 for _ in self.iter_rules())
 
     def source_count(self, source: str) -> int:
-        """How many rules are tagged with *source* (``public`` | ``community``)."""
-        return sum(1 for _cat, r in self.iter_rules() if r.get("source") == source)
+        """How many rules are tagged with *source* (``public`` | ``community``);
+        public includes the live tiers' verified counts."""
+        compiled = sum(1 for _cat, r in self.iter_rules() if r.get("source") == source)
+        return compiled + (sum(self.live_counts().values()) if source == "public" else 0)
 
     def graph_entries(self, source: str) -> List[Dict[str, Any]]:
         cached = self._graph_entries_cache.get(source)
@@ -276,7 +287,8 @@ class Ruleset:
         return entries
 
     def graph_count(self, source: str) -> int:
-        return len(self.graph_entries(source))
+        """Graph threats of *source*: the compiled entries plus, for public, the live tiers."""
+        return len(self.graph_entries(source)) + (sum(self.live_counts().values()) if source == "public" else 0)
 
 
 def _fill_from_dict(answer: live.LookupAnswer, keys: "Sequence[str]",

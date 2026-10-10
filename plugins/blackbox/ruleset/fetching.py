@@ -1,8 +1,10 @@
 """Paged reads of the verified graph from the local DKG node.
 
-Verified partitions are read one asset at a time as plain triples, cached
-per asset (:mod:`.partitions`, KI-288/KI-289); the root data graph and
-other views are cursor-paged in lanes here. Also row de-duplication. Returns
+Since DKG-lookup B6 only the SMALL verified tiers are read (injection, skill,
+corrections, legacy-identifier rules): one cursor-paged lane per type over every
+confirmed assertion graph at once. Dependency and IOC rules stay in the node's
+store and are looked up live (:mod:`.live`). The root data graph and other
+views are cursor-paged in lanes here too. Also row de-duplication. Returns
 raw rows (or ``None`` on failure); turning rows into rules is
 :mod:`.compiler`'s job.
 
@@ -84,16 +86,13 @@ def fetch_tier(
         if listing is None:
             return None
         data_graph = graph_queries._context_graph_data_uri(cg_id)
-        confirmed = listing.confirmed
-        # One plain triple read per asset, each confirmed asset cached once read:
-        # the joined five-asset query this replaces exceeded the node's 30 s store
-        # deadline even on one asset, freezing the rules at the first asset
-        # (KI-288/KI-289). An empty read with partitions pending means nothing
-        # usable yet: keep the last-good tier.
-        verified = partitions.verified_partition_rows(client, cg_id, confirmed)
-        partitions.record_progress(cg_id, verified)
-        if confirmed and verified.compiled == 0:
+        small_tiers = _verified_small_tier_rows(client, cg_id, f"{data_graph}/_verifiable_memory/", listing)
+        if small_tiers is None:
             return None
+        # DKG-lookup B6: dependency / IOC rules are not compiled — they are looked up
+        # live in every confirmed asset — so every confirmed asset is "compiled".
+        partitions.record_progress(cg_id, partitions.PartitionRead(total=len(listing.confirmed),
+                                                                    compiled=len(listing.confirmed)))
         root_rows = _fetch_paged_lanes(
             client,
             cg_id,
@@ -105,9 +104,9 @@ def fetch_tier(
         )
         if root_rows is None:
             return None
-        if len(verified.rows) + len(root_rows) >= sparql_text.MAX_ROWS:
+        if len(small_tiers) + len(root_rows) >= sparql_text.MAX_ROWS:
             return None
-        return _dedupe_threat_rows([*verified.rows, *root_rows])
+        return _dedupe_threat_rows([*small_tiers, *root_rows])
 
     return _fetch_paged_lanes(
         client,
@@ -119,6 +118,23 @@ def fetch_tier(
         view=view,
         agent_address=agent_address,
     )
+
+
+def _verified_small_tier_rows(client: DkgClient, cg_id: str, vm_prefix: str,
+                              listing: PartitionListing) -> Optional[List[Dict[str, Any]]]:
+    """The small verified tiers (injection, skill, corrections, legacy-identifier
+    rules) from every CONFIRMED asset: one cursor-paged read per lane over
+    ``GRAPH ?g`` under *vm_prefix*, then only rows whose graph the node confirmed
+    (a tentative or foreign asset never becomes a public rule). None on failure."""
+    rows = _fetch_paged_lanes(
+        client, cg_id,
+        lambda limit, after: graph_queries._verified_small_tier_lanes(limit, after, vm_prefix),
+        view=constants.VIEW_VERIFIABLE_MEMORY,
+    )
+    if rows is None:
+        return None
+    confirmed = set(listing.confirmed)
+    return [row for row in rows if extract_binding(row.get("g")) in confirmed]
 
 
 def _fetch_paged_lanes(

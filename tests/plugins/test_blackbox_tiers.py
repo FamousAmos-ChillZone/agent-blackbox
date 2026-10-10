@@ -9,7 +9,7 @@
 
 
 from _blackbox_loader import load_blackbox
-from _vm_partitions import answer_partition_query, is_partition_query
+from _vm_partitions import answer_verified_query, is_lane_query, is_verified_query
 
 
 detection = load_blackbox("detection")
@@ -189,9 +189,10 @@ def test_root_only_graph_schemas_are_queried_separately_and_merged():
     assert len(rows) == 2
     # data-bearing lanes page until an EMPTY page (daemon row caps —
     # KI-062), so the legacy + dependency lanes each add one cursor page
-    assert len(queries) == 10
+    root_queries = [query for query in queries[1:] if not is_lane_query(query)]
+    assert len(root_queries) == 9
     assert all("UNION" not in query for query in queries[1:])
-    assert all("GRAPH <did:dkg:context-graph:cg>" in query for query in queries[1:])
+    assert all("GRAPH <did:dkg:context-graph:cg>" in query for query in root_queries)
 
 
 def test_tentative_vm_partitions_fail_closed_without_broad_view():
@@ -234,11 +235,11 @@ def test_mixed_vm_store_merges_root_and_confirmed_partitions_without_duplicates(
                     },
                     "status": {"value": "confirmed"},
                 }]
-            if is_partition_query(sparql):
+            if is_verified_query(sparql):
                 partition = f"{data_graph}/_verifiable_memory/partition/0000"
-                return answer_partition_query(sparql, {partition: [
-                    {"threat": partition_only, "rdfType": "urn:defender:DependencySignal"},
-                    {"threat": duplicate, "rdfType": "urn:defender:DependencySignal"},
+                return answer_verified_query(sparql, {partition: [
+                    {"threat": partition_only, "rdfType": "urn:defender:InjectionSignal", "pattern": "a"},
+                    {"threat": duplicate, "rdfType": "urn:defender:InjectionSignal", "pattern": "b"},
                 ]})
             if "FILTER(STR(?threat) >" in sparql:
                 return []  # cursor advanced past the rows: lane exhausted
@@ -257,11 +258,11 @@ def test_mixed_vm_store_merges_root_and_confirmed_partitions_without_duplicates(
         partition_only,
         root_only,
     ]
-    assert all(kwargs["view"] is None for _query, kwargs in calls)
+    assert {kwargs["view"] for _query, kwargs in calls} <= {None, "verifiable-memory"}
     root_queries = [
         query
         for query, _kwargs in calls
-        if "dkg:assertionGraph" not in query and not is_partition_query(query)
+        if "dkg:assertionGraph" not in query and not is_verified_query(query)
     ]
     assert root_queries
     assert all(f"GRAPH <{data_graph}>" in query for query in root_queries)

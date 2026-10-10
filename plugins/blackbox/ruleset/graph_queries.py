@@ -36,12 +36,27 @@ def _threat_cursor_filter(after: str) -> str:
     return f"FILTER(STR(?threat) > {json.dumps(after, ensure_ascii=True)})"
 
 
+def _scoped(body: str, graph_uri: str, graph_prefix: str) -> tuple:
+    """Wrap *body* in the graph it reads: ONE named graph (*graph_uri*), or every
+    graph under *graph_prefix* (``GRAPH ?g`` + a prefix filter, ``?g`` selected so
+    the caller can keep only the confirmed assets). Returns (body, select columns)."""
+    if graph_prefix:
+        body = (f"  GRAPH ?g {{\n{body}\n  }}\n"
+                f"  FILTER(STRSTARTS(STR(?g), {json.dumps(graph_prefix)}))")
+        return body, f"{_SELECT_COLUMNS} ?g"
+    if graph_uri:
+        body = f"  GRAPH <{graph_uri}> {{\n{body}\n  }}"
+    return body, _SELECT_COLUMNS
+
+
 def _defender_page_sparql(
     signal_type: str,
     properties: str,
     limit: int,
     after: str,
     graph_uri: str = "",
+    *,
+    graph_prefix: str = "",
 ) -> str:
     cursor_filter = _threat_cursor_filter(after)
     body = f"""    {{
@@ -54,10 +69,9 @@ def _defender_page_sparql(
     }}
     BIND(defender:{signal_type} AS ?rdfType)
 {properties}"""
-    if graph_uri:
-        body = f"  GRAPH <{graph_uri}> {{\n{body}\n  }}"
+    body, columns = _scoped(body, graph_uri, graph_prefix)
     return f"""{_DEFENDER_PREFIXES}
-SELECT DISTINCT {_SELECT_COLUMNS}
+SELECT DISTINCT {columns}
 WHERE {{
 {body}
 }}
@@ -167,10 +181,42 @@ def _defender_threats_sparql(
     )
 
 
+#: The verified tiers still COMPILED after DKG-lookup B6: scanned against text or
+#: shapes, so they must live in memory. Dependency / IOC rules (hundreds of
+#: thousands) are looked up live instead (:mod:`.live`).
+SMALL_TIER_SIGNALS = (
+    ("InjectionSignal", """    OPTIONAL { ?threat dp:kind ?kind . }
+    OPTIONAL { ?threat dp:severity ?severity . }
+    OPTIONAL { ?threat schema:name ?name . }
+    OPTIONAL { ?threat schema:description ?description . }
+    OPTIONAL { ?threat dp:pattern ?pattern . }"""),
+    ("SkillSignal", """    OPTIONAL { ?threat dp:kind ?kind . }
+    OPTIONAL { ?threat dp:severity ?severity . }
+    OPTIONAL { ?threat schema:name ?name . }
+    OPTIONAL { ?threat schema:description ?description . }"""),
+    ("CorrectionSignal", """    OPTIONAL { ?threat dp:targetSubject ?targetSubject . }
+    OPTIONAL { ?threat dp:action ?correctionAction . }"""),
+)
+
+
+def _verified_small_tier_lanes(limit: int, after: str, vm_prefix: str) -> tuple:
+    """The cursor-paged lanes that read the small verified tiers from EVERY
+    assertion graph under *vm_prefix* at once (``?g`` in each row): the legacy
+    ``g:identifier`` rules (escalation, fileaccess), then the defender signal
+    types in :data:`SMALL_TIER_SIGNALS`. One read for 564 assets instead of 564."""
+    return (
+        _legacy_threats_sparql(limit, after, graph_prefix=vm_prefix),
+        *(_defender_page_sparql(signal, properties, limit, after, graph_prefix=vm_prefix)
+          for signal, properties in SMALL_TIER_SIGNALS),
+    )
+
+
 def _legacy_threats_sparql(
     limit: int,
     after: str = "",
     graph_uri: str = "",
+    *,
+    graph_prefix: str = "",
 ) -> str:
     cursor_filter = _threat_cursor_filter(after)
     body = f"""  {{
@@ -199,11 +245,10 @@ def _legacy_threats_sparql(
   OPTIONAL {{ ?threat g:skillName ?skillName . }}
   OPTIONAL {{ ?threat g:skillVersion ?skillVersion . }}
   OPTIONAL {{ ?threat g:dangerShape ?dangerShape . }}"""
-    if graph_uri:
-        body = f"  GRAPH <{graph_uri}> {{\n{body}\n  }}"
+    body, columns = _scoped(body, graph_uri, graph_prefix)
     return f"""PREFIX g: <http://umanitek.ai/ontology/guardian/>
 PREFIX schema: <http://schema.org/>
-SELECT DISTINCT {_SELECT_COLUMNS}
+SELECT DISTINCT {columns}
 WHERE {{
 {body}
 }}

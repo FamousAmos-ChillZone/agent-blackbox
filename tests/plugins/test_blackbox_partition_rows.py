@@ -213,27 +213,24 @@ def test_a_corrupt_cache_file_is_read_again_not_trusted(tmp_path):
 # ------------------------------------------------------------------ fetch_tier and progress
 
 
-def test_fetch_tier_serves_every_readable_partition_and_records_progress(tmp_path, monkeypatch):
+def test_fetch_tier_records_every_confirmed_asset_as_in_scope(tmp_path, monkeypatch):
+    """DKG-lookup B6: dependency / IOC rules are looked up live in every confirmed
+    asset, so progress says every confirmed asset is compiled (no per-asset reads)."""
     monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
     parts = _partitions(2)
-    node = _Node({p: _ioc(f"urn:defender:signal:{i}", value=f"x{i}.example") for i, p in enumerate(parts)})
 
-    class Client(_Node):
+    class Client:
         def query(self, sparql, cg, view=None, on_error=None, **kw):
             if "dkg:assertionGraph" in sparql:
                 return [{"assertionGraph": p, "status": "confirmed"} for p in parts]
-            if "GRAPH <did:dkg:context-graph:cg>" in sparql:
-                return []                                   # the root data graph is empty
-            return super().query(sparql, cg, view=view, on_error=on_error, **kw)
+            return []                                       # small tiers and root graph empty
 
-    rows = fetching.fetch_tier(Client(node.triples), "cg", constants.VIEW_VERIFIABLE_MEMORY)
-
-    assert {r["iocValue"] for r in rows} == {'"x0.example"', '"x1.example"'}
-    assert pr.progress("cg")["assets_compiled"] == 2
+    assert fetching.fetch_tier(Client(), "cg", constants.VIEW_VERIFIABLE_MEMORY) == []
+    assert pr.progress("cg")["assets_compiled"] == pr.progress("cg")["assets_total"] == 2
     assert pr.progress("another-graph") is None
 
 
-def test_nothing_readable_and_nothing_cached_keeps_the_last_good_tier(tmp_path, monkeypatch):
+def test_a_refused_small_tier_read_keeps_the_last_good_tier_and_records_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
     parts = _partitions(1)
 
@@ -241,10 +238,10 @@ def test_nothing_readable_and_nothing_cached_keeps_the_last_good_tier(tmp_path, 
         def query(self, sparql, cg, view=None, on_error=None, **kw):
             if "dkg:assertionGraph" in sparql:
                 return [{"assertionGraph": parts[0], "status": "confirmed"}]
-            return on_error
+            return on_error                                 # every lane refused
 
     assert fetching.fetch_tier(Client(), "cg", constants.VIEW_VERIFIABLE_MEMORY) is None
-    assert json.loads((tmp_path / "verified_partitions" / "progress.json").read_text())["assets_compiled"] == 0
+    assert pr.progress("cg") is None                        # could not tell: nothing recorded
 
 
 # ------------------------------------------------------------------ catching up between refreshes
