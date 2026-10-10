@@ -237,30 +237,11 @@ def _apply_overlays(rs: compiler.Ruleset, client: Optional[DkgClient], config: B
         community_tier.reapply_community_tier(rs, client, config)
     else:
         community_tier.apply_community_tier(rs, client, config, _latest_cached_ruleset(config.context_graph_id))
-    _publish_digests(client, config)
+    community_tier.publish_digests(client, config)
     _retry_shares(client, config)
-    _keep_reports_alive(client, config)
-    _record_shadow_metrics(rs, config)
+    community_tier.keep_reports_alive(client, config)
+    community_tier.record_shadow_metrics(rs, config)
     community.PULSE.reset()   # a full read just happened; the next pulse starts from it
-
-
-def _record_shadow_metrics(rs: compiler.Ruleset, config: BlackboxConfig) -> None:
-    """R15: in the shadow phase every refresh logs the §12 numbers it computed. Fail-open."""
-    if not getattr(config, "community_shadow", False):
-        return
-    try:
-        community.shadow.write_snapshot(community.shadow.build_snapshot(rs, time.time()))
-    except Exception as exc:  # pragma: no cover - never degrade the refresh
-        logger.debug("blackbox: shadow metrics skipped this refresh: %s", exc)
-
-
-def _keep_reports_alive(client: DkgClient, config: BlackboxConfig) -> None:
-    """R5: the refresh cycle is the publish step for keep-alive — this node's
-    own live reports get this epoch's copy here (when sharing is on). Fail-open."""
-    try:
-        community.publish_due_copies(client, config)
-    except Exception as exc:  # pragma: no cover - never degrade the refresh
-        logger.warning("blackbox: keep-alive copies not published this refresh: %s", exc)
 
 
 def _retry_shares(client: DkgClient, config: BlackboxConfig) -> None:
@@ -269,15 +250,6 @@ def _retry_shares(client: DkgClient, config: BlackboxConfig) -> None:
         community.retry_due_shares(client, config)
     except Exception as exc:  # pragma: no cover - never degrade the refresh
         logger.debug("blackbox: share retry skipped this beat: %s", exc)
-
-
-def _publish_digests(client: DkgClient, config: BlackboxConfig) -> None:
-    """R2b: the refresh cycle is the one periodic beat, so a completed week's
-    sighting digest leaves here (when sharing is on). Fail-open."""
-    try:
-        community.publish_due_digests(client, config)
-    except Exception as exc:  # pragma: no cover - never degrade the refresh
-        logger.warning("blackbox: sighting digest not published this refresh: %s", exc)
 
 
 def _restore_tiers(rs: compiler.Ruleset, prior: compiler.Ruleset, tiers: List[str]) -> None:
