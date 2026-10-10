@@ -1887,14 +1887,10 @@ def create_app(*, manage_blackbox: bool = False):
             seen: "Dict[str, Dict[str, Any]]" = {}
             try:
                 client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-                identity = client.agent_identity()
-                agent_address = str(identity.get("agentAddress") or "")
-                rows = ruleset.fetch_tier(
-                    client,
-                    cfg.context_graph_id,
-                    view,
-                    agent_address=agent_address,
-                ) or []
+                agent_address = str(client.agent_identity().get("agentAddress") or "")
+                # This machine's private audit records live in its OWN graph (audit.local_graph).
+                local_graph = audit.local_audit_graph(client) or cfg.context_graph_id
+                rows = ruleset.fetch_tier(client, local_graph, view, agent_address=agent_address) or []
                 local_rules = ruleset.build_from_rows(rows, source="local")
                 for rule in local_rules.graph_entries("local"):
                     identifier = str(rule.get("identifier") or "")
@@ -1980,12 +1976,8 @@ def create_app(*, manage_blackbox: bool = False):
                 if tier == "local":
                     identity = client.agent_identity()
                     agent_address = str(identity.get("agentAddress") or "")
-                rows = client.query(
-                    lookup,
-                    cfg.context_graph_id,
-                    view=view,
-                    agent_address=agent_address,
-                )
+                graph = (audit.local_audit_graph(client) or cfg.context_graph_id) if tier == "local" else cfg.context_graph_id
+                rows = client.query(lookup, graph, view=view, agent_address=agent_address)
             subjects: Dict[str, List[Any]] = {}
             for row in rows:
                 subjects.setdefault(extract_binding(row.get("t")), []).append(
