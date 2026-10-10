@@ -159,8 +159,10 @@ class Ruleset(live.LiveAnswering):
 
     def live_counts(self) -> Dict[str, int]:
         """Verified rules held in the live tiers (``dependency``, ``ioc``), from the
-        scope's aggregate counts; {} when this generation has no scope."""
-        return dict(self.verified_scope.verified_counts) if self.verified_scope is not None else {}
+        scope's aggregate counts (its per-ecosystem breakdown is not included); {}
+        when this generation has no scope."""
+        counts = self.verified_scope.verified_counts if self.verified_scope is not None else {}
+        return {tier: int(counts[tier]) for tier in ("dependency", "ioc") if tier in counts}
 
     def counts(self) -> Dict[str, int]:
         """Rules per category: the compiled lists / dicts plus the live tiers'

@@ -141,6 +141,8 @@ def public_tier_response(rs: Any, compiled: List[Dict[str, Any]], *, needle: str
     response.update(offset=offset, limit=limit, partial=offset + limit < len(compiled) + live.total)
     if not live.known:
         response["live_unavailable"] = live.reason or "the node's store did not answer"
+    if live.capped:
+        response["total_capped"] = True   # a search stopped counting at the cap: "N or more"
     return response
 
 

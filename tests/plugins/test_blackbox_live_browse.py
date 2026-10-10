@@ -26,7 +26,7 @@ class BrowseStore(StoreClient):
 
     def _subjects(self, sparql: str):
         kind = "dependency" if "DependencySignal" in sparql else "ioc"
-        eco = re.search(r'\?eco = "([^"]*)"', sparql)
+        eco = re.search(r'<urn:defender:p:ecosystem> "([^"]*)"', sparql)
         needle = re.search(r'CONTAINS\(LCASE\(\?(?:pkg|val)\), "([^"]*)"\)', sparql)
         prefix = re.search(r'STRSTARTS\(STR\(\?g\), "([^"]*)"\)', sparql).group(1)
         out = []
@@ -52,22 +52,29 @@ class BrowseStore(StoreClient):
         self.queries.append(sparql)
         if self.fail:
             return StoreAnswer(None, self.fail)
+        if "VALUES (?g ?t)" in sparql:
+            return self._bound_triples(sparql)
         subjects = self._subjects(sparql)
         if "GROUP BY ?eco" in sparql:
             totals: Dict[str, int] = {}
             for _g, _s, eco in subjects:
                 totals[eco] = totals.get(eco, 0) + 1
             return StoreAnswer([{"g": "x", "eco": f'"{e}"', "n": f'"{n}"'} for e, n in totals.items()])
-        if "COUNT(DISTINCT ?t)" in sparql:
-            return StoreAnswer([{"n": f'"{len(subjects)}"'}])
+        if "OFFSET" not in sparql:                       # a search's one read: SELECT ?g ?t … LIMIT n
+            cap = int(re.search(r"LIMIT (\d+)", sparql).group(1))
+            return StoreAnswer([{"g": g, "t": s} for g, s, _e in subjects[:cap]])
         offset = int(re.search(r"OFFSET (\d+)", sparql).group(1))
         limit = int(re.search(r"OFFSET \d+ LIMIT (\d+)", sparql).group(1))
-        window = {s for _g, s, _e in subjects[offset:offset + limit]}
-        rows = [{"g": g, "t": s, "p": p, "o": o} for g, triples in self.graphs.items() for s, p, o in triples if s in window]
-        return StoreAnswer(rows)
+        return StoreAnswer([{"g": g, "t": s} for g, s, _e in subjects[offset:offset + limit]])
+
+    def _bound_triples(self, sparql: str) -> StoreAnswer:
+        pairs = set(re.findall(r"\(<([^>]+)> <([^>]+)>\)", sparql))
+        return StoreAnswer([{"g": g, "t": s, "p": p, "o": o} for g, triples in self.graphs.items()
+                            for s, p, o in triples if (g, s) in pairs])
 
 
-SCOPE_WITH_COUNTS = live.VerifiedScope(**{**SCOPE.__dict__, "verified_counts": {"dependency": 2, "ioc": 2}})   # the two browsable deps
+SCOPE_WITH_COUNTS = live.VerifiedScope(**{**SCOPE.__dict__, "verified_counts": {   # the two browsable deps
+    "dependency": 2, "ioc": 2, "dependency:npm": 2}})
 
 
 def test_the_front_page_lists_dependencies_then_iocs_with_whole_result_totals():
@@ -76,7 +83,7 @@ def test_the_front_page_lists_dependencies_then_iocs_with_whole_result_totals():
     assert identifiers[:2] == ["dep:npm:wallet-security-checker@2.0.3", "dep:npm:avnjs@*"]   # suppressed + revoked gone
     assert set(identifiers[2:]) == {"ioc:domain:loader.example", "ioc:ip:203.0.113.9"}
     assert page.known and page.total == 4 and page.kind_totals == {"dependency": 2, "ioc": 2}
-    assert page.ecosystem_totals == {"npm": 5}        # the GROUP BY counts stored rows under the prefix
+    assert page.ecosystem_totals == {"npm": 2}        # the scope's refresh-time per-ecosystem count
 
 
 def test_offset_and_limit_run_across_the_kinds():
@@ -90,8 +97,8 @@ def test_filters_narrow_the_live_tiers_and_count_through_the_store():
     store = BrowseStore(GRAPHS)
     page = live.public_page(SCOPE_WITH_COUNTS, store, category="dependency", ecosystem="npm", needle="wallet", limit=10)
     assert [e["identifier"] for e in page.entries] == ["dep:npm:wallet-security-checker@2.0.3"]
-    assert page.total == 1 and page.kind_totals == {"dependency": 1}
-    assert any('"wallet"' in q and "COUNT" in q for q in store.queries)       # the needle is an escaped literal
+    assert page.total == 1 and page.kind_totals == {"dependency": 1} and not page.capped
+    assert any('"wallet"' in q and "LIMIT 11" in q for q in store.queries)    # one read, up to the page's end + 1
     assert live.public_page(SCOPE_WITH_COUNTS, BrowseStore(GRAPHS), category="injection").total == 0
 
 
@@ -126,7 +133,7 @@ def test_the_public_page_puts_compiled_small_tiers_first_then_the_live_tiers():
                                                               "dep:npm:avnjs@*"]
     assert response["total"] == 5 and response["partial"] is True
     assert response["category_totals"] == {"injection": 1, "dependency": 2, "ioc": 2}
-    assert response["ecosystem_totals"] == {"npm": 5} and "live_unavailable" not in response
+    assert response["ecosystem_totals"] == {"npm": 2} and "live_unavailable" not in response
     later = graph_pages.public_tier_response(rs, compiled, needle="", category="", ecosystem="", offset=3, limit=10)
     assert [t["category"] for t in later["threats"]] == ["ioc", "ioc"] and later["partial"] is False
 
@@ -181,3 +188,39 @@ def test_the_curate_helper_asks_for_a_known_universe():
     rs = compiler.Ruleset(dependency={"npm:a@1": {"identifier": "dep:npm:a@1", "source": "public"}})
     assert verified_identifiers(rs, {"dep:npm:a@1": {}, "dep:npm:z@1": {}}) == {"dep:npm:a@1"}
     assert verified_identifiers(None, ["dep:npm:a@1"]) == set()
+
+
+def test_the_window_and_its_triples_are_two_queries_never_one_join():
+    """Bench A 2026-10-10: the joined form ran > 120 s; the window is 0.04 s and the
+    bound triple read an index lookup."""
+    store = BrowseStore(GRAPHS)
+    live.public_page(SCOPE_WITH_COUNTS, store, category="ioc", limit=5)
+    window = [q for q in store.queries if "OFFSET" in q]
+    triples = [q for q in store.queries if "VALUES (?g ?t)" in q]
+    assert window and triples and not any("?p ?o" in q for q in window)
+    assert all("OFFSET" not in q for q in triples)
+
+
+def test_an_ecosystem_is_bound_as_a_literal_not_filtered():
+    store = BrowseStore(GRAPHS)
+    page = live.public_page(SCOPE_WITH_COUNTS, store, category="dependency", ecosystem="npm", limit=5)
+    assert page.known and page.ecosystem_totals == {"npm": page.kind_totals["dependency"]}
+    assert all("?eco =" not in q for q in store.queries)
+
+
+def test_unsearched_pages_never_count_through_the_store():
+    store = BrowseStore(GRAPHS)
+    page = live.public_page(SCOPE_WITH_COUNTS, store, category="dependency", ecosystem="npm", limit=5)
+    assert page.total == 2 and not any("COUNT" in q or "GROUP BY" in q for q in store.queries)
+
+
+def test_a_search_reads_its_matches_once_and_says_when_there_are_more():
+    store = BrowseStore(GRAPHS)
+    page = live.public_page(SCOPE_WITH_COUNTS, store, category="dependency", needle="e", limit=1)
+    assert page.capped and len(page.entries) == 1
+    assert sum(1 for q in store.queries if "CONTAINS" in q) == 1      # count and window share the read
+
+
+def test_plain_paging_stops_at_the_depth_cap():
+    page = live.public_page(SCOPE_WITH_COUNTS, BrowseStore(GRAPHS), offset=browse.MAX_DEPTH, limit=10)
+    assert not page.known and "search or filter" in page.reason

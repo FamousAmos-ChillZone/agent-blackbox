@@ -18,23 +18,14 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, FrozenSet, Iterable, Mapping, Optional, Sequence, Tuple
 
 from ...kernel import threat_ids
-from ...kernel.dkg_client import DkgClient, DkgError, extract_binding
+from ...kernel.dkg_client import DkgClient, DkgError
 from ...kernel.store import StoreClient, loopback_store_url
+from .asset_facts import ECOSYSTEM_COUNT_PREFIX, AssetFacts, read_new_asset_facts, totals  # noqa: F401 — prefix re-exported
 from .. import fetching
 
 logger = logging.getLogger(__name__)
 
-#: The alias read is a refresh-time scan over every package literal, not a
-#: hot-path lookup: it took 7.9 s on a node busy downloading the graph.
-ALIAS_READ_TIMEOUT_SECONDS = 60.0
-#: The three aggregate counts are GROUP BY summaries (LES-013); 0.4 s on the bench.
-COUNT_READ_TIMEOUT_SECONDS = 60.0
-#: Bounded by construction (LES-013): 117 aliases exist today.
-ALIAS_READ_LIMIT = 50_000
 
-_DP = "urn:defender:p:"
-_BP = "urn:blackbox:p:"
-_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
 
 @dataclass(frozen=True)
@@ -65,6 +56,9 @@ class VerifiedScope:
     #: The operator's fallback mode at refresh time (``off`` | ``index``), so the hot
     #: path never reads config.
     fallback: str = "off"
+    #: Per-asset facts (counts, spellings) read ONCE per immutable asset
+    #: (:mod:`.asset_facts`); ``verified_counts`` / ``package_aliases`` are their totals.
+    asset_facts: Mapping[str, AssetFacts] = field(default_factory=dict)
     built_at: float = 0.0
 
     @property
@@ -88,6 +82,7 @@ class VerifiedScope:
             "package_aliases": {key: list(values) for key, values in sorted(self.package_aliases.items())},
             "verified_counts": dict(self.verified_counts),
             "fallback": self.fallback,
+            "asset_facts": {graph: fact.to_json() for graph, fact in sorted(self.asset_facts.items())},
             "built_at": self.built_at,
         }
 
@@ -108,6 +103,8 @@ class VerifiedScope:
             verified_counts={str(k): int(v) for k, v in counts.items() if isinstance(v, (int, float))}
             if isinstance(counts := data.get("verified_counts"), dict) else {},
             fallback=str(data.get("fallback") or "off"),
+            asset_facts={str(graph): fact for graph, raw in facts.items() if (fact := AssetFacts.from_json(raw))}
+            if isinstance(facts := data.get("asset_facts"), dict) else {},
             built_at=float(data.get("built_at") or 0.0),
         )
 
@@ -136,15 +133,12 @@ def refresh_scope(
     previous = previous or VerifiedScope()
     store_url = _store_url(client) or previous.store_url
     graphs = frozenset(confirmed) if confirmed is not None else previous.assertion_graphs
-    aliases, counts = previous.package_aliases, previous.verified_counts
+    facts = dict(previous.asset_facts)
     if store_url and graphs:
-        store = store or StoreClient(store_url)
-        read = _read_aliases(store, graphs)
-        if read is not None:
-            aliases = read
-        counted = _read_counts(store, graphs)
-        if counted is not None:
-            counts = counted
+        facts = read_new_asset_facts(store or StoreClient(store_url), wanted=graphs, known=facts)
+    counts, aliases = totals(facts, graphs)
+    if not facts:                                         # nothing read yet: keep what the last scope said
+        counts, aliases = dict(previous.verified_counts), dict(previous.package_aliases)
     return VerifiedScope(
         context_graph_id=context_graph_id,
         store_url=store_url,
@@ -154,6 +148,7 @@ def refresh_scope(
         package_aliases=aliases,
         verified_counts=counts,
         fallback=fallback,
+        asset_facts=facts,
         built_at=time.time(),
     )
 
@@ -164,34 +159,6 @@ def _store_url(client: DkgClient) -> str:
     except DkgError as exc:
         logger.debug("blackbox: node status unavailable for the store endpoint: %s", exc)
         return ""
-
-
-def _aliases_sparql() -> str:
-    """Package names whose stored spelling differs from the canonical one:
-    capitals anywhere, or ``_`` / ``.`` in a PyPI name (PEP 503 collapses them)."""
-    return f"""SELECT DISTINCT ?g ?eco ?pkg WHERE {{
-  GRAPH ?g {{ ?t <{_DP}package> ?pkg ; <{_DP}ecosystem> ?eco . }}
-  FILTER(?pkg != LCASE(?pkg) || (?eco = "pypi" && (CONTAINS(?pkg, "_") || CONTAINS(?pkg, "."))))
-}} LIMIT {ALIAS_READ_LIMIT}"""
-
-
-def _read_aliases(store: StoreClient, graphs: FrozenSet[str]) -> Optional[Dict[str, Tuple[str, ...]]]:
-    """``"eco:canonical"`` → stored spellings, from the scope's graphs only; None
-    when the store could not be asked (the caller keeps the previous aliases)."""
-    answer = store.select(_aliases_sparql(), timeout=ALIAS_READ_TIMEOUT_SECONDS)
-    if not answer.known:
-        logger.warning("blackbox: package aliases not refreshed (%s); keeping the previous ones", answer.reason)
-        return None
-    found: Dict[str, set] = {}
-    for row in answer.rows or []:
-        if extract_binding(row.get("g")) not in graphs:
-            continue
-        ecosystem = extract_binding(row.get("eco")).strip().lower()
-        stored = extract_binding(row.get("pkg"))
-        canonical = threat_ids.canonical_package_name(ecosystem, stored)
-        if ecosystem and stored and stored != canonical:
-            found.setdefault(f"{ecosystem}:{canonical}", set()).add(stored)
-    return {key: tuple(sorted(values)) for key, values in found.items()}
 
 
 def scope_for_generation(
@@ -218,34 +185,3 @@ def scope_for_generation(
     except Exception as exc:  # pragma: no cover - fail open (an outer boundary)
         logger.warning("blackbox: verified scope not refreshed: %s", exc)
         return previous
-
-
-#: The live tiers and the triple pattern that counts one rule of each.
-_COUNTED_TIERS = (
-    ("dependency", f"?t <{_TYPE}> <urn:defender:DependencySignal> ."),
-    ("ioc", f"?t <{_TYPE}> <urn:defender:IocSignal> ."),
-    ("ioc", f'?t <{_TYPE}> <urn:blackbox:SourceObservation> ; <{_BP}lifecycleStatus> "active" .'),
-)
-
-
-def _count_sparql(pattern: str) -> str:
-    return f"SELECT ?g (COUNT(DISTINCT ?t) AS ?n) WHERE {{ GRAPH ?g {{ {pattern} }} }} GROUP BY ?g"
-
-
-def _read_counts(store: StoreClient, graphs: FrozenSet[str]) -> Optional[Dict[str, int]]:
-    """Verified rules per live tier, summed over the scope's graphs only (an IOC
-    is an IocSignal or an ACTIVE SourceObservation, as the compile counted them);
-    None when any count could not be read (the caller keeps the previous counts)."""
-    counts: Dict[str, int] = {"dependency": 0, "ioc": 0}
-    for tier, pattern in _COUNTED_TIERS:
-        answer = store.select(_count_sparql(pattern), timeout=COUNT_READ_TIMEOUT_SECONDS)
-        if not answer.known:
-            logger.warning("blackbox: verified %s count not refreshed (%s); keeping the previous one", tier, answer.reason)
-            return None
-        for row in answer.rows or []:
-            if extract_binding(row.get("g")) in graphs:
-                try:
-                    counts[tier] += int(float(extract_binding(row.get("n")) or 0))
-                except ValueError:
-                    continue
-    return counts

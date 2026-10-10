@@ -193,22 +193,6 @@ class _Node:
         return self._status
 
 
-def test_refresh_scope_reads_the_store_url_assets_and_aliases():
-    alias_store = FakeStore({})
-    alias_store.select = lambda sparql, timeout=None: StoreAnswer([   # type: ignore[method-assign]
-        {"g": PART_A, "eco": '"npm"', "pkg": '"AVNjs"'},
-        {"g": PART_A, "eco": '"pypi"', "pkg": '"Foo_Bar"'},
-        {"g": FOREIGN, "eco": '"npm"', "pkg": '"Outside"'},
-    ])
-    scope = live.refresh_scope(_Node({"storeUrl": "http://127.0.0.1:7878/query"}), CG, previous=None,
-                               confirmed=[PART_A, PART_B], suppressed={"urn:defender:signal:b2"},
-                               revoked={"dep:npm:revoked-pkg@*"}, store=alias_store)
-    assert scope.ready and scope.assertion_graphs == {PART_A, PART_B}
-    assert scope.package_aliases == {"npm:avnjs": ("AVNjs",), "pypi:foo-bar": ("Foo_Bar",)}
-    assert scope.spellings("npm", "AVNJS") == ("avnjs", "AVNjs")
-    assert scope.revoked_identifiers == {"dep:npm:revoked-pkg@*"} and scope.built_at > 0
-
-
 def test_refresh_scope_keeps_previous_parts_it_could_not_read():
     from plugins.blackbox.kernel.dkg_client import DkgError
     failing = FakeStore({}, fail="timeout")
@@ -234,7 +218,7 @@ def test_scope_for_generation_uses_the_nodes_partition_listing(monkeypatch):
     from plugins.blackbox.ruleset.live import scope as scope_mod
     monkeypatch.setattr(scope_mod.fetching, "confirmed_partitions",
                         lambda client, cg: fetching.PartitionListing(frozenset({PART_A, PART_B}), (PART_A, PART_B)))
-    monkeypatch.setattr(scope_mod, "_read_aliases", lambda store, graphs: {})
+    monkeypatch.setattr(scope_mod, "read_new_asset_facts", lambda store, wanted, known: {})
     scope = live.scope_for_generation(_Node({"storeUrl": "http://127.0.0.1:7878/query"}), CG,
                                       previous=None, suppressed=set(), revoked=set())
     assert scope is not None and scope.ready and scope.assertion_graphs == {PART_A, PART_B}
@@ -243,7 +227,7 @@ def test_scope_for_generation_uses_the_nodes_partition_listing(monkeypatch):
 def test_scope_for_generation_keeps_the_previous_scope_when_the_listing_fails(monkeypatch):
     from plugins.blackbox.ruleset.live import scope as scope_mod
     monkeypatch.setattr(scope_mod.fetching, "confirmed_partitions", lambda client, cg: None)
-    monkeypatch.setattr(scope_mod, "_read_aliases", lambda store, graphs: None)
+    monkeypatch.setattr(scope_mod, "read_new_asset_facts", lambda store, wanted, known: dict(known))
     scope = live.scope_for_generation(_Node({"storeUrl": "http://127.0.0.1:7878/query"}), CG,
                                       previous=SCOPE, suppressed=None, revoked=SCOPE.revoked_identifiers)
     assert scope is not None and scope.assertion_graphs == SCOPE.assertion_graphs
@@ -257,7 +241,7 @@ def test_a_refresh_writes_a_ready_scope_into_the_cache_on_both_paths(monkeypatch
     from plugins.blackbox.ruleset.live import scope as scope_mod
     monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
     monkeypatch.setattr(refresh_cycle, "_memory", refresh_cycle._new_memory())
-    monkeypatch.setattr(scope_mod, "_read_aliases", lambda store, graphs: {})
+    monkeypatch.setattr(scope_mod, "read_new_asset_facts", lambda store, wanted, known: {})
     listing = [fetching.PartitionListing(frozenset({PART_A}), (PART_A,))]
     monkeypatch.setattr(scope_mod.fetching, "confirmed_partitions", lambda client, cg: listing[0])
     from plugins.blackbox.ruleset.partitions import rows_from_triples
@@ -287,7 +271,7 @@ def test_scope_for_generation_reuses_the_listing_the_refresh_already_read(monkey
     from plugins.blackbox.ruleset.live import scope as scope_mod
     monkeypatch.setattr(scope_mod.fetching, "confirmed_partitions",
                         lambda client, cg: pytest.fail("the _meta listing must not be read twice per refresh"))
-    monkeypatch.setattr(scope_mod, "_read_aliases", lambda store, graphs: {})
+    monkeypatch.setattr(scope_mod, "read_new_asset_facts", lambda store, wanted, known: {})
     listing = fetching.PartitionListing(frozenset({PART_A}), (PART_A,))
     scope = live.scope_for_generation(_Node({"storeUrl": "http://127.0.0.1:7878/query"}), CG, previous=None,
                                       suppressed=set(), revoked=set(), listing=listing)
@@ -295,39 +279,6 @@ def test_scope_for_generation_reuses_the_listing_the_refresh_already_read(monkey
 
 
 # ------------------------------------------------------- verified counts travel in the scope (B6)
-
-
-def test_refresh_scope_counts_the_live_tiers_over_the_scope_graphs_only():
-    answers = {
-        "DependencySignal": [{"g": PART_A, "n": '"3"'}, {"g": PART_B, "n": '"2"'}, {"g": FOREIGN, "n": '"99"'}],
-        "IocSignal": [{"g": PART_A, "n": '"5"'}],
-        "SourceObservation": [{"g": PART_B, "n": '"4"^^<http://www.w3.org/2001/XMLSchema#integer>'}],
-    }
-
-    class CountingStore(FakeStore):
-        def select(self, sparql, *, timeout=None):
-            self.queries.append(sparql)
-            if "package" in sparql:
-                return StoreAnswer([])                     # the alias read
-            kind = next(k for k in answers if k in sparql)
-            return StoreAnswer(answers[kind])
-
-    store = CountingStore({})
-    scope = live.refresh_scope(_Node({"storeUrl": "http://127.0.0.1:7878/query"}), CG, previous=None,
-                               confirmed=[PART_A, PART_B], suppressed=set(), revoked=set(), store=store)
-    assert scope.verified_counts == {"dependency": 5, "ioc": 9}
-    assert all("GROUP BY ?g" in q and "LIMIT" not in q for q in store.queries if "COUNT" in q)
-
-
-def test_a_failed_count_keeps_the_previous_counts():
-    class HalfStore(FakeStore):
-        def select(self, sparql, *, timeout=None):
-            return StoreAnswer(None, "timeout") if "IocSignal" in sparql else StoreAnswer([])
-
-    previous = live.VerifiedScope(verified_counts={"dependency": 7, "ioc": 8})
-    scope = live.refresh_scope(_Node({"storeUrl": "http://127.0.0.1:7878/query"}), CG, previous=previous,
-                               confirmed=[PART_A], suppressed=set(), revoked=set(), store=HalfStore({}))
-    assert scope.verified_counts == {"dependency": 7, "ioc": 8}
 
 
 def test_ruleset_counts_add_the_live_tiers_to_the_compiled_rules():
@@ -346,3 +297,88 @@ def test_ruleset_counts_add_the_live_tiers_to_the_compiled_rules():
     back = disk_cache._deserialize(json.loads(json.dumps(disk_cache._serialize(rs))))
     assert back.verified_scope.verified_counts == scope.verified_counts
     assert compiler.Ruleset().counts()["dependency"] == 0 and compiler.Ruleset().live_counts() == {}
+
+
+# ------------------------------------------------------- per-asset facts (read once per asset)
+
+
+class FactStore(FakeStore):
+    """Answers the per-asset fact queries from fixed rows keyed by query kind; counts the queries."""
+
+    def __init__(self, rows):
+        super().__init__({})
+        self.rows = rows
+
+    def select(self, sparql, *, timeout=None):
+        self.queries.append(sparql)
+        if "?pkg" in sparql:
+            kind = "aliases"
+        elif "?eco (COUNT" in sparql:
+            kind = "ecosystem"
+        else:
+            kind = next(k for k in ("DependencySignal", "IocSignal", "SourceObservation") if k in sparql)
+        bound = set(re.findall(r"<(did:dkg:[^>]+)>", sparql.split("GRAPH ?g")[0]))
+        return StoreAnswer([row for row in self.rows.get(kind, []) if row["g"] in bound])
+
+
+FACT_ROWS = {
+    "DependencySignal": [{"g": PART_A, "n": '"3"'}, {"g": PART_B, "n": '"2"'}, {"g": FOREIGN, "n": '"99"'}],
+    "IocSignal": [{"g": PART_A, "n": '"5"'}],
+    "SourceObservation": [{"g": PART_B, "n": '"4"^^<http://www.w3.org/2001/XMLSchema#integer>'}],
+    "ecosystem": [{"g": PART_A, "eco": '"npm"', "n": '"3"'}, {"g": PART_B, "eco": '"pypi"', "n": '"2"'}],
+    "aliases": [{"g": PART_A, "eco": '"npm"', "pkg": '"AVNjs"'}, {"g": PART_B, "eco": '"pypi"', "pkg": '"Foo_Bar"'},
+                {"g": FOREIGN, "eco": '"npm"', "pkg": '"Outside"'}],
+}
+
+
+def test_refresh_scope_reads_each_assets_facts_bound_to_its_graph(monkeypatch):
+    from plugins.blackbox.ruleset.live import asset_facts
+    monkeypatch.setattr(asset_facts, "PAUSE_SECONDS", 0)
+    store = FactStore(FACT_ROWS)
+    scope = live.refresh_scope(_Node({"storeUrl": "http://127.0.0.1:7878/query"}), CG, previous=None,
+                               confirmed=[PART_A, PART_B], suppressed={"urn:defender:signal:b2"},
+                               revoked={"dep:npm:revoked-pkg@*"}, store=store)
+    assert scope.ready and scope.verified_counts == {"dependency": 5, "ioc": 9, "dependency:npm": 3, "dependency:pypi": 2}
+    assert scope.package_aliases == {"npm:avnjs": ("AVNjs",), "pypi:foo-bar": ("Foo_Bar",)}
+    assert scope.spellings("npm", "AVNJS") == ("avnjs", "AVNjs")
+    assert all("VALUES ?g" in q for q in store.queries) and len(store.queries) == 5
+    assert set(scope.asset_facts) == {PART_A, PART_B}
+
+
+def test_known_assets_are_never_read_again_and_new_ones_are(monkeypatch):
+    from plugins.blackbox.ruleset.live import asset_facts
+    monkeypatch.setattr(asset_facts, "PAUSE_SECONDS", 0)
+    node = _Node({"storeUrl": "http://127.0.0.1:7878/query"})
+    first = live.refresh_scope(node, CG, previous=None, confirmed=[PART_A], suppressed=set(), revoked=set(),
+                               store=FactStore(FACT_ROWS))
+    quiet = FactStore(FACT_ROWS)
+    again = live.refresh_scope(node, CG, previous=first, confirmed=[PART_A], suppressed=set(), revoked=set(), store=quiet)
+    assert quiet.queries == [] and again.verified_counts == first.verified_counts
+    grown = FactStore(FACT_ROWS)
+    both = live.refresh_scope(node, CG, previous=again, confirmed=[PART_A, PART_B], suppressed=set(), revoked=set(), store=grown)
+    assert grown.queries and all(PART_A not in q for q in grown.queries)          # only the new asset is read
+    assert both.verified_counts["dependency"] == 5
+
+
+def test_a_failed_read_keeps_known_facts_and_retries_the_rest_later(monkeypatch):
+    from plugins.blackbox.ruleset.live import asset_facts
+    monkeypatch.setattr(asset_facts, "PAUSE_SECONDS", 0)
+    node = _Node({"storeUrl": "http://127.0.0.1:7878/query"})
+    first = live.refresh_scope(node, CG, previous=None, confirmed=[PART_A], suppressed=set(), revoked=set(),
+                               store=FactStore(FACT_ROWS))
+    failing = FakeStore({}, fail="timeout")
+    later = live.refresh_scope(node, CG, previous=first, confirmed=[PART_A, PART_B], suppressed=set(), revoked=set(),
+                               store=failing)
+    assert set(later.asset_facts) == {PART_A} and later.verified_counts == first.verified_counts
+    assert live.VerifiedScope.from_json(json.loads(json.dumps(later.to_json()))).asset_facts == later.asset_facts
+
+
+def test_an_asset_no_longer_confirmed_drops_out_of_the_totals(monkeypatch):
+    from plugins.blackbox.ruleset.live import asset_facts
+    monkeypatch.setattr(asset_facts, "PAUSE_SECONDS", 0)
+    node = _Node({"storeUrl": "http://127.0.0.1:7878/query"})
+    both = live.refresh_scope(node, CG, previous=None, confirmed=[PART_A, PART_B], suppressed=set(), revoked=set(),
+                              store=FactStore(FACT_ROWS))
+    one = live.refresh_scope(node, CG, previous=both, confirmed=[PART_A], suppressed=set(), revoked=set(),
+                             store=FactStore(FACT_ROWS))
+    assert one.verified_counts["dependency"] == 3 and set(one.asset_facts) == {PART_A}

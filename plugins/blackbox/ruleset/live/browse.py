@@ -7,7 +7,10 @@ over 250k subjects cost 25× on the bench, KI-264; the store's own order is
 stable between pages of one generation), then the window's triples through the
 compiler's own builders (:func:`partitions.rows_from_triples`,
 :func:`row_adapters._row_to_graph_entry`). Totals for the whole filtered result
-come from the scope's counts when nothing is filtered, else one COUNT per kind.
+come from the scope's refresh-time counts (per ecosystem too); a search reads its
+matches once, up to the page's end + 1 (``capped`` = there are more); plain paging
+stops at MAX_DEPTH. The window and its triples are TWO queries (bench A: the
+joined form ran > 120 s, the window alone 0.04 s).
 
 Every untrusted value (the search needle, the ecosystem) enters a query as an
 escaped literal (LES-001/002); every query names its predicates and carries a
@@ -28,7 +31,7 @@ from ...kernel.sparql_text import sparql_string_literal as literal
 from ...kernel.store import StoreClient
 from .. import row_adapters
 from ..partitions import rows_from_triples
-from .scope import VerifiedScope
+from .scope import ECOSYSTEM_COUNT_PREFIX, VerifiedScope
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,9 @@ logger = logging.getLogger(__name__)
 BROWSE_TIMEOUT_SECONDS = 10.0
 #: Entries per live page at most; the dashboard pages past it with ``offset``.
 MAX_PAGE = 500
+#: Plain paging stops here: the store walks past every earlier row (offset 5,000:
+#: 0.5 s; 150,000: > 10 s on bench A). Deeper threats are reached by search or filter.
+MAX_DEPTH = 50_000
 #: Triples fetched for a page: subjects × ~15 triples, with headroom.
 _TRIPLES_PER_SUBJECT = 40
 
@@ -60,6 +66,8 @@ class LivePage:
     ecosystem_totals: Dict[str, int] = field(default_factory=dict)
     known: bool = True
     reason: str = ""
+    #: True when a search found more matches than this page reaches ("N or more").
+    capped: bool = False
 
 
 def public_page(scope: VerifiedScope, store: StoreClient, *, category: str = "", ecosystem: str = "",
@@ -68,7 +76,10 @@ def public_page(scope: VerifiedScope, store: StoreClient, *, category: str = "",
     kinds = [kind for kind in KINDS if _kind_matches(kind, category, ecosystem)]
     limit = max(0, min(int(limit), MAX_PAGE))
     offset = max(0, int(offset))
-    browser = _Browser(scope, store, ecosystem=ecosystem.strip().lower(), needle=needle.strip().lower())
+    if offset + limit > MAX_DEPTH:
+        return LivePage(known=False, reason=f"pages past {MAX_DEPTH:,} are not browsable; search or filter instead")
+    browser = _Browser(scope, store, ecosystem=ecosystem.strip().lower(), needle=needle.strip().lower(),
+                       depth=offset + limit)
     totals: Dict[str, int] = {}
     for kind in kinds:
         total = browser.total(kind)
@@ -92,7 +103,7 @@ def public_page(scope: VerifiedScope, store: StoreClient, *, category: str = "",
         entries.extend(found)
         limit -= take
         offset = 0
-    return LivePage(entries, sum(totals.values()), totals, ecosystems)
+    return LivePage(entries, sum(totals.values()), totals, ecosystems, capped=browser.capped)
 
 
 def _kind_matches(kind: str, category: str, ecosystem: str) -> bool:
@@ -105,19 +116,24 @@ def _kind_matches(kind: str, category: str, ecosystem: str) -> bool:
 class _Browser:
     """The queries behind one page (one scope, one store, one set of filters)."""
 
-    def __init__(self, scope: VerifiedScope, store: StoreClient, *, ecosystem: str, needle: str) -> None:
+    def __init__(self, scope: VerifiedScope, store: StoreClient, *, ecosystem: str, needle: str, depth: int) -> None:
         self.scope, self.store = scope, store
         self.ecosystem, self.needle = ecosystem, needle
+        #: A search reads its matches ONCE, up to the page's end + 1, and pages from that.
+        self.depth = depth
+        self._matches: Dict[str, List[Tuple[str, str]]] = {}
         self.prefix = f"did:dkg:context-graph:{scope.context_graph_id}/_verifiable_memory/"
         self.reason = ""
+        self.capped = False
 
     def _pattern(self, kind: str) -> str:
         """The subject pattern of *kind* with the filters applied, inside ``GRAPH ?g``."""
         if kind == "dependency":
+            # The ecosystem is BOUND as a literal (an index lookup), never a FILTER over every row.
+            eco = literal(self.ecosystem) if self.ecosystem else "?eco"
             pattern = (f"?t <{_TYPE}> <urn:defender:DependencySignal> ; "
-                       f"<{_DP}package> ?pkg ; <{_DP}ecosystem> ?eco .")
-            filters = ([f"?eco = {literal(self.ecosystem)}"] if self.ecosystem else []) + (
-                [f"CONTAINS(LCASE(?pkg), {literal(self.needle)})"] if self.needle else [])
+                       f"<{_DP}package> ?pkg ; <{_DP}ecosystem> {eco} .")
+            filters = [f"CONTAINS(LCASE(?pkg), {literal(self.needle)})"] if self.needle else []
         else:
             pattern = (f"{{ ?t <{_TYPE}> <urn:defender:IocSignal> ; <{_DP}value> ?val . }} UNION "
                        f'{{ ?t <{_TYPE}> <urn:blackbox:SourceObservation> ; <{_BP}lifecycleStatus> "active" ; '
@@ -134,28 +150,67 @@ class _Browser:
         return answer.rows
 
     def total(self, kind: str) -> Optional[int]:
-        """Entries of *kind* matching the filters: the scope's count when nothing
-        is filtered, else one COUNT (None when the store could not answer)."""
-        if not self.ecosystem and not self.needle:
-            return int(self.scope.verified_counts.get(kind, 0))
-        rows = self._select(f"SELECT (COUNT(DISTINCT ?t) AS ?n) WHERE {{ {self._pattern(kind)} }}")
-        if rows is None:
+        """Entries of *kind* matching the filters. Without a search the scope's
+        refresh-time counts answer (per ecosystem too) — counting 250k rows per page
+        load took 7–12 s on bench A. A search counts at most :data:`SEARCH_CAP`
+        matches (a full CONTAINS count took 19.6 s); ``capped`` then says "or more".
+        None when the store could not answer."""
+        counts = self.scope.verified_counts
+        if not self.needle:
+            if kind == "dependency" and self.ecosystem:
+                return int(counts.get(ECOSYSTEM_COUNT_PREFIX + self.ecosystem, 0))
+            return int(counts.get(kind, 0))
+        matches = self._search(kind)
+        if matches is None:
             return None
-        return _int(rows[0].get("n")) if rows else 0
+        if len(matches) > self.depth:            # there are more than this page reaches
+            self.capped = True
+        return len(matches)
+
+    def _search(self, kind: str) -> Optional[List[Tuple[str, str]]]:
+        """The search's matches of *kind*, read once: up to the page's end + 1 (a full
+        CONTAINS count took 19.6 s on bench A; a page's worth, ~1.5 s)."""
+        if kind not in self._matches:
+            rows = self._select(f"SELECT ?g ?t WHERE {{ {self._pattern(kind)} }} LIMIT {self.depth + 1}")
+            if rows is None:
+                return None
+            self._matches[kind] = [(extract_binding(r.get("g")), extract_binding(r.get("t"))) for r in rows]
+        return self._matches[kind]
 
     def ecosystems(self) -> Optional[Dict[str, int]]:
-        """Dependency entries per ecosystem under the filters (a GROUP BY summary)."""
-        rows = self._select(f"SELECT ?eco (COUNT(DISTINCT ?t) AS ?n) WHERE {{ {self._pattern('dependency')} }} GROUP BY ?eco")
-        if rows is None:
-            return None
-        return {extract_binding(row.get("eco")).lower(): _int(row.get("n")) for row in rows if extract_binding(row.get("eco"))}
+        """Dependency entries per ecosystem: the scope's refresh-time counts ({} during
+        a search — a per-ecosystem search count would be another full scan)."""
+        if self.needle:
+            return {}
+        counts = self.scope.verified_counts
+        per = {key[len(ECOSYSTEM_COUNT_PREFIX):]: int(value) for key, value in counts.items()
+               if key.startswith(ECOSYSTEM_COUNT_PREFIX)}
+        return {self.ecosystem: per.get(self.ecosystem, 0)} if self.ecosystem else per
 
     def window(self, kind: str, offset: int, limit: int) -> Optional[List[Dict[str, Any]]]:
-        """Graph entries for *limit* subjects of *kind* after *offset*."""
-        rows = self._select(f"""SELECT ?g ?t ?p ?o WHERE {{
-  {{ SELECT ?g ?t WHERE {{ {self._pattern(kind)} }} OFFSET {int(offset)} LIMIT {int(limit)} }}
-  GRAPH ?g {{ ?t ?p ?o }}
-}} LIMIT {int(limit) * _TRIPLES_PER_SUBJECT}""")
+        """Graph entries for *limit* subjects of *kind* after *offset* — TWO queries.
+
+        One query that windows the subjects and joins their triples ran > 120 s on
+        Oxigraph (bench A, 2026-10-10: the planner evaluated ``GRAPH ?g { ?t ?p ?o }``
+        before the window); the window alone takes 0.04 s and the bound triple read is
+        an index lookup, like the live lookups.
+        """
+        if self.needle:
+            matches = self._search(kind)
+            if matches is None:
+                return None
+            pairs = matches[offset:offset + limit]
+        else:
+            window = self._select(f"SELECT ?g ?t WHERE {{ {self._pattern(kind)} }} OFFSET {int(offset)} LIMIT {int(limit)}")
+            if window is None:
+                return None
+            pairs = [(extract_binding(row.get("g")), extract_binding(row.get("t"))) for row in window]
+        pairs = [(g, t) for g, t in pairs if g in self.scope.assertion_graphs and _iri(g) and _iri(t)]
+        if not pairs:
+            return []
+        values = " ".join(f"(<{g}> <{t}>)" for g, t in pairs)
+        rows = self._select(f"SELECT ?g ?t ?p ?o WHERE {{ VALUES (?g ?t) {{ {values} }} GRAPH ?g {{ ?t ?p ?o }} }} "
+                            f"LIMIT {len(pairs) * _TRIPLES_PER_SUBJECT}")
         return None if rows is None else self._entries(rows)
 
     def _entries(self, rows: Sequence[Dict[str, str]]) -> List[Dict[str, Any]]:
@@ -171,6 +226,15 @@ class _Browser:
                 if entry and entry["identifier"] not in self.scope.revoked_identifiers:
                     entries.append(entry)
         return entries
+
+
+_FORBIDDEN_IRI_CHARS = frozenset('<>"{}|^`\\ \r\n\t')
+
+
+def _iri(value: str) -> bool:
+    """True when *value* can be written as ``<value>`` (it came from the store, but an
+    IRI is re-sent only when it cannot break out of the brackets)."""
+    return bool(value) and not any(char in value for char in _FORBIDDEN_IRI_CHARS)
 
 
 def _int(cell: Any) -> int:
