@@ -5011,8 +5011,13 @@
 	    }).join(" · ") || "none";
 	  }
 
-	  function categoryThreatListHTML(items) {
+	  // sampleState: "loading" while the panel fetches its own category page,
+	  // "unavailable" when that fetch found nothing to show (never claim "empty"
+	  // for a category whose count says otherwise).
+	  function categoryThreatListHTML(items, sampleState) {
 	    var sample = graphSampleLeaves(items || [], 10);
+	    if (!sample.length && sampleState === "loading") return '<div class="modal-empty">Loading threats in this category from the graph…</div>';
+	    if (!sample.length && sampleState === "unavailable") return '<div class="modal-empty">The node could not list threats in this category just now. Try again in a moment.</div>';
 	    if (!sample.length) return '<div class="modal-empty">No threats are currently stored in this category.</div>';
 	    var rows = sample.map(function (t) {
 	      var sev = sevClass(t.severity);
@@ -5030,7 +5035,11 @@
 	      (remaining ? '<div class="modal-empty">' + num(remaining) + ' more in this category.</div>' : '');
 	  }
 
-	  function openCategoryModal(node) {
+	  // The loaded graph page is one window in a fixed category order (small tiers,
+	  // then 252k dependencies, then IOCs), so a category's own threats may not be
+	  // loaded at all: the panel then fetches its category page itself.
+	  var CATEGORY_SAMPLE_SIZE = 10;
+	  function openCategoryModal(node, sampleState) {
 	    var overlay = $("threat-modal");
 	    if (!overlay || !node || !node.focus) return;
 	    var focus = node.focus;
@@ -5038,6 +5047,17 @@
 	    var meta = CATS[cat] || CATS.other;
 	    var color = meta.color;
 	    var items = graphThreatsForFocus(activeTier, focus);
+	    var tier = activeTier;
+	    var wanted = Math.min(Number(node.count) || 0, CATEGORY_SAMPLE_SIZE);
+	    if (!sampleState && items.length < wanted) {
+	      sampleState = "loading";
+	      loadGraphFocusPage(tier, focus).catch(function () { return false; }).then(function () {
+	        var stillOpen = overlay.classList.contains("open") && TM.node && TM.node.kind === "category" &&
+	          graphSameFocus(TM.node.focus, focus) && activeTier === tier;
+	        if (!stillOpen) return;
+	        openCategoryModal(node, graphThreatsForFocus(tier, focus).length ? "loaded" : "unavailable");
+	      });
+	    }
 	    var topSev = graphTopSeverity(items);
 	    var label = graphFocusLabel(focus) || node.label || meta.name;
 	    var renderMeta = graphRenderMeta[activeTier] || {};
@@ -5066,7 +5086,7 @@
 	    $("tm-body").innerHTML =
 	      '<div class="modal-desc">' + esc(CAT_SUMMARY[cat] || CAT_SUMMARY.other) + '</div>' +
 	      gridHTML(rows) +
-	      categoryThreatListHTML(items);
+	      categoryThreatListHTML(items, sampleState);
 	    overlay.classList.add("open");
 	    overlay.setAttribute("aria-hidden", "false");
 	  }
