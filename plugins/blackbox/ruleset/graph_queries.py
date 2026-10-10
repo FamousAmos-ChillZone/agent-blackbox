@@ -24,7 +24,6 @@ PREFIX blackbox: <urn:blackbox:>
 PREFIX bp: <urn:blackbox:p:>
 PREFIX schema: <http://schema.org/>
 """
-_VM_PARTITION_QUERY_LIMIT = 50_000
 _FORBIDDEN_IRI_CHARS = frozenset('<>"{}|^`\\\r\n\t')
 #: A wallet-namespaced graph id starts with its owner's address (lowercased here).
 _WALLET_ADDRESS = re.compile(r"0x[0-9a-f]{40}")
@@ -325,36 +324,6 @@ SELECT (COUNT(DISTINCT ?ka) AS ?assets) (SUM(?publicTriples) AS ?triples) WHERE 
   FILTER(STRSTARTS(STR(?assertionGraph), {json.dumps(vm_prefix)}))
 }}
 """
-
-
-def _partition_triples_sparql(graph_uri: str, *, after: str = "", limit: int = _VM_PARTITION_QUERY_LIMIT) -> str:
-    """Every triple of ONE verified partition, in threat order, after a cursor.
-
-    A plain scan of one asset's named graph — no joins, no DISTINCT, no OFFSET.
-    The joined query this replaces (one row per threat with ~27 OPTIONAL
-    columns over five partitions) exceeded DKG 10.0.21's 30 s store deadline on
-    a single asset even on a calm node, while this read returns the largest
-    asset (15,032 triples) in 1.7 s (KI-288/KI-289, bench v21 2026-10-06).
-    :mod:`.partitions` rebuilds the same rows from the triples.
-    """
-    return f"""SELECT ?threat ?p ?o
-WHERE {{
-  GRAPH <{graph_uri}> {{ ?threat ?p ?o }}
-  {_threat_cursor_filter(after)}
-}}
-ORDER BY STR(?threat) ?p ?o
-LIMIT {int(limit)}
-"""
-
-
-def _partition_triple_count_sparql(graph_uri: str) -> str:
-    """How many triples ONE verified partition holds — the check a read is held to.
-
-    A DKG node whose store is restarting answers queries with zero rows rather
-    than an error (bench native-c, 2026-10-06), so a read alone cannot tell an
-    empty or cut-short answer from the real content.
-    """
-    return f"SELECT (COUNT(*) AS ?n) WHERE {{ GRAPH <{graph_uri}> {{ ?threat ?p ?o }} }}"
 
 
 # ---------------------------------------------------------------------------

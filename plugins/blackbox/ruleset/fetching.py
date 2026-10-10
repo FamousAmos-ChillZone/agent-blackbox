@@ -133,6 +133,7 @@ def _verified_small_tier_rows(client: DkgClient, cg_id: str, vm_prefix: str,
     )
     if rows is None:
         return None
+    partitions.forget_cached_assets()   # the per-asset row cache these lanes replaced
     confirmed = set(listing.confirmed)
     return [row for row in rows if extract_binding(row.get("g")) in confirmed]
 
