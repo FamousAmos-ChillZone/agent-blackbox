@@ -1,0 +1,294 @@
+"""Live verified lookups (DKG-lookup B2/B3): the scope decides what counts, the
+store's triples go through the compiler's own builders, and a store that could
+not answer is never read as "clean"."""
+
+from __future__ import annotations
+
+import json
+import re
+from typing import Dict, List, Optional
+
+import pytest
+
+from plugins.blackbox.kernel.store import StoreAnswer, StoreClient
+from plugins.blackbox.ruleset import compiler, disk_cache, live
+from plugins.blackbox.ruleset.live import lookup as live_lookup
+
+TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+DP = "urn:defender:p:"
+BP = "urn:blackbox:p:"
+SCHEMA = "http://schema.org/"
+CG = "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"
+VM = f"did:dkg:context-graph:{CG}/_verifiable_memory/0x37b1fdfd134e2b17583bcbdd3034f91504cd9c70/"
+PART_A, PART_B = f"{VM}212", f"{VM}17"
+FOREIGN = "did:dkg:context-graph:0xD96E82064ce8A7fA25ba0d9Ca8319fF87A2272fd/community-curation-1003"
+
+
+def _dep(subject, pkg, ver, eco="npm", severity="critical", kind="malware"):
+    return [
+        (subject, TYPE, "urn:defender:DependencySignal"),
+        (subject, f"{DP}package", f'"{pkg}"'), (subject, f"{DP}ecosystem", f'"{eco}"'),
+        (subject, f"{DP}version", f'"{ver}"'), (subject, f"{DP}severity", f'"{severity}"'),
+        (subject, f"{DP}kind", f'"{kind}"'), (subject, f"{SCHEMA}name", f'"{pkg}@{ver}"'),
+    ]
+
+
+def _ioc(subject, value, ioc_type="domain", severity="high"):
+    return [
+        (subject, TYPE, "urn:defender:IocSignal"), (subject, f"{DP}value", f'"{value}"'),
+        (subject, f"{DP}iocType", f'"{ioc_type}"'), (subject, f"{DP}severity", f'"{severity}"'),
+    ]
+
+
+def _observation(subject, value, canonical_type="ip", lifecycle="active"):
+    return [
+        (subject, TYPE, "urn:blackbox:SourceObservation"), (subject, f"{BP}normalizedValue", f'"{value}"'),
+        (subject, f"{BP}canonicalType", f'"{canonical_type}"'), (subject, f"{BP}lifecycleStatus", f'"{lifecycle}"'),
+        (subject, f"{BP}provenanceJson", json.dumps(json.dumps({"severity": "medium"}))),
+    ]
+
+
+class FakeStore(StoreClient):
+    """A store holding named-graph triples; answers the lookup's VALUES queries
+    by matching literals, so the SPARQL shape itself is exercised a little."""
+
+    def __init__(self, graphs: Dict[str, List[tuple]], *, fail: Optional[str] = None) -> None:
+        super().__init__("http://127.0.0.1:7878/query")
+        self.graphs = graphs
+        self.fail = fail
+        self.queries: List[str] = []
+
+    def select(self, sparql: str, *, timeout=None) -> StoreAnswer:
+        self.queries.append(sparql)
+        if self.fail:
+            return StoreAnswer(None, self.fail)
+        wanted = set(re.findall(r'"((?:[^"\\]|\\.)*)"', sparql.split("GRAPH", 1)[0]))
+        rows = []
+        for graph, triples in self.graphs.items():
+            subjects = {s for s, p, o in triples
+                        if p in (f"{DP}package", f"{DP}value", f"{BP}normalizedValue") and o.strip('"') in wanted}
+            for s, p, o in triples:
+                if s in subjects:
+                    rows.append({"g": graph, "t": s, "p": p, "o": o})
+        return StoreAnswer(rows)
+
+
+GRAPHS = {
+    PART_A: _dep("urn:defender:signal:a1", "wallet-security-checker", "2.0.3")
+            + _dep("urn:defender:signal:a2", "AVNjs", "*", severity="high")
+            + _ioc("urn:defender:signal:a3", "loader.example"),
+    PART_B: _observation("urn:defender:signal:b1", "203.0.113.9")
+            + _dep("urn:defender:signal:b2", "suppressed-pkg", "1.0.0")
+            + _dep("urn:defender:signal:b3", "revoked-pkg", "*"),
+    FOREIGN: _dep("urn:guardian:threat:x", "react", "18.3.1") + _ioc("urn:guardian:threat:y", "google.com"),
+    f"{VM}999-tentative": _dep("urn:defender:signal:t1", "lodash", "4.17.21"),
+}
+
+SCOPE = live.VerifiedScope(
+    context_graph_id=CG, store_url="http://127.0.0.1:7878/query",
+    assertion_graphs=frozenset({PART_A, PART_B}),
+    suppressed_subjects=frozenset({"urn:defender:signal:b2"}),
+    revoked_identifiers=frozenset({"dep:npm:revoked-pkg@*"}),
+    package_aliases={"npm:avnjs": ("AVNjs",)},
+    built_at=1.0,
+)
+
+
+@pytest.fixture
+def store():
+    return FakeStore(GRAPHS)
+
+
+def test_a_dependency_hit_is_the_rule_the_compiler_would_have_built(store):
+    answer = live.VerifiedLookup(SCOPE, store).dependencies([("npm", "wallet-security-checker", "2.0.3")])
+    rule = answer.rules["npm:wallet-security-checker@2.0.3"]
+    assert answer.outcome == live.HIT and answer.known
+    assert (rule["identifier"], rule["severity"], rule["kind"], rule["source"]) == (
+        "dep:npm:wallet-security-checker@2.0.3", "critical", "malware", "public")
+    # byte-identical to a compile of the same triples
+    from plugins.blackbox.ruleset.partitions import rows_from_triples
+    compiled = compiler.build_from_rows(rows_from_triples(PART_A, GRAPHS[PART_A]))
+    assert compiled.dependency["npm:wallet-security-checker@2.0.3"] == rule
+
+
+def test_a_mixed_case_stored_name_is_found_through_its_alias(store):
+    answer = live.VerifiedLookup(SCOPE, store).dependencies([("npm", "avnjs", "*")])
+    assert "npm:avnjs@*" in answer.rules
+    assert '"AVNjs"' in store.queries[0] and '"avnjs"' in store.queries[0]
+
+
+def test_the_untrusted_name_enters_the_query_only_as_an_escaped_literal(store):
+    hostile = 'x" } } UNION { ?t ?p ?o } #'
+    live.VerifiedLookup(SCOPE, store).dependencies([("npm", hostile, "1.0")])
+    query = store.queries[0]
+    assert '"x\\" } } union { ?t ?p ?o } #"' in query.lower()
+    assert query.count("GRAPH") == 1
+
+
+def test_rows_from_a_graph_outside_the_scope_never_become_public_rules(store):
+    lookup = live.VerifiedLookup(SCOPE, store)
+    assert lookup.dependencies([("npm", "react", "18.3.1")]).outcome == live.CLEAN
+    assert lookup.dependencies([("npm", "lodash", "4.17.21")]).outcome == live.CLEAN   # tentative asset
+    assert lookup.iocs(["ioc:domain:google.com"]).rules == {}
+
+
+def test_suppressed_subjects_and_revoked_identifiers_are_withdrawn(store):
+    lookup = live.VerifiedLookup(SCOPE, store)
+    assert lookup.dependencies([("npm", "suppressed-pkg", "1.0.0")]).rules == {}
+    assert lookup.dependencies([("npm", "revoked-pkg", "*")]).rules == {}
+
+
+def test_ioc_hits_cover_signals_and_active_observations(store):
+    answer = live.VerifiedLookup(SCOPE, store).iocs(
+        ["ioc:domain:loader.example", "ioc:ip:203.0.113.9", "ioc:domain:clean.example"])
+    assert set(answer.rules) == {"ioc:domain:loader.example", "ioc:ip:203.0.113.9"}
+    assert answer.rules["ioc:ip:203.0.113.9"]["severity"] == "medium"   # from the observation's provenance
+
+
+def test_a_store_failure_is_could_not_tell_not_clean():
+    answer = live.VerifiedLookup(SCOPE, FakeStore(GRAPHS, fail="timeout")).dependencies([("npm", "react", "1.0")])
+    assert answer.outcome == live.COULD_NOT_TELL and not answer.known and answer.reason == "timeout"
+
+
+def test_a_scope_that_is_not_ready_is_could_not_tell(store):
+    answer = live.VerifiedLookup(live.VerifiedScope(), store).iocs(["ioc:domain:loader.example"])
+    assert answer.outcome == live.COULD_NOT_TELL and store.queries == []
+
+
+def test_no_candidates_is_clean_without_asking_the_store(store):
+    assert live.VerifiedLookup(SCOPE, store).dependencies([]).outcome == live.CLEAN and store.queries == []
+
+
+def test_values_are_chunked_and_capped(store):
+    identifiers = [f"ioc:domain:h{i}.example" for i in range(live_lookup.MAX_VALUES + 50)]
+    live.VerifiedLookup(SCOPE, store).iocs(identifiers)
+    assert len(store.queries) == live_lookup.MAX_VALUES // live_lookup.CHUNK
+    assert all(query.count("LIMIT") == 1 for query in store.queries)
+
+
+# ------------------------------------------------------------------ the scope
+
+
+def test_the_scope_survives_the_ruleset_cache_round_trip():
+    rs = compiler.Ruleset(context_graph_id=CG, verified_scope=SCOPE, curator_revoked=frozenset({"dep:npm:revoked-pkg@*"}))
+    back = disk_cache._deserialize(json.loads(json.dumps(disk_cache._serialize(rs))))
+    assert back.verified_scope == SCOPE and back.curator_revoked == rs.curator_revoked
+    assert back.live_lookup() is not None
+
+
+def test_a_generation_without_a_scope_has_no_live_lookup():
+    rs = compiler.Ruleset(context_graph_id=CG)
+    assert rs.live_lookup() is None
+    rs.verified_scope = live.VerifiedScope(store_url="http://127.0.0.1:7878/query")   # no assets yet
+    assert rs.live_lookup() is None
+
+
+class _Node:
+    def __init__(self, status):
+        self._status = status
+
+    def status(self, timeout=None):
+        if isinstance(self._status, Exception):
+            raise self._status
+        return self._status
+
+
+def test_refresh_scope_reads_the_store_url_assets_and_aliases():
+    alias_store = FakeStore({})
+    alias_store.select = lambda sparql, timeout=None: StoreAnswer([   # type: ignore[method-assign]
+        {"g": PART_A, "eco": '"npm"', "pkg": '"AVNjs"'},
+        {"g": PART_A, "eco": '"pypi"', "pkg": '"Foo_Bar"'},
+        {"g": FOREIGN, "eco": '"npm"', "pkg": '"Outside"'},
+    ])
+    scope = live.refresh_scope(_Node({"storeUrl": "http://127.0.0.1:7878/query"}), CG, previous=None,
+                               confirmed=[PART_A, PART_B], suppressed={"urn:defender:signal:b2"},
+                               revoked={"dep:npm:revoked-pkg@*"}, store=alias_store)
+    assert scope.ready and scope.assertion_graphs == {PART_A, PART_B}
+    assert scope.package_aliases == {"npm:avnjs": ("AVNjs",), "pypi:foo-bar": ("Foo_Bar",)}
+    assert scope.spellings("npm", "AVNJS") == ("avnjs", "AVNjs")
+    assert scope.revoked_identifiers == {"dep:npm:revoked-pkg@*"} and scope.built_at > 0
+
+
+def test_refresh_scope_keeps_previous_parts_it_could_not_read():
+    from plugins.blackbox.kernel.dkg_client import DkgError
+    failing = FakeStore({}, fail="timeout")
+    scope = live.refresh_scope(_Node(DkgError("down")), CG, previous=SCOPE, confirmed=None, suppressed=None,
+                               revoked=set(), store=failing)
+    assert scope.store_url == SCOPE.store_url and scope.assertion_graphs == SCOPE.assertion_graphs
+    assert scope.suppressed_subjects == SCOPE.suppressed_subjects
+    assert scope.package_aliases == SCOPE.package_aliases
+    assert scope.revoked_identifiers == frozenset()   # a reduction always applies
+
+
+def test_refresh_scope_refuses_a_store_that_is_not_on_this_machine():
+    scope = live.refresh_scope(_Node({"storeUrl": "http://10.116.0.6:7878/query"}), CG, previous=None,
+                               confirmed=[PART_A], suppressed=set(), revoked=set(), store=FakeStore({}))
+    assert scope.store_url == "" and not scope.ready
+
+
+# ------------------------------------------------------- the refresh cycle builds it
+
+
+def test_scope_for_generation_uses_the_nodes_partition_listing(monkeypatch):
+    from plugins.blackbox.ruleset import fetching
+    from plugins.blackbox.ruleset.live import scope as scope_mod
+    monkeypatch.setattr(scope_mod.fetching, "confirmed_partitions",
+                        lambda client, cg: fetching.PartitionListing(frozenset({PART_A, PART_B}), (PART_A, PART_B)))
+    monkeypatch.setattr(scope_mod, "_read_aliases", lambda store, graphs: {})
+    scope = live.scope_for_generation(_Node({"storeUrl": "http://127.0.0.1:7878/query"}), CG,
+                                      previous=None, suppressed=set(), revoked=set())
+    assert scope is not None and scope.ready and scope.assertion_graphs == {PART_A, PART_B}
+
+
+def test_scope_for_generation_keeps_the_previous_scope_when_the_listing_fails(monkeypatch):
+    from plugins.blackbox.ruleset.live import scope as scope_mod
+    monkeypatch.setattr(scope_mod.fetching, "confirmed_partitions", lambda client, cg: None)
+    monkeypatch.setattr(scope_mod, "_read_aliases", lambda store, graphs: None)
+    scope = live.scope_for_generation(_Node({"storeUrl": "http://127.0.0.1:7878/query"}), CG,
+                                      previous=SCOPE, suppressed=None, revoked=SCOPE.revoked_identifiers)
+    assert scope is not None and scope.assertion_graphs == SCOPE.assertion_graphs
+
+
+def test_a_refresh_writes_a_ready_scope_into_the_cache_on_both_paths(monkeypatch, tmp_path):
+    """A fresh compile and a kept last-good generation both carry the scope."""
+    from plugins.blackbox.kernel import constants
+    from plugins.blackbox.kernel.config import BlackboxConfig
+    from plugins.blackbox.ruleset import fetching, refresh_cycle
+    from plugins.blackbox.ruleset.live import scope as scope_mod
+    monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
+    monkeypatch.setattr(refresh_cycle, "_memory", refresh_cycle._new_memory())
+    monkeypatch.setattr(scope_mod, "_read_aliases", lambda store, graphs: {})
+    listing = [fetching.PartitionListing(frozenset({PART_A}), (PART_A,))]
+    monkeypatch.setattr(scope_mod.fetching, "confirmed_partitions", lambda client, cg: listing[0])
+    from plugins.blackbox.ruleset.partitions import rows_from_triples
+    public_rows = [rows_from_triples(PART_A, _dep("urn:defender:signal:a1", "evil-pkg", "1.0.0"))]
+    monkeypatch.setattr(refresh_cycle.fetching, "fetch_tier", lambda client, cg, view, **kw: public_rows[0])
+    monkeypatch.setattr(refresh_cycle.curator_tier, "apply_curator_tier", lambda rs, client, cfg: 0)
+
+    class Client:
+        def status(self, timeout=None):
+            return {"storeUrl": "http://127.0.0.1:7878/query"}
+
+    cfg = BlackboxConfig(context_graph_id=CG, community_graph_id="")
+    rs = refresh_cycle.refresh(cfg, Client(), force_query=True)
+    assert rs.verified_scope is not None and rs.verified_scope.assertion_graphs == {PART_A}
+    assert disk_cache._read_cache().verified_scope == rs.verified_scope
+
+    # the node now confirms a second asset but answers the read empty: last-good is kept, scope grows
+    listing[0] = fetching.PartitionListing(frozenset({PART_A, PART_B}), (PART_A, PART_B))
+    public_rows[0] = []
+    kept = refresh_cycle.refresh(cfg, Client())
+    assert "npm:evil-pkg@1.0.0" in kept.dependency
+    assert kept.verified_scope.assertion_graphs == {PART_A, PART_B}
+
+
+def test_scope_for_generation_reuses_the_listing_the_refresh_already_read(monkeypatch):
+    from plugins.blackbox.ruleset import fetching
+    from plugins.blackbox.ruleset.live import scope as scope_mod
+    monkeypatch.setattr(scope_mod.fetching, "confirmed_partitions",
+                        lambda client, cg: pytest.fail("the _meta listing must not be read twice per refresh"))
+    monkeypatch.setattr(scope_mod, "_read_aliases", lambda store, graphs: {})
+    listing = fetching.PartitionListing(frozenset({PART_A}), (PART_A,))
+    scope = live.scope_for_generation(_Node({"storeUrl": "http://127.0.0.1:7878/query"}), CG, previous=None,
+                                      suppressed=set(), revoked=set(), listing=listing)
+    assert scope is not None and scope.assertion_graphs == {PART_A}

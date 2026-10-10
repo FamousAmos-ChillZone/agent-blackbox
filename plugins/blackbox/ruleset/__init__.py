@@ -15,6 +15,8 @@ and serves it to the hot path. Callers use this surface only:
 * :func:`build_from_rows`, :func:`verified_identifiers`, :func:`fetch_tier` —
   compile / proof / paging entry points used by the dashboard and tests.
 * ``RulesetRefresh*`` — refresh outcomes callers branch on.
+* :mod:`.live` — the live verified lookups (DKG-lookup): ``rs.live_lookup()``
+  asks the node's local store at check time instead of a compiled dict.
 
 Internals: :mod:`.graph_queries` (SPARQL) → :mod:`.fetching` (paging) →
 :mod:`.row_adapters` + :mod:`.compiler` (rows → rules) → :mod:`.disk_cache` /
@@ -31,6 +33,7 @@ from __future__ import annotations
 from .compiler import Ruleset, build_from_rows, verified_identifiers
 from .errors import RulesetRefreshIncomplete, RulesetRefreshLockUnavailable, RulesetRefreshUnavailable
 from .fetching import fetch_tier
+from . import live
 from .partitions import DownloadTotals, verified_download_totals
 from .partitions import progress as verified_progress
 from .pulse_beat import pulse
@@ -45,6 +48,7 @@ __all__ = [
     "build_from_rows",
     "fetch_tier",
     "get",
+    "live",
     "peek",
     "pulse",
     "refresh",

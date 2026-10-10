@@ -13,12 +13,14 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, FrozenSet, Iterable, List, Optional
 from ..kernel import constants, threat_ids
 from . import anchors
 from ..kernel.dkg_client import DkgClient, extract_binding
+from ..kernel.store import StoreClient
 from . import graph_queries
 from . import row_adapters
+from . import live
 
 logger = logging.getLogger(__name__)
 
@@ -128,11 +130,29 @@ class Ruleset:
     #: after ``synced_at``. Set earlier while the graph is still arriving or came back empty (KI-288).
     refresh_due_at: float = 0.0
     context_graph_id: str = ""
+    #: DKG-lookup: what a live verified lookup may believe this generation (the
+    #: confirmed owner-pinned assets, suppressions, revocations, aliases, store
+    #: endpoint). ``None`` until the first refresh that built one.
+    verified_scope: Optional[live.VerifiedScope] = None
+    #: Identifiers the curator revoked as of this generation (Refine R2); the
+    #: scope carries them so a live lookup withdraws the same rules the compile did.
+    curator_revoked: FrozenSet[str] = frozenset()
+    #: Subjects a public CorrectionSignal suppressed in THIS compile (not persisted:
+    #: the scope keeps its own copy) — what the live scope withdraws too.
+    suppressed_subjects: FrozenSet[str] = frozenset()
     _graph_entries_cache: Dict[str, List[Dict[str, Any]]] = field(
         default_factory=dict,
         init=False,
         repr=False,
     )
+
+    def live_lookup(self) -> Optional[live.VerifiedLookup]:
+        """The live verified lookup for this generation, or None when no usable
+        scope has been built yet (the compiled dicts then stand alone)."""
+        scope = self.verified_scope
+        if scope is None or not scope.ready:
+            return None
+        return live.VerifiedLookup(scope, StoreClient(scope.store_url))
 
     def refresh_due(self, interval: float) -> float:
         """Epoch seconds when this generation should be refreshed: its own early
@@ -271,10 +291,10 @@ def build_from_rows(rows: List[Dict[str, Any]], source: str = "public") -> Rules
     skill_seen: set = set()
     graph_seen: set = set()
     tagged_rows = [item if isinstance(item, tuple) else (item, source) for item in rows]
-    suppressed = suppressed_subjects(tagged_rows)
+    rs.suppressed_subjects = frozenset(suppressed_subjects(tagged_rows))
 
     for row, row_source in tagged_rows:
-        if extract_binding(row.get("threat")) in suppressed:
+        if extract_binding(row.get("threat")) in rs.suppressed_subjects:
             continue
         graph_entry = row_adapters._row_to_graph_entry(row, row_source)
         if graph_entry:

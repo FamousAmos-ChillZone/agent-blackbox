@@ -71,16 +71,16 @@ def fetch_tier(
     client: DkgClient,
     cg_id: str,
     view: str,
-    agent_address: Optional[str] = None,
+    agent_address: Optional[str] = None, listing: Optional[PartitionListing] = None,
 ) -> Optional[List[Dict[str, Any]]]:
     """Fully paginate one tier. Returns all rows, or ``None`` if the node errored.
 
     ``None`` (error) is distinct from ``[]`` (the tier is genuinely empty) so
     the caller can preserve a tier's last-good rules through a transient failure
-    instead of wiping them.
+    instead of wiping them. *listing*: the ``_meta`` listing when already read.
     """
     if view == constants.VIEW_VERIFIABLE_MEMORY:
-        listing = confirmed_partitions(client, cg_id)
+        listing = listing or confirmed_partitions(client, cg_id)
         if listing is None:
             return None
         data_graph = graph_queries._context_graph_data_uri(cg_id)
