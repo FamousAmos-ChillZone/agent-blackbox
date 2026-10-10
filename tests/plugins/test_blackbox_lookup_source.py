@@ -20,11 +20,13 @@ def test_lookup_status_names_each_state():
     assert sync_meter.lookup_status(None, _health(False))["state"] == "not-live"
     assert sync_meter.lookup_status(live.VerifiedScope(), _health(False))["state"] == "not-live"
     assert sync_meter.lookup_status(ready, _health(False)) == {
-        "state": "live", "text": "Verified checks are answered live from the graph on this node."}
+        "state": "live", "label": "Live from graph", "text": "Verified checks are answered live from the graph on this node."}
     paused = sync_meter.lookup_status(ready, _health(True))
+    assert paused["label"] == "Checks paused · graph down"
     assert paused["state"] == "paused" and "PAUSED" in paused["text"] and "timeout" in paused["text"] and "UTC" in paused["text"]
     indexed = live.VerifiedScope(**{**ready.__dict__, "fallback": "index"})
     fallback = sync_meter.lookup_status(indexed, _health(True, "http 503"))
+    assert fallback["label"] == "Local index · graph down"
     assert fallback["state"] == "fallback" and "local index" in fallback["text"] and "http 503" in fallback["text"]
 
 

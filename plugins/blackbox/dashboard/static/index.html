@@ -2858,7 +2858,7 @@
             <div class="vs-note" id="vs-note" aria-live="polite">Reading the node&hellip;</div>
             <!-- DKG-lookup: WHERE each check's verified answer came from — the graph store, the opt-in
                  local index while the store is down, or nowhere (checks paused). Never silent. -->
-            <div class="vs-lookups" id="vs-lookups" data-state="unknown" aria-live="polite"><span class="vs-lookups-mark" aria-hidden="true">&middot;</span><span id="vs-lookups-text">Checking where verified lookups are answered&hellip;</span></div>
+            <div class="vs-lookups" id="vs-lookups" data-state="unknown" aria-live="polite"><span class="vs-lookups-mark" aria-hidden="true">&middot;</span><span id="vs-lookups-text">Checking&hellip;</span></div>
             <div class="vs-bar-row" title="Verified assets your node has downloaded and verified, of every asset in the graph right now.">
               <span class="vs-bar-label">Downloaded</span>
               <div class="vs-bar"><div class="vs-fill" id="vs-fill-downloaded"></div></div>
@@ -3858,7 +3858,9 @@
     var state = (lk && lk.state) || "unknown";
     box.setAttribute("data-state", state);
     box.querySelector(".vs-lookups-mark").textContent = LOOKUP_MARKS[state] || "\u00B7";
-    vsSet("vs-lookups-text", (lk && lk.text) || "Checking where verified lookups are answered\u2026");
+    // The mark says it; the words are short. The full sentence is the hover (title).
+    vsSet("vs-lookups-text", (lk && lk.label) || "Checking\u2026");
+    box.title = (lk && lk.text) || "";
   }
 
   function loadSyncMeter() {

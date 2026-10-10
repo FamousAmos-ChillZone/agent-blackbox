@@ -71,7 +71,8 @@ class SyncMeter:
     percent_compiled: Optional[float]
     checked_at: str
     #: DKG-lookup: where verified answers come from right now — ``state`` ∈ live |
-    #: fallback | paused | not-live, ``text`` the sentence the panel shows (see :func:`lookup_status`).
+    #: fallback | paused | not-live, ``label`` the few words the panel shows next to its
+    #: mark, ``text`` the full sentence (the hover) — see :func:`lookup_status`.
     lookups: Dict[str, str] = field(default_factory=dict)
 
 
@@ -122,16 +123,20 @@ def lookup_status(scope: Any, health: Any, now: Optional[float] = None) -> Dict[
     actions pass unchecked by the verified graph. not-live: no scope yet (compiled rules only).
     """
     if scope is None or not getattr(scope, "ready", False):
-        return {"state": "not-live", "text": "Verified lookups are not live yet: the node has not reported its store."}
+        return {"state": "not-live", "label": "Not live yet",
+                "text": "Verified lookups are not live yet: the node has not reported its store."}
     if not getattr(health, "degraded", False):
-        return {"state": "live", "text": "Verified checks are answered live from the graph on this node."}
+        return {"state": "live", "label": "Live from graph",
+                "text": "Verified checks are answered live from the graph on this node."}
     since = time.strftime("%H:%M UTC", time.gmtime(float(getattr(health, "since", 0) or 0)))
     reason = getattr(health, "reason", "") or "the store did not answer"
     if getattr(scope, "fallback", "off") == "index":
-        return {"state": "fallback", "text": f"Graph store down since {since} ({reason}); verified checks are answered "
-                                             "from the local index until it is back."}
-    return {"state": "paused", "text": f"Graph store down since {since} ({reason}); verified checks are PAUSED — "
-                                       "actions pass unchecked by the verified graph until it answers again."}
+        return {"state": "fallback", "label": "Local index · graph down",
+                "text": f"Graph store down since {since} ({reason}); verified checks are answered "
+                        "from the local index until it is back."}
+    return {"state": "paused", "label": "Checks paused · graph down",
+            "text": f"Graph store down since {since} ({reason}); verified checks are PAUSED — "
+                    "actions pass unchecked by the verified graph until it answers again."}
 
 
 def verified_graph_still_arriving(cfg: Any) -> bool:
