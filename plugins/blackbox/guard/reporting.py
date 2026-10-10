@@ -81,7 +81,9 @@ def _report_and_audit(cfg: BlackboxConfig, event: str, findings: List[detection.
         # here so it bounds the KA independently of whether a sighting is sent.
         if client is not None:
             audit.mark_reported(identifier)
-            audit.write_private_audit_ka(client, cfg.context_graph_id, event, finding)
+            local_graph = audit.local_audit_graph(client)   # this node's own graph — the verified one refuses writes
+            if local_graph:
+                audit.write_private_audit_ka(client, local_graph, event, finding)
         allowed, why = policy.decide(finding, reporter)
         if not allowed:
             logger.debug("blackbox: community share skipped (%s): %s", why, identifier)

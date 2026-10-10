@@ -91,7 +91,7 @@ def _queue(args: argparse.Namespace) -> int:
     if ctx.compiled is None:
         print("No compiled ruleset available.")
         return 1
-    view = queue.delta_view(ctx.compiled.community, verified_identifiers(ctx.compiled))
+    view = queue.delta_view(ctx.compiled.community, verified_identifiers(ctx.compiled, ctx.compiled.community))
     print(f"NEW: {len(view.new)} · ALREADY VERIFIED (closed as duplicates): {len(view.already_verified)}"
           f" · UNLISTED-ONLY (stored, no lane): {len(view.unlisted_only)}"
           + ("" if ctx.manifest else " · no trusted key manifest: every author is unlisted"))
@@ -288,7 +288,7 @@ def _watch(args: argparse.Namespace) -> int:
         ctx = _ctx(args)   # KI-261: a fresh view every round (the curators' statements change between rounds)
         compiled = ctx.compiled
         if compiled is not None:
-            announced = watcher.poll(queue.delta_view(compiled.community, verified_identifiers(compiled)), sink)
+            announced = watcher.poll(queue.delta_view(compiled.community, verified_identifiers(compiled, compiled.community)), sink)
             if announced:
                 print(f"announced {len(announced)} new threat(s): " + ", ".join(_term(a, 60) for a in announced[:10]))
         delivered = alarms.poll(verbs.curator_alarms(ctx, compiled, today=_today(), now=time.time()), sink)   # R10b

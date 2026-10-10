@@ -70,14 +70,11 @@ for (const vp of viewports) {
 
   const checks = [await overflow("landing")];
   const sections = {};
-  for (const id of ["health-strip", "community-statements-body", "my-reports-body", "tab-community",
-                    "stat-community-count", "stat-sharing-state", "cg-summary",
-                    "vs-pct", "vs-chip", "vs-val-downloaded", "vs-note"]) sections[id] = await sectionText(id);
-  // The community panel's own tabs: each pane renders without page overflow.
-  for (const pane of ["statements", "reports", "agents"]) {
-    const tab = page.locator(`#cg-tab-${pane}`);
-    if (await tab.count()) { await tab.click(); await page.waitForTimeout(300); checks.push(await overflow(`community-${pane}`)); }
-  }
+  for (const id of ["health-strip", "tab-community", "stat-community-count", "stat-sharing-state",
+                    "vs-pct", "vs-chip", "vs-val-downloaded", "vs-note", "vs-lookups"]) sections[id] = await sectionText(id);
+  // The Community graph section and its details window were removed (Amos, 2026-10-10):
+  // community threats live in the Threat graph's Community tab and the two summary tiles.
+  sections["community-panel-present"] = (await page.locator("#community-panel").count()) > 0;
   const spillingCells = await cellSqueeze();
   const communityTab = page.locator("#tab-community");
   if (await communityTab.count()) {

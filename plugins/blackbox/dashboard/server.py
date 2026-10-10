@@ -30,9 +30,10 @@ from typing import Any, Dict, List, Set, Tuple
 
 from ..sync import state as sync_state
 from ..sync import read_durable_progress
-from . import community_routes, lifecycle, sync_meter, sync_timing
+from . import community_routes, graph_pages, lifecycle, sync_meter, sync_timing
+from .graph_pages import _balanced_graph_entries, _graph_entries  # noqa: F401 — moved there; tests reach them here
 from .network_sync import network_sync_argv as _network_sync_argv
-from .node_probe import node_sync_probe
+from .node_probe import NodeLiveness, RepeatGate, node_sync_probe
 from .sync_labels import _community_progress, _sync_label, not_subscribed_activity
 from .threat_detail_fields import DETAIL_FIELDS
 from .safe_payloads import graph_tier_item, safe_identifier, safe_text
@@ -40,6 +41,7 @@ from .safe_payloads import graph_tier_item, safe_identifier, safe_text
 logger = logging.getLogger(__name__)
 
 _RESCAN_INTERVAL_SEC = 5.0
+_SLOW_NODE_READ_SEC = 10.0   # a cached node read slower than this is logged (KI-335)
 _RECONCILE_INTERVAL_SEC = 60.0
 _RULESET_EMPTY_RETRY_SEC = 10.0
 _RULESET_MIN_RETRY_SEC = 5.0
@@ -154,61 +156,6 @@ def _graph_source_count(rs: Any, source: str) -> int:
     if callable(counter):
         return int(counter(source) or 0)
     return int(rs.source_count(source) or 0)
-
-
-def _graph_entries(rs: Any, source: str) -> List[Dict[str, Any]]:
-    getter = getattr(rs, "graph_entries", None)
-    if callable(getter):
-        entries = getter(source) or []
-        return entries if isinstance(entries, list) else list(entries)
-    return [
-        {
-            "identifier": rule.get("identifier"),
-            "category": category,
-            "severity": str(rule.get("severity") or "info").lower(),
-            "name": rule.get("name") or "",
-            "subject": rule.get("subject") or "",
-            "source": source,
-        }
-        for category, rule in rs.iter_rules()
-        if rule.get("source") == source
-    ]
-
-
-def _balanced_graph_entries(
-    entries: List[Dict[str, Any]], minimum_per_category: int = 24
-) -> List[Dict[str, Any]]:
-    """Front-load a small sample of every populated threat category."""
-    category_order = (
-        "dependency", "injection", "escalation", "fileaccess",
-        "skill", "secret", "ioc", "other",
-    )
-    buckets: Dict[str, List[Dict[str, Any]]] = {key: [] for key in category_order}
-    for entry in entries:
-        key = str(entry.get("category") or "other").lower()
-        buckets.setdefault(key, []).append(entry)
-
-    front: List[Dict[str, Any]] = []
-    skipped: Dict[str, int] = {}
-    ordered_keys = category_order + tuple(k for k in buckets if k not in category_order)
-    for key in ordered_keys:
-        skipped[key] = min(len(buckets.get(key, [])), minimum_per_category)
-    for index in range(minimum_per_category):
-        for key in ordered_keys:
-            bucket = buckets.get(key, [])
-            if index < len(bucket):
-                front.append(bucket[index])
-
-    rest: List[Dict[str, Any]] = []
-    consumed: Dict[str, int] = {}
-    for entry in entries:
-        key = str(entry.get("category") or "other").lower()
-        used = consumed.get(key, 0)
-        if used < skipped.get(key, 0):
-            consumed[key] = used + 1
-            continue
-        rest.append(entry)
-    return front + rest
 
 
 def _ruleset_sync_counts(rs: Any) -> Dict[str, int]:
@@ -1201,41 +1148,16 @@ def create_app(*, manage_blackbox: bool = False):
     # the node is queried at most once per TTL per key, and graph data changes
     # slowly enough that ~20s of staleness is invisible.
     _SWR_TTL = 20.0         # refresh a cached node read at most this often
-    _REACH_TTL = 15.0       # re-probe node liveness at most this often
-    # Per-route liveness timeout; /api/status can take a couple seconds under
-    # load, and a probe that's too tight would wrongly report a busy node as down.
-    _REACH_TIMEOUT = 5.0
+    # Node liveness: cached, debounced, and its outages logged (KI-335). The
+    # 5 s check timeout stays generous — /api/status can take a couple of
+    # seconds under load, and the debounce absorbs one check that still misses.
+    _liveness = NodeLiveness(lambda cfg, timeout: DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home).reachable(timeout=timeout),
+                             ttl=15.0, timeout=5.0)
+    _node_reachable = _liveness.reachable
+    _node_read_log = RepeatGate()
     _swr_lock = threading.Lock()
     _swr_state: Dict[str, Dict[str, Any]] = {}   # key -> {"val", "ts"}
     _swr_busy: Set[str] = set()
-    _reach: Dict[str, Any] = {"ok": False, "ts": -1e9, "busy": False}
-
-    def _node_reachable(cfg: Any) -> bool:
-        """Cached DKG node liveness, refreshed off the request path.
-
-        Returns the last probe result immediately (``False`` until the first
-        lands) and spawns a background re-probe past ``_REACH_TTL``. Never
-        blocks the caller, so gating a node query on this is free."""
-        now = time.monotonic()
-        with _swr_lock:
-            stale = (now - _reach["ts"]) >= _REACH_TTL
-            spawn = stale and not _reach["busy"]
-            if spawn:
-                _reach["busy"] = True
-            cur = bool(_reach["ok"])
-        if spawn:
-            def _probe() -> None:
-                ok = False
-                try:
-                    ok = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home).reachable(timeout=_REACH_TIMEOUT)
-                except Exception:  # pragma: no cover - fail open
-                    ok = False
-                with _swr_lock:
-                    _reach["ok"] = ok
-                    _reach["ts"] = time.monotonic()
-                    _reach["busy"] = False
-            threading.Thread(target=_probe, name="blackbox-reach", daemon=True).start()
-        return cur
 
     def _swr(key: str, producer: Any, default: Any, ttl: float = _SWR_TTL) -> Any:
         """Return the cached value for ``key`` instantly, refreshing in the
@@ -1251,11 +1173,16 @@ def create_app(*, manage_blackbox: bool = False):
                 _swr_busy.add(key)
         if spawn:
             def _run() -> None:
+                started = time.monotonic()
                 try:
                     val = producer()
-                except Exception as exc:  # pragma: no cover - fail open
-                    logger.debug("blackbox dashboard: swr %s failed: %s", key, exc)
+                except Exception as exc:  # fail open; logged at most once per 5 min per key
+                    if _node_read_log.due(key):
+                        logger.warning("blackbox dashboard: node read %s failed: %s", key, exc)
                     val = None
+                elapsed = time.monotonic() - started
+                if elapsed > _SLOW_NODE_READ_SEC and _node_read_log.due("slow:" + key):
+                    logger.warning("blackbox dashboard: node read %s took %.1f s", key, elapsed)
                 with _swr_lock:
                     if val is not None:
                         _swr_state[key] = {"val": val, "ts": time.monotonic()}
@@ -1931,28 +1858,7 @@ def create_app(*, manage_blackbox: bool = False):
                 ]
             elif not wanted_category and not wanted_ecosystem:
                 all_threats = _balanced_graph_entries(all_threats)
-            # Counts describe the complete filtered result, never the rendered
-            # page.  The dashboard can therefore show the real threat magnitude
-            # on category/ecosystem hubs while progressively loading leaves.
-            category_totals: Dict[str, int] = {}
-            ecosystem_totals: Dict[str, int] = {}
-            for item in all_threats:
-                item_category = str(item.get("category") or "other").lower()
-                category_totals[item_category] = category_totals.get(item_category, 0) + 1
-                if item_category == "dependency":
-                    parts = str(item.get("identifier") or "").split(":")
-                    ecosystem_name = (parts[1] if len(parts) > 1 else "other").lower()
-                    ecosystem_totals[ecosystem_name] = ecosystem_totals.get(ecosystem_name, 0) + 1
-            return {
-                "tier": tier,
-                "threats": all_threats[offset:offset + limit],
-                "total": len(all_threats),
-                "category_totals": category_totals,
-                "ecosystem_totals": ecosystem_totals,
-                "offset": offset,
-                "limit": limit,
-                "partial": offset + limit < len(all_threats),
-            }
+            return graph_pages.page_response(rs, tier, all_threats, needle=needle, category=wanted_category, ecosystem=wanted_ecosystem, offset=offset, limit=limit)
 
         # The local tier reads the live working-memory view and is served
         # stale-while-revalidate.
@@ -1962,14 +1868,10 @@ def create_app(*, manage_blackbox: bool = False):
             seen: "Dict[str, Dict[str, Any]]" = {}
             try:
                 client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-                identity = client.agent_identity()
-                agent_address = str(identity.get("agentAddress") or "")
-                rows = ruleset.fetch_tier(
-                    client,
-                    cfg.context_graph_id,
-                    view,
-                    agent_address=agent_address,
-                ) or []
+                agent_address = str(client.agent_identity().get("agentAddress") or "")
+                # This machine's private audit records live in its OWN graph (audit.local_graph).
+                local_graph = audit.local_audit_graph(client) or cfg.context_graph_id
+                rows = ruleset.fetch_local_records(client, local_graph, agent_address) or []
                 local_rules = ruleset.build_from_rows(rows, source="local")
                 for rule in local_rules.graph_entries("local"):
                     identifier = str(rule.get("identifier") or "")
@@ -2025,23 +1927,7 @@ def create_app(*, manage_blackbox: bool = False):
             "references": [],
             "found": False,
         }
-        cached_rule: Dict[str, Any] = {}
-        try:
-            for _cat, rule in ruleset.peek(cfg).iter_rules():
-                if rule.get("source") == tier and rule.get("identifier") == identifier:
-                    cached_rule = rule
-                    break
-        except Exception:
-            pass
-        if not cached_rule:
-            try:
-                cached_rule = next(
-                    item
-                    for item in _graph_entries(ruleset.peek(cfg), tier)
-                    if item.get("identifier") == identifier
-                )
-            except Exception:
-                cached_rule = {}
+        cached_rule = graph_pages.rule_for(ruleset.peek(cfg), tier, identifier)
         if cached_rule:
             detail.update({
                 key: value
@@ -2071,12 +1957,8 @@ def create_app(*, manage_blackbox: bool = False):
                 if tier == "local":
                     identity = client.agent_identity()
                     agent_address = str(identity.get("agentAddress") or "")
-                rows = client.query(
-                    lookup,
-                    cfg.context_graph_id,
-                    view=view,
-                    agent_address=agent_address,
-                )
+                graph = (audit.local_audit_graph(client) or cfg.context_graph_id) if tier == "local" else cfg.context_graph_id
+                rows = client.query(lookup, graph, view=view, agent_address=agent_address)
             subjects: Dict[str, List[Any]] = {}
             for row in rows:
                 subjects.setdefault(extract_binding(row.get("t")), []).append(
@@ -2118,16 +2000,9 @@ def create_app(*, manage_blackbox: bool = False):
         def _warm() -> None:
             try:
                 cfg = load_blackbox_config()
-                # Probe liveness synchronously first and seed the cache, so the
-                # reads below see the node's true state, not the cold default.
-                try:
-                    ok = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home).reachable(timeout=_REACH_TIMEOUT)
-                except Exception:  # pragma: no cover - fail open
-                    ok = False
-                with _swr_lock:
-                    _reach["ok"] = ok
-                    _reach["ts"] = time.monotonic()
-                    _reach["busy"] = False
+                # Check liveness synchronously first, so the reads below see
+                # the node's true state, not the cold default.
+                _liveness.check_now(cfg)
                 # Touch each cached endpoint to warm it. Two passes: the first
                 # spawns the refresh, the second lands it.
                 for _ in range(2):

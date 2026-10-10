@@ -105,11 +105,11 @@ def test_the_snapshot_carries_the_section_12_numbers_and_the_file_is_bounded(tmp
 
 def test_the_refresh_logs_a_snapshot_only_in_shadow_mode(monkeypatch):
     written = []
-    monkeypatch.setattr(refresh_cycle.community.shadow, "write_snapshot", lambda snap: written.append(snap))
+    monkeypatch.setattr(community_tier.community.shadow, "write_snapshot", lambda snap: written.append(snap))
     rs = compiler.Ruleset(synced_at=NOW)
-    refresh_cycle._record_shadow_metrics(rs, BlackboxConfig(community_graph_id=GRAPH))
+    community_tier.record_shadow_metrics(rs, BlackboxConfig(community_graph_id=GRAPH))
     assert written == []
-    refresh_cycle._record_shadow_metrics(rs, BlackboxConfig(community_graph_id=GRAPH, community_shadow=True))
+    community_tier.record_shadow_metrics(rs, BlackboxConfig(community_graph_id=GRAPH, community_shadow=True))
     assert len(written) == 1 and written[0].community_total == 0
 
 

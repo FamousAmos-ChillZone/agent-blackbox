@@ -18,6 +18,7 @@ imports a feature (enforced by tests/plugins/test_blackbox_architecture.py).
 * :mod:`.threat_ids` — deterministic threat identifiers and URIs.
 * :mod:`.rdf_terms` — N-Triples terms, ``Quad``, literal size caps.
 * :mod:`.sparql_text` — SPARQL in and out: THE string escaper, the row ceiling, and decoding the daemon's result cells and rows.
+* :mod:`.store` — read-only SELECTs against the node's LOCAL triple store (loopback only, hard timeout, three-outcome answer): the hot path's exact rule lookups.
 * :mod:`.yaml_files` — safe YAML config read/write (atomic).
 * :mod:`.display_safety` — terminal-safe printing of untrusted text.
 

@@ -1,6 +1,8 @@
 """Detection — the CHECK hot path: is this tool call / model request a threat?
 
-Pure matchers over the compiled ruleset plus the two advisory look-asides.
+Pure matchers over the ruleset — public dependency / IOC rules are asked of the
+ruleset object (a live lookup against the node's local store, DKG-lookup B4),
+the small tiers are scanned from its compiled lists — plus two advisory look-asides.
 Callers use this package's surface only:
 
 * ``Finding`` and the ``detect_*`` / ``discover_*`` functions (from
@@ -27,6 +29,7 @@ from .content_scanners import SKILL_DANGER_SHAPES
 from .osv import DEPENDENCY_ECOSYSTEMS, advisory_kind
 from .reviewer_setup import cmd_setup_llm
 from .detectors import (
+    ANSWERED_BY_FALLBACK,
     Finding,
     detect_all,
     detect_custom_fileaccess,
@@ -51,6 +54,7 @@ __all__ = [
     "SENSITIVE_PATH_CATEGORIES",
     "SHELL_TOOLS",
     "SKILL_DANGER_SHAPES",
+    "ANSWERED_BY_FALLBACK",
     "Finding",
     "skill_install_arg",
     "cmd_setup_llm",

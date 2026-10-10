@@ -150,7 +150,7 @@ def curator_alarms(ctx: CurateContext, compiled: Optional[Any], *, today: str, n
     lane_depth: Dict[int, int] = {}
     lane_over: Dict[int, int] = {}
     if compiled is not None:
-        view = queue_mod.delta_view(compiled.community, verified_identifiers(compiled))
+        view = queue_mod.delta_view(compiled.community, verified_identifiers(compiled, compiled.community))
         for item in view.new:
             lane_depth[item.lane.value] = lane_depth.get(item.lane.value, 0) + 1
             first_seen = float((compiled.community.get(item.identifier) or {}).get("firstSeen") or now)

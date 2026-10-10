@@ -618,6 +618,13 @@
   .vs-panel[data-state="syncing"] .vs-chip { border-color: var(--signal); color: var(--signal); background: var(--signal-soft); }
   .vs-panel[data-state="synced"] .vs-chip { border-color: var(--graph-mint); color: var(--graph-mint); }
   .vs-note { font-size: 13px; color: var(--muted-strong); overflow-wrap: anywhere; }
+  .vs-lookups { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--muted-strong); overflow-wrap: anywhere; }
+  .vs-lookups-mark { font-weight: 700; flex: 0 0 auto; }
+  .vs-lookups[data-state="live"] .vs-lookups-mark { color: var(--graph-mint); }
+  .vs-lookups[data-state="fallback"] { color: var(--text); }
+  .vs-lookups[data-state="fallback"] .vs-lookups-mark { color: var(--signal); }
+  .vs-lookups[data-state="paused"] { color: var(--text); }
+  .vs-lookups[data-state="paused"] .vs-lookups-mark { color: var(--red, #e5484d); }
   .vs-bar-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; align-items: center; gap: 12px; }
   .vs-bar-label { font-family: var(--mono-font); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
   .vs-bar { height: 8px; border-radius: 999px; background: var(--elevated); border: 1px solid var(--border); overflow: hidden; }
@@ -638,20 +645,6 @@
     .vs-ring { align-self: center; }
     .vs-bar-row { grid-template-columns: minmax(0, 1fr) auto; }
     .vs-bar-row .vs-bar { grid-column: 1 / -1; grid-row: 2; }
-  }
-  /* Community Curation C10: the trust panel */
-  .trust-authorities { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; padding: 14px; }
-  .trust-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background: var(--panel); min-width: 0; }
-  .trust-card h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--text); }
-  .trust-card .t-state { font-family: var(--mono-font); font-size: 11px; color: var(--muted); margin-bottom: 8px; overflow-wrap: anywhere; }
-  .trust-card .t-state.warn { color: var(--signal); }
-  .trust-card .t-beat { font-family: var(--mono-font); font-size: 11px; color: var(--text); overflow-wrap: anywhere; }
-  .trust-card .t-beat.silent { color: var(--muted); }
-  #trust-reporters-body td, #trust-confirmed-body td { overflow-wrap: anywhere; }
-  /* At phone width the table header is hidden and cells stack: each trust cell then carries its own label. */
-  .t-label { display: none; }
-  @media (max-width: 520px) {
-    .t-label { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); margin-bottom: 2px; }
   }
   .banner-inner .b-icon {
     flex-shrink: 0; width: 16px; height: 16px;
@@ -989,44 +982,6 @@
     color: var(--signal);
     border-color: color-mix(in srgb, var(--signal) 46%, transparent);
     background: var(--signal-soft);
-  }
-
-  /* ---------- Community graph panel ---------- */
-  .cg-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
-  .cg-chip { display: inline-flex; align-items: baseline; gap: 7px; padding: 7px 11px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel); font-family: var(--mono-font); font-size: 11px; color: var(--muted); }
-  .cg-chip strong { color: var(--text); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .cg-chip.on strong { color: var(--text); }
-  .cg-chip.warn { border-color: color-mix(in srgb, var(--signal) 40%, var(--border)); }
-  .cg-chip.warn strong { color: var(--signal); }
-  .cg-panel { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
-  .cg-tabs { align-self: flex-start; flex-wrap: wrap; }
-  .cg-note { font-size: 12px; color: var(--muted); line-height: 1.5; }
-  .cg-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
-  .cg-list > .empty { padding: 20px; }
-  .cg-row { display: grid; grid-template-columns: minmax(96px, auto) minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--border); }
-  .cg-row:first-child, .cg-group:first-child > summary { border-top: 0; }
-  .cg-kind { font-family: var(--mono-font); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-  .cg-ident { font-family: var(--mono-font); font-size: 12px; color: var(--text); overflow-wrap: anywhere; min-width: 0; }
-  .cg-sub { display: block; font-family: var(--body-font, inherit); font-size: 11.5px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
-  .cg-when { font-family: var(--mono-font); font-size: 11px; color: var(--muted); white-space: nowrap; text-align: right; }
-  .cg-group > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: minmax(96px, auto) minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--border); }
-  .cg-group > summary::-webkit-details-marker { display: none; }
-  .cg-group > summary:focus-visible, .cg-more:focus-visible, .cg-tabs .tab:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
-  .cg-group > summary .cg-ident::before { content: "\25B8  "; color: var(--muted); }
-  .cg-group[open] > summary .cg-ident::before { content: "\25BE  "; }
-  .cg-idents { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 12px 12px; }
-  .cg-idents span { font-family: var(--mono-font); font-size: 11px; padding: 2px 7px; border: 1px solid var(--border); border-radius: 2px; color: var(--muted-strong); overflow-wrap: anywhere; max-width: 100%; }
-  .cg-stage { font-family: var(--mono-font); font-size: 10.5px; padding: 2px 7px; border-radius: 2px; border: 1px solid var(--border); color: var(--muted-strong); white-space: nowrap; }
-  .cg-stage.flag, .cg-stage.corroborated { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 45%, transparent); background: var(--signal-soft); }
-  .cg-sends { font-family: var(--mono-font); font-size: 10.5px; color: var(--muted); }
-  .cg-sends .bad { color: var(--signal); }
-  .cg-more { align-self: flex-start; appearance: none; font: inherit; font-family: var(--mono-font); font-size: 11px; color: var(--text); background: var(--elevated); border: 1px solid var(--border); border-radius: 3px; padding: 6px 12px; cursor: pointer; }
-  @media (max-width: 640px) {
-    /* one compact row of tabs (the page's phone rule stacks the tier tabs) */
-    .tabs.cg-tabs { display: flex; flex-direction: row; flex-wrap: nowrap; align-self: stretch; overflow-x: auto; }
-    .tabs.cg-tabs .tab { flex: 1 1 auto; flex-direction: row; justify-content: center; padding: 7px 8px; gap: 6px; white-space: nowrap; }
-    .cg-row, .cg-group > summary { grid-template-columns: minmax(0, 1fr) auto; }
-    .cg-row .cg-kind, .cg-group > summary .cg-kind { grid-column: 1 / -1; }
   }
 
   /* ---------- Threat graph (force-directed) ---------- */
@@ -2864,67 +2819,6 @@
       </div>
     </section>
 
-    <!-- Community graph: one panel (summary + agents / statements / my reports).
-         Replaces three full-height sections that grew to hundreds of rows. -->
-    <section class="section" id="community-panel" aria-label="Community graph">
-      <div class="section-head">
-        <div class="section-htext">
-          <h2>Community graph</h2>
-          <div class="section-note">Threats shared between Blackbox nodes through the DKG. Community reports flag; they never block. <span id="community-agents-note"></span></div>
-        </div>
-      </div>
-      <div class="cg-summary" id="cg-summary" aria-live="polite"></div>
-      <div class="panel cg-panel">
-        <div class="tabs cg-tabs" role="tablist" aria-label="Community graph views">
-          <button class="tab active" id="cg-tab-agents" role="tab" aria-selected="true" aria-controls="cg-pane-agents" data-cg="agents">Agents<span class="tab-count" id="cg-count-agents">&middot;</span></button>
-          <button class="tab" id="cg-tab-statements" role="tab" aria-selected="false" aria-controls="cg-pane-statements" data-cg="statements">Statements<span class="tab-count" id="cg-count-statements">&middot;</span></button>
-          <button class="tab" id="cg-tab-reports" role="tab" aria-selected="false" aria-controls="cg-pane-reports" data-cg="reports">My reports<span class="tab-count" id="cg-count-reports">&middot;</span></button>
-          <button class="tab" id="cg-tab-trust" role="tab" aria-selected="false" aria-controls="cg-pane-trust" data-cg="trust">Trust</button>
-        </div>
-        <div class="cg-pane" id="cg-pane-agents" role="tabpanel" aria-labelledby="cg-tab-agents">
-          <div class="cg-note">Agents that have reported into the shared community graph, reached through the DKG. They are not connected to this Blackbox.</div>
-          <div class="agents-strip" id="community-agents-strip">
-            <div class="empty" style="padding:28px 20px; width:100%;">Loading community graph agents&hellip;</div>
-          </div>
-        </div>
-        <div class="cg-pane" id="cg-pane-statements" role="tabpanel" aria-labelledby="cg-tab-statements" hidden>
-          <div class="cg-note">What reporters and the curator said about community threats: who, when and why. Only statements this node could verify are shown. A dispute never changes what blocks. <span id="community-statements-note"></span></div>
-          <div class="cg-list" id="community-statements-body"><div class="empty">Loading community statements&hellip;</div></div>
-        </div>
-        <div class="cg-pane" id="cg-pane-reports" role="tabpanel" aria-labelledby="cg-tab-reports" hidden>
-          <div class="cg-note">What this node shared, one line per threat: its current stage (the same on every node) and what happened to each send. <span id="my-reports-note"></span></div>
-          <div class="cg-list" id="my-reports-body"><div class="empty">Loading your reports&hellip;</div></div>
-        </div>
-        <!-- Community Curation C10: trust — who curates, who is trusted, what is confirmed -->
-        <div class="cg-pane" id="cg-pane-trust" role="tabpanel" aria-labelledby="cg-tab-trust" hidden>
-          <div class="cg-note">Who may vouch for community threats on this network, whom they trust, and what they confirmed with evidence. Community curators can only flag; blocking stays with the verified graph. <span id="trust-note"></span></div>
-          <div class="trust-authorities" id="trust-authorities">
-            <div class="empty" style="padding:20px; width:100%;">Loading the trust layer&hellip;</div>
-          </div>
-          <div class="table-scroll">
-            <table aria-label="Trusted reporters">
-              <thead>
-                <tr><th>Trusted reporter</th><th>Class</th><th>Listed by</th><th>Until</th></tr>
-              </thead>
-              <tbody id="trust-reporters-body">
-                <tr><td colspan="4"><div class="empty">Loading trusted reporters&hellip;</div></td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="table-scroll">
-            <table aria-label="Confirmed pool">
-              <thead>
-                <tr><th>Confirmed threat</th><th>Evidence the curators checked</th><th>When</th><th>Curator keys</th><th>Reporters</th></tr>
-              </thead>
-              <tbody id="trust-confirmed-body">
-                <tr><td colspan="5"><div class="empty">Loading the confirmed pool&hellip;</div></td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <!-- Threat graph (tabbed) -->
     <section class="section" aria-label="Threat graph">
       <div class="section-head graph-head">
@@ -2962,6 +2856,9 @@
           <div class="vs-body">
             <div class="vs-head"><h3>Verified graph sync</h3><span class="vs-chip" id="vs-chip">checking</span></div>
             <div class="vs-note" id="vs-note" aria-live="polite">Reading the node&hellip;</div>
+            <!-- DKG-lookup: WHERE each check's verified answer came from — the graph store, the opt-in
+                 local index while the store is down, or nowhere (checks paused). Never silent. -->
+            <div class="vs-lookups" id="vs-lookups" data-state="unknown" aria-live="polite"><span class="vs-lookups-mark" aria-hidden="true">&middot;</span><span id="vs-lookups-text">Checking&hellip;</span></div>
             <div class="vs-bar-row" title="Verified assets your node has downloaded and verified, of every asset in the graph right now.">
               <span class="vs-bar-label">Downloaded</span>
               <div class="vs-bar"><div class="vs-fill" id="vs-fill-downloaded"></div></div>
@@ -3882,189 +3779,13 @@
     strip.innerHTML = cards + addTile;
   }
 
-  // ---------- Community graph — connected agents ----------
-  // Remote reporters on the community graph. Addresses/frameworks are
-  // self-described payload fields (display-only, LES-014): escaped, never
-  // trusted for anything.
-  function renderCommunityAgents(data) {
-    var list = (data && Array.isArray(data.community_agents)) ? data.community_agents : [];
-    var strip = $("community-agents-strip");
-    $("community-agents-note").textContent = list.length
-      ? "\u00b7 " + list.length + " agent" + (list.length === 1 ? "" : "s") + " so far."
-      : "";
-    $("cg-count-agents").textContent = num(list.length);
-    if (!list.length) {
-      strip.innerHTML = '<div class="empty" style="padding:28px 20px; width:100%;">' +
-        '<strong>No community graph reports yet.</strong></div>';
-      return;
-    }
-    strip.innerHTML = list.map(function (a) {
-      var frameworks = Array.isArray(a.frameworks) ? a.frameworks : [];
-      var primary = frameworks[0] || "unknown";
-      var label = frameworks.map(fwLabel).join(" + ") || fwLabel(primary);
-      var addr = String(a.address || "");
-      var shortAddr = addr.length > 14 ? addr.slice(0, 8) + "\u2026" + addr.slice(-4) : addr;
-      var reports = Number(a.reports) || 0;
-      return '<div class="agent-card' + (a.is_self ? ' self' : '') + '">' +
-        '<span class="agent-avatar" style="--fw:' + fwColor(primary) + '">' + fwIcon(primary) + '</span>' +
-        '<div class="agent-info">' +
-          '<div class="agent-fw">' + esc(label) +
-            (a.is_self ? ' <span class="agent-self-tag">this node</span>' : '') + '</div>' +
-          '<div class="agent-addr" title="' + esc(addr) + '">' + esc(shortAddr) + '</div>' +
-          '<div class="agent-reports"><strong>' + num(reports) + '</strong> report' + (reports === 1 ? '' : 's') + '</div>' +
-        '</div>' +
-      '</div>';
-    }).join("");
-  }
-
-  // Refine R2: every statement the reader honoured. Values arrive sanitized
-  // by the server (safe_text); esc() keeps this renderer safe on its own.
-  function renderCommunityStatements(data) {
-    var body = $("community-statements-body");
-    var note = $("community-statements-note");
-    if (!body) return;
-    function emptyRow(text) {
-      return '<tr><td colspan="5"><div class="empty">' + esc(text) + '</div></td></tr>';
-    }
-    if (!data || !data.configured) { body.innerHTML = emptyRow("No community graph is configured."); note.textContent = ""; return; }
-    if (!data.available) { body.innerHTML = emptyRow("The community graph could not be read yet."); return; }
-    var curator = data.curator || {};
-    var rows = [];
-    (data.disputes || []).forEach(function (d) {
-      rows.push(["dispute", d.identifier, d.who, d.when, d.why]);
-    });
-    (data.retractions || []).forEach(function (r) {
-      rows.push(["retraction", r.identifier, r.who, r.when, "withdrawn by its reporter"]);
-    });
-    (data.heat || []).forEach(function (h) {
-      rows.push(["seen again", h.identifier, h.digests + " counted digest" + (h.digests === 1 ? "" : "s"), h.week,
-        "seen by ~" + num(h.agents) + " agent" + (h.agents === 1 ? "" : "s") + " this week"]);
-    });
-    (data.digests || []).forEach(function (d) {
-      if (d.counted) return;   // counted digests are summed into the heat rows above
-      rows.push(["sighting digest", d.threats + " verified threat" + (d.threats === 1 ? "" : "s"), d.who, d.week,
-        "new reporter \u00b7 counted 0"]);
-    });
-    (curator.verdicts || []).forEach(function (v) {
-      rows.push(["curator: " + v.verdict, v.identifier, v.keys + " curator key" + (v.keys === 1 ? "" : "s"), v.when, v.why || ""]);
-    });
-    (curator.counted_authors || []).forEach(function (a) {
-      rows.push(["counted author", a.address, a["class"] + (a.org ? " (" + a.org + ")" : ""), "until " + a.expires, ""]);
-    });
-    (curator.away || []).forEach(function (w) {
-      rows.push(["curator away", "", "key " + w.key + "\u2026", w.from + " \u2192 " + w.until, ""]);
-    });
-    if (curator.backlog) {
-      rows.push(["curator backlog", "lanes " + curator.backlog.lanes, "", "until " + curator.backlog.until, "SLA suspended"]);
-    }
-    var bits = [];
-    bits.push(curator.trusted ? "Curator keys trusted (manifest v" + curator.manifest.version + ", " +
-      curator.manifest.threshold + " of " + curator.manifest.keys + ")." : "No trusted curator keys on this network yet.");
-    if (data.held_back) bits.push(num(data.held_back) + " held back by the daily per-author budget.");
-    if (data.pending_tombstones) bits.push(num(data.pending_tombstones) + " retraction(s) waiting for a report not seen yet.");
-    note.textContent = "\u00b7 " + bits.join(" ");
-    $("cg-count-statements").textContent = num(rows.length);
-    if (!rows.length) { body.innerHTML = emptyRow("No statements yet."); return; }
-    body.innerHTML = groupStatementRows(rows).map(renderStatementGroup).join("");
-  }
-
-  // Rows are [kind, threat, who, when, why]. One signer saying the same kind of
-  // thing for the same reason many times (a dispute flood, a batch of
-  // retractions) folds into ONE expandable line instead of one line each.
-  var STATEMENT_GROUP_MIN = 3;
-
-  function groupStatementRows(rows) {
-    var groups = [], byKey = {};
-    rows.forEach(function (r) {
-      var key = r[0] + "\u0000" + r[2] + "\u0000" + r[4];
-      if (!byKey[key]) { byKey[key] = { kind: r[0], who: r[2], why: r[4], when: r[3], rows: [] }; groups.push(byKey[key]); }
-      byKey[key].rows.push(r);
-    });
-    return groups;
-  }
-
-  function shortWho(who) {
-    var s = String(who || "");
-    return /^0x[0-9a-f]{40}$/i.test(s) ? s.slice(0, 8) + "\u2026" + s.slice(-4) : s;
-  }
-
-  function renderStatementGroup(g) {
-    if (g.rows.length < STATEMENT_GROUP_MIN) {
-      return g.rows.map(function (r) {
-        return '<div class="cg-row"><span class="cg-kind">' + esc(r[0]) + '</span>' +
-          '<span class="cg-ident">' + esc(r[1]) + '<span class="cg-sub">' + esc(shortWho(r[2])) +
-          (r[4] ? ' \u00b7 ' + esc(r[4]) : '') + '</span></span>' +
-          '<span class="cg-when">' + esc(r[3]) + '</span></div>';
-      }).join("");
-    }
-    return '<details class="cg-group"><summary><span class="cg-kind">' + esc(g.kind) + '</span>' +
-      '<span class="cg-ident">' + num(g.rows.length) + ' ' + esc(g.kind) + 's<span class="cg-sub">from ' +
-      esc(shortWho(g.who)) + (g.why ? ' \u00b7 ' + esc(g.why) : '') + '</span></span>' +
-      '<span class="cg-when">' + esc(g.when) + '</span></summary><div class="cg-idents">' +
-      g.rows.map(function (r) { return '<span>' + esc(r[1]) + '</span>'; }).join("") + '</div></details>';
-  }
-
   var heatByIdentifier = {};   // R10: "seen by ~N agents this week" joined onto verified leaves
 
   function loadCommunityStatements() {
     return getJSON("/api/community-statements").then(function (data) {
       heatByIdentifier = {};
       ((data && data.heat) || []).forEach(function (h) { heatByIdentifier[h.identifier] = h; });
-      renderCommunityStatements(data);
     }, function () {});
-  }
-
-  // Community Curation C10: the trust panel (the same facts `blackbox status` prints). Values arrive
-  // sanitized by the server; esc() keeps this renderer safe on its own.
-  function renderTrust(data) {
-    var cards = $("trust-authorities"), reporters = $("trust-reporters-body"), confirmed = $("trust-confirmed-body"), note = $("trust-note");
-    if (!cards || !reporters || !confirmed) return;
-    function empty(columns, text) {
-      return '<tr><td colspan="' + columns + '"><div class="empty">' + esc(text) + '</div></td></tr>';
-    }
-    function cell(label, text) {
-      return '<td><span class="t-label">' + esc(label) + '</span>' + esc(text) + '</td>';
-    }
-    function all(text) {
-      cards.innerHTML = '<div class="empty" style="padding:20px; width:100%;">' + esc(text) + '</div>';
-      reporters.innerHTML = empty(4, text); confirmed.innerHTML = empty(5, text); note.textContent = "";
-    }
-    if (!data || !data.configured) { all("No community graph is configured."); return; }
-    if (!data.available) { all("The community graph could not be read yet, so nothing is shown as trusted or untrusted."); return; }
-    var stateText = { ok: "manifest in force", pending: "new manifest waiting (72 h time-lock) until ", stale: "manifest STALE since ",
-                      conflict: "manifest CONFLICT: two root-signed manifests disagree", unavailable: "could not be read" };
-    cards.innerHTML = (data.authorities || []).map(function (a) {
-      var title = a.authority === "community" ? "Community curators (flag only)" : "Verified-graph curators";
-      if (!a.trusted && a.state === "none") {
-        return '<div class="trust-card"><h3>' + esc(title) + '</h3><div class="t-state">none trusted on this network</div></div>';
-      }
-      var state = (stateText[a.state] || a.state) + ((a.state === "pending" || a.state === "stale") ? a.state_day : "");
-      var line = a.threshold + " of " + a.keys + " keys \u00b7 manifest v" + a.version + " \u00b7 " + state + (a.expires ? " \u00b7 expires " + a.expires : "");
-      var beats = (a.heartbeats || []).map(function (b) {
-        return '<div class="t-beat' + (b.silent ? ' silent' : '') + '">key ' + esc(b.key) + '\u2026 \u00b7 ' +
-          esc(b.day ? "last heartbeat " + b.day : "no heartbeat seen") + (b.silent ? " \u00b7 silent" : "") + '</div>';
-      }).join("");
-      return '<div class="trust-card"><h3>' + esc(title) + '</h3><div class="t-state' + (a.state === "ok" ? "" : " warn") + '">' +
-        esc(line) + '</div>' + beats + '</div>';
-    }).join("");
-    reporters.innerHTML = (data.reporters || []).length ? data.reporters.map(function (r) {
-      return "<tr>" + cell("Trusted reporter", r.address + " (key " + r.key + "\u2026)") +
-        cell("Class", r["class"] + (r.org ? " (" + r.org + ")" : "")) + cell("Listed by", r.listed_by + " curators") +
-        cell("Until", r.expires) + "</tr>";
-    }).join("") : empty(4, "No reporter is trusted yet: every report is stored and shown, and weighs nothing.");
-    confirmed.innerHTML = (data.confirmed || []).length ? data.confirmed.map(function (c) {
-      return "<tr>" + cell("Confirmed threat", c.identifier) + cell("Evidence the curators checked", c.evidence) +
-        cell("When", c.when) + cell("Curator keys", num(c.curators)) + cell("Reporters", num(c.reporters)) + "</tr>";
-    }).join("") : empty(5, "The community curators have not confirmed a threat yet.");
-    var bits = [num(data.reporters_total) + " trusted reporter" + (data.reporters_total === 1 ? "" : "s") + ", " +
-                num(data.confirmed_total) + " confirmed threat" + (data.confirmed_total === 1 ? "" : "s") + "."];
-    if (data.held_raising) bits.push(num(data.held_raising) + " held by this node's daily cap.");
-    if (data.lookup_incomplete) bits.push("The trust lookup was cut short; showing what this node already verified.");
-    note.textContent = "\u00b7 " + bits.join(" ");
-  }
-
-  function loadTrust() {
-    return getJSON("/api/trust").then(renderTrust, function () {});
   }
 
   // Refine R10: the shared health items (kernel.health) — the same lines `blackbox status` prints.
@@ -4120,6 +3841,7 @@
       ? "Verified threat graph sync progress unknown" : pct + "% of the verified threat graph compiled into rules");
     vsSet("vs-chip", VS_STATE_TEXT[m.state] || m.state);
     vsSet("vs-note", vsNote(m));
+    renderLookups(m.lookups);
     vsBar("downloaded", m.downloaded_assets, m.percent_downloaded, m.graph_assets);
     vsBar("compiled", m.compiled_assets, m.percent_compiled, m.graph_assets);
     vsSet("vs-graph-assets", typeof m.graph_assets === "number" ? vsNumber(m.graph_assets) + " assets" : "\u2014");
@@ -4127,74 +3849,31 @@
     vsSet("vs-rules", vsNumber(m.verified_rules));
   }
 
+  // Where verified answers come from right now: live (the graph store), fallback (the
+  // local index while the store is down), paused (store down, no fallback), not-live.
+  var LOOKUP_MARKS = { live: "\u2713", fallback: "\u26A0", paused: "\u2715", "not-live": "\u00B7", unknown: "\u00B7" };
+  function renderLookups(lk) {
+    var box = document.getElementById("vs-lookups");
+    if (!box) return;
+    var state = (lk && lk.state) || "unknown";
+    box.setAttribute("data-state", state);
+    box.querySelector(".vs-lookups-mark").textContent = LOOKUP_MARKS[state] || "\u00B7";
+    // The mark says it; the words are short. The full sentence is the hover (title).
+    vsSet("vs-lookups-text", (lk && lk.label) || "Checking\u2026");
+    box.title = (lk && lk.text) || "";
+  }
+
   function loadSyncMeter() {
     return getJSON("/api/verified-sync").then(renderSyncMeter, function () {});
   }
 
-  // One line per threat: the stage every node computes, then what happened to
-  // this node's sends of it ("accepted · kept alive 2x"). The ledger itself lists
-  // every send, so keep-alive copies used to repeat each threat several times.
-  var MY_REPORTS_SHOWN = 8;
-  var myReportsExpanded = false;
-
-  function groupMyReports(rows) {
-    var groups = [], byId = {};
-    rows.forEach(function (r) {   // newest first, as the API returns them
-      var id = String(r.identifier || "");
-      if (!byId[id]) { byId[id] = { latest: r, outcomes: {}, sends: 0 }; groups.push(byId[id]); }
-      var g = byId[id];
-      g.sends += 1;
-      g.outcomes[r.outcome] = (g.outcomes[r.outcome] || 0) + 1;
-    });
-    return groups;
-  }
-
-  function outcomeSummary(outcomes) {
-    return Object.keys(outcomes).map(function (o) {
-      var bad = /fail|refus|retry/i.test(o);
-      var label = o === "kept-alive" ? "kept alive" : o;
-      var text = label + (outcomes[o] > 1 ? " " + outcomes[o] + "\u00d7" : "");
-      return bad ? '<span class="bad">' + esc(text) + '</span>' : esc(text);
-    }).join(" \u00b7 ");
-  }
-
-  function renderMyReports(data) {
-    var body = $("my-reports-body");
-    var note = $("my-reports-note");
-    if (!body) return;
-    var rows = (data && Array.isArray(data.outbound)) ? data.outbound : [];
-    note.textContent = data && data.sharing_enabled === false ? "\u00b7 Sharing is off; nothing new leaves this node." : "";
-    var groups = groupMyReports(rows);
-    $("cg-count-reports").textContent = num(groups.length);
-    if (!groups.length) { body.innerHTML = '<div class="empty">No reports shared from this node yet.</div>'; return; }
-    var shown = myReportsExpanded ? groups : groups.slice(0, MY_REPORTS_SHOWN);
-    body.innerHTML = shown.map(function (g) {
-      var r = g.latest;
-      var stage = r.stage || "not compiled";
-      var stageClass = /corroborated/.test(stage) ? " corroborated" : "";
-      var reason = r.stage ? (r.stage_reason || "") : "not in the compiled community tier (not read yet, retracted, or below the cap)";
-      return '<div class="cg-row"><span class="cg-kind">' + esc(r.category) + '</span>' +
-        '<span class="cg-ident">' + esc(r.identifier) +
-          '<span class="cg-sub"><span class="cg-stage' + stageClass + '">' + esc(stage) + '</span> ' + esc(reason) + '</span>' +
-          '<span class="cg-sub cg-sends">' + outcomeSummary(g.outcomes) + '</span></span>' +
-        '<span class="cg-when" title="' + esc(r.ts) + '">' + fmtAgo(r.ts) + '</span></div>';
-    }).join("") + (groups.length > MY_REPORTS_SHOWN
-      ? '<div class="cg-row" style="grid-template-columns:1fr"><button class="cg-more" type="button" id="my-reports-more">' +
-        (myReportsExpanded ? "Show fewer" : "Show all " + num(groups.length) + " threats") + '</button></div>'
-      : "");
-    var more = $("my-reports-more");
-    if (more) more.addEventListener("click", function () { myReportsExpanded = !myReportsExpanded; renderMyReports(data); });
-  }
-
-  // The two summary tiles and the chip strip, from /api/community-stats.
+  // The two summary tiles, from /api/community-stats.
   function renderCommunityStats(s) {
-    var strip = $("cg-summary");
     if (!s || !s.configured) {
       $("stat-community-count").textContent = "off";
       $("stat-community-meta").textContent = "no community graph configured";
       $("stat-sharing-state").textContent = "off";
       $("stat-sharing-meta").textContent = "outbound threat sharing";
-      if (strip) strip.innerHTML = "";
       return;
     }
     var sharing = s.paused ? "paused" : (s.sharing_enabled ? "on" : "off");
@@ -4206,37 +3885,10 @@
     $("stat-sharing-meta").textContent = last
       ? "last share " + fmtAgo(last.ts) + " \u00b7 " + (last.outcome || (last.ok ? "accepted" : "failed"))
       : (s.sharing_enabled ? "nothing shared yet" : "turn on in settings");
-    if (!strip) return;
-    var chips = [
-      ["threats", s.community_threats || 0, ""],
-      ["agents", s.contributing_agents || 0, ""],
-      ["2+ reporters", s.corroborated_2plus || 0, ""],
-      ["new today", s.new_today || 0, ""],
-      ["sharing", sharing, s.paused ? "warn" : ""]
-    ];
-    strip.innerHTML = chips.map(function (c) {
-      return '<span class="cg-chip ' + c[2] + '"><strong>' + esc(typeof c[1] === "number" ? num(c[1]) : c[1]) + '</strong>' + esc(c[0]) + '</span>';
-    }).join("");
   }
 
   function loadCommunityStats() {
     return getJSON("/api/community-stats").then(renderCommunityStats, function () {});
-  }
-
-  // Tabs inside the community panel (separate from the threat-graph tier tabs).
-  var CG_TAB_KEY = "bb.communityTab";
-  function switchCommunityTab(name) {
-    ["agents", "statements", "reports", "trust"].forEach(function (n) {
-      var on = n === name;
-      $("cg-tab-" + n).classList.toggle("active", on);
-      $("cg-tab-" + n).setAttribute("aria-selected", on ? "true" : "false");
-      $("cg-pane-" + n).hidden = !on;
-    });
-    try { localStorage.setItem(CG_TAB_KEY, name); } catch (e) { /* storage blocked: tab just isn't remembered */ }
-  }
-
-  function loadMyReports() {
-    return getJSON("/api/reports?limit=50").then(renderMyReports, function () {});
   }
 
   function renderAttachTargets(targets, note) {
@@ -5359,8 +5011,13 @@
 	    }).join(" · ") || "none";
 	  }
 
-	  function categoryThreatListHTML(items) {
+	  // sampleState: "loading" while the panel fetches its own category page,
+	  // "unavailable" when that fetch found nothing to show (never claim "empty"
+	  // for a category whose count says otherwise).
+	  function categoryThreatListHTML(items, sampleState) {
 	    var sample = graphSampleLeaves(items || [], 10);
+	    if (!sample.length && sampleState === "loading") return '<div class="modal-empty">Loading threats in this category from the graph…</div>';
+	    if (!sample.length && sampleState === "unavailable") return '<div class="modal-empty">The node could not list threats in this category just now. Try again in a moment.</div>';
 	    if (!sample.length) return '<div class="modal-empty">No threats are currently stored in this category.</div>';
 	    var rows = sample.map(function (t) {
 	      var sev = sevClass(t.severity);
@@ -5378,7 +5035,11 @@
 	      (remaining ? '<div class="modal-empty">' + num(remaining) + ' more in this category.</div>' : '');
 	  }
 
-	  function openCategoryModal(node) {
+	  // The loaded graph page is one window in a fixed category order (small tiers,
+	  // then 252k dependencies, then IOCs), so a category's own threats may not be
+	  // loaded at all: the panel then fetches its category page itself.
+	  var CATEGORY_SAMPLE_SIZE = 10;
+	  function openCategoryModal(node, sampleState) {
 	    var overlay = $("threat-modal");
 	    if (!overlay || !node || !node.focus) return;
 	    var focus = node.focus;
@@ -5386,6 +5047,17 @@
 	    var meta = CATS[cat] || CATS.other;
 	    var color = meta.color;
 	    var items = graphThreatsForFocus(activeTier, focus);
+	    var tier = activeTier;
+	    var wanted = Math.min(Number(node.count) || 0, CATEGORY_SAMPLE_SIZE);
+	    if (!sampleState && items.length < wanted) {
+	      sampleState = "loading";
+	      loadGraphFocusPage(tier, focus).catch(function () { return false; }).then(function () {
+	        var stillOpen = overlay.classList.contains("open") && TM.node && TM.node.kind === "category" &&
+	          graphSameFocus(TM.node.focus, focus) && activeTier === tier;
+	        if (!stillOpen) return;
+	        openCategoryModal(node, graphThreatsForFocus(tier, focus).length ? "loaded" : "unavailable");
+	      });
+	    }
 	    var topSev = graphTopSeverity(items);
 	    var label = graphFocusLabel(focus) || node.label || meta.name;
 	    var renderMeta = graphRenderMeta[activeTier] || {};
@@ -5414,7 +5086,7 @@
 	    $("tm-body").innerHTML =
 	      '<div class="modal-desc">' + esc(CAT_SUMMARY[cat] || CAT_SUMMARY.other) + '</div>' +
 	      gridHTML(rows) +
-	      categoryThreatListHTML(items);
+	      categoryThreatListHTML(items, sampleState);
 	    overlay.classList.add("open");
 	    overlay.setAttribute("aria-hidden", "false");
 	  }
@@ -6994,12 +6666,10 @@
   // ---------- Poll loop ----------
   function poll() {
     loadAudit();   // full history refresh (independent of the fixed-index batch below)
-    loadCommunityStatements();   // Refine R2 (independent too)
+    loadCommunityStatements();   // R10 heat on verified leaves (independent too)
     loadHealth();                // Refine R10
     loadSyncMeter();             // verified-sync meter
-    loadTrust();                 // Community Curation C10
-    loadMyReports();             // Refine R10
-    loadCommunityStats();        // summary tiles + chips
+    loadCommunityStats();        // the two summary tiles
     return Promise.allSettled([
       loadFindings(),
       getJSON("/api/graph-status"),
@@ -7010,7 +6680,7 @@
       var allFail = res.every(function (r) { return r.status === "rejected"; });
 
       if (res[1].status === "fulfilled") renderGraphStatus(res[1].value);
-      if (res[2].status === "fulfilled") { renderAgents(res[2].value); renderCommunityAgents(res[2].value); }
+      if (res[2].status === "fulfilled") renderAgents(res[2].value);
       var anyGraph = false;
       if (res[3].status === "fulfilled") { localCache = res[3].value; anyGraph = true; }
 
@@ -7035,14 +6705,6 @@
   TIERS.forEach(function (t) {
     $("tab-" + t).addEventListener("click", function () { switchTier(t); });
   });
-  ["agents", "statements", "reports", "trust"].forEach(function (n) {
-    $("cg-tab-" + n).addEventListener("click", function () { switchCommunityTab(n); });
-  });
-  (function restoreCommunityTab() {
-    var saved = null;
-    try { saved = localStorage.getItem(CG_TAB_KEY); } catch (e) { saved = null; }
-    if (saved === "statements" || saved === "reports" || saved === "trust") switchCommunityTab(saved);
-  })();
   // Collapse the header actions into one animated disclosure on phone/tablet.
   (function wireHeaderMenu() {
     var toggle = $("header-menu-toggle");

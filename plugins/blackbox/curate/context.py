@@ -128,8 +128,15 @@ def build_context(compiled_ruleset: Optional[CompiledRuleset], *, authority: Opt
                          sandbox=is_sandbox(acting, cfg, environment), compiled=compiled, authority=acting)
 
 
-def verified_identifiers(compiled: Any) -> set:
-    """Identifiers the verified tier already lists (the delta view's "already verified")."""
+def verified_identifiers(compiled: Any, among: Iterable[str]) -> set:
+    """Which of *among* the verified tier already lists (the delta view's "already
+    verified"). Asked for a known set — the community store's identifiers, a
+    read's reports — because the verified tier is looked up live, never listed."""
     if compiled is None:
         return set()
-    return {str(rule.get("identifier") or "") for _category, rule in compiled.iter_rules() if rule.get("source") == "public"}
+    subset = getattr(compiled, "verified_subset", None)
+    if callable(subset):
+        return set(subset(among))
+    wanted = {str(identifier) for identifier in among}   # a plain compiled object: scan its public rules
+    return {str(rule.get("identifier") or "") for _category, rule in compiled.iter_rules()
+            if rule.get("source") == "public" and str(rule.get("identifier") or "") in wanted}

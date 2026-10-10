@@ -22,7 +22,7 @@ import time
 import pytest
 
 from _blackbox_loader import load_blackbox
-from _vm_partitions import answer_partition_query, is_partition_query, is_partition_read
+from _vm_partitions import answer_verified_query, is_lane_query, is_verified_query
 
 
 audit = load_blackbox("audit")
@@ -131,33 +131,34 @@ class _Pager:
                 },
                 "status": {"value": "confirmed"},
             } for i in range(partition_count)]
-        if not is_partition_query(sparql):
+        if not is_verified_query(sparql):
             return []
-        partition = re.search(r"GRAPH <([^>]+)>", sparql).group(1)
-        index = int(partition.rsplit("/", 1)[1])
-        start, end = index * 1000, min(index * 1000 + 1000, self.n)
-        return answer_partition_query(sparql, {partition: [{
-            "threat": f"urn:test:dependency:{i:08d}",
-            "rdfType": "urn:defender:DependencySignal",
-            "packageEcosystem": "npm",
-            "packageName": f"pkg{i}",
-            "packageVersion": "1.0",
-            "severity": "critical",
-        } for i in range(start, end)]})
+        partition_count = (self.n + 999) // 1000
+        # DKG-lookup B6: the compiled tiers are the small ones; the pager is exercised
+        # with injection rules (dependency rules are looked up live, never compiled).
+        return answer_verified_query(sparql, {
+            f"{data_graph}/_verifiable_memory/partition/{index:04d}": [{
+                "threat": f"urn:test:injection:{i:08d}",
+                "rdfType": "urn:defender:InjectionSignal",
+                "pattern": f"ignore previous {i}",
+                "severity": "critical",
+            } for i in range(index * 1000, min(index * 1000 + 1000, self.n))]
+            for index in range(partition_count)})
 
 def test_ruleset_sync_is_uncapped(monkeypatch):
     monkeypatch.setattr(ruleset_disk_cache, "_write_cache", lambda rs: None)
     monkeypatch.setattr(ruleset_refresh, "_memory", ruleset_refresh._new_memory())
     pager = _Pager(16_250)
     rs = ruleset_mod.refresh(config_mod.BlackboxConfig(), pager)
-    assert len(rs.dependency) == 16_250
+    assert len(rs.injection) == 16_250
     metadata_queries = [query for query, _kwargs in pager.queries if "dkg:assertionGraph" in query]
-    partition_queries = [(query, kwargs) for query, kwargs in pager.queries if is_partition_read(query)]
+    partition_queries = [(query, kwargs) for query, kwargs in pager.queries if is_lane_query(query)]
     assert len(metadata_queries) == 1
-    # KI-288/KI-289: one plain triple read per asset (17 assets of up to 1,000 threats), no OFFSET paging
-    assert len(partition_queries) == 17
+    # DKG-lookup B6: the small tiers are read by cursor-paged lanes over every confirmed
+    # asset at once (the 16,250 injection rows take 4 pages + the empty one), no OFFSET
+    assert len(partition_queries) >= 5
     assert not any("OFFSET" in query for query, _kwargs in partition_queries)
-    assert all(kwargs["view"] is None for _query, kwargs in partition_queries)
+    assert all(kwargs["view"] == "verifiable-memory" for _query, kwargs in partition_queries)
 
 
 def test_concurrent_ruleset_refresh_reuses_completed_generation(monkeypatch, tmp_path):
@@ -604,7 +605,7 @@ def test_missing_community_does_not_restart_dkg_sync(monkeypatch):
         config_mod.BlackboxConfig(context_graph_id="public-with-empty-community"),
         _PublicOnly(1),
     )
-    assert len(rs.dependency) == 1
+    assert len(rs.injection) == 1
 
 
 def test_vm_error_preserves_public_rules_without_loading_swm(monkeypatch):

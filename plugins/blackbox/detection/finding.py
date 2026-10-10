@@ -71,3 +71,18 @@ def _rule_source(rule: Dict[str, Any]) -> str:
     always treated as verified."""
     src = str(rule.get("source") or "public").lower()
     return src if src in ("public", "community") else "public"
+
+
+#: What a lookup answer says about itself when the graph store could not answer and
+#: the operator's opt-in local index did (the finding then carries ``answered_by``).
+FALLBACK_REASON = "fallback index"
+ANSWERED_BY_FALLBACK = "local index (graph store down)"
+
+
+def mark_answered_by(answer: Any) -> Dict[str, Dict[str, Any]]:
+    """The answer's rules; when the graph store was down and the local index answered,
+    each rule is copied with ``answered_by`` set so the finding and the audit row say so."""
+    rules = getattr(answer, "rules", {}) or {}
+    if getattr(answer, "reason", "") != FALLBACK_REASON:
+        return rules
+    return {key: {**rule, "answered_by": ANSWERED_BY_FALLBACK} for key, rule in rules.items()}

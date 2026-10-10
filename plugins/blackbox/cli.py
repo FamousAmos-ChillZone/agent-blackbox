@@ -139,6 +139,7 @@ def _cmd_status(args: argparse.Namespace) -> int:
         print("  community ingest:  PAUSED by the curator")
     if getattr(rs, "curator_manifest_state", ""):
         print(f"  curator keys:      {rs.curator_manifest_state}")
+    print(f"  verified lookups:  {_verified_lookups_text(rs)}")
     _print_health(cfg, rs, client, reachable)
     print(f"  ruleset:           {counts['injection']} injection, "
           f"{counts['escalation']} escalation, {counts['dependency']} dependency, "
@@ -152,6 +153,19 @@ def _cmd_status(args: argparse.Namespace) -> int:
     print(f"  dashboard:         http://127.0.0.1:{cfg.dashboard_port}")
     _print_attached_targets()
     return 0
+
+
+def _verified_lookups_text(rs: Any) -> str:
+    """DKG-lookup: where public rules are answered from, and whether the store answers."""
+    scope = getattr(rs, "verified_scope", None)
+    if scope is None or not scope.ready:
+        return "not live yet (no verified scope — compiled rules only)"
+    state = ruleset.live.HEALTH.read()
+    where = f"live against {scope.store_url} ({len(scope.assertion_graphs)} verified assets)"
+    if not state.degraded:
+        return where
+    answering = "answering from the LOCAL INDEX" if scope.fallback == "index" else "verified checks PAUSED (actions pass unchecked)"
+    return f"{where} — DEGRADED: {state.problem()} — {answering}"
 
 
 def _print_verified_progress(cfg: Any) -> None:
@@ -176,7 +190,8 @@ def _print_health(cfg: Any, rs: Any, client: DkgClient, reachable: bool) -> None
     retries = community.share_retry_stats()
     items = health.operator_health(health.gather(cfg, rs, reachable, read, audit.blocked_counts_by_identifier(), time.time(),
                                                  pending_shares=retries.pending, shares_given_up=retries.given_up,
-                                                 sharing_consent_problem=community.consent.why_not()))
+                                                 sharing_consent_problem=community.consent.why_not(),
+                                                 verified_lookup_problem=ruleset.live.HEALTH.read().problem()))
     if cfg.community_graph_id:   # who curates, who is trusted, what is confirmed (the dashboard's trust panel shows the same)
         for line in community.trust_status_lines(community.trust_panel(read)):
             print(line)

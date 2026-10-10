@@ -98,6 +98,9 @@ class HealthInputs:
     manifest_state: str = ""             # R7b: "" | "pending" | "stale"
     manifest_state_day: str = ""         # the day it takes effect / expired
     manifest_expires_day: str = ""       # the 30-day-ahead key-expiry alarm
+    #: DKG-lookup B5: why live verified lookups are degraded ("" = answering). The
+    #: caller passes ``ruleset.live.HEALTH.read().problem()`` (the kernel reads no feature).
+    verified_lookup_problem: str = ""
     #: Community Curation C11: why sharing is stopped by consent ("" = in force or sharing off) — the
     #: caller passes ``community.consent.why_not()`` only when `report: true`.
     sharing_consent_problem: str = ""
@@ -189,6 +192,11 @@ def _node_and_ruleset(inputs: HealthInputs) -> List[HealthItem]:
     if inputs.rule_count == 0:
         items.append(HealthItem(_OPERATOR, HealthClass.ACTION, "UNPROTECTED: the threat ruleset is empty",
                                 "run `blackbox sync --wait` to load the threat graph"))
+    if inputs.verified_lookup_problem:
+        items.append(HealthItem(_OPERATOR, HealthClass.ACTION,
+                                f"DEGRADED: verified rules cannot be looked up — {inputs.verified_lookup_problem}",
+                                "actions pass unchecked by the verified graph; check the DKG node and its store, "
+                                "then run `blackbox sync --wait`"))
     return items
 
 
@@ -299,7 +307,8 @@ def red(item: HealthItem) -> bool:
 
 
 def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked_by_identifier: Mapping[str, int],
-           now: float, *, pending_shares: int = 0, shares_given_up: int = 0, sharing_consent_problem: str = "") -> HealthInputs:
+           now: float, *, pending_shares: int = 0, shares_given_up: int = 0, sharing_consent_problem: str = "",
+           verified_lookup_problem: str = "") -> HealthInputs:
     """Build :class:`HealthInputs` from a config, a compiled ruleset, node
     reachability, the last community read (or None), how many actions each
     threat blocked here (``audit.blocked_counts_by_identifier()``) and the
@@ -322,6 +331,7 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         held_back=int(getattr(read, "held_back", 0) or 0),
         pending_shares=int(pending_shares),
         sharing_consent_problem=sharing_consent_problem if getattr(cfg, "community_enabled", False) else "",
+        verified_lookup_problem=verified_lookup_problem,
         shares_given_up=int(shares_given_up),
         curators_last_day=(view.last_statement_day if view is not None else ""),
         today=datetime.fromtimestamp(now, timezone.utc).date().isoformat(),

@@ -30,6 +30,7 @@ from .. import community
 from . import locks
 from .memory_cache import RulesetCache
 from . import pulse_beat
+from . import live
 
 logger = logging.getLogger(__name__)
 
@@ -136,8 +137,8 @@ def _refresh_unlocked(
     config = config or load_blackbox_config()
     context_graph_id = config.context_graph_id
     client = client or DkgClient(url=config.dkg_url, dkg_home=config.dkg_home)
-    tiers = ((constants.VIEW_VERIFIABLE_MEMORY, "public"),)
-    fetched = {tier: fetching.fetch_tier(client, config.context_graph_id, view) for view, tier in tiers}
+    listing = _partition_listing(client, context_graph_id)   # ONE _meta read, shared with the scope
+    fetched = {"public": fetching.fetch_tier(client, context_graph_id, constants.VIEW_VERIFIABLE_MEMORY, listing=listing)}
 
     # An entirely empty store gets an early cache-expiry below. Subscription,
     # admission, and catch-up are DKG daemon responsibilities; a cache read must
@@ -168,13 +169,13 @@ def _refresh_unlocked(
         ]
         prior = max(candidates, key=lambda item: item.source_count("public"), default=None)
         if prior is not None and prior.source_count("public") > 0:
-            return _reuse_generation(prior, context_graph_id, client, config)
+            return _reuse_generation(prior, context_graph_id, client, config, listing)
 
     if all(rows is None for rows in fetched.values()):
         # Every tier failed — keep the last-good ruleset instead of emptying.
         existing = _latest_cached_ruleset(context_graph_id)
         if existing is not None:
-            return _reuse_generation(existing, context_graph_id, client, config)
+            return _reuse_generation(existing, context_graph_id, client, config, listing)
 
     rows: List[Any] = []
     for tier, view_rows in fetched.items():
@@ -183,7 +184,7 @@ def _refresh_unlocked(
         rows.extend((row, tier) for row in view_rows)
     rs = compiler.build_from_rows(rows)
     rs.context_graph_id = context_graph_id
-    _apply_overlays(rs, client, config)
+    _apply_overlays(rs, client, config, listing=listing)
     _schedule_next_refresh(rs, config, empty_success)
 
     errored = failed_tiers
@@ -197,22 +198,39 @@ def _refresh_unlocked(
     return rs
 
 
+def _partition_listing(client: DkgClient, context_graph_id: str) -> Optional[fetching.PartitionListing]:
+    """The verified graph's ``_meta`` listing, read once per refresh for both the
+    compile and the live scope. None when it could not be read: each consumer
+    then falls back on its own (fail-open, never a lost generation)."""
+    try:
+        return fetching.confirmed_partitions(client, context_graph_id)
+    except Exception as exc:  # pragma: no cover - fail open (an outer boundary)
+        logger.debug("blackbox: partition listing unavailable: %s", exc)
+        return None
+
+
 def _reuse_generation(rs: compiler.Ruleset, context_graph_id: str, client: Optional[DkgClient],
-                      config: BlackboxConfig) -> compiler.Ruleset:
+                      config: BlackboxConfig, listing: Optional[fetching.PartitionListing] = None) -> compiler.Ruleset:
     """Keep *rs* (last-good verified tier) as the new generation: re-stamp it,
     refresh its community tier (it must refresh on every path — R0 tri-state),
     write it to disk and memory."""
     rs.context_graph_id = context_graph_id
     rs.synced_at = time.time()
     _schedule_next_refresh(rs, config, False)   # a deferred read while catching up retries soon
-    _apply_overlays(rs, client, config, reused=True)
+    _apply_overlays(rs, client, config, reused=True, listing=listing)
     disk_cache._write_cache(rs)
     _memory.store(rs)
     return rs
 
 
+def _previous_scope(config: BlackboxConfig) -> Optional[live.VerifiedScope]:
+    """The last cached generation's verified scope (fills what this refresh could not read)."""
+    prior = _latest_cached_ruleset(config.context_graph_id)
+    return prior.verified_scope if prior is not None else None
+
+
 def _apply_overlays(rs: compiler.Ruleset, client: Optional[DkgClient], config: BlackboxConfig, *,
-                    reused: bool = False) -> None:
+                    reused: bool = False, listing: Optional[fetching.PartitionListing] = None) -> None:
     """The tiers layered on top of the verified build, on EVERY refresh path.
 
     First the curator tier (Refine R2): verified rules the curator revoked are
@@ -228,6 +246,13 @@ def _apply_overlays(rs: compiler.Ruleset, client: Optional[DkgClient], config: B
     if client is None:
         return
     curator_tier.apply_curator_tier(rs, client, config)
+    # DKG-lookup B2: the live verified scope is rebuilt on every path, so a last-good
+    # generation kept through an empty read still learns the assets confirmed since.
+    rs.verified_scope = live.scope_for_generation(
+        client, config.context_graph_id, previous=rs.verified_scope or _previous_scope(config),
+        suppressed=None if reused else rs.suppressed_subjects, revoked=rs.curator_revoked, listing=listing,
+        fallback=config.verified_lookup_fallback)
+    live.maintain_fallback_index(rs.verified_scope, client, config.context_graph_id)   # B9: no-op unless opted in
     if not config.community_graph_id:
         return
     # KI-208: record what the graph looks like BEFORE this read, so anything that
@@ -237,30 +262,11 @@ def _apply_overlays(rs: compiler.Ruleset, client: Optional[DkgClient], config: B
         community_tier.reapply_community_tier(rs, client, config)
     else:
         community_tier.apply_community_tier(rs, client, config, _latest_cached_ruleset(config.context_graph_id))
-    _publish_digests(client, config)
+    community_tier.publish_digests(client, config)
     _retry_shares(client, config)
-    _keep_reports_alive(client, config)
-    _record_shadow_metrics(rs, config)
+    community_tier.keep_reports_alive(client, config)
+    community_tier.record_shadow_metrics(rs, config)
     community.PULSE.reset()   # a full read just happened; the next pulse starts from it
-
-
-def _record_shadow_metrics(rs: compiler.Ruleset, config: BlackboxConfig) -> None:
-    """R15: in the shadow phase every refresh logs the §12 numbers it computed. Fail-open."""
-    if not getattr(config, "community_shadow", False):
-        return
-    try:
-        community.shadow.write_snapshot(community.shadow.build_snapshot(rs, time.time()))
-    except Exception as exc:  # pragma: no cover - never degrade the refresh
-        logger.debug("blackbox: shadow metrics skipped this refresh: %s", exc)
-
-
-def _keep_reports_alive(client: DkgClient, config: BlackboxConfig) -> None:
-    """R5: the refresh cycle is the publish step for keep-alive — this node's
-    own live reports get this epoch's copy here (when sharing is on). Fail-open."""
-    try:
-        community.publish_due_copies(client, config)
-    except Exception as exc:  # pragma: no cover - never degrade the refresh
-        logger.warning("blackbox: keep-alive copies not published this refresh: %s", exc)
 
 
 def _retry_shares(client: DkgClient, config: BlackboxConfig) -> None:
@@ -269,15 +275,6 @@ def _retry_shares(client: DkgClient, config: BlackboxConfig) -> None:
         community.retry_due_shares(client, config)
     except Exception as exc:  # pragma: no cover - never degrade the refresh
         logger.debug("blackbox: share retry skipped this beat: %s", exc)
-
-
-def _publish_digests(client: DkgClient, config: BlackboxConfig) -> None:
-    """R2b: the refresh cycle is the one periodic beat, so a completed week's
-    sighting digest leaves here (when sharing is on). Fail-open."""
-    try:
-        community.publish_due_digests(client, config)
-    except Exception as exc:  # pragma: no cover - never degrade the refresh
-        logger.warning("blackbox: sighting digest not published this refresh: %s", exc)
 
 
 def _restore_tiers(rs: compiler.Ruleset, prior: compiler.Ruleset, tiers: List[str]) -> None:
