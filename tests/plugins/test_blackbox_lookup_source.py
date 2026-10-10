@@ -54,3 +54,15 @@ def test_a_finding_answered_by_the_local_index_says_so():
     assert ioc[0].fields["answered_by"] == detection.ANSWERED_BY_FALLBACK
     rs.dependency_rules = lambda candidates: live.LookupAnswer({"npm:evil@1.0": rule}, live.HIT, "")  # type: ignore[method-assign]
     assert "answered_by" not in detection.detect_dependency("bash", {"command": "npm install evil@1.0"}, rs)[0].fields
+
+
+def test_the_local_only_marker_never_reaches_a_shared_report():
+    """A finding the local index answered still shares: `answered_by` describes this
+    machine's check, not the threat, and the report schema would refuse it."""
+    from plugins.blackbox.community import sharing
+    finding = {"identifier": "dep:npm:evil@1.0.0", "category": "dependency", "severity": "critical",
+               "source": "public", "fields": {"ecosystem": "npm", "package_name": "evil", "package_version": "1.0.0",
+                                              "kind": "malware", "advisory_id": "MAL-2026-1", "reason": "advisory:MAL-2026-1",
+                                              "answered_by": detection.ANSWERED_BY_FALLBACK}}
+    assert "answered_by" not in sharing.shareable_fields(finding)
+    assert sharing._schema_decision(finding) == (True, "ok")
