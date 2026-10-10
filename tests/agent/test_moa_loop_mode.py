@@ -1122,7 +1122,6 @@ def test_late_completing_interrupted_reference_feeds_accounting_sink(monkeypatch
     """A reference still in flight at interrupt time gets a placeholder in
     the results, but its eventual REAL accounting must reach the sink."""
     import threading
-    import time
 
     from agent import moa_loop
 
@@ -1131,18 +1130,22 @@ def test_late_completing_interrupted_reference_feeds_accounting_sink(monkeypatch
 
     fake_agent = SimpleNamespace(_interrupt_requested=False)
     release = threading.Event()
+    wedged_started = threading.Event()
     sink_calls = []
     sink_seen = threading.Event()
 
     def sink(label, accounting):
         sink_calls.append((label, accounting))
-        sink_seen.set()
+        if "wedged" in label:
+            sink_seen.set()
 
     def fake_call_llm(**kwargs):
         if kwargs["provider"] == "fast":
+            assert wedged_started.wait(timeout=5), "second reference never started"
             fake_agent._interrupt_requested = True
             return _response("fast output")
         # wedged: blocks past the interrupt, completes later.
+        wedged_started.set()
         release.wait(timeout=5)
         return _response_with_usage("late output", prompt=21, completion=2)
 
@@ -1170,8 +1173,10 @@ def test_late_completing_interrupted_reference_feeds_accounting_sink(monkeypatch
     # …then completes late; its real billed usage must reach the sink.
     release.set()
     assert sink_seen.wait(timeout=5), "late accounting sink never called"
-    label, acct = sink_calls[0]
-    assert "wedged" in label
+    # Either completed future may reach the sink first after interruption.
+    late = [acct for label, acct in sink_calls if "wedged" in label]
+    assert len(late) == 1
+    acct = late[0]
     assert acct.usage.input_tokens == 21
 
 
