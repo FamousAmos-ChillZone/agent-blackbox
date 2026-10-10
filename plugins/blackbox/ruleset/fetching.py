@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, FrozenSet, List, Optional, Tuple
 from ..kernel import constants
 from ..kernel.dkg_client import DkgClient, extract_binding
 from ..kernel import sparql_text
+from ..kernel.store import StoreClient, loopback_store_url
 from . import graph_queries, partitions
 
 logger = logging.getLogger(__name__)
@@ -127,7 +128,7 @@ def _verified_small_tier_rows(client: DkgClient, cg_id: str, vm_prefix: str,
     ``GRAPH ?g`` under *vm_prefix*, then only rows whose graph the node confirmed
     (a tentative or foreign asset never becomes a public rule). None on failure."""
     rows = _fetch_paged_lanes(
-        client, cg_id,
+        _StoreLanes.for_node(client) or client, cg_id,
         lambda limit, after: graph_queries._verified_small_tier_lanes(limit, after, vm_prefix),
         view=constants.VIEW_VERIFIABLE_MEMORY,
     )
@@ -136,6 +137,41 @@ def _verified_small_tier_rows(client: DkgClient, cg_id: str, vm_prefix: str,
     partitions.forget_cached_assets()   # the per-asset row cache these lanes replaced
     confirmed = set(listing.confirmed)
     return [row for row in rows if extract_binding(row.get("g")) in confirmed]
+
+
+class _StoreLanes:
+    """The lane reader pointed at the node's LOCAL store instead of its query API.
+
+    Bench A 2026-10-10: the InjectionSignal lane took 0.05 s at the store and 25–29 s
+    through the node's /api/query (with or without the verified-memory view, which also
+    rewrote it to an 86 KB query listing all 564 asset graphs) — long enough for the
+    node's own supervisor to restart the store (KI-330, LES-040). Adapter: the
+    ``query(sparql, cg, view=, on_error=)`` shape the pager calls, answered by
+    :class:`~..kernel.store.StoreClient`; a failed read returns *on_error*.
+    """
+
+    def __init__(self, store: StoreClient) -> None:
+        self.store = store
+
+    @classmethod
+    def for_node(cls, client: Any) -> Optional["_StoreLanes"]:
+        """A store-backed reader when the node reports a loopback store; else None."""
+        status = getattr(client, "status", None)
+        if not callable(status):
+            return None
+        try:
+            url = loopback_store_url(status(timeout=5.0))
+        except Exception:   # a node without a status answer: the caller uses its query API
+            return None
+        return cls(StoreClient(url, timeout=STORE_LANE_TIMEOUT_SECONDS)) if url else None
+
+    def query(self, sparql: str, _cg_id: str, *, view: Optional[str] = None, on_error: Any = None, **_: Any) -> Any:
+        answer = self.store.select(sparql)
+        return answer.rows if answer.known else on_error
+
+
+#: One lane page at the store (0.05 s on bench A; generous for a busy node).
+STORE_LANE_TIMEOUT_SECONDS = 20.0
 
 
 def _fetch_paged_lanes(

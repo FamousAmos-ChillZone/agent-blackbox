@@ -224,3 +224,54 @@ def test_a_search_reads_its_matches_once_and_says_when_there_are_more():
 def test_plain_paging_stops_at_the_depth_cap():
     page = live.public_page(SCOPE_WITH_COUNTS, BrowseStore(GRAPHS), offset=browse.MAX_DEPTH, limit=10)
     assert not page.known and "search or filter" in page.reason
+
+
+# ------------------------------------------------------------------ the small-tier lanes read the store
+
+
+def test_small_tier_lanes_go_to_the_local_store_when_the_node_reports_one(monkeypatch):
+    """Bench A: 0.05 s at the store vs 25–29 s through the node API (KI-330)."""
+    from plugins.blackbox.ruleset import fetching
+    asked = []
+
+    class Store(StoreClient):
+        def select(self, sparql, *, timeout=None):
+            asked.append(sparql)
+            return StoreAnswer([])
+
+    monkeypatch.setattr(fetching, "StoreClient", lambda url, timeout=None: Store(url))
+
+    class Node:
+        def status(self, timeout=None):
+            return {"storeUrl": "http://127.0.0.1:7878/query"}
+
+        def query(self, sparql, cg, view=None, on_error=None, **kw):
+            if "dkg:assertionGraph" in sparql:
+                return [{"assertionGraph": f"did:dkg:context-graph:{cg}/_verifiable_memory/0xc/1", "status": "confirmed"}]
+            if "GRAPH ?g {" in sparql:
+                raise AssertionError("small-tier lanes must not go through the node API when a store is reported")
+            return []
+
+    assert fetching.fetch_tier(Node(), "0xC/agent-blackbox-vm", "verifiable-memory") == []
+    assert asked and all("GRAPH ?g {" in q for q in asked)
+
+
+def test_without_a_reported_store_the_lanes_use_the_node_api():
+    from plugins.blackbox.ruleset import fetching
+
+    class Node:
+        def __init__(self):
+            self.lanes = 0
+
+        def status(self, timeout=None):
+            return {}
+
+        def query(self, sparql, cg, view=None, on_error=None, **kw):
+            if "dkg:assertionGraph" in sparql:
+                return [{"assertionGraph": f"did:dkg:context-graph:{cg}/_verifiable_memory/0xc/1", "status": "confirmed"}]
+            if "GRAPH ?g {" in sparql:
+                self.lanes += 1
+            return []
+
+    node = Node()
+    assert fetching.fetch_tier(node, "0xC/agent-blackbox-vm", "verifiable-memory") == [] and node.lanes == 4
