@@ -240,6 +240,22 @@ class Ruleset:
         return len(self.graph_entries(source))
 
 
+def suppressed_subjects(tagged_rows: Iterable[tuple]) -> set:
+    """Subjects a PUBLIC CorrectionSignal row suppresses (``(row, source)`` pairs):
+    a curated correction withdraws the threat it targets from every tier."""
+    suppressed: set = set()
+    for row, row_source in tagged_rows:
+        if row_source != "public":
+            continue
+        if extract_binding(row.get("rdfType")) != constants.DEFENDER_CORRECTION_TYPE_IRI:
+            continue
+        action = extract_binding(row.get("correctionAction")).strip().lower()
+        target = extract_binding(row.get("targetSubject")).strip()
+        if action == constants.DEFENDER_CORRECTION_SUPPRESS and target:
+            suppressed.add(target)
+    return suppressed
+
+
 def build_from_rows(rows: List[Dict[str, Any]], source: str = "public") -> Ruleset:
     """Build a :class:`Ruleset` from ``(rows, source)`` pairs or plain rows.
 
@@ -254,25 +270,11 @@ def build_from_rows(rows: List[Dict[str, Any]], source: str = "public") -> Rules
     fa_seen: set = set()
     skill_seen: set = set()
     graph_seen: set = set()
-    tagged_rows = []
-    suppressed_subjects: set = set()
-    for item in rows:
-        if isinstance(item, tuple):
-            row, row_source = item
-        else:
-            row, row_source = item, source
-        tagged_rows.append((row, row_source))
-        if row_source != "public":
-            continue
-        if extract_binding(row.get("rdfType")) != constants.DEFENDER_CORRECTION_TYPE_IRI:
-            continue
-        action = extract_binding(row.get("correctionAction")).strip().lower()
-        target = extract_binding(row.get("targetSubject")).strip()
-        if action == constants.DEFENDER_CORRECTION_SUPPRESS and target:
-            suppressed_subjects.add(target)
+    tagged_rows = [item if isinstance(item, tuple) else (item, source) for item in rows]
+    suppressed = suppressed_subjects(tagged_rows)
 
     for row, row_source in tagged_rows:
-        if extract_binding(row.get("threat")) in suppressed_subjects:
+        if extract_binding(row.get("threat")) in suppressed:
             continue
         graph_entry = row_adapters._row_to_graph_entry(row, row_source)
         if graph_entry:

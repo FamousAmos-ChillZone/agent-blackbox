@@ -13,7 +13,8 @@ by :mod:`.refresh_cycle` and the dashboard; tests patch it here).
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Tuple
 from ..kernel import constants
 from ..kernel.dkg_client import DkgClient, extract_binding
 from ..kernel import sparql_text
@@ -26,6 +27,44 @@ _PAGE_SIZE = 5000
 
 
 _QUERY_ERROR = object()  # sentinel: distinguishes a tier failure from an empty tier
+
+
+@dataclass(frozen=True)
+class PartitionListing:
+    """What the node's ``_meta`` says about the verified graph's assets.
+
+    ``graphs`` — every VM assertion graph listed (any status); ``confirmed`` —
+    the owner-pinned, on-chain-confirmed ones, sorted: the only graphs a
+    public rule may come from.
+    """
+
+    graphs: FrozenSet[str]
+    confirmed: Tuple[str, ...]
+
+
+def confirmed_partitions(client: DkgClient, cg_id: str) -> Optional[PartitionListing]:
+    """List the verified graph's assertion graphs; None when the node could
+    not be asked, or lists partitions but confirms none yet (a broad read then
+    would promote tentative assets to public rules — keep the last-good tier)."""
+    partition_query = graph_queries._verified_partitions_sparql(cg_id)
+    if not partition_query:
+        return None
+    metadata = client.query(partition_query, cg_id, view=None, on_error=_QUERY_ERROR)
+    if metadata is _QUERY_ERROR:
+        return None
+    vm_prefix = f"{graph_queries._context_graph_data_uri(cg_id)}/_verifiable_memory/"
+    partition_metadata = [
+        (graph, extract_binding(row.get("status")))
+        for row in metadata
+        if (graph := extract_binding(row.get("assertionGraph"))).startswith(vm_prefix)
+        and graph != vm_prefix
+        and not any(char in graph for char in graph_queries._FORBIDDEN_IRI_CHARS)
+    ]
+    graphs = frozenset(graph for graph, _status in partition_metadata)
+    confirmed = tuple(sorted({graph for graph, status in partition_metadata if status == "confirmed"}))
+    if graphs and not confirmed:
+        return None
+    return PartitionListing(graphs=graphs, confirmed=confirmed)
 
 
 def fetch_tier(
@@ -41,37 +80,11 @@ def fetch_tier(
     instead of wiping them.
     """
     if view == constants.VIEW_VERIFIABLE_MEMORY:
-        partition_query = graph_queries._verified_partitions_sparql(cg_id)
-        if not partition_query:
+        listing = confirmed_partitions(client, cg_id)
+        if listing is None:
             return None
-        metadata = client.query(
-            partition_query,
-            cg_id,
-            view=None,
-            on_error=_QUERY_ERROR,
-        )
-        if metadata is _QUERY_ERROR:
-            return None
-
         data_graph = graph_queries._context_graph_data_uri(cg_id)
-        vm_prefix = f"{data_graph}/_verifiable_memory/"
-        partition_metadata = [
-            (graph, extract_binding(row.get("status")))
-            for row in metadata
-            if (graph := extract_binding(row.get("assertionGraph"))).startswith(vm_prefix)
-            and graph != vm_prefix
-            and not any(char in graph for char in graph_queries._FORBIDDEN_IRI_CHARS)
-        ]
-        partition_graphs = {graph for graph, _status in partition_metadata}
-        confirmed = sorted(
-            {graph for graph, status in partition_metadata if status == "confirmed"}
-        )
-        # A broad VM query would union tentative assertion graphs and promote
-        # them to public rules. Preserve the last-good tier until every graph
-        # selected here is explicitly confirmed.
-        if partition_graphs and not confirmed:
-            return None
-
+        confirmed = listing.confirmed
         # One plain triple read per asset, each confirmed asset cached once read:
         # the joined five-asset query this replaces exceeded the node's 30 s store
         # deadline even on one asset, freezing the rules at the first asset
