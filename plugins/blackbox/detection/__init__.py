@@ -1,6 +1,8 @@
 """Detection — the CHECK hot path: is this tool call / model request a threat?
 
-Pure matchers over the compiled ruleset plus the two advisory look-asides.
+Pure matchers over the ruleset — public dependency / IOC rules are asked of the
+ruleset object (a live lookup against the node's local store, DKG-lookup B4),
+the small tiers are scanned from its compiled lists — plus two advisory look-asides.
 Callers use this package's surface only:
 
 * ``Finding`` and the ``detect_*`` / ``discover_*`` functions (from

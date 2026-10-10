@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, FrozenSet, Iterable, List, Optional
+from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Sequence, Tuple
 from ..kernel import constants, threat_ids
 from . import anchors
 from ..kernel.dkg_client import DkgClient, extract_binding
@@ -154,6 +154,25 @@ class Ruleset:
             return None
         return live.VerifiedLookup(scope, StoreClient(scope.store_url))
 
+    def dependency_rules(self, candidates: "Sequence[Tuple[str, str, str]]") -> live.LookupAnswer:
+        """Rules for these ``(ecosystem, name, version)`` candidates, keyed as
+        ``dependency_key`` keys. PUBLIC rules come from the live lookup when this
+        generation has one; the compiled ``dependency`` dict fills the keys it did
+        not answer (community-materialised rules, or a fully compiled tier). Public
+        therefore beats community by construction. A lookup that could not tell
+        keeps that outcome even when the dict filled a hit."""
+        lookup = self.live_lookup()
+        answer = lookup.dependencies(candidates) if lookup else live.LookupAnswer({}, live.CLEAN)
+        keys = [threat_ids.dependency_key(ecosystem, name, version) for ecosystem, name, version in candidates]
+        return _fill_from_dict(answer, keys, self.dependency)
+
+    def ioc_rules(self, identifiers: "Sequence[str]") -> live.LookupAnswer:
+        """Rules among these ``ioc:type:value`` identifiers (see :meth:`dependency_rules`
+        for the live-then-compiled precedence and the outcome)."""
+        lookup = self.live_lookup()
+        answer = lookup.iocs(identifiers) if lookup else live.LookupAnswer({}, live.CLEAN)
+        return _fill_from_dict(answer, identifiers, self.ioc)
+
     def refresh_due(self, interval: float) -> float:
         """Epoch seconds when this generation should be refreshed: its own early
         schedule (``refresh_due_at``) if it set one, else *interval* after it was
@@ -258,6 +277,20 @@ class Ruleset:
 
     def graph_count(self, source: str) -> int:
         return len(self.graph_entries(source))
+
+
+def _fill_from_dict(answer: live.LookupAnswer, keys: "Sequence[str]",
+                    compiled: Dict[str, Dict[str, Any]]) -> live.LookupAnswer:
+    """The live answer plus every *key* the compiled dict holds that the lookup
+    did not; HIT when anything matched unless the lookup could not tell."""
+    rules = dict(answer.rules)
+    for key in keys:
+        if key not in rules and key in compiled:
+            rules[key] = compiled[key]
+    outcome = answer.outcome
+    if outcome == live.CLEAN and rules:
+        outcome = live.HIT
+    return live.LookupAnswer(rules, outcome, answer.reason)
 
 
 def suppressed_subjects(tagged_rows: Iterable[tuple]) -> set:

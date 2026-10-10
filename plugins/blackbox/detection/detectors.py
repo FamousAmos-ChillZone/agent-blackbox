@@ -1,7 +1,10 @@
 """Pure, testable matcher over a :class:`~plugins.blackbox.ruleset.Ruleset`.
 
-No hardcoded threat rules act as truth: every rule comes from the graph-synced
-ruleset, in two trust tiers. Rules tagged ``source: "public"`` come from the
+No hardcoded threat rules act as truth: every rule comes from the graph, in two
+trust tiers. Public dependency and IOC rules are ASKED of the ruleset object
+(``dependency_rules`` / ``ioc_rules``: a live lookup against the node's local
+store, with the compiled dicts filling in — DKG-lookup B4); the small tiers are
+scanned from the compiled lists. Rules tagged ``source: "public"`` come from the
 verified public threat graph (verifiable-memory) — the source of truth: if it's
 there, it's a threat, and a match is CONFIRMED (blockable). Rules tagged
 ``source: "community"`` come from the shared community pool — a match is
@@ -17,7 +20,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 import os
-from typing import Any, Iterable, List
+from typing import Any, Dict, Iterable, List
 
 from . import action_parsing
 from . import content_scanners
@@ -30,6 +33,31 @@ from .skill_detection import detect_skill
 from ..kernel import threat_ids
 
 logger = logging.getLogger(__name__)
+
+def _dependency_candidates(dep: Dict[str, Any]) -> List[Any]:
+    """The ``(ecosystem, name, version)`` candidates one parsed install can match:
+    the exact pinned version first, then the package-level ``@*`` rule — whole-
+    package malware / typosquats where EVERY version is bad, including an
+    unpinned ``install <pkg>`` (which has no version to key on)."""
+    ecosystem = dep["ecosystem"].lower()
+    version = dep.get("version") or ""
+    return ([(ecosystem, dep["name"], version)] if version else []) + [(ecosystem, dep["name"], "*")]
+
+
+def dependency_rules(ruleset: Any, candidates: List[Any]) -> Dict[str, Dict[str, Any]]:
+    """The dependency rules for ``(ecosystem, name, version)`` *candidates*, keyed
+    by ``dependency_key``. A :class:`~..ruleset.Ruleset` answers through
+    ``dependency_rules()`` (live verified lookup first, compiled dict after);
+    a bare object with a ``dependency`` dict (tests, older callers) is indexed."""
+    if not candidates:
+        return {}
+    ask = getattr(ruleset, "dependency_rules", None)
+    if callable(ask):
+        return ask(candidates).rules
+    compiled = getattr(ruleset, "dependency", {}) or {}
+    keys = (threat_ids.dependency_key(ecosystem, name, version) for ecosystem, name, version in candidates)
+    return {key: compiled[key] for key in keys if key in compiled}
+
 
 def detect_escalation(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     """Match a tool call against escalation rules on BOTH toolName AND argShape.
@@ -99,25 +127,23 @@ def detect_dependency(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     key on and are skipped here (they surface as advisories elsewhere).
     """
     command = action_parsing.command_text(args)
-    dependency_rules = getattr(ruleset, "dependency", {}) or {}
-    if not command or not dependency_rules:
+    if not command:
         return []
+    installs = action_parsing.parse_dependency_installs(command)
+    # One round trip asks for every candidate of every install at once.
+    rules = dependency_rules(ruleset, [c for dep in installs for c in _dependency_candidates(dep)])
     out: List[Finding] = []
     seen: set = set()
-    for dep in action_parsing.parse_dependency_installs(command):
+    for dep in installs:
         version = dep.get("version") or ""
         eco = dep["ecosystem"].lower()
         name = threat_ids.canonical_package_name(eco, dep["name"])
-        # Exact pinned version first, then a package-level ``@*`` rule — whole-package
-        # malware / typosquats where EVERY version is bad, including an unpinned
-        # ``install <pkg>`` (which has no version to key on).
-        candidates = [threat_ids.dependency_key(eco, dep["name"], version)] if version else []
-        candidates.append(threat_ids.dependency_key(eco, dep["name"], "*"))
-        key = next((k for k in candidates if k in dependency_rules), None)
+        keys = [threat_ids.dependency_key(*candidate) for candidate in _dependency_candidates(dep)]
+        key = next((k for k in keys if k in rules), None)
         if key is None or key in seen:
             continue
         seen.add(key)
-        rule = dependency_rules[key]
+        rule = rules[key]
         src = _rule_source(rule)
         shown = version or "*"
         out.append(
@@ -199,17 +225,16 @@ def discover_dependency_candidates(tool_name: str, args: Any, ruleset: Any, osv_
     candidates; clean deps never surface (privacy). Runs OFF the blocking path.
     """
     command = action_parsing.command_text(args)   # "" parses to no installs
-    dependency_rules = getattr(ruleset, "dependency", {}) or {}
+    pinned = [dep for dep in action_parsing.parse_dependency_installs(command) if dep.get("version")]
+    covered = dependency_rules(ruleset, [(dep["ecosystem"].lower(), dep["name"], dep["version"]) for dep in pinned])
     out: List[Finding] = []
     seen: set = set()
-    for dep in action_parsing.parse_dependency_installs(command):
-        version = dep.get("version") or ""
-        if not version:
-            continue
+    for dep in pinned:
+        version = dep["version"]
         eco = dep["ecosystem"].lower()
         name = dep["name"]
-        key = f"{eco}:{name.lower()}@{version}"
-        if key in dependency_rules or key in seen:
+        key = threat_ids.dependency_key(eco, name, version)   # the same key the graph rule has (PyPI names canonical)
+        if key in covered or key in seen:
             continue  # already a graph rule (confirmed elsewhere) or duped
         seen.add(key)
         try:
