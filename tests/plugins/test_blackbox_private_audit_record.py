@@ -130,3 +130,23 @@ def test_the_hook_writes_its_private_record_into_the_local_graph(tmp_path, monke
                                 title="t", tool_name="terminal", matched="m", evidence="e", confirmed=True, source="public")
     reporting._report_and_audit(config.BlackboxConfig(), "pre_tool_call", [finding], {})
     assert writes == ["0xABC/blackbox-local"]
+
+
+def test_the_local_tier_reads_only_the_identifier_lane_of_the_nodes_own_graph():
+    """Bench A 2026-10-10: the defender-signal lanes over working memory ran > 30 s and the
+    node restarted its store; the private graph holds audit records only."""
+    fetching = load_blackbox("ruleset.fetching")
+    asked = []
+
+    class Node:
+        def query(self, sparql, cg, view=None, on_error=None, agent_address=None, **kw):
+            asked.append((sparql, cg, view, agent_address))
+            if "FILTER(STR(?threat) >" in sparql:
+                return []
+            return [{"threat": "urn:guardian:audit:1", "identifier": '"ioc:ip:203.0.113.9"',
+                     "rdfType": "http://umanitek.ai/ontology/guardian/AuditRecord", "severity": '"high"'}]
+
+    rows = fetching.fetch_local_records(Node(), "0xABC/blackbox-local", "0xABC")
+    assert [r["threat"] for r in rows] == ["urn:guardian:audit:1"]
+    assert all("defender:" not in q and cg == "0xABC/blackbox-local" and view == "working-memory" and who == "0xABC"
+               for q, cg, view, who in asked)

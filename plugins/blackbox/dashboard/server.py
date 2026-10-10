@@ -1890,7 +1890,7 @@ def create_app(*, manage_blackbox: bool = False):
                 agent_address = str(client.agent_identity().get("agentAddress") or "")
                 # This machine's private audit records live in its OWN graph (audit.local_graph).
                 local_graph = audit.local_audit_graph(client) or cfg.context_graph_id
-                rows = ruleset.fetch_tier(client, local_graph, view, agent_address=agent_address) or []
+                rows = ruleset.fetch_local_records(client, local_graph, agent_address) or []
                 local_rules = ruleset.build_from_rows(rows, source="local")
                 for rule in local_rules.graph_entries("local"):
                     identifier = str(rule.get("identifier") or "")

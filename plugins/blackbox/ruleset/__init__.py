@@ -12,6 +12,7 @@ and serves it to the hot path. Callers use this surface only:
   compiled (assets compiled of assets confirmed), for status and health.
 * :func:`verified_download_totals` — assets + triples the node has downloaded
   and confirmed (one aggregate query), for the dashboard's sync meter.
+* :func:`fetch_local_records` — this node's private audit records (the Local tier).
 * :func:`build_from_rows`, :func:`verified_identifiers`, :func:`fetch_tier` —
   compile / proof / paging entry points used by the dashboard and tests.
 * ``RulesetRefresh*`` — refresh outcomes callers branch on.
@@ -32,7 +33,7 @@ from __future__ import annotations
 
 from .compiler import Ruleset, build_from_rows, verified_identifiers
 from .errors import RulesetRefreshIncomplete, RulesetRefreshLockUnavailable, RulesetRefreshUnavailable
-from .fetching import fetch_tier
+from .fetching import fetch_local_records, fetch_tier
 from . import live
 from .partitions import DownloadTotals, verified_download_totals
 from .partitions import progress as verified_progress
@@ -46,6 +47,7 @@ __all__ = [
     "RulesetRefreshLockUnavailable",
     "RulesetRefreshUnavailable",
     "build_from_rows",
+    "fetch_local_records",
     "fetch_tier",
     "get",
     "live",

@@ -121,6 +121,19 @@ def fetch_tier(
     )
 
 
+def fetch_local_records(client: DkgClient, local_graph: str, agent_address: str) -> Optional[List[Dict[str, Any]]]:
+    """This node's private audit records (``g:identifier`` rows) from its OWN graph's
+    working memory — the dashboard's Local tier. ONE identifier lane only: the private
+    graph holds audit records and nothing else, and the defender-signal lanes over a
+    working-memory view scanned the whole store (> 30 s on bench A, 2026-10-10 — the
+    node's supervisor then restarted Oxigraph, LES-040). None when the node failed."""
+    return _fetch_paged_lanes(
+        client, local_graph,
+        lambda limit, after: (graph_queries._legacy_threats_sparql(limit, after),),
+        view=constants.VIEW_WORKING_MEMORY, agent_address=agent_address,
+    )
+
+
 def _verified_small_tier_rows(client: DkgClient, cg_id: str, vm_prefix: str,
                               listing: PartitionListing) -> Optional[List[Dict[str, Any]]]:
     """The small verified tiers (injection, skill, corrections, legacy-identifier
