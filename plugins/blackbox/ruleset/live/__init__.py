@@ -22,6 +22,9 @@ small scope travels in ``ruleset.json``.
   check-time answers (``dependency_rules``, ``ioc_rules``, ``verified_subset``, ``live_browse``).
 * :func:`public_page` / :class:`LivePage` — one bounded page of the live tiers for
   the dashboard (filtered window + whole-result totals), through the same builders.
+* :class:`FallbackIndex` / :func:`maintain_fallback_index` — the OPT-IN on-disk index
+  (``verified_lookup_fallback: index``), a last resort that answers only after the store
+  could not; off by default.
 * :data:`HEALTH` — the record of what lookups could and could not answer
   (``verified_lookup_state.json``): a degraded store is an operator alarm.
 
@@ -35,8 +38,10 @@ Usage::
 
 from .answering import LiveAnswering
 from .browse import LivePage, public_page
+from .fallback_index import FALLBACK_INDEX, FALLBACK_OFF, FallbackIndex
+from .fallback_index import maintain as maintain_fallback_index
 from .health import HEALTH, LookupHealth, LookupState
 from .lookup import CLEAN, COULD_NOT_TELL, HIT, LookupAnswer, VerifiedLookup
 from .scope import VerifiedScope, refresh_scope, scope_for_generation
 
-__all__ = ["CLEAN", "COULD_NOT_TELL", "HEALTH", "HIT", "LiveAnswering", "LivePage", "LookupAnswer", "LookupHealth", "LookupState", "public_page", "VerifiedLookup", "VerifiedScope", "refresh_scope", "scope_for_generation"]
+__all__ = ["CLEAN", "COULD_NOT_TELL", "FALLBACK_INDEX", "FALLBACK_OFF", "FallbackIndex", "HEALTH", "HIT", "maintain_fallback_index", "LiveAnswering", "LivePage", "LookupAnswer", "LookupHealth", "LookupState", "public_page", "VerifiedLookup", "VerifiedScope", "refresh_scope", "scope_for_generation"]

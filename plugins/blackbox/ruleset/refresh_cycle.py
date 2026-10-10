@@ -250,7 +250,9 @@ def _apply_overlays(rs: compiler.Ruleset, client: Optional[DkgClient], config: B
     # generation kept through an empty read still learns the assets confirmed since.
     rs.verified_scope = live.scope_for_generation(
         client, config.context_graph_id, previous=rs.verified_scope or _previous_scope(config),
-        suppressed=None if reused else rs.suppressed_subjects, revoked=rs.curator_revoked, listing=listing)
+        suppressed=None if reused else rs.suppressed_subjects, revoked=rs.curator_revoked, listing=listing,
+        fallback=config.verified_lookup_fallback)
+    live.maintain_fallback_index(rs.verified_scope, client, config.context_graph_id)   # B9: no-op unless opted in
     if not config.community_graph_id:
         return
     # KI-208: record what the graph looks like BEFORE this read, so anything that

@@ -19,7 +19,7 @@ from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 from ...kernel import threat_ids
 from ...kernel.store import StoreClient
-from . import browse
+from . import browse, fallback_index
 from .lookup import CLEAN, HIT, LookupAnswer, VerifiedLookup
 from .scope import VerifiedScope
 
@@ -41,7 +41,7 @@ class LiveAnswering:
         scope = self.verified_scope
         if scope is None or not scope.ready:
             return None
-        return VerifiedLookup(scope, StoreClient(scope.store_url))
+        return VerifiedLookup(scope, StoreClient(scope.store_url), fallback=fallback_index.FallbackIndex.for_scope(scope))
 
     def dependency_rules(self, candidates: "Sequence[Tuple[str, str, str]]") -> LookupAnswer:
         """Rules for these ``(ecosystem, name, version)`` candidates, keyed as

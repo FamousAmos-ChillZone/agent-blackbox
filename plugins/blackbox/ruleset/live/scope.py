@@ -62,6 +62,9 @@ class VerifiedScope:
     #: How many verified rules the live tiers hold (``dependency``, ``ioc``) — the
     #: counts the compile used to produce, now three aggregate queries per refresh.
     verified_counts: Mapping[str, int] = field(default_factory=dict)
+    #: The operator's fallback mode at refresh time (``off`` | ``index``), so the hot
+    #: path never reads config.
+    fallback: str = "off"
     built_at: float = 0.0
 
     @property
@@ -84,6 +87,7 @@ class VerifiedScope:
             "revoked_identifiers": sorted(self.revoked_identifiers),
             "package_aliases": {key: list(values) for key, values in sorted(self.package_aliases.items())},
             "verified_counts": dict(self.verified_counts),
+            "fallback": self.fallback,
             "built_at": self.built_at,
         }
 
@@ -103,6 +107,7 @@ class VerifiedScope:
                              if isinstance(vs, list)} if isinstance(aliases, dict) else {},
             verified_counts={str(k): int(v) for k, v in counts.items() if isinstance(v, (int, float))}
             if isinstance(counts := data.get("verified_counts"), dict) else {},
+            fallback=str(data.get("fallback") or "off"),
             built_at=float(data.get("built_at") or 0.0),
         )
 
@@ -120,6 +125,7 @@ def refresh_scope(
     suppressed: Optional[Iterable[str]],
     revoked: Iterable[str],
     store: Optional[StoreClient] = None,
+    fallback: str = "off",
 ) -> VerifiedScope:
     """The next scope. Every part that could not be read this time keeps the
     previous scope's value (fail-open, but never "could not read" → "nothing").
@@ -147,6 +153,7 @@ def refresh_scope(
         revoked_identifiers=frozenset(revoked),
         package_aliases=aliases,
         verified_counts=counts,
+        fallback=fallback,
         built_at=time.time(),
     )
 
@@ -195,6 +202,7 @@ def scope_for_generation(
     suppressed: Optional[Iterable[str]],
     revoked: Iterable[str],
     listing: Optional[fetching.PartitionListing] = None,
+    fallback: str = "off",
 ) -> Optional[VerifiedScope]:
     """:func:`refresh_scope` fed by the node's partition listing (*listing* when
     the refresh already read it, else read now) — what the refresh cycle calls
@@ -205,7 +213,7 @@ def scope_for_generation(
         return refresh_scope(
             client, context_graph_id, previous=previous,
             confirmed=listing.confirmed if listing is not None else None,
-            suppressed=suppressed, revoked=revoked,
+            suppressed=suppressed, revoked=revoked, fallback=fallback,
         )
     except Exception as exc:  # pragma: no cover - fail open (an outer boundary)
         logger.warning("blackbox: verified scope not refreshed: %s", exc)

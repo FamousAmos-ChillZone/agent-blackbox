@@ -73,10 +73,13 @@ class VerifiedLookup:
     """Exact lookups for one scope against one store. Stateless; build one per
     ruleset generation (:func:`compiler.Ruleset.live_lookup`)."""
 
-    def __init__(self, scope: VerifiedScope, store: StoreClient, health: Optional[LookupHealth] = None) -> None:
+    def __init__(self, scope: VerifiedScope, store: StoreClient, health: Optional[LookupHealth] = None,
+                 fallback: Any = None) -> None:
         self.scope = scope
         self.store = store
         self.health = health or HEALTH
+        #: The opt-in on-disk index (:class:`.fallback_index.FallbackIndex`), None by default.
+        self.fallback = fallback
 
     def dependencies(self, candidates: Sequence[DependencyCandidate]) -> LookupAnswer:
         """Public dependency rules for exactly these ``(ecosystem, name, version)``
@@ -101,8 +104,20 @@ class VerifiedLookup:
         if not items:
             return LookupAnswer({}, CLEAN)
         answer = self._ask(items, build_query, category)
-        self.health.record(answer.known, answer.reason)
+        self.health.record(answer.known, answer.reason)        # the STORE's health, whatever answers next
+        if not answer.known and self.fallback is not None:
+            return self._from_fallback(items, category, answer)
         return answer
+
+    def _from_fallback(self, items: Sequence[Any], category: str, store_answer: LookupAnswer) -> LookupAnswer:
+        """The last resort (B9): the operator-enabled index answers; hits the store
+        found before failing are kept; absence from a partial index stays could-not-tell."""
+        if category == "dependency":
+            fallback = self.fallback.dependencies([(eco, pkg, ver) for pkg, eco, ver in items])
+        else:
+            fallback = self.fallback.ioc_values(list(items))
+        rules = {**fallback.rules, **store_answer.rules}
+        return LookupAnswer(rules, HIT if rules else fallback.outcome, fallback.reason)
 
     def _ask(self, items: Sequence[Any], build_query: Any, category: str) -> LookupAnswer:
         if not self.scope.ready:
