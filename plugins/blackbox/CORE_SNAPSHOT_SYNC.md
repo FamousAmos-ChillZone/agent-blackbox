@@ -34,7 +34,8 @@ core trust cannot subsequently be described as RPC-only by changing one flag:
 use a separate fresh DKG profile/store for independent-only operation.
 
 `blackbox sync --wait --require-rules` starts or observes one matching DKG job,
-checks usable local rules through direct queries, and waits for a fresh final
+lets the DKG job establish its own public subscription without a second legacy
+catch-up, checks usable local rules through direct queries, and waits for a fresh final
 inventory comparison. A failed job remains failed even if some rules arrived.
 A changing graph is reported as partial. Without `--wait`, the command starts or
 reattaches to the job and reports that it is still running. Interrupting the

@@ -95,6 +95,7 @@ def test_real_http_job_waits_for_coverage_and_never_upgrades_failed_job(tmp_path
                       argparse.Namespace(wait=True, require_rules=True, timeout=5))
     assert result == expected
     assert sum(method == "POST" and path == core.PATH for method, path, _ in calls) == 1
+    assert not any(path == "/api/context-graph/subscribe" for _, path, _ in calls)
     recorded = core.state.read_for_graph(configured.context_graph_id)
     assert recorded["detection_ready"] is True
     assert recorded["graph_complete"] is (terminal == "complete" and current)

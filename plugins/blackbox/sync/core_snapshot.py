@@ -25,8 +25,7 @@ class SnapshotSyncClient(DkgClient):
         super().__init__(url=local_url(cfg.dkg_url), dkg_home=cfg.dkg_home)
 
     def request(self, method, path, body=None, timeout=15):
-        if (method, path) not in {("GET", PATH), ("POST", PATH),
-                                  ("POST", "/api/context-graph/subscribe")}:
+        if (method, path) not in {("GET", PATH), ("POST", PATH)}:
             raise DkgError("SNAPSHOT_ROUTE_REFUSED")
         data = json.dumps(body).encode() if body is not None else None
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
@@ -74,7 +73,7 @@ def run(client, cfg, args):
                     snapshot_digest=result.get("snapshotDigest"), error=error)
 
     try:
-        # Check capability before subscribing or starting a transfer. Never silently fall back.
+        # Check capability before starting a transfer. Never silently fall back.
         job = client.request("GET", PATH)
         if job.get("state") not in {"idle", "running", "complete", "failed"}:
             raise DkgError("SNAPSHOT_RESPONSE_INVALID")
@@ -82,9 +81,6 @@ def run(client, cfg, args):
             if job.get("request") != payload:
                 raise DkgError("ANOTHER_SNAPSHOT_JOB_IS_RUNNING")
         else:
-            subscribed = client.subscribe_context_graph(cfg.context_graph_id)
-            if subscribed.get("subscribed") is not True:
-                raise DkgError("SNAPSHOT_SUBSCRIPTION_REFUSED")
             job = client.request("POST", PATH, payload)
         job_id = job.get("id")
         if not isinstance(job_id, str) or not job_id:
