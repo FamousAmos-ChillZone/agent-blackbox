@@ -15,20 +15,23 @@ Safety:
 * a row counts only when its graph is in the scope, its subject is not
   suppressed and its identifier not revoked;
 * a store that failed or timed out gives ``COULD_NOT_TELL`` — hits found
-  before the failure are still hits, but the absence of a hit proves nothing.
+  before the failure are still hits, but the absence of a hit proves nothing;
+* every outcome is recorded in :data:`.health.HEALTH`, so a degraded store is
+  visible to `blackbox status` and the dashboard, never silent.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from ...kernel.dkg_client import extract_binding
 from ...kernel.sparql_text import sparql_string_literal as literal
 from ...kernel.store import StoreClient
 from .. import row_adapters
 from ..partitions import rows_from_triples
+from .health import HEALTH, LookupHealth
 from .scope import VerifiedScope
 
 logger = logging.getLogger(__name__)
@@ -70,9 +73,10 @@ class VerifiedLookup:
     """Exact lookups for one scope against one store. Stateless; build one per
     ruleset generation (:func:`compiler.Ruleset.live_lookup`)."""
 
-    def __init__(self, scope: VerifiedScope, store: StoreClient) -> None:
+    def __init__(self, scope: VerifiedScope, store: StoreClient, health: Optional[LookupHealth] = None) -> None:
         self.scope = scope
         self.store = store
+        self.health = health or HEALTH
 
     def dependencies(self, candidates: Sequence[DependencyCandidate]) -> LookupAnswer:
         """Public dependency rules for exactly these ``(ecosystem, name, version)``
@@ -96,6 +100,11 @@ class VerifiedLookup:
     def _run(self, items: Sequence[Any], build_query: Any, category: str) -> LookupAnswer:
         if not items:
             return LookupAnswer({}, CLEAN)
+        answer = self._ask(items, build_query, category)
+        self.health.record(answer.known, answer.reason)
+        return answer
+
+    def _ask(self, items: Sequence[Any], build_query: Any, category: str) -> LookupAnswer:
         if not self.scope.ready:
             return LookupAnswer({}, COULD_NOT_TELL, "verified scope not ready")
         rules: Dict[str, Dict[str, Any]] = {}

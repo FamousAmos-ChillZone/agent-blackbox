@@ -18,6 +18,8 @@ small scope travels in ``ruleset.json``.
   ``COULD_NOT_TELL``). Rows come back as triples and go through the SAME
   row builder and row adapters that compiled today's rules, so a verdict is
   byte-identical to the compiled one (bench 2026-10-10: 60/60 sampled rules).
+* :data:`HEALTH` — the record of what lookups could and could not answer
+  (``verified_lookup_state.json``): a degraded store is an operator alarm.
 
 Usage::
 
@@ -27,7 +29,8 @@ Usage::
     answer.outcome          # HIT | CLEAN | COULD_NOT_TELL
 """
 
+from .health import HEALTH, LookupHealth, LookupState
 from .lookup import CLEAN, COULD_NOT_TELL, HIT, LookupAnswer, VerifiedLookup
 from .scope import VerifiedScope, refresh_scope, scope_for_generation
 
-__all__ = ["CLEAN", "COULD_NOT_TELL", "HIT", "LookupAnswer", "VerifiedLookup", "VerifiedScope", "refresh_scope", "scope_for_generation"]
+__all__ = ["CLEAN", "COULD_NOT_TELL", "HEALTH", "HIT", "LookupAnswer", "LookupHealth", "LookupState", "VerifiedLookup", "VerifiedScope", "refresh_scope", "scope_for_generation"]
