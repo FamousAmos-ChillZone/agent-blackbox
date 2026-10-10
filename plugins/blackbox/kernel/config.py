@@ -345,8 +345,8 @@ def load_blackbox_config() -> BlackboxConfig:
             default=constants.DEFAULT_GRAPH_PEER_ID,
         )
     ).strip()
-    # Replace bootstrap peers from previous releases; custom peers are untouched.
-    if graph_peer_id in constants.LEGACY_GRAPH_PEER_IDS:
+    # Replace old bootstrap peers (custom ones untouched); the default is in that set too (KI-335).
+    if graph_peer_id in constants.LEGACY_GRAPH_PEER_IDS and graph_peer_id != constants.DEFAULT_GRAPH_PEER_ID:
         logger.info(
             "blackbox: switching stale graph_peer_id %s -> %s",
             graph_peer_id,

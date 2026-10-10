@@ -33,7 +33,7 @@ from ..sync import read_durable_progress
 from . import community_routes, graph_pages, lifecycle, sync_meter, sync_timing
 from .graph_pages import _balanced_graph_entries, _graph_entries  # noqa: F401 — moved there; tests reach them here
 from .network_sync import network_sync_argv as _network_sync_argv
-from .node_probe import node_sync_probe
+from .node_probe import NodeLiveness, RepeatGate, node_sync_probe
 from .sync_labels import _community_progress, _sync_label, not_subscribed_activity
 from .threat_detail_fields import DETAIL_FIELDS
 from .safe_payloads import graph_tier_item, safe_identifier, safe_text
@@ -41,6 +41,7 @@ from .safe_payloads import graph_tier_item, safe_identifier, safe_text
 logger = logging.getLogger(__name__)
 
 _RESCAN_INTERVAL_SEC = 5.0
+_SLOW_NODE_READ_SEC = 10.0   # a cached node read slower than this is logged (KI-335)
 _RECONCILE_INTERVAL_SEC = 60.0
 _RULESET_EMPTY_RETRY_SEC = 10.0
 _RULESET_MIN_RETRY_SEC = 5.0
@@ -1147,41 +1148,16 @@ def create_app(*, manage_blackbox: bool = False):
     # the node is queried at most once per TTL per key, and graph data changes
     # slowly enough that ~20s of staleness is invisible.
     _SWR_TTL = 20.0         # refresh a cached node read at most this often
-    _REACH_TTL = 15.0       # re-probe node liveness at most this often
-    # Per-route liveness timeout; /api/status can take a couple seconds under
-    # load, and a probe that's too tight would wrongly report a busy node as down.
-    _REACH_TIMEOUT = 5.0
+    # Node liveness: cached, debounced, and its outages logged (KI-335). The
+    # 5 s check timeout stays generous — /api/status can take a couple of
+    # seconds under load, and the debounce absorbs one check that still misses.
+    _liveness = NodeLiveness(lambda cfg, timeout: DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home).reachable(timeout=timeout),
+                             ttl=15.0, timeout=5.0)
+    _node_reachable = _liveness.reachable
+    _node_read_log = RepeatGate()
     _swr_lock = threading.Lock()
     _swr_state: Dict[str, Dict[str, Any]] = {}   # key -> {"val", "ts"}
     _swr_busy: Set[str] = set()
-    _reach: Dict[str, Any] = {"ok": False, "ts": -1e9, "busy": False}
-
-    def _node_reachable(cfg: Any) -> bool:
-        """Cached DKG node liveness, refreshed off the request path.
-
-        Returns the last probe result immediately (``False`` until the first
-        lands) and spawns a background re-probe past ``_REACH_TTL``. Never
-        blocks the caller, so gating a node query on this is free."""
-        now = time.monotonic()
-        with _swr_lock:
-            stale = (now - _reach["ts"]) >= _REACH_TTL
-            spawn = stale and not _reach["busy"]
-            if spawn:
-                _reach["busy"] = True
-            cur = bool(_reach["ok"])
-        if spawn:
-            def _probe() -> None:
-                ok = False
-                try:
-                    ok = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home).reachable(timeout=_REACH_TIMEOUT)
-                except Exception:  # pragma: no cover - fail open
-                    ok = False
-                with _swr_lock:
-                    _reach["ok"] = ok
-                    _reach["ts"] = time.monotonic()
-                    _reach["busy"] = False
-            threading.Thread(target=_probe, name="blackbox-reach", daemon=True).start()
-        return cur
 
     def _swr(key: str, producer: Any, default: Any, ttl: float = _SWR_TTL) -> Any:
         """Return the cached value for ``key`` instantly, refreshing in the
@@ -1197,11 +1173,16 @@ def create_app(*, manage_blackbox: bool = False):
                 _swr_busy.add(key)
         if spawn:
             def _run() -> None:
+                started = time.monotonic()
                 try:
                     val = producer()
-                except Exception as exc:  # pragma: no cover - fail open
-                    logger.debug("blackbox dashboard: swr %s failed: %s", key, exc)
+                except Exception as exc:  # fail open; logged at most once per 5 min per key
+                    if _node_read_log.due(key):
+                        logger.warning("blackbox dashboard: node read %s failed: %s", key, exc)
                     val = None
+                elapsed = time.monotonic() - started
+                if elapsed > _SLOW_NODE_READ_SEC and _node_read_log.due("slow:" + key):
+                    logger.warning("blackbox dashboard: node read %s took %.1f s", key, elapsed)
                 with _swr_lock:
                     if val is not None:
                         _swr_state[key] = {"val": val, "ts": time.monotonic()}
@@ -2019,16 +2000,9 @@ def create_app(*, manage_blackbox: bool = False):
         def _warm() -> None:
             try:
                 cfg = load_blackbox_config()
-                # Probe liveness synchronously first and seed the cache, so the
-                # reads below see the node's true state, not the cold default.
-                try:
-                    ok = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home).reachable(timeout=_REACH_TIMEOUT)
-                except Exception:  # pragma: no cover - fail open
-                    ok = False
-                with _swr_lock:
-                    _reach["ok"] = ok
-                    _reach["ts"] = time.monotonic()
-                    _reach["busy"] = False
+                # Check liveness synchronously first, so the reads below see
+                # the node's true state, not the cold default.
+                _liveness.check_now(cfg)
                 # Touch each cached endpoint to warm it. Two passes: the first
                 # spawns the refresh, the second lands it.
                 for _ in range(2):
