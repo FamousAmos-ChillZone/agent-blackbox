@@ -17,7 +17,6 @@ from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Sequence, Tup
 from ..kernel import constants, threat_ids
 from . import anchors
 from ..kernel.dkg_client import DkgClient, extract_binding
-from ..kernel.store import StoreClient
 from . import graph_queries
 from . import row_adapters
 from . import live
@@ -87,8 +86,13 @@ def _copy_community_stats(entry: Dict[str, Any], rule: Dict[str, Any]) -> None:
 
 
 @dataclass
-class Ruleset:
-    """Compiled detection rules. See :mod:`detection` for how each is used."""
+class Ruleset(live.LiveAnswering):
+    """Compiled detection rules. See :mod:`detection` for how each is used.
+
+    What a generation ANSWERS at check time — live lookups, verified subsets, the
+    dashboard's live page — comes from :class:`live.LiveAnswering` (a mixin over
+    ``verified_scope`` and the compiled dicts; compiler.py sits at its size alarm).
+    """
 
     injection: List[Dict[str, Any]] = field(default_factory=list)
     escalation: List[Dict[str, Any]] = field(default_factory=list)
@@ -145,33 +149,6 @@ class Ruleset:
         init=False,
         repr=False,
     )
-
-    def live_lookup(self) -> Optional[live.VerifiedLookup]:
-        """The live verified lookup for this generation, or None when no usable
-        scope has been built yet (the compiled dicts then stand alone)."""
-        scope = self.verified_scope
-        if scope is None or not scope.ready:
-            return None
-        return live.VerifiedLookup(scope, StoreClient(scope.store_url))
-
-    def dependency_rules(self, candidates: "Sequence[Tuple[str, str, str]]") -> live.LookupAnswer:
-        """Rules for these ``(ecosystem, name, version)`` candidates, keyed as
-        ``dependency_key`` keys. PUBLIC rules come from the live lookup when this
-        generation has one; the compiled ``dependency`` dict fills the keys it did
-        not answer (community-materialised rules, or a fully compiled tier). Public
-        therefore beats community by construction. A lookup that could not tell
-        keeps that outcome even when the dict filled a hit."""
-        lookup = self.live_lookup()
-        answer = lookup.dependencies(candidates) if lookup else live.LookupAnswer({}, live.CLEAN)
-        keys = [threat_ids.dependency_key(ecosystem, name, version) for ecosystem, name, version in candidates]
-        return _fill_from_dict(answer, keys, self.dependency)
-
-    def ioc_rules(self, identifiers: "Sequence[str]") -> live.LookupAnswer:
-        """Rules among these ``ioc:type:value`` identifiers (see :meth:`dependency_rules`
-        for the live-then-compiled precedence and the outcome)."""
-        lookup = self.live_lookup()
-        answer = lookup.iocs(identifiers) if lookup else live.LookupAnswer({}, live.CLEAN)
-        return _fill_from_dict(answer, identifiers, self.ioc)
 
     def refresh_due(self, interval: float) -> float:
         """Epoch seconds when this generation should be refreshed: its own early
@@ -289,20 +266,6 @@ class Ruleset:
     def graph_count(self, source: str) -> int:
         """Graph threats of *source*: the compiled entries plus, for public, the live tiers."""
         return len(self.graph_entries(source)) + (sum(self.live_counts().values()) if source == "public" else 0)
-
-
-def _fill_from_dict(answer: live.LookupAnswer, keys: "Sequence[str]",
-                    compiled: Dict[str, Dict[str, Any]]) -> live.LookupAnswer:
-    """The live answer plus every *key* the compiled dict holds that the lookup
-    did not; HIT when anything matched unless the lookup could not tell."""
-    rules = dict(answer.rules)
-    for key in keys:
-        if key not in rules and key in compiled:
-            rules[key] = compiled[key]
-    outcome = answer.outcome
-    if outcome == live.CLEAN and rules:
-        outcome = live.HIT
-    return live.LookupAnswer(rules, outcome, answer.reason)
 
 
 def suppressed_subjects(tagged_rows: Iterable[tuple]) -> set:

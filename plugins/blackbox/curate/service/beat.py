@@ -277,7 +277,7 @@ class Beat:
         compiled = run.ctx.compiled
         if compiled is None:
             return
-        view = queue.delta_view(compiled.community, verified_identifiers(compiled))
+        view = queue.delta_view(compiled.community, verified_identifiers(compiled, compiled.community))
         in_flight = {proposal.identifier for proposal in run.store.open(now=self._clock())}
         for item in view.new:
             verdict = run.ctx.own_view.verdicts.get(item.identifier)

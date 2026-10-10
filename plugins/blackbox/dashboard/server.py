@@ -1877,7 +1877,7 @@ def create_app(*, manage_blackbox: bool = False):
                 ]
             elif not wanted_category and not wanted_ecosystem:
                 all_threats = _balanced_graph_entries(all_threats)
-            return graph_pages.tier_response(tier, all_threats, offset, limit)
+            return graph_pages.page_response(rs, tier, all_threats, needle=needle, category=wanted_category, ecosystem=wanted_ecosystem, offset=offset, limit=limit)
 
         # The local tier reads the live working-memory view and is served
         # stale-while-revalidate.
@@ -1950,7 +1950,7 @@ def create_app(*, manage_blackbox: bool = False):
             "references": [],
             "found": False,
         }
-        cached_rule = graph_pages.compiled_rule(ruleset.peek(cfg), tier, identifier)
+        cached_rule = graph_pages.rule_for(ruleset.peek(cfg), tier, identifier)
         if cached_rule:
             detail.update({
                 key: value

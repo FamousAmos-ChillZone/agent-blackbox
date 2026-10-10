@@ -18,6 +18,10 @@ small scope travels in ``ruleset.json``.
   ``COULD_NOT_TELL``). Rows come back as triples and go through the SAME
   row builder and row adapters that compiled today's rules, so a verdict is
   byte-identical to the compiled one (bench 2026-10-10: 60/60 sampled rules).
+* :class:`LiveAnswering` — the mixin that gives :class:`~..compiler.Ruleset` its
+  check-time answers (``dependency_rules``, ``ioc_rules``, ``verified_subset``, ``live_browse``).
+* :func:`public_page` / :class:`LivePage` — one bounded page of the live tiers for
+  the dashboard (filtered window + whole-result totals), through the same builders.
 * :data:`HEALTH` — the record of what lookups could and could not answer
   (``verified_lookup_state.json``): a degraded store is an operator alarm.
 
@@ -29,8 +33,10 @@ Usage::
     answer.outcome          # HIT | CLEAN | COULD_NOT_TELL
 """
 
+from .answering import LiveAnswering
+from .browse import LivePage, public_page
 from .health import HEALTH, LookupHealth, LookupState
 from .lookup import CLEAN, COULD_NOT_TELL, HIT, LookupAnswer, VerifiedLookup
 from .scope import VerifiedScope, refresh_scope, scope_for_generation
 
-__all__ = ["CLEAN", "COULD_NOT_TELL", "HEALTH", "HIT", "LookupAnswer", "LookupHealth", "LookupState", "VerifiedLookup", "VerifiedScope", "refresh_scope", "scope_for_generation"]
+__all__ = ["CLEAN", "COULD_NOT_TELL", "HEALTH", "HIT", "LiveAnswering", "LivePage", "LookupAnswer", "LookupHealth", "LookupState", "public_page", "VerifiedLookup", "VerifiedScope", "refresh_scope", "scope_for_generation"]

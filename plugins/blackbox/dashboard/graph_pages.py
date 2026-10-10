@@ -6,12 +6,18 @@ Lifted out of ``server.py`` (at its size alarm) as pure functions, so the
 * :func:`_graph_entries` — a ruleset's threats of one source, in graph-entry shape.
 * :func:`_balanced_graph_entries` — the front page shows a sample of every category.
 * :func:`tier_response` — the page dict (totals describe the whole filtered result).
-* :func:`compiled_rule` — the compiled rule / entry behind one identifier.
+* :func:`public_tier_response` — the public page: compiled small-tier entries first,
+  then the live dependency / IOC tiers from the node's store (DKG-lookup B7).
+* :func:`compiled_rule` / :func:`rule_for` — the rule behind one identifier (live
+  lookup for a public ``dep:`` / ``ioc:`` identifier).
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+from ..kernel import threat_ids
+from .safe_payloads import graph_tier_item
 
 
 def _graph_entries(rs: Any, source: str) -> List[Dict[str, Any]]:
@@ -109,3 +115,59 @@ def compiled_rule(rs: Any, tier: str, identifier: str) -> Dict[str, Any]:
         return next(item for item in _graph_entries(rs, tier) if item.get("identifier") == identifier)
     except Exception:
         return {}
+
+
+def public_tier_response(rs: Any, compiled: List[Dict[str, Any]], *, needle: str, category: str, ecosystem: str,
+                         offset: int, limit: int) -> Dict[str, Any]:
+    """The public page: *compiled* entries (small tiers, already filtered and
+    shaped) occupy the first positions, the live tiers follow — one window from
+    the store for the part of ``[offset, offset+limit)`` past the compiled ones.
+    Totals cover both; when the store could not answer, the page says so
+    (``live_unavailable``) and the live totals fall back to the scope's counts.
+    A ruleset without a live scope answers exactly as before."""
+    page = compiled[offset:offset + limit]
+    browse = getattr(rs, "live_browse", None)
+    live = browse(category=category, ecosystem=ecosystem, needle=needle, offset=max(0, offset - len(compiled)),
+                  limit=limit - len(page)) if callable(browse) else None
+    if live is None:
+        return tier_response("public", compiled, offset, limit)
+    response = tier_response("public", compiled, 0, len(compiled))
+    response["threats"] = page + [graph_tier_item(entry, community=False) for entry in live.entries]
+    for kind, count in live.kind_totals.items():
+        response["category_totals"][kind] = response["category_totals"].get(kind, 0) + count
+    for name, count in live.ecosystem_totals.items():
+        response["ecosystem_totals"][name] = response["ecosystem_totals"].get(name, 0) + count
+    response["total"] = len(compiled) + live.total
+    response.update(offset=offset, limit=limit, partial=offset + limit < len(compiled) + live.total)
+    if not live.known:
+        response["live_unavailable"] = live.reason or "the node's store did not answer"
+    return response
+
+
+def rule_for(rs: Any, tier: str, identifier: str) -> Dict[str, Any]:
+    """:func:`compiled_rule`, then — for a public ``dep:`` / ``ioc:`` identifier —
+    the live lookup, which carries the rule's subject for the detail read."""
+    found = compiled_rule(rs, tier, identifier)
+    if found or tier != "public":
+        return found
+    return _live_rule(rs, identifier) or {}
+
+
+def _live_rule(rs: Any, identifier: str) -> Optional[Dict[str, Any]]:
+    parsed = threat_ids.parse_dependency_identifier(identifier)
+    if parsed is not None and callable(getattr(rs, "dependency_rules", None)):
+        return next((rule for rule in rs.dependency_rules([parsed]).rules.values()
+                     if rule.get("identifier") == identifier), None)
+    if identifier.startswith("ioc:") and callable(getattr(rs, "ioc_rules", None)):
+        return rs.ioc_rules([identifier]).rules.get(identifier)
+    return None
+
+
+def page_response(rs: Any, tier: str, threats: List[Dict[str, Any]], *, needle: str, category: str, ecosystem: str,
+                  offset: int, limit: int) -> Dict[str, Any]:
+    """The page for *tier*: the public tier gets the live dependency / IOC tiers
+    after its compiled entries; the community tier is its filtered list alone."""
+    if tier == "public":
+        return public_tier_response(rs, threats, needle=needle, category=category, ecosystem=ecosystem,
+                                    offset=offset, limit=limit)
+    return tier_response(tier, threats, offset, limit)

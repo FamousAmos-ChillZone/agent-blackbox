@@ -70,7 +70,9 @@ class Snapshot:
 def build_snapshot(rs: Any, now: float) -> Snapshot:
     """The §12 numbers from a compiled ruleset (its community store + public rules)."""
     community: Mapping[str, Mapping[str, Any]] = getattr(rs, "community", {}) or {}
-    verified = {str(rule.get("identifier") or "") for _cat, rule in rs.iter_rules() if rule.get("source") == "public"}
+    subset = getattr(rs, "verified_subset", None)
+    verified = (set(subset(community)) if callable(subset) else
+                {str(rule.get("identifier") or "") for _cat, rule in rs.iter_rules() if rule.get("source") == "public"})
     stages: Dict[str, int] = {}
     would: Dict[str, int] = {}
     reporters: List[int] = []
