@@ -173,7 +173,12 @@ def read_sync_meter(cfg: Any, *, node_reachable: bool, verified_rules: int) -> S
         verified_rules=verified_rules,
         checked_at=backlog.logged_at if backlog else "",
     )
-    meter.lookups.update(lookup_status(getattr(ruleset.peek(cfg), "verified_scope", None), ruleset.live.HEALTH.read()))
+    if node_reachable:
+        meter.lookups.update(lookup_status(getattr(ruleset.peek(cfg), "verified_scope", None), ruleset.live.HEALTH.read()))
+    else:   # the last lookup's ✓ says nothing about a node that is not answering now (LES-011)
+        meter.lookups.update({"state": "unknown", "label": "Node not answering",
+                              "text": "The local DKG node is not answering, so it is unknown whether verified checks "
+                                      "can be answered; the line updates when the node is back."})
     return meter
 
 

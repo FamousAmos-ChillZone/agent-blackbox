@@ -39,7 +39,7 @@ def test_the_meter_payload_carries_the_lookup_status(monkeypatch):
     monkeypatch.setattr(ruleset, "verified_progress", lambda cg: None)
     monkeypatch.setattr(sync_meter, "read_recovery_backlog", lambda home, cg: None)
     cfg = SimpleNamespace(context_graph_id="cg", dkg_url="http://127.0.0.1:9320", dkg_home="/tmp/x")
-    meter = sync_meter.read_sync_meter(cfg, node_reachable=False, verified_rules=3)
+    meter = sync_meter.read_sync_meter(cfg, node_reachable=True, verified_rules=3)
     assert meter.lookups["state"] == "paused" and meter.verified_rules == 3
 
 
@@ -68,3 +68,17 @@ def test_the_local_only_marker_never_reaches_a_shared_report():
                                               "answered_by": detection.ANSWERED_BY_FALLBACK}}
     assert "answered_by" not in sharing.shareable_fields(finding)
     assert sharing._schema_decision(finding) == (True, "ok")
+
+
+def test_an_unreachable_node_is_never_shown_as_live(monkeypatch):
+    """Bench A 2026-10-10: the meter said "node offline" while the line still showed the last ✓."""
+    from plugins.blackbox import ruleset
+    scope = live.VerifiedScope(store_url="http://127.0.0.1:7878/query", assertion_graphs=frozenset({"g"}))
+    monkeypatch.setattr(ruleset, "peek", lambda cfg: compiler.Ruleset(verified_scope=scope))
+    monkeypatch.setattr(ruleset.live.HEALTH, "read", lambda: _health(False))
+    monkeypatch.setattr(ruleset, "verified_progress", lambda cg: None)
+    monkeypatch.setattr(sync_meter, "read_recovery_backlog", lambda home, cg: None)
+    cfg = SimpleNamespace(context_graph_id="cg", dkg_url="http://127.0.0.1:9320", dkg_home="/tmp/x")
+    meter = sync_meter.read_sync_meter(cfg, node_reachable=False, verified_rules=1)
+    assert meter.state == "unavailable" and meter.lookups["state"] == "unknown"
+    assert meter.lookups["label"] == "Node not answering"
