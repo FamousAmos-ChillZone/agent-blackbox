@@ -9,7 +9,7 @@ from ..partitions.rows import rows_from_triples
 from .. import curator_tier
 from ...kernel.dkg_client import extract_binding, DkgError
 from .client import GraphReadUnavailable, LocalGraphClient, local_url
-from .queries import candidate_query, candidates
+from .queries import candidate_query, candidates, selected_query
 
 
 @dataclass
@@ -34,7 +34,7 @@ def read_for_action(cfg, tool: str, args, *, client=None) -> DetectionRead:
         validate_config(cfg)
         client = client or LocalGraphClient(cfg)
         identifiers, packages = candidates(tool, args)
-        reply = client.bounded(candidate_query(cfg.context_graph_id, identifiers, packages), cfg.context_graph_id)
+        reply = read_candidates(cfg, client, identifiers, packages)
         result.rules = compile_reply(cfg, reply)
         curator_tier.apply_curator_tier(result.rules, client, cfg)
         if getattr(result.rules, "curator_read_unavailable", False):
@@ -53,6 +53,15 @@ def read_for_action(cfg, tool: str, args, *, client=None) -> DetectionRead:
         # A malformed rule/adapter must never bypass independent local checks.
         result.code = "QUERY_MALFORMED_RESPONSE"
     return result
+
+
+def read_candidates(cfg, client, identifiers, packages):
+    # Bound identities before joining their properties. Expanding all package
+    # aliases into triples in one query makes the store do a much larger join.
+    selected = client.bounded(candidate_query(cfg.context_graph_id, identifiers, packages, entities_only=True),
+                              cfg.context_graph_id, max_rows=2048)
+    rows = selected["result"]["bindings"]
+    return client.bounded(selected_query(cfg.context_graph_id, rows), cfg.context_graph_id) if rows else selected
 
 
 def validate_config(cfg):

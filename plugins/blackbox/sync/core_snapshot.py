@@ -52,14 +52,16 @@ def sync(args):
 class _Progress:
     """Owned observation state; sampled rules and full coverage stay distinct."""
     def __init__(self, cfg):
-        self.cfg, self.job_id, self.usable, self.cursor = cfg, None, 0, {}
+        self.cfg, self.job_id, self.usable, self.cursor = cfg, None, None, {}
+        self.readiness_state, self.readiness_error, self.coverage = "pending", "", {}
 
     def record(self, status, phase, *, error="", result=None):
-        result = result or {}
+        result = self.coverage if result is None else result
         state.write(status, context_graph_id=self.cfg.context_graph_id, phase=phase,
                     chain_evidence_mode=self.cfg.snapshot_sync.mode, job_id=self.job_id,
                     public_entries=self.usable, count_kind="sampled-usable-rules",
-                    detection_ready=self.usable > 0, graph_complete=result.get("current") is True,
+                    detection_ready=self.readiness_state == "ready", graph_complete=result.get("current") is True,
+                    readiness_state=self.readiness_state, readiness_error=self.readiness_error,
                     complete=result.get("current") is True,
                     assets=result.get("assets"), committed=result.get("committed"),
                     snapshot_digest=result.get("snapshotDigest"), error=error)
@@ -87,23 +89,40 @@ def _observe(job, payload, progress, args):
         raise DkgError("SNAPSHOT_RECOVERY_FAILED")
     if job.get("state") not in {"running", "complete"}:
         raise DkgError("SNAPSHOT_RESPONSE_INVALID")
+    if job["state"] == "complete":
+        result = job.get("result")
+        if (not isinstance(result, dict) or result.get("mode") != payload["mode"]
+                or result.get("completeAsOfSnapshot") is not True
+                or type(result.get("assets")) is not int or result["assets"] < 0
+                or result.get("committed") != result["assets"]):
+            raise DkgError("SNAPSHOT_RESPONSE_INVALID")
+        if not progress.coverage:
+            # Completion needs a fresh sample, not whichever trailing page the
+            # in-flight observer happened to reach, nor an earlier positive.
+            progress.cursor.clear()
+        progress.coverage = result
     try:
         progress.usable = ruleset.ready_sample(progress.cfg, cursor=progress.cursor)
-    except DkgError:
-        progress.usable = 0
+        progress.readiness_error = ""
+        progress.readiness_state = ("ready" if progress.usable > 0 else
+                                    "empty" if progress.cursor.get("exhausted", True) else "pending")
+    except DkgError as exc:
+        progress.usable = None
+        progress.readiness_state = "unavailable"
+        progress.readiness_error = getattr(exc, "code", "QUERY_UNAVAILABLE")
     if job["state"] != "complete":
         return None
-    result = job.get("result")
-    if (not isinstance(result, dict) or result.get("mode") != payload["mode"]
-            or result.get("completeAsOfSnapshot") is not True
-            or type(result.get("assets")) is not int or result["assets"] < 0
-            or result.get("committed") != result["assets"]):
-        raise DkgError("SNAPSHOT_RESPONSE_INVALID")
+    result = progress.coverage
     complete = result.get("current") is True
+    if (complete and getattr(args, "require_rules", False) and getattr(args, "wait", False)
+            and progress.readiness_state in {"unavailable", "pending"}):
+        # Retry only local reads within the original observation deadline. The
+        # owned network job remains complete; never start another transfer.
+        return None
     progress.record("complete" if complete else "partial", "snapshot-coverage-checked", result=result)
     print(f"Snapshot coverage: {result['committed']}/{result['assets']} assets; "
-          f"current={complete}; usable rule sample={progress.usable}.")
-    return 0 if complete and (progress.usable > 0 or not getattr(args, "require_rules", False)) else 2
+          f"current={complete}; usable rule sample={progress.usable if progress.usable is not None else 'unavailable'}.")
+    return 0 if complete and (progress.readiness_state == "ready" or not getattr(args, "require_rules", False)) else 2
 
 
 def run(client, cfg, args):
@@ -121,14 +140,18 @@ def run(client, cfg, args):
             outcome = _observe(job, payload, progress, args)
             if outcome is not None:
                 return outcome
-            progress.record("running", "recovering-core-snapshot")
+            progress.record("partial" if progress.coverage else "running",
+                            "awaiting-local-rule-readiness" if progress.coverage else "recovering-core-snapshot",
+                            error=progress.readiness_error)
             if not getattr(args, "wait", False):
                 progress.record("partial", "snapshot-job-running")
                 print("The DKG snapshot job is running. Run sync --wait to observe its coverage result.")
                 return 0
             time.sleep(min(POLL_SECONDS, max(0.0, deadline - time.monotonic())))
             job = client.request("GET", PATH)
-        progress.record("partial", "snapshot-observation-timeout", error="The owned DKG job may still be running")
+        progress.record("partial", "rule-readiness-timeout" if progress.coverage else "snapshot-observation-timeout",
+                        error=progress.readiness_error or ("Local rule readiness was not established" if progress.coverage
+                                                          else "The owned DKG job may still be running"))
         return 2
     except DkgError as exc:
         # Detailed peer/endpoint errors stay in the DKG log, not user-facing status.
