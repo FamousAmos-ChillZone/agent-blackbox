@@ -76,8 +76,8 @@ class SigningLog:
                          key=signing.public_key_hex(key), action=action, at=self._clock())
         with self._lock:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            with os.fdopen(os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), "a",
-                           encoding="utf-8") as handle:
+            descriptor = os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
                 handle.write(json.dumps(asdict(row), sort_keys=True) + "\n")
         return row
 

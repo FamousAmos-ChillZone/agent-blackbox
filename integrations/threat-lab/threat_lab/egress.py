@@ -107,7 +107,7 @@ class NftablesEgressGuard:
         if self._call("list", "table", TABLE_FAMILY, TABLE_NAME) is None:
             raise LabConfigError(f"egress policy not loaded: run `nft -f {RULESET_PATH}` as root")
         try:
-            switched_on = bridge_netfilter.read_text().strip() == "1"
+            switched_on = bridge_netfilter.read_text(encoding="utf-8").strip() == "1"
         except OSError:
             switched_on = False
         if not switched_on:

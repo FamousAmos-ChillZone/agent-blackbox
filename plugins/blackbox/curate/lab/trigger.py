@@ -256,8 +256,8 @@ class LabRequests:
                "code": code}
         with self._lock:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            with os.fdopen(os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), "a",
-                           encoding="utf-8") as handle:
+            descriptor = os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
                 handle.write(json.dumps(row, sort_keys=True) + "\n")
 
     def requested_digests(self) -> FrozenSet[str]:
