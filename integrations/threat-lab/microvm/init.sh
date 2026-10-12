@@ -7,6 +7,6 @@ mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev
 mount -t tmpfs -o mode=0755 tmpfs /run
-mount -t tmpfs -o mode=1777 tmpfs /tmp
+mount -t tmpfs -o mode=1777 tmpfs /tmp   # no-tmp: ok — the guest VM's own fresh /tmp, never the host's
 exec env -i PATH=/usr/local/bin:/usr/bin:/bin PYTHONPATH=/opt/threat-lab PYTHONDONTWRITEBYTECODE=1 \
     python3 -m threat_lab.guest

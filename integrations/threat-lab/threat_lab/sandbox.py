@@ -101,7 +101,7 @@ class GVisorSandbox:
             f"--memory={caps.memory_mb}m",
             f"--memory-swap={caps.memory_mb}m",
             f"--pids-limit={caps.pids}",
-            "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m",
+            "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m",   # no-tmp: ok — the sandbox container's own capped /tmp, never the host's
             f"--volume={spec.work_dir}:/work:{mount_mode}",
             self._config.image,
             "python", "-m", "threat_lab.probe", *spec.probe_args,
