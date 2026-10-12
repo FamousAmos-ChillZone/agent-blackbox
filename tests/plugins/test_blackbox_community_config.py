@@ -68,12 +68,13 @@ def test_the_shipped_default_is_the_production_community_graph(clean_env):
     assert bool(constants.DEFAULT_COMMUNITY_GRAPH_PEER_ID) == bool(constants.DEFAULT_COMMUNITY_GRAPH_ID)
 
 
-def test_a_fresh_install_reads_the_community_graph_but_sends_nothing_without_consent(clean_env):
-    """Reading community flags needs only the address; sharing still needs the
-    operator's own consent (privacy: opt-in, never on by default)."""
+def test_a_fresh_install_reads_and_shares_with_the_community_graph(clean_env):
+    """Everything works as soon as Blackbox is installed: the production graph is
+    the default and sharing is on (opt-out); the operator's `report: false` still wins."""
     cfg = _load_with_entry(clean_env, {})
     assert cfg.community_graph_id == constants.DEFAULT_COMMUNITY_GRAPH_ID
-    assert cfg.report is False and cfg.community_enabled is False
+    assert cfg.report is True and cfg.community_enabled is True
+    assert _load_with_entry(clean_env, {"report": False}).community_enabled is False
 
 
 # ---------------------------------------------------------------------------
@@ -112,9 +113,10 @@ def test_report_env_override_wins(clean_env):
     assert cfg.report is True
 
 
-def test_report_defaults_off(clean_env):
+def test_report_defaults_on(clean_env):
+    """Community sharing is ON by default with an opt-out (founder decision 2026-10-12)."""
     cfg = _load_with_entry(clean_env, {})
-    assert cfg.report is False
+    assert cfg.report is True
 
 
 def test_daily_report_limit_has_real_default(clean_env):

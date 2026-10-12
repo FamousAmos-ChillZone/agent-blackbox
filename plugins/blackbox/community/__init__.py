@@ -16,7 +16,9 @@ Public surface:
   :func:`spawn_community_share` sends an allowed finding. This node's
   reporting identity is resolved by ``kernel.identity.reporter_address``.
 * :func:`add_report_parser` + :func:`cmd_report` (``blackbox report``), :func:`print_community_status`
-  (the status block), :func:`ensure_community_subscription` (join on sync).
+  (the status block), :func:`ensure_community_subscription` (join on sync),
+  :func:`read_join_state` + :class:`JoinState` / ``JOIN_STATE_TEXT`` (is this node
+  connected to the community graph yet — the dashboard's community tile).
 * :func:`build_report_quads` / :func:`build_false_positive_quads` /
   :func:`build_retraction_quads` — the
   privacy-safe statements a report or dispute shares (write side).
@@ -61,7 +63,7 @@ Usage::
 from __future__ import annotations
 
 from .report_builder import build_false_positive_quads, build_report_quads, build_retraction_quads
-from .membership import ensure_community_subscription
+from .membership import JOIN_STATE_TEXT, JoinState, ensure_community_subscription, read_join_state
 from .report_cli import add_report_parser, cmd_report, print_community_status
 from .sharing import ALREADY_SEALED_REPLY, NEVER_SHARED_SOURCES, CommunitySharePolicy, spawn_community_share
 from .graph_stats import community_agents, contributing_agent_count, most_reported_threats, reports_signed_by
@@ -125,6 +127,9 @@ __all__ = [
     "add_report_parser",
     "cmd_report",
     "ensure_community_subscription",
+    "JOIN_STATE_TEXT",
+    "JoinState",
+    "read_join_state",
     "ActiveGraph",
     "active_verified_graph",
     "community_pause_active",

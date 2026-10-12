@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment — Agent Blackbox community graph
 
-Version: 1.3 (draft for counsel review, 2026-10-03; v1.3 adds the community authority — Community Curation C11; v1.2 corrected §2/§5 after review round 5 — KI-221/223/224, erasure semantics KI-220). Engineering assessment,
+Version: 1.4 (draft for counsel review, 2026-10-12; v1.4 records the switch to sharing ON by default with an opt-out — founder decision; v1.3 adds the community authority — Community Curation C11; v1.2 corrected §2/§5 after review round 5 — KI-221/223/224, erasure semantics KI-220). Engineering assessment,
 not legal advice; the launching party still needs counsel for its market.
 
 ## 1. The processing
@@ -45,9 +45,16 @@ never-shared source list; tested.
 
 ## 3. Lawful basis and consent
 
-- Node operators: consent, opt-in, default OFF, bound to the content of the
-  reporter terms (sha256), withdrawable with one command that stops the
-  processing on the next action (R13 consent record).
+- Node operators: sharing is ON by default with an easy OPT-OUT (founder
+  decision 2026-10-12, replacing opt-in/default-off). The installer and the
+  dashboard say that sharing is on, what is sent and how to turn it off; one
+  command or one toggle stops the processing on the next action, and an
+  opt-out survives upgrades, terms changes and identity erasure. RECORDED
+  DEPARTURE from the privacy-by-default baseline: the basis this relies on is
+  legitimate interest in network and information security (GDPR recital 49),
+  with notice and an unconditional right to object. COUNSEL REVIEW REQUIRED
+  before a wide launch, in particular for EU/UK operators and for the weekly
+  sighting digest.
 - Legitimate interest (network and information security, GDPR recital 49) is
   the fallback basis for the curator's processing of statements that nodes
   chose to publish into a public graph.
@@ -58,12 +65,12 @@ never-shared source list; tested.
 | --- | --- |
 | Immutable statements cannot be deleted from a replicated graph | The terms say so before consent; retraction stops counting on every current reader; nothing identifying beyond the reporter address is ever in a statement |
 | Author linkability: a reporter's dependency reports reveal which packages its agents install | Day-rounded timestamps; automatic sightings only for VERIFIED-tier matches; vulnerability findings never leave; the operator may run a dedicated reporter identity and erase it |
-| The weekly digest is a week-level list of verified threats per address | Coarse buckets; verified threats only; the digest is one statement per week; opt-in like every share |
+| The weekly digest is a week-level list of verified threats per address | Coarse buckets; verified threats only; the digest is one statement per week; stops with every other share after an opt-out |
 | A replica disables expiry → unbounded retention | Disclosed in the terms; readers' own persistence is bounded (≤ 90 d past expiry); the inventory records the replica setting as the retention boundary |
 | The counted-author list is public | It carries addresses and classes only; graduation needs the reporter's own reports; delisting is one statement |
 | Reputation ledger profiling | Curator-private, salted pseudonyms, encrypted index, 24-month retention, erasure by salt deletion; decisions reach readers only as list entries |
 | Automated decisions about reporters (the curator service lists or delists a reporter when its ledger calls for it) | The rules are arithmetic over public outcomes, written in the automation policy the operator accepted; two curator nodes must each reach the same answer from their own ledgers; strikes and anything alleging bad faith are always a person's; the reporter sees its own progress (`blackbox report --standing`) and can dispute and retract |
-| A second group of controllers (the community curators) | Separate root keys: neither group can speak for the other; the controller map names both; the terms changed, so every operator is asked to consent again before sharing |
+| A second group of controllers (the community curators) | Separate root keys: neither group can speak for the other; the controller map names both; the terms say what changed; sharing no longer pauses on a terms change (on by default since 2026-10-12) |
 | The export bundle spreads reporters' signed reports to a new receiver | It holds only statements already public in the community graph; reporters are told in the terms; crediting reporters is its purpose |
 | A breach of the curator ledger | Copying the entries file or the index alone links no key to any outcome (the index is encrypted); all three files together do, so the key file is the one to protect |
 | Re-identification of a node from its address | The address is a wallet, pseudonymous by design; the terms warn; no mapping to persons is kept anywhere in the product |
@@ -77,7 +84,7 @@ never-shared source list; tested.
 | Access / export | `blackbox report --export FILE` (key backup, ledger, consent record, keep-alive memory, retry queue, sighting tally — machine-readable JSON, KI-224) |
 | Rectification | `--retract`, `--false-positive` |
 | Erasure | `--erase-identity --confirm` (signing key, ledger, keep-alive memory, retry queue, consent record, sighting tally); on request, each curator group runs `blackbox curate graduate --erase KEY` (salt deletion, and its statements about the reporter are no longer kept alive). NOTE (KI-220): erasure rotates the SIGNING key; the reporter address in every statement is the node's wallet address, which this command does not change — a new reporter identity in full needs a new node wallet (decision pending) |
-| Restriction / objection | `--withdraw-consent`; `report: false` |
+| Restriction / objection | `--withdraw-consent` (opt-out, kept across upgrades and erasure); `--disable-sharing` / the dashboard toggle (`report: false`) |
 | Portability | the export file restores the identity on another machine (`--restore-key`) |
 
 ## 6. Transfers and sub-processors
@@ -104,7 +111,7 @@ the controller map).
 | Item | State | Where |
 | --- | --- | --- |
 | Only necessary fields, each mapped to a purpose | done | §2: no new kind of personal data; listings carry key, address, class, organisation, expiry |
-| Consent opt-in, unbundled, default off; record stored; withdrawal works | done | §3; bound to the terms' text, so the v1.1 terms ask every operator again and say why; a node with `report: true` and no current consent shows an ACTION item in `blackbox status` and the dashboard |
+| Consent opt-in, unbundled, default off; record stored; withdrawal works | departed | §3: on by default with notice and a one-step opt-out; the opt-out record is stored and honoured by both runtimes; a node with `report: true` and an opt-out on record shows an ACTION item in `blackbox status` and the dashboard; counsel review pending |
 | Access, export, correction, deletion, opt-out are real, tested operations | done | §5; the curator-side erasure removes the ledger entry and ends keep-alive of statements about the reporter |
 | Retention set; automatic deletion | done | §2: replica expiry, 90-day community listings, 24-month ledger, 500-day trust store, current-only keep-alive |
 | Encryption at rest for the sensitive store; secrets kept out of statements | done | the ledger index is encrypted (AES-256-GCM); keys and tokens never leave their owner-only files |

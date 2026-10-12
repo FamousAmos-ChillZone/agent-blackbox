@@ -1,11 +1,13 @@
-"""Refine R13 — the sharing consent record, retention windows, erase/export end to end.
+"""The community-sharing gate (Refine R13, revised 2026-10-12), erase/export end to end.
 
-* Consent is opt-in and default OFF: without a record the automatic share
-  gate, the manual `blackbox report` path and the dashboard's `report: true`
-  all refuse; the record is bound to the terms' content (a changed text
-  invalidates it); withdrawal stops sharing on the next action.
-* Erasure destroys everything that could re-publish or re-consent: the key,
-  the ledger, the keep-alive memory, the retry queue, the consent record.
+* Sharing is ON by default with an easy opt-out: with no record the automatic
+  share gate and the manual `blackbox report` path both send; an opt-out
+  (`--withdraw-consent`, the dashboard toggle) stops sharing on the next
+  action; turning sharing on again is the opt-back-in. A change of the terms
+  no longer pauses sharing.
+* Erasure destroys everything that could re-publish: the key, the ledger, the
+  keep-alive memory, the retry queue, the acceptance history — and leaves
+  sharing OFF (an erased identity never restarts sharing on its own).
 * Export carries the key backup and the ledger (machine-readable).
 * The three documents ship with the plugin and the terms carry a version.
 """
@@ -41,60 +43,67 @@ def home(monkeypatch, tmp_path):
 # ------------------------------------------------------------------ the record
 
 
-def test_consent_is_off_by_default_bound_to_the_terms_and_withdrawable(real_consent, monkeypatch):
-    assert real_consent.current() is None and not real_consent.in_force()
-    entry = real_consent.record()
-    assert entry is not None and entry.terms_version == "1.1" and entry.terms_hash == real_consent.terms_hash()
-    assert real_consent.in_force() and real_consent.current().withdrawn_at == ""
-    original = real_consent.terms_text
-    monkeypatch.setattr(real_consent, "terms_text", lambda: "Version: 2.0\nnew terms")       # the text changed
-    assert not real_consent.in_force()                                                        # old consent no longer counts
-    monkeypatch.setattr(real_consent, "terms_text", original)
-    assert real_consent.in_force()
-    assert real_consent.withdraw() and not real_consent.withdraw()
+def test_sharing_is_on_by_default_and_an_opt_out_stops_it(real_consent, monkeypatch):
+    assert real_consent.current() is None and real_consent.in_force()              # no record: the default, on
+    assert real_consent.withdraw() and not real_consent.withdraw()                    # opt out once; already off after
     assert real_consent.current().withdrawn_at and not real_consent.in_force()
+    entry = real_consent.record()                                                     # opt back in
+    assert entry is not None and entry.terms_version == "1.2" and real_consent.in_force()
+    monkeypatch.setattr(real_consent, "terms_text", lambda: "Version: 2.0\nnew terms")
+    assert real_consent.in_force()                                                    # new terms never pause sharing
 
 
-def test_without_terms_nothing_can_be_consented_to(real_consent, monkeypatch):
+def test_without_the_terms_file_sharing_follows_the_default_and_can_be_turned_back_on(real_consent, monkeypatch):
     monkeypatch.setattr(real_consent, "terms_text", lambda: "")
-    assert real_consent.record() is None and not real_consent.in_force()
+    assert real_consent.in_force()
+    assert real_consent.withdraw() and not real_consent.in_force()
+    assert real_consent.record() is not None and real_consent.in_force()
+
+
+def test_an_opt_out_that_cannot_be_saved_is_reported_never_assumed(real_consent, monkeypatch, capsys):
+    monkeypatch.setattr(real_consent, "_save", lambda entry: False)
+    assert real_consent.withdraw() is False and real_consent.in_force()
+    assert report_rights.withdraw_consent() == 1 and "still ON" in capsys.readouterr().out
 
 
 # ------------------------------------------------------------------ the gates
 
 
-def test_the_automatic_and_manual_share_paths_refuse_without_consent(real_consent, capsys, monkeypatch):
+def test_the_automatic_and_manual_share_paths_send_by_default_and_stop_after_an_opt_out(real_consent, capsys, monkeypatch):
     policy = sharing.CommunitySharePolicy(CFG)
-    ok, why = policy.decide(FINDING, "0x" + "a" * 40)
-    assert not ok and "consent" in why
-    real_consent.record()
-    assert policy.decide(FINDING, "0x" + "a" * 40)[0]
+    assert policy.decide(FINDING, "0x" + "a" * 40)[0]                                  # default: allowed
     real_consent.withdraw()
-    assert not policy.decide(FINDING, "0x" + "a" * 40)[0]
+    ok, why = policy.decide(FINDING, "0x" + "a" * 40)
+    assert not ok and "turned off" in why
     # the manual path prints the same refusal and sends nothing
     from plugins.blackbox.community.report_cli import report_command
     args = argparse.Namespace(status=False, standing=False, export=None, restore_key=None, erase_identity=False, consent=False,
                               withdraw_consent=False, false_positive=None, retract=None, type="ioc", ioc_type="domain",
                               value="x.example", context="fetched-by-tool", severity="high")
     monkeypatch.setattr(report_command, "load_blackbox_config", lambda: CFG)   # the command reads the config itself
-    assert report_command.cmd_report(args) == 2 and "consent" in capsys.readouterr().out
-
-
-def test_the_dashboard_cannot_switch_sharing_on_without_consent(real_consent, monkeypatch, tmp_path):
-    updates, errors = settings._validate({"report": True}, sharing_consent=real_consent.in_force())
-    assert any("consent" in e for e in errors) and "report" not in updates
+    assert report_command.cmd_report(args) == 2 and "turned off" in capsys.readouterr().out
     real_consent.record()
-    updates, errors = settings._validate({"report": True}, sharing_consent=real_consent.in_force())
+    assert policy.decide(FINDING, "0x" + "a" * 40)[0]                                  # back on
+
+
+def test_turning_sharing_on_in_the_dashboard_is_the_opt_back_in(real_consent):
+    real_consent.withdraw()
+    assert real_consent.for_settings({"report": False}) is False and not real_consent.in_force()   # off stays off
+    assert real_consent.for_settings({"report": True}) is True and real_consent.in_force()         # on opts back in
+    updates, errors = settings._validate({"report": True}, sharing_consent=True)
     assert updates.get("report") is True and not errors
+    updates, errors = settings._validate({"report": True}, sharing_consent=False)                  # the opt-back-in failed to save
+    assert any("writable" in e for e in errors) and "report" not in updates
     updates, errors = settings._validate({"report": False}, sharing_consent=False)
-    assert updates.get("report") is False                                                    # turning OFF never needs consent
+    assert updates.get("report") is False                                                          # turning OFF never needs anything
 
 
-def test_the_consent_verbs_record_and_withdraw(real_consent, capsys):
+def test_the_sharing_verbs_record_and_withdraw(real_consent, capsys):
+    assert report_rights.withdraw_consent() == 0 and not real_consent.in_force()
+    assert report_rights.withdraw_consent() == 0 and "already off" in capsys.readouterr().out
     assert report_rights.record_consent() == 0 and real_consent.in_force()
     out = capsys.readouterr().out
-    assert "Version: 1.1" in out and "Consent recorded" in out
-    assert report_rights.withdraw_consent() == 0 and not real_consent.in_force()
+    assert "Version: 1.2" in out and "Consent recorded" in out
     assert report_rights.wants_local_verb(argparse.Namespace(consent=True))
     assert report_rights.wants_local_verb(argparse.Namespace(withdraw_consent=True))
 
@@ -124,8 +133,10 @@ def test_erasure_destroys_every_way_to_re_publish_and_export_carries_the_record(
     assert report_rights.erase_identity(store, confirmed=True) == 0
     assert keep_alive.LiveReportStore().all() == [] and share_retry.default_queue().pending() == []
     assert digest.SightingTally().weeks() == []                                               # KI-221: tally gone
-    assert "wallet address stays the same" in capsys.readouterr().out                         # KI-220: honest wording
-    assert real_consent.current() is None and not real_consent.in_force()
+    erased_out = capsys.readouterr().out
+    assert "wallet address stays the same" in erased_out                                      # KI-220: honest wording
+    assert "Community sharing is now OFF" in erased_out
+    assert real_consent.current().withdrawn_at and not real_consent.in_force()           # erasure leaves sharing OFF
     assert audit.read_share_ledger(limit=5) == []
     assert not store.exists() if hasattr(store, "exists") else True
 
@@ -137,20 +148,22 @@ def test_the_documents_ship_with_the_plugin():
     terms = consent_module.terms_text()
     for command in ("--withdraw-consent", "--erase-identity", "--export", "--retract"):
         assert command in terms                                                               # the rights are real commands
-    assert consent_module.terms_version() == "1.1"
+    assert consent_module.terms_version() == "1.2"
 
 
-def test_a_garbage_record_is_no_consent(real_consent, tmp_path):
+@pytest.mark.parametrize("garbage", ["{nope", "[]", '"text"', "null"])
+def test_a_garbage_record_reads_as_the_default(real_consent, garbage):
+    """Python and the OpenClaw bridge read every malformed record the same way: as no record."""
     path = real_consent._record_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("{nope", encoding="utf-8")
-    assert real_consent.current() is None and not real_consent.in_force()
+    path.write_text(garbage, encoding="utf-8")
+    assert real_consent.current() is None and real_consent.in_force()
     json.loads(json.dumps({"ok": True}))
 
 
 def test_a_retraction_or_dispute_passes_without_consent_and_with_sharing_off(real_consent, monkeypatch):
-    """KI-222 / LES-016: reductions always get through — withdrawing consent must not
-    trap the operator's own statements. Reports still need consent."""
+    """KI-222 / LES-016: reductions always get through — opting out must not trap
+    the operator's own statements. Reports stop after an opt-out."""
     from types import SimpleNamespace
 
     from plugins.blackbox.community.report_cli import report_command, statement_verbs
@@ -166,9 +179,10 @@ def test_a_retraction_or_dispute_passes_without_consent_and_with_sharing_off(rea
     base = dict(status=False, standing=False, export=None, restore_key=None, erase_identity=False, consent=False,
                 withdraw_consent=False, false_positive=None, retract=None, type="ioc", ioc_type="domain",
                 value="x.example", context="fetched-by-tool", severity="high")
+    real_consent.withdraw()
     assert not real_consent.in_force()
     assert report_command.cmd_report(argparse.Namespace(**{**base, "retract": "ioc:domain:x.example"})) == 0
     assert report_command.cmd_report(argparse.Namespace(**{**base, "false_positive": "ioc:domain:x.example"})) == 0
     assert sent == ["ioc:domain:x.example", "ioc:domain:x.example"]
-    # a REPORT without consent (and with sharing off) is still refused
+    # a REPORT after the opt-out (and with sharing off) is still refused
     assert report_command.cmd_report(argparse.Namespace(**base)) == 2 and len(sent) == 2

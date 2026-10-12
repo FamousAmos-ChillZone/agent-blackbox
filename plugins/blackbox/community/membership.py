@@ -41,6 +41,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from enum import Enum
 from typing import Callable, Dict, Optional, Set, Tuple
 
 from ..kernel.dkg_client import DkgClient
@@ -239,3 +240,50 @@ def ensure_community_subscription(client: DkgClient, cfg: object) -> Tuple[bool,
     """Subscribe/join this node to the community graph — at most once, never
     to itself, only when the node says it is not subscribed (KI-064/114)."""
     return MEMBERSHIP.ensure(client, cfg)
+
+
+class JoinState(Enum):
+    """Where this node stands with the community graph, as its own listing says.
+
+    JOINED — subscribed with the graph's definition in (it can read and post);
+    AWAITING_DEFINITION — subscribed, the definition still on its way from the
+    owner (the node logs "not authorized" meanwhile; about a minute, KI-295);
+    JOINING — not subscribed yet (dialling the owner, subscribe pending);
+    UNKNOWN — the node could not be asked (never read as "not joined", LES-011).
+    """
+
+    JOINED = "joined"
+    AWAITING_DEFINITION = "awaiting-definition"
+    JOINING = "joining"
+    UNKNOWN = "unknown"
+
+
+#: One plain line per state, for the dashboard (no jargon, no ids).
+JOIN_STATE_TEXT: Dict[JoinState, str] = {
+    JoinState.JOINED: "connected",
+    JoinState.AWAITING_DEFINITION: "connecting — fetching the graph from its owner (about a minute)",
+    JoinState.JOINING: "connecting — reaching the graph's owner",
+    JoinState.UNKNOWN: "could not check the connection (local node not answering)",
+}
+
+
+def join_state_of(entry: Optional[Dict[str, object]], *, listing_read: bool) -> JoinState:
+    """Pure: the :class:`JoinState` of the node's listing row *entry* for the
+    graph (None when the graph is not listed). *listing_read* False means the
+    listing itself could not be read."""
+    if not listing_read:
+        return JoinState.UNKNOWN
+    if entry is None or not entry.get("subscribed"):
+        return JoinState.JOINING
+    return JoinState.JOINED if _has_definition(entry) else JoinState.AWAITING_DEFINITION
+
+
+def read_join_state(client: DkgClient, graph: str) -> JoinState:
+    """Ask the node once (its context-graph listing) where it stands with *graph*."""
+    try:
+        entries = client.context_graphs()
+    except Exception as exc:   # could not tell (LES-011)
+        logger.debug("blackbox: community join state unreadable: %s", exc)
+        return JoinState.UNKNOWN
+    entry = next((row for row in entries if str(row.get("id") or "") == graph), None)
+    return join_state_of(entry, listing_read=True)
