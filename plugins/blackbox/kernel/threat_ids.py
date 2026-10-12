@@ -274,7 +274,8 @@ def _is_canonical_ipv6(value: str) -> bool:
 #: Hosts: ASCII labels (Punycode after :func:`_idna_host`), ≤16 labels, a
 #: letter-led top label; URLs: http(s), a host or IPv4, optional port, a path
 #: free of whitespace and the characters that end a URL in HTML/shell;
-#: IPs: IPv4, or IPv6 in RFC 5952 compressed form (KI-193); hashes: 32–128 hex;
+#: IPs: IPv4, or IPv6 in RFC 5952 compressed form (KI-193); hashes: 32–128 hex, optionally
+#: ``md5:``/``sha1:``/``sha256:``/``sha512:``-prefixed at that algorithm's length;
 #: wallets/contracts: one alphanumeric token (EVM hex, base58, bech32).
 _HOST_SHAPE = r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){1,16}[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?"
 _IPV4_SHAPE = r"(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)"
@@ -282,7 +283,9 @@ _IOC_VALUE_SHAPES = {
     "domain": re.compile(_HOST_SHAPE),
     "url": re.compile(rf"https?://(?:{_HOST_SHAPE}|{_IPV4_SHAPE})(?::\d{{1,5}})?(?:[/?#][^\s<>\"'`\\^{{}}|\[\]]*)?"),
     "ip": re.compile(_IPV4_SHAPE),   # IPv6 is checked by ipaddress, not a regex (see ioc_value_is_well_formed)
-    "hash": re.compile(r"[a-f0-9]{32,128}"),
+    # A digest is bare hex, or algorithm-prefixed with the length that algorithm has —
+    # the form detection emits and the verified graph lists (KI-354).
+    "hash": re.compile(r"(?:md5:[a-f0-9]{32}|sha1:[a-f0-9]{40}|sha256:[a-f0-9]{64}|sha512:[a-f0-9]{128}|[a-f0-9]{32,128})"),
     "wallet": re.compile(r"[A-Za-z0-9]{20,128}"),
     "contract": re.compile(r"[A-Za-z0-9]{20,128}"),
 }

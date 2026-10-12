@@ -382,3 +382,11 @@ def test_the_reader_holds_the_verified_only_gates_against_a_forged_matched_by():
                   "signedStatement": signer.sign(REPORT_STATEMENT, {**payload, "matched_by": "built-in"})}
         assert verifier.verify(forged) is None
     assert verifier.drops["schema"] == 2
+
+
+def test_verified_prefixed_hash_identifier_is_reportable():
+    """KI-354: the verified graph and detection both spell digests ``sha256:<hex>``;
+    such a report was refused, so no verified hash match could ever be shared."""
+    identifier = "ioc:hash:sha256:d2e1ab10d5a0c16a724aeda8acb46b38f551ade58137969c3bc3c9cdc0a12425"
+    assert _ok("ioc", identifier, ioc_type="hash", ioc_context="fetched-by-tool").identifier == identifier
+    _bad("ioc", "ioc:hash:sha256:" + "a" * 40, ioc_type="hash", ioc_context="fetched-by-tool")
