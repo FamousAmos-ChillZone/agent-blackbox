@@ -178,6 +178,21 @@ def _max_severity(sevs: List[str]) -> Optional[str]:
     return best
 
 
+def _threat_row(row: Dict[str, Any], finding: Dict[str, Any], detail: Dict[str, Any]) -> Dict[str, Any]:
+    """One local threat as the dashboard's Local view shows it (from a findings.jsonl row)."""
+    return {
+        "identifier": finding.get("identifier"),
+        "category": finding.get("category") or "other",
+        "severity": (finding.get("severity") or "info").lower(),
+        "title": finding.get("title") or finding.get("identifier") or "Threat",
+        "source": finding.get("source"),
+        "confirmed": bool(finding.get("confirmed")),
+        "tool": finding.get("tool_name") or detail.get("tool_name"),
+        "ts": row.get("ts") or 0,
+        "profile": finding.get("sighting") or {},   # threat profiles: goal, at risk, outcome…
+    }
+
+
 def read_local_activity(max_sessions: int = 60) -> Dict[str, Any]:
     """Reconstruct the user's LOCAL threat activity as sessions → events → threats.
 
@@ -205,16 +220,7 @@ def read_local_activity(max_sessions: int = 60) -> Dict[str, Any]:
         fd = f.get("finding") or {}
         det = f.get("detail") or {}
         sid = _sid(f)
-        threat = {
-            "identifier": fd.get("identifier"),
-            "category": fd.get("category") or "other",
-            "severity": (fd.get("severity") or "info").lower(),
-            "title": fd.get("title") or fd.get("identifier") or "Threat",
-            "source": fd.get("source"),
-            "confirmed": bool(fd.get("confirmed")),
-            "tool": fd.get("tool_name") or det.get("tool_name"),
-            "ts": f.get("ts") or 0, "profile": fd.get("sighting") or {},   # threat profiles: goal, at risk, outcome…
-        }
+        threat = _threat_row(f, fd, det)
         tcid = det.get("tool_call_id")
         if tcid:
             threats_by_call.setdefault((sid, tcid), []).append(threat)
