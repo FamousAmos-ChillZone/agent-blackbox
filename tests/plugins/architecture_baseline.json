@@ -3,7 +3,7 @@
   "files": {
     "dashboard/server.py": 1996,
     "kernel/config.py": 427,
-    "kernel/dkg_client.py": 641,
+    "kernel/dkg_client.py": 639,
     "sync/command.py": 1402
   },
   "functions": {

@@ -278,6 +278,13 @@ COMMUNITY_GRAPH_ENABLED = True
 #: ``BlackboxConfig.community_enabled``). Never a development or test graph here.
 DEFAULT_COMMUNITY_GRAPH_ID = "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-community"
 
+#: The named subgraph every community statement is written to and read from
+#: (2026-10-12). DKG 10.0.23 reserves a catalog-mode graph's ROOT for its RFC-64
+#: catalog sync and refuses members' direct shares there ("legacy SWM apply is
+#: not authoritative for root scope"); a named subgraph keeps the member lane,
+#: so a share reaches every subscribed member at once (measured: same second).
+COMMUNITY_SUB_GRAPH = "reports"
+
 #: Peer id of the node that OWNS the community graph (its read authority). An
 #: unregistered public graph has no on-chain pointer, so a fresh node cannot
 #: find the graph until it is connected to this peer (KI-216: eight subscribes
