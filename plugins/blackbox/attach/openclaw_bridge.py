@@ -180,7 +180,7 @@ def _desired_entry(cfg: Dict[str, Any]) -> Dict[str, Any]:
             "communityGraphId": cfg.get("community_graph_id", ""),
             "communityGraphPeerId": cfg.get("community_graph_peer_id", ""),
             "report": bool(cfg.get("report", True)),   # on by default (2026-10-12); the opt-out record still gates sends
-            "dailyReportLimit": int(cfg.get("daily_report_limit") or 20),
+            "dailyReportLimit": int(cfg.get("daily_report_limit") or constants.DEFAULT_DAILY_REPORT_LIMIT),
             "reportMinSeverity": cfg.get("report_min_severity", "high"),
         },
         "hooks": {"allowConversationAccess": True},

@@ -116,7 +116,7 @@ export const DEFAULT_PROTECTED_PATHS: readonly string[] = [
 ];
 
 /** Mirror of Python `constants.DEFAULT_DAILY_REPORT_LIMIT` / `effective_daily_report_limit`. */
-export const DEFAULT_DAILY_REPORT_LIMIT = 20;
+export const DEFAULT_DAILY_REPORT_LIMIT = 100;
 export function effectiveDailyReportLimit(configured: number | undefined): number {
   return configured !== undefined && Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : DEFAULT_DAILY_REPORT_LIMIT;
 }
