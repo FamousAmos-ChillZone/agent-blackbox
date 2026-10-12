@@ -53,8 +53,6 @@ STATE_FILE = "console_state.json"
 SELF_TEST_FIXTURES: Mapping[str, int] = {"threatsConfirmed": 10, "cleanRejected": 10, "unprovenLeft": 2}
 #: K2: one narrowing list per this many seconds per root epoch.
 NARROWING_INTERVAL_SECONDS = 24 * 60 * 60
-#: A non-narrowing list waits this long before readers act on it; until then the console builds on nothing newer.
-WAITING_SECONDS = key_manifest.MANIFEST_TIME_LOCK_DAYS * 24 * 60 * 60
 REMINDER_DAYS = (40, 50, 55)
 ALARM_DAYS_LEFT = 5
 MAX_PENDING_JOINS = 32
@@ -62,6 +60,12 @@ MAX_DECIDED_JOINS = 64
 MAX_SIGNED_LISTS = 50
 _KEY_HEX = re.compile(r"[0-9a-f]{64}")
 _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _waiting_seconds() -> int:
+    """How long a non-narrowing list waits before readers act on it (0 = no wait);
+    until then the console builds on nothing newer. Read at call time."""
+    return key_manifest.MANIFEST_TIME_LOCK_DAYS * 24 * 60 * 60
 
 
 class RosterError(ValueError):
@@ -216,7 +220,7 @@ class ConsoleState:
         on the older list would silently drop its change."""
         lists = self._signed_lists()
         waiting = [s for s in lists if s.root_epoch == effective.root_epoch and s.version > effective.version
-                   and not s.narrowing and now - s.at < WAITING_SECONDS]
+                   and not s.narrowing and now - s.at < _waiting_seconds()]
         return (f"version {max(s.version for s in waiting)} signed here is still in its waiting period; "
                 "approve again after readers act on it") if waiting else ""
 

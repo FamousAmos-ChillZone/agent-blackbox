@@ -222,7 +222,8 @@ def _narrowed(side, issued):
                                curator_operators=side.manifest.curator_operators[keep])
 
 
-def test_a_narrowing_list_is_effective_at_once_and_sticky_after_its_own_three_days(monkeypatch):
+@pytest.mark.usefixtures("time_lock_one_day")
+def test_a_narrowing_list_is_effective_at_once_and_sticky_after_its_own_time_lock(monkeypatch):
     today = ["2026-10-11"]
     side = _verified_side(monkeypatch, today)
     narrowed = _narrowed(side, issued="2026-10-11")
@@ -361,6 +362,7 @@ def _active(node):
     return active_verified_graph(node, CFG)
 
 
+@pytest.mark.usefixtures("time_lock_one_day")
 def test_a_migration_pending_inside_its_time_lock_leaves_the_old_graph_active_and_then_the_successor_is(root, today):
     node = MigrationNode(_migration_row(_migration(), root))
     for day in ("2026-10-10", "2026-10-11"):
@@ -520,6 +522,7 @@ def _run_sync(monkeypatch, node):
     return node.subscribed
 
 
+@pytest.mark.usefixtures("time_lock_one_day")
 def test_sync_subscribes_the_successor_and_keeps_the_old_graph_only_when_a_successor_is_active(monkeypatch, root, today):
     today[0] = "2026-10-11"                                     # migration still inside its time-lock
     assert _run_sync(monkeypatch, MigrationNode(_migration_row(_migration(), root))) == [OLD_GRAPH]

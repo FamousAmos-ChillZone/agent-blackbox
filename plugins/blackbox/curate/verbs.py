@@ -284,7 +284,7 @@ def manifest_proposal(ctx: CurateContext, store: ProposalStore, *, curator_keys:
     community authority), stored APPROVED (one root signature is the whole
     quorum) for `curate publish`. On a pinned network or graph the root is
     offline; its manifest arrives as a file, not from this verb (R7b).
-    *issued_day* dates it (60-day validity, 1-day time-lock); "" = no clock.
+    *issued_day* dates it (60-day validity; acted on at once — no time-lock); "" = no clock.
     *curator_operators* names the organisation running each key, in the same order."""
     if not ctx.sandbox:   # KI-256
         raise VerbError("this network has a pinned root; manifests come from the offline root (R7b)")

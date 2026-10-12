@@ -81,7 +81,7 @@ def _add_keys(verbs_: Any) -> None:
     m.add_argument("--promotion-author", dest="promotion_author", default="", metavar="ADDRESS",
                    help="verified authority only: the pinned publisher of verified rows")
     m.add_argument("--issued-day", dest="issued_day", default="", metavar="YYYY-MM-DD",
-                   help="date the manifest (60-day validity, 1-day time-lock); omit for no clock")
+                   help="date the manifest (60-day validity; acted on at once — no time-lock); omit for no clock")
     m.add_argument("--root-epoch", dest="root_epoch", type=int, default=1)
     m.add_argument("--manifest-version", dest="manifest_version", type=int, default=1,
                    help="the manifest's version number (never --version: Hermes owns that name, KI-276)")

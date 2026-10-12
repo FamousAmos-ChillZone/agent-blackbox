@@ -680,6 +680,7 @@ def test_renewal_reminders_at_40_50_55_and_the_alarm_inside_5_days(routed, today
     assert routed.http.get("/api/renewal", headers=TAILSCALE).json() == status.as_dict()
 
 
+@pytest.mark.usefixtures("time_lock_one_day")
 def test_renew_dates_the_same_roster_today_and_waits_for_readers(routed):
     res = routed.http.post("/api/manifest/renew", headers=routed.headers, json=routed.sign_body())
     assert res.status_code == 200, res.text

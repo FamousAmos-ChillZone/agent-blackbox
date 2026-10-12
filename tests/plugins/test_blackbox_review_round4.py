@@ -106,6 +106,7 @@ def _rows_of(envelope):
 # ------------------------------------------------------------------ finding 3 + 8: the effective manifest
 
 
+@pytest.mark.usefixtures("time_lock_one_day")
 def test_an_undated_manifest_never_beats_a_dated_one_and_a_conflict_freezes(keys):
     dated = _manifest(keys, version=1, issued_day="2026-09-01")
     undated_newer = _manifest(keys, version=2)

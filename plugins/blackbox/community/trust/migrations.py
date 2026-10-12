@@ -34,7 +34,7 @@ from ...kernel import signing, sparql_text, threat_ids
 from ...kernel.dkg_client import extract_binding
 from ...kernel.signing import graph_migration
 from ...kernel.signing.graph_migration import GraphMigration, MigrationVerdict
-from ...kernel.signing.key_manifest import MANIFEST_TIME_LOCK_DAYS
+from ...kernel.signing import key_manifest
 from ...kernel.signing.trust_anchors import RootPins
 
 Order = Tuple[int, int]
@@ -76,7 +76,7 @@ def content_hash(migration: GraphMigration) -> str:
 
 def is_pending(migration: GraphMigration, today: str) -> bool:
     """True while *migration* is inside its time-lock (the same time-lock as a list)."""
-    effective = date.fromisoformat(migration.issued_day) + timedelta(days=MANIFEST_TIME_LOCK_DAYS)
+    effective = date.fromisoformat(migration.issued_day) + timedelta(days=key_manifest.MANIFEST_TIME_LOCK_DAYS)
     return today < effective.isoformat()
 
 

@@ -466,6 +466,7 @@ def test_the_day_is_first_sight_when_the_node_gives_none_and_never_later_than_to
     assert decided[PART_A].tier is AssetTier.BLOCK and decided[PART_B].tier is AssetTier.BLOCK   # judged on TODAY
 
 
+@pytest.mark.usefixtures("time_lock_one_day")
 def test_no_list_in_force_on_the_day_tiers_flag():
     decided, _store = _decide({PART_A: _promoted(EVIL), PART_B: _promoted(EVIL)},
                               {PART_A: "2026-09-01", PART_B: "2026-11-05"}, history=(V1,))
@@ -622,6 +623,7 @@ def test_signed_facts_survive_the_cache_round_trip():
 # ------------------------------------------------------------------ which manifest was in force (community/trust)
 
 
+@pytest.mark.usefixtures("time_lock_one_day")
 def test_manifest_on_day_follows_the_reader_policy_as_of_that_day():
     assert manifest_history.manifest_on_day(HISTORY, "2026-09-10") == V1
     assert manifest_history.manifest_on_day(HISTORY, "2026-10-20") == V1      # V2 still in its time-lock

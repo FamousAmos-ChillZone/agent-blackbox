@@ -69,9 +69,12 @@ NO_PROMOTION_AUTHOR = "none"
 MAX_CURATOR_KEYS = 8
 #: R7b: a dated manifest is valid this long, and takes effect this long after its day (the time-lock).
 MANIFEST_VALID_DAYS = 60
-#: One day (founder decision 2026-10-11, was three): long enough for the manifest
-#: watchers to raise an alarm and a counter-list to land before a widened list acts.
-MANIFEST_TIME_LOCK_DAYS = 1
+#: How many days a widened list waits before readers act on it. ZERO = no wait:
+#: a new list counts the moment a reader reads it (founder decision 2026-10-12,
+#: "remove the 1 day rule; we'll add it if we need the additional security"; it
+#: was 3, then 1). The whole mechanism stays in place and tested at 1 day: set a
+#: positive value to bring the wait back. Read at call time, never copied at import.
+MANIFEST_TIME_LOCK_DAYS = 0
 #: the lowest threshold a list may carry, keyed by its distinct operators
 #: (the break-glass key's operator never counts here). A count missing from the
 #: table (one operator) can never make a quorum, so such a list is invalid.

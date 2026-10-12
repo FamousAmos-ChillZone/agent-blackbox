@@ -218,6 +218,7 @@ def test_a_conflict_below_the_sticky_order_changes_nothing_and_flags_an_alarm(ro
     assert _read(leapfrog_below, sticky=v4) == (v4, False, True)
 
 
+@pytest.mark.usefixtures("time_lock_one_day")
 def test_a_narrowing_list_conflicted_on_day_2_is_undone(roots):
     root_a, root_b = roots
     v1 = _listed(1)
@@ -237,6 +238,7 @@ def test_a_narrowing_list_conflicted_on_day_2_is_undone(roots):
     assert trust_manifests.sticky_after(conflicted, day3, v1.order, v1.content_hash()) == (v1.order, v1.content_hash())
 
 
+@pytest.mark.usefixtures("time_lock_one_day")
 def test_a_pending_list_that_does_not_narrow_still_waits(roots):
     root_a, _ = roots
     v1 = _listed(1)

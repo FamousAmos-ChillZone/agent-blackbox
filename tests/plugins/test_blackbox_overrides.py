@@ -168,9 +168,9 @@ def _rows_of(envelope):
 # ------------------------------------------------------------------ the manifest clock: time-lock, stale, expiry
 
 
+@pytest.mark.usefixtures("time_lock_one_day")
 def test_the_manifest_clock_pending_valid_stale(keys):
     dated = _manifest(keys, issued_day="2026-10-01")
-    assert km.MANIFEST_TIME_LOCK_DAYS == 1                                             # founder decision 2026-10-11
     assert km.manifest_clock(dated, "2026-10-01") == ("pending", "2026-10-02")
     assert km.manifest_clock(dated, "2026-10-02") == ("", "2026-11-30")
     assert km.manifest_clock(dated, "2026-12-01") == ("stale", "2026-11-30")
@@ -179,6 +179,15 @@ def test_the_manifest_clock_pending_valid_stale(keys):
     with pytest.raises(km.KeyManifestError):
         _manifest(keys, issued_day="yesterday")
 
+
+
+def test_with_no_time_lock_a_new_list_counts_on_the_day_it_is_issued(keys):
+    """Founder decision 2026-10-12: the live time-lock is 0 days, so a widened
+    list is in force the moment a reader reads it (it still expires after 60 d)."""
+    assert km.MANIFEST_TIME_LOCK_DAYS == 0
+    dated = _manifest(keys, issued_day="2026-10-01")
+    assert km.manifest_clock(dated, "2026-10-01") == ("", "2026-11-30")
+    assert km.manifest_clock(dated, "2026-09-30")[0] == "pending"                    # a future-dated list still waits for its day
 
 def test_clock_forward_past_expiry_keeps_blocking_freezes_raising_and_lets_a_revocation_through(keys):
     manifest = _manifest(keys, issued_day="2026-08-01")                                # stale after 2026-09-30
