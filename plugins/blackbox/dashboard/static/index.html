@@ -4881,6 +4881,9 @@
     "Package": "The package name, exactly as it is installed.",
     "Version": "The exact version this record is about. Other versions may be fine.",
     "Fixed in": "The first version without the problem, when one exists.",
+    "Threat type": "What this indicator is used for: a phishing site, malware infrastructure, a command-and-control server, a scam…",
+    "Indicator": "What kind of indicator it is: a domain, IP address, URL, file hash or wallet address.",
+    "Feed": "The public threat feed that listed it before Umanitek verified it into the graph (e.g. Phishing.Database, Maltrail).",
     "OWASP": "The OWASP Top 10 for LLM applications category. LLM01 is prompt injection.",
     "Pattern": "The text pattern Blackbox matches. For a prompt injection this is the attacker's wording it looks for — never your own prompt.",
     "Tool": "The agent tool involved (web_fetch, terminal, read_file…).",
@@ -5009,6 +5012,17 @@
     return rows;
   }
 
+  // Indicator records: what kind of threat, what kind of indicator, which feed listed it.
+  var IOC_KIND_LABEL = {
+    phishing: "Phishing", "credential-harvest": "Credential harvesting", scam: "Scam",
+    malicious_ioc: "Malware infrastructure", malware: "Malware", "malware-delivery": "Malware delivery",
+    c2: "Command & control", "command-and-control": "Command & control", "exfil-endpoint": "Data exfiltration endpoint",
+    "injection-host": "Hosted a prompt injection"
+  };
+  var IOC_TYPE_LABEL = { domain: "Domain", ip: "IP address", url: "URL", hash: "File hash", wallet: "Wallet address", contract: "Contract address" };
+  var FEED_LABEL = { phishing_database: "Phishing.Database", maltrail_static: "Maltrail (static trails)" };
+  function iocKindLabel(k) { k = String(k || ""); return IOC_KIND_LABEL[k] || IOC_KIND_LABEL[k.toLowerCase()] || ""; }
+
   // [label, value, mono?] rows for the details grid, by category, skipping empties.
   function detailRows(d) {
     var rows = [];
@@ -5028,6 +5042,10 @@
     } else if (cat === "fileaccess") {
       add("Tool", d.tool, true);
       add("File category", d.file_category);
+    } else if (cat === "ioc") {
+      add("Threat type", iocKindLabel(d.kind || d.reportReason));
+      add("Indicator", IOC_TYPE_LABEL[d.iocType || d.ioc_type] || d.iocType || d.ioc_type);
+      add("Feed", FEED_LABEL[d.sourceId] || d.sourceId);
     } else if (cat === "skill") {
       add("Skill", d.skill, true);
       add("Version", d.skill_version, true);
@@ -5048,7 +5066,8 @@
     var meta = CATS[cat];
     var t = '<span class="pill ' + sev + '">' + esc(sev) + '</span>' +
       '<span class="m-tag" style="color:' + meta.color + '">' + esc(meta.name) + '</span>';
-    if (kind === "malware") t += '<span class="m-tag kind-malware">Malware</span>';
+    if (iocKindLabel(kind)) t += '<span class="m-tag kind-malware">' + esc(iocKindLabel(kind)) + '</span>';
+    else if (kind === "malware") t += '<span class="m-tag kind-malware">Malware</span>';
     else if (kind === "vulnerability") t += '<span class="m-tag kind-vuln">Vulnerable</span>';
     if (curated === "true" || curated === true) t += '<span class="m-tag curated">Verified</span>';
     return t;
@@ -5426,6 +5445,8 @@
     var apply = function (d) {
       if (TM.finding !== f) return;   // user moved on
       var intel = threatIntelHTML(d || {});
+      if (d && iocKindLabel(d.kind) && $("tm-tags").innerHTML.indexOf("kind-malware") < 0)
+        $("tm-tags").insertAdjacentHTML("beforeend", '<span class="m-tag kind-malware">' + esc(iocKindLabel(d.kind)) + '</span>');
       if (intel) $("tm-body").innerHTML = findingBaseHTML(f) + intel + (f.proofHTML || "");
     };
     var lookup = function (i) {
