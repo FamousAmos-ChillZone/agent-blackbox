@@ -310,3 +310,13 @@ def test_the_local_record_carries_the_profile(monkeypatch, tmp_path):
     from plugins.blackbox.kernel.config import BlackboxConfig
     reporting._report_and_audit(BlackboxConfig(), "pre_tool_call", [finding], {"tool_name": "web_fetch"})
     assert recorded[0]["findings"][0]["sighting"]["outcome"] == "flagged"
+
+
+def test_the_findings_log_keeps_the_profile(monkeypatch, tmp_path):
+    """The record writer kept a fixed key list and dropped the profile (seen on bench A)."""
+    from plugins.blackbox import audit
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path))
+    finding = {**_finding(), "sighting": sighting.sighting_fields(_finding(), outcome="blocked")}
+    audit.record(event="pre_tool_call", findings=[finding], detail={"tool_name": "web_fetch"})
+    row = json.loads((tmp_path / "findings.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    assert row["finding"]["sighting"]["outcome"] == "blocked" and row["finding"]["sighting"]["threat_goal"] == "phishing-lure"

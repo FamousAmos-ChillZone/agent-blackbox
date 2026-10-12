@@ -256,6 +256,8 @@ def _finding_summary(finding: Dict[str, Any]) -> Dict[str, Any]:
         "candidate": bool(finding.get("candidate", not finding.get("confirmed", True))),
         "source": str(finding.get("source") or ("public" if finding.get("confirmed", True) else "heuristic")),
         "ts": time.time(),
+        # threat profiles: the closed-vocabulary sighting the guard attached (goal, at risk, outcome…).
+        "sighting": {str(k)[:64]: str(v)[:128] for k, v in (finding.get("sighting") or {}).items()},
     }
 
 
