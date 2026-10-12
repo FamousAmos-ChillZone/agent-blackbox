@@ -5280,10 +5280,13 @@
     if (e.command) rows.push(["Command", e.command, true]);
     rows.push(["Tool", e.tool || "—", false], ["Decision", e.outcome === "blocked" ? "Blocked before it ran" : "Flagged (it ran)", false],
               ["Severity", e.severity || "—", false]);
+    var named = false;
     profileRows(e.profile).forEach(function (r) {
       if (r[0] === "Outcome" || r[0] === "Seen via" || String(r[1]) === "unknown") return;
+      if (r[0] === "What it's after") named = true;
       rows.push(r);
     });
+    if (!named && WEV_GOAL[walletKind(e)]) rows.splice(2, 0, ["What it's after", WEV_GOAL[walletKind(e)], false]);
     rows.push(["Rule", e.identifier, true]);
     var s = e.session || {};
     rows.push(["Session", [s.agent, s.model, s.status, (s.steps || 0) + " steps", s.id ? "#" + s.id : ""].filter(Boolean).join(" · "), false]);
@@ -5291,11 +5294,19 @@
       return '<div class="k">' + esc(r[0]) + '</div><div' + (r[2] ? ' class="mono"' : "") + ">" + esc(r[1]) + "</div>";
     }).join("") + "</div>";
   }
-  var WEV_KIND = { api: "model", tool: "tool", file: "file", dependency: "install", threat: "threat" };
+  var WEV_KIND = { api: "model", tool: "tool", file: "file", dependency: "install", threat: "threat", session: "session" };
+  // What a wallet event is after, for events recorded before threat profiles named it.
+  var WEV_GOAL = { vault: "the wallet's keys — to empty the wallet", seed: "the wallet itself — the recovery words control every account in it",
+                   key: "the account's signing key — to move its funds" };
   function wevTimeline(e) {
-    var start = (e.session && e.session.start) || (e.timeline[0] && e.timeline[0].ts) || 0;
-    return '<ol class="wev-steps">' + (e.timeline || []).map(function (step) {
-      var flags = (step.threats || []).length ? " · " + step.threats.join(", ") : "";
+    var s = e.session || {}, steps = (e.timeline || []).slice();
+    var start = s.start || (steps[0] && steps[0].ts) || 0;
+    // The session's own edges, so the story has a beginning and an end.
+    if (s.start) steps.unshift({ type: "session", ts: s.start, label: "Session started" });
+    if (s.end && s.status && s.status !== "active") steps.push({ type: "session", ts: s.end, label: "Session ended (" + s.status + ")" });
+    return '<ol class="wev-steps">' + steps.map(function (step) {
+      var flags = (step.threats || []).filter(function (t) { return t !== step.result; });
+      flags = flags.length ? " · " + flags.join(", ") : "";
       var label = step.type === "tool" ? (step.tool ? esc(step.tool) + ": " : "") + "<code>" + esc(step.label || "") + "</code>" : esc(step.label || "");
       return '<li class="wev-step' + (step.this ? " this" : "") + '"><span class="off">' + esc(wevOffset(step.ts, start)) + '</span><span class="what"><span class="kind">' +
         esc(WEV_KIND[step.type] || step.type) + "</span>" + label + esc(step.result ? " → " + step.result : "") + esc(flags) +
