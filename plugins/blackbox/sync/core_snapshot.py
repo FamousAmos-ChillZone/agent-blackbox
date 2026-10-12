@@ -8,6 +8,7 @@ from __future__ import annotations
 import http.client
 import json
 import time
+from copy import deepcopy
 from ..kernel.config import load_blackbox_config
 from ..kernel.dkg_client import DkgClient, DkgError, signed_request_headers
 from ..kernel.local_http import request
@@ -67,16 +68,29 @@ class _Progress:
                     snapshot_digest=result.get("snapshotDigest"), error=error)
 
 
+def _matches_requested_scope(request, payload):
+    # New daemons echo their resolved transport even when the caller omitted it.
+    # Only this known selection is additive; all authority fields remain exact.
+    if not isinstance(request, dict):
+        return False
+    if request == payload:
+        return True
+    return ("transport" not in payload and request.get("transport") in ("exact", "bulk")
+            and request == {**payload, "transport": request["transport"]})
+
+
 def _start(client, payload):
     # Check capability before starting a transfer. Never silently fall back.
     job = client.request("GET", PATH)
     if job.get("state") not in {"idle", "running", "complete", "failed"}:
         raise DkgError("SNAPSHOT_RESPONSE_INVALID")
     if job["state"] == "running":
-        if job.get("request") != payload:
+        if not _matches_requested_scope(job.get("request"), payload):
             raise DkgError("ANOTHER_SNAPSHOT_JOB_IS_RUNNING")
     else:
         job = client.request("POST", PATH, payload)
+        if not _matches_requested_scope(job.get("request"), payload):
+            raise DkgError("SNAPSHOT_JOB_CHANGED")
     if not isinstance(job.get("id"), str) or not job["id"]:
         raise DkgError("SNAPSHOT_RESPONSE_INVALID")
     return job
@@ -136,6 +150,9 @@ def run(client, cfg, args):
     try:
         job = _start(client, payload)
         progress.job_id = job["id"]
+        # Pin the validated descriptor, including any selected transport, for
+        # every subsequent poll. Never normalize away a mid-job change.
+        payload = deepcopy(job["request"])
         while time.monotonic() < deadline:
             outcome = _observe(job, payload, progress, args)
             if outcome is not None:
