@@ -4409,8 +4409,7 @@
       severity: t.severity || "info", title: t.title || t.identifier || "Threat",
       source: t.source, confirmed: !!t.confirmed,
       tool_name: t.tool || "", framework: (s && s.agent) || "hermes",
-      ts: t.ts || 0, profile: t.profile || {}, decision: t.decision || "",
-      session: s ? (fwLabel(s.agent) + " · " + (s.shortId || "local")) : ""
+      ts: t.ts || 0, profile: t.profile || {}, decision: t.decision || ""
     };
   }
 
@@ -4433,8 +4432,9 @@
         (ev.threats || []).forEach(function (t) {
           var key = t.identifier || ((t.title || "threat") + ":" + (t.ts || 0));
           var item = byId[key];
-          if (!item) { item = byId[key] = { t: t, s: s, ev: ev, count: 0 }; order.push(key); }
+          if (!item) { item = byId[key] = { t: t, s: s, ev: ev, count: 0, first: t.ts || 0 }; order.push(key); }
           item.count += 1;
+          if (t.ts && (!item.first || t.ts < item.first)) item.first = t.ts;
           if ((t.ts || 0) >= (item.t.ts || 0)) { item.t = t; item.s = s; item.ev = ev; }   // keep the newest sighting
         });
       });
@@ -4460,13 +4460,13 @@
       items.slice(0, LOCAL_LEAVES_PER_TYPE).forEach(function (it, i) {
         var t = it.t, tsev = sevClass(t.severity), finding = localFinding(t, it.s);
         finding.sightings = it.count;
+        finding.firstSeen = it.first;
         nodes.push({
           id: hubId + ":" + i, kind: "lthreat", cat: ck,
           label: clip(t.title || t.identifier || "Threat", 22) + (it.count > 1 ? " ×" + it.count : ""),
           color: meta.color, ring: SEV_COLOR[tsev] || SEV_COLOR.info,
           severity: tsev, identifier: t.identifier || "", name: t.title || "",
           tool: t.tool || it.ev.tool || "", ts: t.ts || it.ev.ts || 0,
-          session: fwLabel(it.s.agent) + " · " + (it.s.shortId || "local"),
           sightings: it.count, profile: t.profile || {}, finding: finding, val: 5
         });
         links.push({ source: hubId + ":" + i, target: hubId, kind: "leaf" });
@@ -4817,7 +4817,6 @@
     var tmeta = [];
     if (node.tool) tmeta.push(node.tool);
     if (node.ts) tmeta.push(lclock(node.ts));
-    if (node.session) tmeta.push(node.session);
     if (node.sightings > 1) tmeta.push("seen " + node.sightings + " times");
     return '<div class="graph-tip">' +
       '<div class="t-name">' + esc(title) + '</div>' +
@@ -4896,8 +4895,7 @@
     "Detected": "When Blackbox saw it on this machine.",
     "Agent": "Which protected agent was involved.",
     "Trigger": "Which check caught it: a tool call, a model request, or a file/package action.",
-    "Session": "The agent session it happened in.",
-    "Seen": "How many times this threat was met on this machine.",
+    "Seen": "How many separate times Blackbox detected this threat on this machine, and when the first and the latest were.",
     "What it's after": "The threat's goal, from a fixed list (credential theft, wallet drain, agent hijack…).",
     "At risk": "The KIND of resource the threat targets (cloud credentials, API keys, funds…) — never the actual file or account.",
     "Technique": "The MITRE ATT&CK or ATLAS technique id — the industry's shared name for this attack method.",
@@ -5279,8 +5277,8 @@
     add("Agent", fwLabel(f.framework));
     add("Tool", f.tool_name || f.tool, true);
     add("Trigger", EVENT_LABEL[String(f.event || "")] || f.event);
-    add("Session", f.session);
-    add("Seen", f.sightings > 1 ? f.sightings + " times" : "");
+    // Every time this machine recorded the threat (each is a separate detection), with when.
+    add("Seen", f.sightings > 1 ? f.sightings + " times · first " + shortWhen(f.firstSeen) + " · last " + shortWhen(f.ts) : "");
     rows = rows.concat(profileRows(f.profile || f.sighting));
     var base = gridHTML(rows);
     var advRefs = findingAdvisoryRefs(f);
@@ -6490,6 +6488,12 @@
     return d.toLocaleString();
   }
   // Compact wall-clock (HH:MM:SS) for hover cards and inline threat lists.
+  // "Oct 12, 2:17 PM" — a date and time short enough for one detail row.
+  function shortWhen(ts) {
+    if (!ts) return "";
+    try { return new Date(ts * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); }
+    catch (e) { return ""; }
+  }
   function lclock(ts) {
     if (!ts) return "";
     try { return new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }); }
