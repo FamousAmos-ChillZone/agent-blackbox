@@ -269,13 +269,14 @@ VIEW_VERIFIABLE_MEMORY = "verifiable-memory"
 # this constant only records that the capability ships in this build.
 COMMUNITY_GRAPH_ENABLED = True
 
-#: Default community context graph id. SHIPS EMPTY until Umanitek mints the
-#: production community graph — an empty id keeps every community path dormant
-#: (community_enabled is False without a graph address), so a release can never
-#: point the fleet at a development graph by accident. Dev machines opt in via
-#: the BLACKBOX_COMMUNITY_GRAPH_ID env override or the config entry. The
-#: production id lands here in the launch PR and the flip is one line.
-DEFAULT_COMMUNITY_GRAPH_ID = ""
+#: Default community context graph id: the PRODUCTION community graph, created
+#: 2026-10-12 on Umanitek's node and owned by its wallet (an open, unregistered
+#: shared-memory graph; creating it cost nothing). Every install joins it unless
+#: the BLACKBOX_COMMUNITY_GRAPH_ID env override or the config entry names
+#: another graph. Reading community flags needs only this address; SENDING
+#: reports still needs the operator's consent (``report``, the single gate
+#: ``BlackboxConfig.community_enabled``). Never a development or test graph here.
+DEFAULT_COMMUNITY_GRAPH_ID = "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-community"
 
 #: Peer id of the node that OWNS the community graph (its read authority). An
 #: unregistered public graph has no on-chain pointer, so a fresh node cannot
@@ -286,7 +287,7 @@ DEFAULT_COMMUNITY_GRAPH_ID = ""
 #: it, filled in the same launch PR. It is a TRUST ANCHOR: whoever names this
 #: peer decides whose graph the node reads, so it comes only from the shipped
 #: default, the installer, or the operator's own config — never from the network.
-DEFAULT_COMMUNITY_GRAPH_PEER_ID = ""
+DEFAULT_COMMUNITY_GRAPH_PEER_ID = "12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyKndHXjZM"   # Umanitek's node
 
 #: Default daily cap on outbound community reports per node. Bounds a runaway
 #: or compromised agent's graph footprint even before the per-threat 6-hour

@@ -94,7 +94,7 @@ def test_community_strings_are_sanitized(configured):
 
 def test_unconfigured_and_unreadable_states(monkeypatch, configured):
     assert community_routes.community_statements_payload(lambda cfg: None) == {"configured": True, "available": False}
-    monkeypatch.setattr("plugins.blackbox.kernel.config.load_blackbox_config", lambda: BlackboxConfig())
+    monkeypatch.setattr("plugins.blackbox.kernel.config.load_blackbox_config", lambda: BlackboxConfig(community_graph_id=""))
     assert community_routes.community_statements_payload(lambda cfg: _read()) == {"configured": False}
 
 

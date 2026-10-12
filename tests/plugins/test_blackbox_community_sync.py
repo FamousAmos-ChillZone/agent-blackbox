@@ -76,7 +76,7 @@ def test_subscribe_includes_shared_memory():
 
 def test_no_graph_id_means_no_subscribe():
     client = FakeClient()
-    ok, detail = membership.ensure_community_subscription(client, BlackboxConfig())
+    ok, detail = membership.ensure_community_subscription(client, BlackboxConfig(community_graph_id=""))
     assert ok is False
     assert client.subscribes == []
     assert "no community graph" in detail
@@ -129,7 +129,7 @@ def test_status_lines_sharing_off(bb_home, capsys):
 
 
 def test_status_lines_unconfigured(bb_home, capsys):
-    report_command.print_community_status(BlackboxConfig())
+    report_command.print_community_status(BlackboxConfig(community_graph_id=""))
     out = capsys.readouterr().out
     assert "not configured" in out
     assert "threat sharing" not in out  # no misleading sharing line without a graph

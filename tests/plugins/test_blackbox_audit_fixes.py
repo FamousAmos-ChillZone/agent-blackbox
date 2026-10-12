@@ -187,12 +187,12 @@ def test_concurrent_ruleset_refresh_reuses_completed_generation(monkeypatch, tmp
     monkeypatch.setattr(ruleset_fetching, "fetch_tier", slow_fetch)
 
     first = threading.Thread(
-        target=lambda: results.append(ruleset_mod.refresh(config_mod.BlackboxConfig(), object()))
+        target=lambda: results.append(ruleset_mod.refresh(config_mod.BlackboxConfig(community_graph_id=""), object()))
     )
 
     def second_refresh():
         second_started.set()
-        results.append(ruleset_mod.refresh(config_mod.BlackboxConfig(), object()))
+        results.append(ruleset_mod.refresh(config_mod.BlackboxConfig(community_graph_id=""), object()))
 
     second = threading.Thread(target=second_refresh)
     first.start()
@@ -246,7 +246,7 @@ def test_post_barrier_refresh_does_not_reuse_pre_barrier_generation(
             barrier_stamp_read.set()
         return stamp
 
-    cfg = config_mod.BlackboxConfig(context_graph_id="owner/public")
+    cfg = config_mod.BlackboxConfig(context_graph_id="owner/public", community_graph_id="")
     monkeypatch.setattr(ruleset_disk_cache.constants, "blackbox_home", lambda: tmp_path)
     monkeypatch.setattr(ruleset_refresh, "_memory", ruleset_refresh._new_memory())
     monkeypatch.setattr(ruleset_fetching, "fetch_tier", staged_fetch)
@@ -320,7 +320,7 @@ def test_forced_refresh_rejects_incomplete_vm_query_without_restamping_cache(
         "packageName": "last-good",
         "packageVersion": "1.0.0",
     }
-    cfg = config_mod.BlackboxConfig(context_graph_id="owner/public")
+    cfg = config_mod.BlackboxConfig(context_graph_id="owner/public", community_graph_id="")
     monkeypatch.setattr(ruleset_disk_cache.constants, "blackbox_home", lambda: tmp_path)
     monkeypatch.setattr(ruleset_refresh, "_memory", ruleset_refresh._new_memory())
     monkeypatch.setattr(ruleset_fetching, "fetch_tier", lambda *_args, **_kwargs: [row])
@@ -353,8 +353,8 @@ def test_ruleset_cache_never_crosses_custom_context_graphs(monkeypatch, tmp_path
     monkeypatch.setattr(ruleset_refresh, "_memory", ruleset_refresh._new_memory())
     monkeypatch.setattr(ruleset_fetching, "fetch_tier", lambda *_args, **_kwargs: [row])
 
-    graph_a = config_mod.BlackboxConfig(context_graph_id="owner/graph-a")
-    graph_b = config_mod.BlackboxConfig(context_graph_id="owner/graph-b")
+    graph_a = config_mod.BlackboxConfig(context_graph_id="owner/graph-a", community_graph_id="")
+    graph_b = config_mod.BlackboxConfig(context_graph_id="owner/graph-b", community_graph_id="")
     first = ruleset_mod.refresh(graph_a, object())
     assert first.context_graph_id == "owner/graph-a"
     assert first.source_count("public") == 1

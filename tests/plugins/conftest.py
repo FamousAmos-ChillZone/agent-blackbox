@@ -66,3 +66,14 @@ def time_lock_one_day(monkeypatch):
     switched back on, so its tests pin a positive lock instead of being deleted."""
     from plugins.blackbox.kernel.signing import key_manifest
     monkeypatch.setattr(key_manifest, "MANIFEST_TIME_LOCK_DAYS", 1)
+
+
+@pytest.fixture
+def no_community_graph(monkeypatch):
+    """Load settings as an install with NO community graph would: the shipped
+    default is the production graph (2026-10-12), so tests of the dormant path
+    say "no graph" explicitly instead of relying on an empty default."""
+    from plugins.blackbox.kernel import constants
+    monkeypatch.setattr(constants, "DEFAULT_COMMUNITY_GRAPH_ID", "")
+    monkeypatch.setattr(constants, "DEFAULT_COMMUNITY_GRAPH_PEER_ID", "")
+    monkeypatch.delenv("BLACKBOX_COMMUNITY_GRAPH_ID", raising=False)

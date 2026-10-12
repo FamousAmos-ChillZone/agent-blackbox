@@ -1,6 +1,7 @@
 """Release contract: curated public VM only; community SWM is coming soon."""
 
 import time
+import pytest
 from argparse import Namespace
 from pathlib import Path
 
@@ -40,7 +41,7 @@ def test_refresh_queries_only_verifiable_memory(monkeypatch, tmp_path):
 
     monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
     monkeypatch.setattr(ruleset_refresh, "_memory", ruleset_refresh._new_memory())
-    cfg = config.BlackboxConfig()
+    cfg = config.BlackboxConfig(community_graph_id="")
     ruleset.refresh(cfg, Client())
 
     assert queries
@@ -75,6 +76,7 @@ def test_cached_community_rules_are_discarded():
     assert [r["identifier"] for r in restored.graph_threats] == ["public"]
 
 
+@pytest.mark.usefixtures("no_community_graph")
 def test_sharing_stays_dormant_without_a_community_graph_address(monkeypatch):
     """Contract update (community-graph build B2): the `report` key is LIVE,
     but community sharing remains dormant by construction until a community
@@ -85,7 +87,7 @@ def test_sharing_stays_dormant_without_a_community_graph_address(monkeypatch):
     monkeypatch.delenv("BLACKBOX_COMMUNITY_GRAPH_ID", raising=False)
     cfg = config.load_blackbox_config()
     assert cfg.report is True  # the switch is real now
-    assert cfg.community_graph_id == ""  # shipped default: no address
+    assert cfg.community_graph_id == ""  # an install with no community graph
     assert cfg.community_enabled is False  # → every community path dormant
     assert cfg.daily_report_limit > 0  # the cap exists the moment sharing can
 
@@ -122,6 +124,7 @@ def test_openclaw_runtime_reads_vm_only_and_reporting_is_opt_in():
     assert 'row.source !== "community"' in ruleset_src
 
 
+@pytest.mark.usefixtures("no_community_graph")
 def test_report_command_submits_nothing_when_community_dormant(monkeypatch, capsys):
     """Contract update (community-graph build B6): the command is REAL now,
     but with no community graph configured (the shipped default) it must
@@ -408,6 +411,7 @@ def test_dashboard_reuses_fresh_large_ruleset_without_querying_blazegraph(monkey
     }
 
 
+@pytest.mark.usefixtures("no_community_graph")
 def test_dashboard_community_surfaces_live_but_dormant_without_graph(monkeypatch):
     """Contract update (community-graph build B7): the community surfaces are
     LIVE endpoints now. With no community graph configured (the shipped
