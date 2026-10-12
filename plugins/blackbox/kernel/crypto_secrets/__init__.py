@@ -14,6 +14,6 @@ Public surface:
 """
 
 from .seed_phrase import MARKER as SEED_PHRASE_MARKER
-from .seed_phrase import SeedPhraseRun, find_seed_phrase_runs, redact_seed_phrases
+from .seed_phrase import SeedPhraseRun, find_seed_phrase_runs, redact_seed_phrases, wordlist_ready
 
-__all__ = ["SEED_PHRASE_MARKER", "SeedPhraseRun", "find_seed_phrase_runs", "redact_seed_phrases"]
+__all__ = ["SEED_PHRASE_MARKER", "SeedPhraseRun", "find_seed_phrase_runs", "redact_seed_phrases", "wordlist_ready"]

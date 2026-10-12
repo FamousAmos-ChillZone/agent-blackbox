@@ -96,6 +96,11 @@ def _wordlist() -> Optional[Dict[str, int]]:
     return {word: index for index, word in enumerate(words)}
 
 
+def wordlist_ready() -> bool:
+    """True when the pinned BIP-39 wordlist loaded, i.e. seed-phrase detection is ON."""
+    return _wordlist() is not None
+
+
 def checksum_entropy(indices: List[int]) -> Optional[bytes]:
     """The entropy behind word *indices* when their BIP-39 checksum holds,
     else ``None``. ``len(indices)`` must be a standard phrase length."""

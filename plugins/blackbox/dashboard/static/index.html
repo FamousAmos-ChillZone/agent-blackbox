@@ -806,6 +806,24 @@
     overflow: hidden;
   }
 
+  /* ---------- Wallet protection panel (trader rules) ---------- */
+  .wp-mode { font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 4px 10px; border-radius: 999px; }
+  .wp-mode.block { background: color-mix(in srgb, var(--mint) 18%, transparent); color: var(--mint); }
+  .wp-mode.audit { background: color-mix(in srgb, #d99a1e 20%, transparent); color: #b7791f; }
+  .wp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0; }
+  .wp-col { padding: 16px 20px; border-right: 1px solid var(--border); display: grid; gap: 10px; align-content: start; }
+  .wp-col:last-child { border-right: 0; }
+  .wp-h { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .wp-row { display: grid; grid-template-columns: 18px 1fr; gap: 8px; font-size: 13px; line-height: 1.45; align-items: start; }
+  .wp-ic { font-weight: 700; text-align: center; }
+  .wp-ic.ok { color: var(--mint); } .wp-ic.warn { color: #c9821a; } .wp-ic.none { color: var(--muted); }
+  .wp-sub { color: var(--muted); font-size: 12px; }
+  .wp-ev { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 12.5px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .wp-ev:last-child { border-bottom: 0; }
+  .wp-ev .o { font-weight: 700; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+  .wp-ev .o.blocked { color: #d0342c; } .wp-ev .o.flagged { color: #c9821a; }
+  @media (max-width: 700px) { .wp-col { border-right: 0; border-bottom: 1px solid var(--border); } .wp-col:last-child { border-bottom: 0; } }
+
   /* ---------- Connected agents strip ---------- */
   .agents-strip {
     display: flex;
@@ -2829,6 +2847,18 @@
           <div class="empty" style="padding:28px 20px; width:100%;">Loading agents&hellip;</div>
         </div>
       </div>
+    </section>
+
+    <!-- Wallet protection (trader rules): what was found on this machine, and how it is protected -->
+    <section class="section" aria-label="Wallet protection" id="wallet-protection">
+      <div class="section-head">
+        <div class="section-htext">
+          <h2>Wallet protection</h2>
+          <div class="section-note">What Blackbox found on this machine, and how it keeps your agent away from it.</div>
+        </div>
+        <div class="head-right"><span class="wp-mode" id="wp-mode">…</span></div>
+      </div>
+      <div class="panel"><div class="wp-grid" id="wp-body"><div class="empty" style="padding:24px 20px;">Checking this machine&hellip;</div></div></div>
     </section>
 
     <!-- Threat graph (tabbed) -->
@@ -4991,6 +5021,64 @@
     document.addEventListener("click", function (e) { var el = helpOf(e); if (el) { e.stopPropagation(); show(el); } }, true);
     window.addEventListener("scroll", hide, true);
   })();
+
+  // ---------- Wallet protection panel (GET /api/wallet-protection) ----------
+  function wpHelp(text) {
+    return '<span class="m-help" tabindex="0" role="note" aria-label="' + esc(text) + '" data-help="' + esc(text) + '">i</span>';
+  }
+  function wpRow(icon, cls, html) {
+    return '<div class="wp-row"><span class="wp-ic ' + cls + '">' + icon + '</span><div>' + html + '</div></div>';
+  }
+  function renderWalletProtection(d) {
+    var block = d.mode === "block";
+    var mode = $("wp-mode");
+    if (mode) {
+      mode.className = "wp-mode " + (block ? "block" : "audit");
+      mode.textContent = block ? "● Blocking" : "Watching only · audit mode";
+      mode.title = block ? "Wallet threats are stopped before the action runs."
+                         : "Wallet threats are recorded and shown, but not stopped. Turn on Block in Settings to stop them.";
+    }
+    var guard = block ? "protected — blocked if the agent reaches for it" : "watched — flagged, not blocked (audit mode)";
+    var found = (d.wallets || []).map(function (w) {
+      return wpRow("✓", "ok", "<b>" + esc(w.wallet) + "</b> · " + esc(w.browser) + (w.profile ? " · profile “" + esc(w.profile) + "”" : "") +
+        '<div class="wp-sub">' + esc((w.areas || []).join(", ")) + " — " + guard + "</div>");
+    });
+    if (!found.length) found.push(wpRow("–", "none", "No browser wallet found on this machine." +
+      '<div class="wp-sub">Blackbox checks the usual browser folders by name every few minutes; it never opens a vault.</div>'));
+    var col1 = '<div class="wp-col"><div class="wp-h">Found on this machine ' +
+      wpHelp("Wallets whose key store (the encrypted vault holding your keys) exists in a browser profile here. Blackbox only checks that the folder exists — it never opens or reads it.") +
+      "</div>" + found.join("") + "</div>";
+    var watch = [
+      wpRow(d.seed_checker ? "✓" : "!", d.seed_checker ? "ok" : "warn", "<b>Seed phrases</b> " +
+        wpHelp("12–24 word recovery phrases are recognised by their built-in checksum. A phrase with a cue like 'seed:', or 18+ words, is blocked in block mode; any phrase sent off the machine is blocked.") +
+        '<div class="wp-sub">' + (d.seed_checker ? "checker on — 2,048-word list, checksum verified" : "checker OFF — the word list did not load") + "</div>"),
+      wpRow("✓", "ok", "<b>Private keys</b> " +
+        wpHelp("A key written next to a label like PRIVATE_KEY= or pk: is recognised. Handling it is only flagged, because trading configs legitimately hold one; sending it off the machine is blocked.") +
+        '<div class="wp-sub">labelled keys flagged · blocked if sent off the machine</div>'),
+      wpRow("✓", "ok", "<b>Protected files</b> " +
+        wpHelp("Your protected file patterns from Settings. Reading a matching file through a file tool is flagged critical and blocked in block mode.") +
+        '<div class="wp-sub">' + esc((d.protected_paths || []).slice(0, 6).join(" · ")) + ((d.protected_paths || []).length > 6 ? " …" : "") + "</div>"),
+      d.terminal_reads === "logged" ? wpRow("!", "warn", "<b>Not yet:</b> reading a protected file through the terminal (e.g. <code>cat .env</code>) is logged, not blocked " +
+        wpHelp("A known gap that is being fixed: the protected-files rule only checks file tools so far. Wallet vaults are already covered in the terminal.")) : ""
+    ];
+    var col2 = '<div class="wp-col"><div class="wp-h">Always watching</div>' + watch.join("") + "</div>";
+    var events = (d.events || []).slice(0, 6).map(function (e) {
+      return '<div class="wp-ev"><span class="o ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span><span>" + esc(e.title || e.identifier) +
+        '</span><span class="wp-sub">' + esc(shortWhen(e.ts)) + "</span><span class=\"wp-sub\">" + esc(e.tool ? "via " + e.tool : "") + "</span></div>";
+    });
+    var col3 = '<div class="wp-col"><div class="wp-h">Recent wallet events ' +
+      wpHelp("The latest times your agent reached for a wallet, a seed phrase or a private key, and what Blackbox did.") + "</div>" +
+      (events.length ? events.join("") : '<div class="wp-sub">Nothing yet — no agent has reached for a wallet or key.</div>') + "</div>";
+    $("wp-body").innerHTML = col1 + col2 + col3;
+  }
+  function loadWalletProtection() {
+    if (!$("wp-body")) return;
+    getJSON("/api/wallet-protection").then(renderWalletProtection).catch(function () {
+      $("wp-body").innerHTML = '<div class="empty" style="padding:24px 20px;">Wallet protection status is unavailable right now.</div>';
+    });
+  }
+  setTimeout(loadWalletProtection, 300);
+  setInterval(loadWalletProtection, 30000);
 
   // The threat profile a report carries (closed words only), as detail rows. Accepts the
   // community rule's camelCase keys or a local finding's snake_case sighting.

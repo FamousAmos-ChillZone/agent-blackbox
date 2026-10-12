@@ -45,6 +45,7 @@ from .detectors import (
     injection_scan_text,
 )
 from .shell_shapes import ESCALATION_SHAPES, SHELL_TOOLS, command_from_args
+from .wallet_files import found_wallets
 
 __all__ = [
     "DEPENDENCY_ECOSYSTEMS",
@@ -52,6 +53,7 @@ __all__ = [
     "ESCALATION_SHAPES",
     "FETCH_TOOL_PREFIXES",
     "HOST_FILE_AND_SKILL_TOOLS",
+    "found_wallets",
     "SENSITIVE_PATH_CATEGORIES",
     "SHELL_TOOLS",
     "SKILL_DANGER_SHAPES",

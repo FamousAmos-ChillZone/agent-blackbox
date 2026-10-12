@@ -189,6 +189,35 @@ def _store_globs(root: str) -> List[str]:
 EXISTING_STORES = _ExistingStores()
 
 
+#: Browser names recognised in a key-store path (first match wins), for the dashboard.
+_BROWSERS = (("brave", "Brave"), ("edge", "Edge"), ("vivaldi", "Vivaldi"), ("opera", "Opera"), ("arc", "Arc"),
+             ("chromium", "Chromium"), ("chrome", "Chrome"), ("firefox", "Firefox"), ("mozilla", "Firefox"))
+#: Which storage area a key-store folder is (Chromium constants / Firefox storage), in plain words.
+_AREAS = (("Local Extension Settings", "vault"), ("Sync Extension Settings", "synced copy"),
+          ("IndexedDB", "backup copy"), ("moz-extension", "extension storage"))
+
+
+def found_wallets() -> List[dict]:
+    """The wallets whose key stores exist on this machine, for the dashboard:
+    ``[{wallet, browser, profile, areas: [...]}]``. Built from the folder NAMES
+    the archive check already found (:data:`EXISTING_STORES`) — no file is opened,
+    nothing is read inside a store."""
+    grouped: dict = {}
+    for path, wallet in EXISTING_STORES.get():
+        low = path.lower()
+        browser = next((label for key, label in _BROWSERS if key in low), "Browser")
+        area = next((label for key, label in _AREAS if key.lower() in low), "storage")
+        parts = path.split("/")
+        anchor = next((i for i, part in enumerate(parts) if part in ("local extension settings", "sync extension settings",
+                                                                    "indexeddb", "storage")), len(parts))   # paths are lower-cased
+        profile = parts[anchor - 1] if anchor > 0 else ""
+        entry = grouped.setdefault((wallet, browser, profile), {"wallet": wallet, "browser": browser,
+                                                                 "profile": profile, "areas": []})
+        if area not in entry["areas"]:
+            entry["areas"].append(area)
+    return list(grouped.values())
+
+
 def wallet_inside_folder(path: str) -> Optional[str]:
     """The wallet whose key store sits somewhere inside folder *path* on this
     machine, or ``None`` (also ``None`` when no key store exists here)."""
