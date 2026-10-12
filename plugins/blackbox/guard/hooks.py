@@ -16,6 +16,7 @@ from .. import audit, detection, killlist, overrides, ruleset
 from ..kernel import config as config_mod, constants
 from ..kernel.config import BlackboxConfig
 from . import background
+from . import injection_sites
 from . import reporting
 from . import session_context
 
@@ -85,6 +86,16 @@ def _decision(cfg: BlackboxConfig, findings: List[detection.Finding], blocking: 
     if blocking:
         return "block"
     return "flag (local override)" if _overridden(cfg, findings) else "flag"
+
+
+def _decision_detail(cfg: BlackboxConfig, findings: List[detection.Finding],
+                     blocking: List[detection.Finding]) -> Dict[str, Any]:
+    """The audit row's ``decision`` and, when something blocked, ``blocked`` —
+    which findings did, so each report can say blocked or flagged (threat-profiles D3)."""
+    out: Dict[str, Any] = {"decision": _decision(cfg, findings, blocking)}
+    if blocking:
+        out["blocked"] = [f.identifier for f in blocking]
+    return out
 
 
 def _overridden(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List[detection.Finding]:
@@ -163,7 +174,7 @@ def on_pre_tool_call(
         if findings:
             # KI-189: the audit row says what the hook DID, not only what it saw —
             # R10's "a revoked threat blocked N actions here" counts these.
-            detail["decision"] = _decision(cfg, findings, blocking)
+            detail.update(_decision_detail(cfg, findings, blocking))
         reporting._report_and_audit(cfg, "pre_tool_call", findings, detail)
         # OSV auto-discovery runs off the blocking path so a network lookup
         # never delays or breaks the tool call.
@@ -313,6 +324,7 @@ def on_pre_api_request(**kwargs: Any) -> None:
         sources = _untrusted_request_sources(kwargs.get("user_message"), kwargs.get("request_messages"))
         text = "\n".join(part for _, part in sources)   # the LLM reviewer's input
         findings = _injection_by_source(sources, rs, cfg.discover)
+        findings += injection_sites.injection_site_findings(findings, kwargs.get("request_messages"), rs)   # D8
         findings = reporting._flag_worthy(cfg, findings)
         detail = {
             "session_id": kwargs.get("session_id"),

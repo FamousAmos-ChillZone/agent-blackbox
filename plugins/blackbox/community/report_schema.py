@@ -58,6 +58,7 @@ from typing import Callable, Dict, Mapping, Optional, Tuple
 
 from .. import detection
 from ..kernel import constants, display_safety, threat_ids
+from .sighting import vocab as sighting_vocab
 
 #: Longest identifier / evidence value a report may carry.
 MAX_IDENTIFIER_CHARS = 512
@@ -81,13 +82,15 @@ _BLACKBOX_VERSION = re.compile(r"[0-9]{1,4}(\.[0-9]{1,4}){1,3}([a-z0-9.+-]{0,24}
 MATCHED_BY = frozenset({"verified", "built-in", "advisory"})
 #: Why an indicator of compromise is reported (§03.6) — a closed code, never text.
 IOC_REASONS = frozenset({"phishing", "malware-delivery", "command-and-control", "credential-harvest",
-                         "exfil-endpoint", "scam"})
+                         "exfil-endpoint", "scam", "injection-host"})   # injection-host: threat-profiles D8
 #: Where an injection may be reported from: the R1 contexts plus a tool's input (§03.6).
 INJECTION_CONTEXTS = (*constants.INJECTION_CONTEXTS, "in-tool-input")
 #: The dependency reason of a package the verified graph lists (``matched_by=verified`` only).
 VERIFIED_MATCH_REASON = "verified-match"
 #: The common fields every category may carry beside its evidence.
-COMMON_FIELD_KEYS = ("matched_by", "blackbox_version")
+COMMON_FIELD_KEYS = ("matched_by", "blackbox_version", *sighting_vocab.SIGHTING_KEYS)   # + threat-profiles §03.2
+#: A verified skill rule's identifier (the corpus names skills by hash, not name@version).
+_VERIFIED_SKILL_ID = re.compile(r"skill:[0-9a-f]{24}")
 
 
 class ReportValidationError(ValueError):
@@ -101,7 +104,8 @@ class ReportRecord:
     ``evidence`` holds (builder keyword, value) pairs, sorted — only keys the
     category allows, every value checked. ``matched_by`` (one of
     :data:`MATCHED_BY`) and ``blackbox_version`` are the common fields;
-    ``""`` means the report does not state it.
+    ``""`` means the report does not state it. ``sighting`` holds the
+    threat-profile fields (:data:`.sighting.vocab.SIGHTING_KEYS`) it states, sorted.
     """
 
     identifier: str
@@ -111,10 +115,11 @@ class ReportRecord:
     evidence: Tuple[Tuple[str, str], ...]
     matched_by: str = ""
     blackbox_version: str = ""
+    sighting: Tuple[Tuple[str, str], ...] = ()
 
     def common_fields(self) -> Dict[str, str]:
         """The common fields this report states, keyed like the evidence."""
-        stated = {"matched_by": self.matched_by, "blackbox_version": self.blackbox_version}
+        stated = {"matched_by": self.matched_by, "blackbox_version": self.blackbox_version, **dict(self.sighting)}
         return {key: value for key, value in stated.items() if value}
 
 
@@ -214,7 +219,9 @@ def _skill(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
     out = {"skill_name": name, "skill_version": version}
     if ev.get("registry") or ev.get("matched_by") != "verified":   # a verified match is already public
         out["registry"] = _one_of("registry", ev.get("registry"), constants.SKILL_REGISTRIES)   # never local (KI-159)
-    return threat_ids.skill_version_identifier(name, version), out
+        return threat_ids.skill_version_identifier(name, version), out
+    # KI-353: a VERIFIED skill keeps the corpus's own identifier (checked by shape below).
+    return None, out
 
 
 def _ioc(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
@@ -235,8 +242,39 @@ def _common_fields(given: Mapping[str, str]) -> Dict[str, str]:
         if not _BLACKBOX_VERSION.fullmatch(version):
             _fail("blackbox_version must be a release number such as 1.1.0")
         out["blackbox_version"] = version
+    out.update(_sighting_fields(given, matched_by=out.get("matched_by", "")))
     return out
 
+
+#: Each sighting field's allowed values: a closed set, or a strict shape.
+_SIGHTING_SETS = {"agent_action": sighting_vocab.AGENT_ACTIONS, "outcome": sighting_vocab.OUTCOMES,
+                  "threat_goal": sighting_vocab.THREAT_GOALS, "resource_at_risk": sighting_vocab.RESOURCES_AT_RISK}
+
+
+def _sighting_fields(given: Mapping[str, str], *, matched_by: str) -> Dict[str, str]:
+    """The threat-profile fields *given* states (threat-profiles §03.2), checked:
+    closed sets, the tool rule (host tool verbatim, else ``mcp-tool``/``other``),
+    ATT&CK/ATLAS shape, and a verified-rule link only on a verified match."""
+    out = {key: _one_of(key, given[key], allowed) for key, allowed in _SIGHTING_SETS.items() if given.get(key)}
+    if given.get("agent_tool"):
+        tool = str(given["agent_tool"]).strip().lower()
+        if tool not in sighting_vocab.OTHER_TOOLS and not (tool in _HOST_TOOLS or sighting_vocab.TOOL_SHAPE.fullmatch(tool)):
+            _fail("agent_tool must be a host tool name, mcp-tool or other")
+        out["agent_tool"] = tool
+    if given.get("attack_technique"):
+        technique = str(given["attack_technique"]).strip()
+        if not sighting_vocab.ATTACK_TECHNIQUE_SHAPE.fullmatch(technique):
+            _fail("attack_technique must be a MITRE ATT&CK or ATLAS technique id")
+        out["attack_technique"] = technique
+    if given.get("verified_subject"):
+        subject = str(given["verified_subject"]).strip()
+        if matched_by != "verified" or not sighting_vocab.VERIFIED_SUBJECT_SHAPE.fullmatch(subject):
+            _fail("verified_subject names a verified rule, and only on a verified match")
+        out["verified_subject"] = subject
+    return out
+
+
+_HOST_TOOLS = frozenset({*detection.SHELL_TOOLS, *detection.HOST_FILE_AND_SKILL_TOOLS})
 
 _VALIDATORS: Dict[str, Callable[[Mapping[str, str]], Tuple[Optional[str], Dict[str, str]]]] = {
     "injection": _injection,
@@ -261,6 +299,10 @@ def _check_identifier(category: str, identifier: str, derived: Optional[str], ev
         _fail("identifier must be a short single token without control or format characters")
     if derived is not None and identifier != derived:
         _fail(f"identifier does not match its fields (expected {derived})")
+    if category == "skill" and derived is None and not (
+            _VERIFIED_SKILL_ID.fullmatch(identifier)
+            or identifier == threat_ids.skill_version_identifier(evidence["skill_name"], evidence["skill_version"])):
+        _fail("a verified skill report names the skill (skill:<name>@<version>) or its verified rule (skill:<24 hex>)")
     if category == "injection" and not _INJECTION_ID.fullmatch(identifier):
         _fail("an injection identifier is a slug (injection:<pattern hash or corpus id>), never free text")
     if category == "ioc":
@@ -296,7 +338,8 @@ def validate_report(*, identifier: str, category: str, severity: str, framework:
     return ReportRecord(identifier=identifier.strip(), category=category,
                         severity=constants.normalize_severity(severity), framework=framework_name,
                         evidence=tuple(sorted(out.items())), matched_by=common.get("matched_by", ""),
-                        blackbox_version=common.get("blackbox_version", ""))
+                        blackbox_version=common.get("blackbox_version", ""),
+                        sighting=tuple(sorted((k, v) for k, v in common.items() if k in sighting_vocab.SIGHTING_KEYS)))
 
 
 def validate_dispute(*, identifier: str, reason: str) -> Tuple[str, str]:

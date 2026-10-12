@@ -4251,7 +4251,8 @@
             color: CATS[ck].color, ring: SEV_COLOR[sev] || SEV_COLOR.info,
             severity: sev, identifier: t.identifier || "", name: t.name || "", val: 5,
             tier: tier, stage: t.stage || "", stageReason: t.stageReason || "", enforcement: t.enforcement || "",
-            networkLive: t.networkLive || "", stageSource: t.stageSource || "local"
+            networkLive: t.networkLive || "", stageSource: t.stageSource || "local",
+            profile: t.profile || {}
           });
           links.push({ source: nodes[nodes.length - 1].id, target: parentId, kind: "leaf" });
         });
@@ -4854,10 +4855,23 @@
       (tmeta.length ? '<div class="t-cat">' + esc(tmeta.join(" · ")) + '</div>' : '') +
       (node.stage ? '<div class="t-cat">stage: ' + esc(node.stage) + ' (' + esc(node.stageSource || "local") + ') · ' + esc(node.enforcement || "") +
         (node.stageReason ? ' — ' + esc(node.stageReason) : '') + '</div>' : '') +
+      (profileLine(node.profile) ? '<div class="t-cat">' + esc(profileLine(node.profile)) + '</div>' : '') +
       (node.networkLive === "no" ? '<div class="t-cat">kept locally — its network copies expired; this node keeps a counted threat up to 90 days</div>' : '') +
       (heatByIdentifier[node.identifier] ? '<div class="t-cat">seen by ~' + num(heatByIdentifier[node.identifier].agents) +
         ' agents this week (' + esc(heatByIdentifier[node.identifier].week) + ')</div>' : '') +
     '</div>';
+  }
+
+  // Threat profile in one line: goal · what is at risk · technique · blocked/flagged · tool (fields optional, LES-018).
+  function profileLine(p) {
+    if (!p) return "";
+    var parts = [];
+    if (p.threatGoal) parts.push(p.threatGoal.replace(/-/g, " "));
+    if (p.resourceAtRisk && p.resourceAtRisk !== "none-identified") parts.push("at risk: " + p.resourceAtRisk.replace(/-/g, " "));
+    if (p.attackTechnique) parts.push(p.attackTechnique);
+    if (p.outcome) parts.push(p.outcome);
+    if (p.agentTool) parts.push("via " + p.agentTool);
+    return parts.join(" · ");
   }
 
   // ---------- Threat detail modal ----------
@@ -7768,7 +7782,7 @@
         <div class="set-row">
           <div class="set-rl">
             <div class="set-rt">Community sharing</div>
-            <div class="set-rh">On by default. When your agent meets a threat the verified graph already lists, share its privacy-safe signature (identifier and type) with the community graph. Your prompts, commands and files never leave this machine. Switch off any time.</div>
+            <div class="set-rh">On by default. When your agent meets a threat the verified graph already lists, share a privacy-safe statement with the community graph: the threat's identifier and type, the tool that met it, whether it was blocked or flagged, and what the threat targets. Your prompts, commands and files never leave this machine. Switch off any time.</div>
           </div>
           <div class="set-rc">
             <label class="set-toggle"><input type="checkbox" id="set-report" /><span class="set-track"></span></label>

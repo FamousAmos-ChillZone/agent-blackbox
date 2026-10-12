@@ -42,6 +42,16 @@ def _flag_worthy(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List
     return out
 
 
+def _attach_sightings(finding_dicts: List[Dict[str, Any]], detail: Dict[str, Any]) -> None:
+    """Give each finding the sighting a report carries (threat-profiles §03.2):
+    the tool, the action, blocked or flagged (from the hook's ``blocked`` list)
+    and what the threat goes after."""
+    blocked = set(detail.get("blocked") or ())
+    for finding in finding_dicts:
+        outcome = "blocked" if finding.get("identifier") in blocked else "flagged"
+        finding["sighting"] = community.sighting_fields(finding, outcome=outcome)
+
+
 def _report_and_audit(cfg: BlackboxConfig, event: str, findings: List[detection.Finding], detail: Dict[str, Any]) -> None:
     """Audit findings locally, then fan out (Observer-style) per finding:
     private WM audit KA always; community share when the policy allows.
@@ -61,6 +71,7 @@ def _report_and_audit(cfg: BlackboxConfig, event: str, findings: List[detection.
         client = None
     policy = community.CommunitySharePolicy(cfg)
     reporter = identity.reporter_address(client) if client is not None else None
+    _attach_sightings(finding_dicts, detail)
     for finding in finding_dicts:
         # Custom rules, LLM opinions, and secret findings stay local — no private
         # KA, no sighting. Secret values must never risk reaching the shared graph.

@@ -63,6 +63,7 @@ Usage::
 from __future__ import annotations
 
 from .report_builder import build_false_positive_quads, build_report_quads, build_retraction_quads
+from .sighting import injection_host_identifier, sighting_fields
 from .membership import JOIN_STATE_TEXT, JoinState, ensure_community_subscription, ensure_report_lane, read_join_state
 from .report_cli import add_report_parser, cmd_report, print_community_status
 from .sharing import ALREADY_SEALED_REPLY, NEVER_SHARED_SOURCES, CommunitySharePolicy, spawn_community_share
@@ -111,6 +112,8 @@ def first_seen_trail():
 
 __all__ = [
     "ALREADY_SEALED_REPLY",
+    "injection_host_identifier",
+    "sighting_fields",
     "EVIDENCE_REFERENCE",
     "COMMUNITY_PAUSE_SUBJECT",
     "NEVER_SHARED_SOURCES",

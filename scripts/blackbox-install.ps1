@@ -1528,7 +1528,8 @@ function Show-NextSteps {
 
   Community sharing is ON: when your agent meets a threat already listed in the
   verified threat graph, this node shares a privacy-safe statement (the threat's
-  identifier and type, never prompts, commands, file paths or files) with the
+  identifier and type, the tool that met it, blocked or flagged, and what the
+  threat targets; never prompts, commands, file paths or files) with the
   Blackbox community graph. Turn it off any time:
        blackbox report --disable-sharing     (or the dashboard's sharing toggle)
 "@ | Write-Host
@@ -1558,7 +1559,8 @@ function Show-NextSteps {
 
   Community sharing is ON: when your agent meets a threat already listed in the
   verified threat graph, this node shares a privacy-safe statement (the threat's
-  identifier and type, never prompts, commands, file paths or files) with the
+  identifier and type, the tool that met it, blocked or flagged, and what the
+  threat targets; never prompts, commands, file paths or files) with the
   Blackbox community graph. Turn it off any time:
        blackbox report --disable-sharing     (or the dashboard's sharing toggle)
 "@ | Write-Host

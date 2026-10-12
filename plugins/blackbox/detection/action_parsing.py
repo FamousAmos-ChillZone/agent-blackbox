@@ -125,6 +125,8 @@ def sensitive_path_category(path: str, args: Any = None) -> Optional[Dict[str, s
 FETCH_TOOL_PREFIXES = ("web_", "browser_")
 
 _SKILL_TOOLS = {"skill_manage", "skill_install", "install_skill", "plugin_install", "install_plugin"}
+#: The host tool names above, public: a report may name these verbatim (threat-profiles D9).
+HOST_FILE_AND_SKILL_TOOLS = frozenset({*_FILE_ACCESS_TOOLS, *_SKILL_TOOLS})
 _SKILL_NAME_KEYS = ("name", "skill", "skill_name", "id", "plugin")
 _SKILL_VERSION_KEYS = ("version", "skill_version", "ver")
 _SKILL_CODE_KEYS = ("code", "content", "source", "body", "script")

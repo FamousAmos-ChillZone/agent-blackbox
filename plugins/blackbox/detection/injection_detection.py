@@ -17,7 +17,7 @@ import logging
 from typing import Any, List, Optional
 
 from . import content_scanners
-from .finding import Finding, _rule_source
+from .finding import Finding, _rule_source, rule_subject
 from ..kernel import threat_ids
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ def detect_injection(text: str, ruleset: Any, context: Optional[str] = None) -> 
                     matched=str(match.group(0))[:200],
                     evidence=str(match.group(0))[:200],
                     confirmed=src == "public",
-                    source=src,
+                    source=src, rule_subject=rule_subject(rule),
                     fields={"context": context},
                 )
             )

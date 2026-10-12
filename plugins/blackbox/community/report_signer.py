@@ -39,7 +39,10 @@ DISPUTE_STATEMENT = "blackbox.dispute"
 RETRACT_STATEMENT = "blackbox.retract"   # Refine R1: a reporter withdrawing its own report
 DIGEST_STATEMENT = "blackbox.digest"     # Refine R2b: a reporter's weekly sighting digest
 #: Bump when the signed payload's fields change meaning (readers check it).
-STATEMENT_SCHEMA_VERSION = 1
+#: 2 (threat profiles, 2026-10-12): a report may carry the sighting fields.
+#: A reader sets aside fields it does not know ONLY from a statement of a
+#: newer schema than its own (``verification``); at its own version they are refused.
+STATEMENT_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)

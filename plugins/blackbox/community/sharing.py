@@ -114,9 +114,11 @@ LOCAL_ONLY_FIELDS = frozenset({"answered_by"})
 
 
 def shareable_fields(finding: Dict[str, Any]) -> Dict[str, Any]:
-    """The finding's evidence fields a report may carry: set, and not local-only."""
+    """The fields a report may carry: the finding's evidence plus the sighting
+    the guard attached (threat-profiles §03.2) — set, and not local-only."""
     fields = finding.get("fields") if isinstance(finding.get("fields"), dict) else {}
-    return {k: v for k, v in fields.items() if v is not None and k not in LOCAL_ONLY_FIELDS}
+    sighting = finding.get("sighting") if isinstance(finding.get("sighting"), dict) else {}
+    return {k: v for k, v in {**fields, **sighting}.items() if v is not None and k not in LOCAL_ONLY_FIELDS}
 
 
 def _schema_decision(finding: Dict[str, Any]) -> "tuple[bool, str]":
