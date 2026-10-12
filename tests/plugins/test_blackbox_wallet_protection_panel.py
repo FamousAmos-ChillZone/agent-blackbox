@@ -155,3 +155,11 @@ def test_protected_files_lists_what_trader_shield_guards_read_only():
     assert "if (!setState || !setState.wallet_protection) return" in rows   # only while engaged
     assert "path-del" not in rows   # read-only: no remove button
     assert "host.innerHTML = own + shieldPathRows();" in html
+
+
+def test_a_new_wallet_finding_refreshes_trader_shield_on_the_main_poll():
+    """Real time: the 4 s findings poll, not the panel's 30 s timer, brings wallet events in."""
+    html = (protection.TRADER_SHIELD_PAGE.parent / "index.html").read_text(encoding="utf-8")
+    notify = html[html.index("function processThreatNotifications(data)"):html.index("function setThreatAlertsEnabled(")]
+    assert notify.index("onWalletEvent()") < notify.index("if (!threatAlertsEnabled || !fresh.length) return;")
+    assert "var POLL_MS = 4000;" in html

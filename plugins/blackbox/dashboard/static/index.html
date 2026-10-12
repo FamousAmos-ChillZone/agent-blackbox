@@ -903,6 +903,10 @@
   .wev-step.this::before { background: var(--signal); box-shadow: 0 0 0 4px color-mix(in srgb, var(--signal) 25%, transparent); }
   .wev-step .here { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--signal); margin-left: 8px; }
   .wev-empty { padding: 40px 24px; color: var(--muted); }
+  .wev-new { justify-self: start; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--signal); }
+  .wev-item.fresh { animation: wevFresh 2.4s ease-out 1; }
+  @keyframes wevFresh { from { background: color-mix(in srgb, var(--signal) 22%, transparent); } to { background: transparent; } }
+  @media (prefers-reduced-motion: reduce) { .wev-item.fresh { animation: none; } }
   @media (max-width: 760px) {
     .wev-head { padding: 14px 16px 10px; } .wev-head h2 { font-size: 20px; }
     .wev-private { margin: 10px 16px 0; }
@@ -5333,8 +5337,9 @@
     var list = $("wev-list");
     if (!list) return;
     list.innerHTML = wev.events.map(function (e, i) {
-      return '<button type="button" class="wev-item" data-wev-index="' + i + '"' + (i === wev.selected ? ' aria-current="true"' : "") + '>' +
-        '<span class="wev-chip ' + esc(e.outcome) + '">' + esc(e.outcome) + '</span><span class="t">' + esc(e.title || e.identifier) + "</span>" +
+      return '<button type="button" class="wev-item' + (e.isNew ? " fresh" : "") + '" data-wev-index="' + i + '"' + (i === wev.selected ? ' aria-current="true"' : "") + '>' +
+        '<span class="wev-chip ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span>" + (e.isNew ? '<span class="wev-new">New</span>' : "") +
+        '<span class="t">' + esc(e.title || e.identifier) + "</span>" +
         '<span class="m">' + esc(shortWhen(e.ts)) + (e.session && e.session.model ? " · " + esc(e.session.model) : "") + "</span>" +
         (e.command ? "<code>" + esc(e.command) + "</code>" : "") + "</button>";
     }).join("");
@@ -5365,6 +5370,21 @@
     }).catch(function () {
       $("wev-detail").innerHTML = '<div class="wev-empty">The wallet events could not be read right now.</div>';
     });
+  }
+  // A new wallet event arrived (the main poll saw it): refresh the panel, and the window if it is
+  // open — keeping the event being read selected, and marking the newly arrived ones.
+  function onWalletEvent() {
+    loadWalletProtection();
+    var overlay = $("wallet-events");
+    if (!overlay || overlay.hidden) return;
+    var current = wev.events[wev.selected], newestBefore = wev.events.length ? (wev.events[0].ts || 0) : 0;
+    getJSON("/api/wallet-protection/events").then(function (d) {
+      wev.events = (d && Array.isArray(d.events)) ? d.events : [];
+      wev.events.forEach(function (e) { e.isNew = (e.ts || 0) > newestBefore; });
+      wev.selected = current ? wevPick(current.identifier, current.ts) : 0;
+      wevRenderList();
+      if (!current) wevRenderDetail();
+    }).catch(function () { /* the next poll tries again */ });
   }
   function closeWalletEvents() {
     var overlay = $("wallet-events");
@@ -6666,6 +6686,9 @@
     while (knownFindingOrder.length > MAX_KNOWN_FINDINGS) {
       knownFindingKeys.delete(knownFindingOrder.shift());
     }
+    // Trader Shield is live: a new wallet finding refreshes its panel (and open window) now,
+    // on this 4 s poll, whatever the alert setting — not on the panel's slow 30 s timer.
+    if (fresh.some(function (f) { return !!walletKind(f); })) onWalletEvent();
     if (!threatAlertsEnabled || !fresh.length) return;
     unreadThreatCount += fresh.length;
     updateThreatNotificationUI();
