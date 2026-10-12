@@ -82,7 +82,12 @@ _INDICATOR: Dict[str, Classification] = {
     "command-and-control": Classification("command-and-control", "host-system", "T1071"),
     "exfil-endpoint": Classification("data-exfil", "host-system", "T1041"),
     "injection-host": Classification("agent-hijack", "agent-instructions", "AML.T0051"),
+    # The verified graph's Maltrail feed (sourceId maltrail_static) lists malware
+    # infrastructure — command-and-control and distribution trails — as malicious_ioc.
+    "malicious_ioc": Classification("malware-delivery", "host-system", "T1105"),
 }
+#: A known-bad file digest is a malware file (ATT&CK: User Execution, Malicious File).
+_FILE_HASH = Classification("malware-delivery", "host-system", "T1204.002")
 _WALLET = Classification("wallet-drain", "funds", "T1657")
 
 
@@ -98,6 +103,8 @@ def _indicator(finding: Mapping[str, Any]) -> Classification:
             return _INDICATOR[key.lower()]
     if str(fields.get("ioc_type") or "") in ("wallet", "contract"):
         return _WALLET
+    if str(fields.get("ioc_type") or "") == "hash":
+        return _FILE_HASH
     return UNKNOWN
 
 

@@ -73,6 +73,14 @@ def test_every_skill_danger_shape_is_classified(shape):
     assert classified.threat_goal != "unknown" and classified.attack_technique
 
 
+@pytest.mark.parametrize("kind, ioc_type, goal", [
+    ("malicious_ioc", "domain", "malware-delivery"),   # the verified graph's Maltrail trails
+    (None, "hash", "malware-delivery"),                # a known-bad file digest
+])
+def test_verified_indicator_kinds_name_their_goal(kind, ioc_type, goal):
+    assert sighting.classify({"category": "ioc", "kind": kind, "fields": {"ioc_type": ioc_type}}).threat_goal == goal
+
+
 def test_a_wallet_is_a_drain_and_an_unknown_indicator_stays_unknown():
     wallet = sighting.classify({"category": "ioc", "kind": None, "fields": {"ioc_type": "wallet"}})
     unknown = sighting.classify({"category": "ioc", "kind": None, "fields": {"ioc_type": "ip"}})
