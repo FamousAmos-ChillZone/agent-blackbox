@@ -4,6 +4,8 @@
   the rows the old joined query produced (same columns, same SPARQL semantics, see
   :data:`COLUMN_PREDICATES`). The live lookups (:mod:`..live`) run every store
   answer through it, so a looked-up rule equals the compiled one.
+* **Growth** — :mod:`.growth_watch`, :class:`GrowthWatch` notices within ~30 s that the
+  node holds confirmed assets the last refresh did not read (one aggregate count).
 * **Progress** — :mod:`.reader`: how many confirmed assets the last refresh covered,
   when the node's asset count last grew (:func:`catching_up`), and the sync meter's
   download totals (:func:`verified_download_totals`).
@@ -17,12 +19,14 @@ Usage::
     rows = partitions.rows_from_triples(graph_iri, triples)
 """
 
+from .growth_watch import GrowthWatch
 from .reader import DownloadTotals, PartitionRead, catching_up, forget_cached_assets, progress, record_progress, verified_download_totals
 from .rows import COLUMN_PREDICATES, THREAT_TYPES, rows_from_triples
 
 __all__ = [
     "COLUMN_PREDICATES",
     "DownloadTotals",
+    "GrowthWatch",
     "PartitionRead",
     "THREAT_TYPES",
     "catching_up",

@@ -88,6 +88,25 @@ def _background_pulse(config: BlackboxConfig) -> None:
             _pulsing = False
 
 
+def request_refresh_now(config: BlackboxConfig) -> bool:
+    """Mark the cached generation due for a full refresh NOW and write it through
+    (disk + memory, under the refresh lock), so the dashboard worker and every
+    agent hook refresh on their next look (``Ruleset.refresh_due``). Called when
+    :class:`.partitions.GrowthWatch` sees new verified assets on the node.
+    False when a refresh holds the lock — it is reading the node already."""
+    from . import refresh_cycle   # lazy: refresh_cycle imports this module
+
+    with locks._ruleset_refresh_lock(blocking=False) as held:
+        if not held:
+            return False
+        rs = refresh_cycle.peek(config)
+        rs.refresh_due_at = time.time()
+        disk_cache._write_cache(rs)
+        refresh_cycle._memory.store(rs)
+    logger.info("blackbox: new verified assets on the node — refreshing now instead of at the next scheduled sync")
+    return True
+
+
 def _reapply_community(config: BlackboxConfig, client: DkgClient) -> None:
     """Re-read the community tier onto the cached generation and write it
     through (disk + memory), so every process picks it up on its next call.

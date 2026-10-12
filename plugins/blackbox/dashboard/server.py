@@ -1015,12 +1015,11 @@ def create_app(*, manage_blackbox: bool = False):
         duration is deducted from the wait so a refresh *starts* every
         ``sync_interval`` seconds even when the sync itself is slow."""
         last_total: Any = None
+        growth = ruleset.GrowthWatch.for_config(load_blackbox_config)   # new verified assets: refresh now, not hourly
         first_cfg = load_blackbox_config()   # KI-205: a never-compiled home refreshes soon, not in an hour
         initial_interval = sync_timing.initial_sync_delay(first_cfg, ruleset.peek(first_cfg), _RULESET_MIN_RETRY_SEC, _RULESET_EMPTY_RETRY_SEC)
-        for _ in range(int(initial_interval * 10)):
-            if _rescan_state["stop"]:
-                return
-            time.sleep(0.1)
+        if sync_timing.wait_or_wake(initial_interval, lambda: _rescan_state["stop"], lambda: growth.check() and ruleset.request_refresh_now(load_blackbox_config())):
+            return
         while not _rescan_state["stop"]:
             wait = _RULESET_EMPTY_RETRY_SEC
             started = time.monotonic()
@@ -1055,10 +1054,8 @@ def create_app(*, manage_blackbox: bool = False):
             except Exception as exc:  # pragma: no cover - fail open
                 logger.debug("blackbox automatic graph sync: iteration failed: %s", exc)
                 wait = _RULESET_EMPTY_RETRY_SEC
-            for _ in range(int(wait * 10)):
-                if _rescan_state["stop"]:
-                    return
-                time.sleep(0.1)
+            if sync_timing.wait_or_wake(wait, lambda: _rescan_state["stop"], lambda: growth.check() and ruleset.request_refresh_now(load_blackbox_config())):
+                return
 
     @lifecycle.on_startup(app)
     def _start_rescanner() -> None:
