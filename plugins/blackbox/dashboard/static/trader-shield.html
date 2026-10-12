@@ -87,7 +87,7 @@
   .btn[disabled] { opacity: .55; cursor: default; }
 
   /* the 3D stack: agent → shield → wallet */
-  .stage { perspective: 1100px; height: 420px; display: grid; place-items: center; }
+  .stage { perspective: 1100px; height: 420px; display: grid; place-items: center; overflow: clip; }
   .stack { position: relative; width: min(360px, 82vw); height: 300px; transform-style: preserve-3d; transform: rotateX(58deg) rotateZ(-38deg); animation: drift 14s ease-in-out infinite; }
   .plane { position: absolute; inset: 0; border-radius: 10px; display: grid; place-items: center; transform-style: preserve-3d; }
   .p-wallet { transform: translateZ(0); background: var(--elevated); border: 1px solid var(--border-strong); }
@@ -178,7 +178,7 @@
   footer { color: var(--muted); font-size: 13px; font-family: var(--mono); }
 
   @media (max-width: 900px) {
-    .hero { grid-template-columns: 1fr; } .stage { height: 360px; }
+    .hero { grid-template-columns: 1fr; } .stage { height: 360px; } .stack { width: min(360px, 58vw); }
     .flow { grid-template-columns: 1fr 1fr; } .fstep:not(:last-child)::after { display: none; }
     .grid3, .outcomes { grid-template-columns: 1fr; } .grid2 { grid-template-columns: 1fr; }
     .set { grid-template-columns: 1fr; gap: 8px; }
