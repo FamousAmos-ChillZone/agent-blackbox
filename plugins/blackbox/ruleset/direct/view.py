@@ -11,15 +11,32 @@ from .client import LocalGraphClient, GraphReadUnavailable
 from .queries import confirmed_scope, selected_query, iri, G, DP, BP
 
 
-def _entities(cg_id, source_graph=None):
+def _entities(cg_id, source_graph=None, category=""):
     # A sample binds one confirmed partition before scanning its entities. A
     # global DISTINCT/ORDER BY forces the store to sort the entire rule graph.
     graph = iri(source_graph) if source_graph is not None else "?sourceGraph"
     binding = f"VALUES ?sourceGraph {{ {graph} }}" if source_graph is not None else ""
-    return f'{binding} {confirmed_scope(cg_id)} GRAPH {graph} {{ {_entity_patterns()} }}'
+    return f'{binding} {confirmed_scope(cg_id)} GRAPH {graph} {{ {_entity_patterns(category)} }}'
 
 
-def _entity_patterns():
+def _entity_patterns(category=""):
+    if category:
+        # Bind the requested category before reading entities, rather than
+        # scanning every signal type and filtering the joined result afterward.
+        types = {"dependency": "DependencySignal", "injection": "InjectionSignal",
+                 "skill": "SkillSignal", "ioc": "IocSignal"}
+        if category not in {*types, "fileaccess", "escalation"}:
+            return "FILTER(false)"
+        branches = []
+        if category in types:
+            branches.append(f'{{ ?threat a <urn:defender:{types[category]}> }}')
+        if category == "ioc":
+            branches.append(f'''{{ ?threat a <urn:blackbox:SourceObservation> ;
+                <{BP}lifecycleStatus> "active" }}''')
+        prefix = "dep" if category == "dependency" else category
+        branches.append(f'''{{ ?threat <{G}identifier> ?identifier .
+            FILTER(STRSTARTS(?identifier, {literal(prefix + ':')})) }}''')
+        return '{ ' + ' UNION '.join(branches) + f' }} BIND({literal(category)} AS ?category)'
     return f'''{{ ?threat a ?type . VALUES (?type ?category) {{
         (<urn:defender:DependencySignal> "dependency")
         (<urn:defender:InjectionSignal> "injection")
@@ -48,7 +65,7 @@ def _body(cfg, q="", category="", ecosystem=""):
     if ecosystem:
         properties.append(f"OPTIONAL {{ ?threat <{DP}ecosystem>|<{G}packageEcosystem> ?ecosystem }}")
     joins = 'GRAPH ?sourceGraph { ' + ' '.join(properties) + ' }' if properties else ''
-    return f'{_entities(cfg.context_graph_id)} {joins} {" ".join(filters)}'
+    return f'{_entities(cfg.context_graph_id, category=category)} {joins} {" ".join(filters)}'
 
 
 class GraphView(Ruleset):
@@ -143,14 +160,18 @@ def sample_rules(cfg, *, client=None, cursor=None, category=""):
         cursor.clear()
         cursor.update(scope=scope, offset=0, exhausted=False)
     from .. import curator_tier
-    category_filter = f'FILTER(?category = {literal(category)})' if category else ''
     for _ in range(4):
         if not cursor.get("graph"):
             after = f'FILTER(STR(?sourceGraph) > {literal(cursor["after"])})' if cursor.get("after") else ''
             # Sort only partition identities, not all matching entity identities.
             # Keep GRAPH variables at top level for the DKG scope guard.
-            scope_body = _entities(cfg.context_graph_id) if category else confirmed_scope(cfg.context_graph_id)
-            partitions = client.page(f'SELECT DISTINCT ?sourceGraph WHERE {{ {scope_body} {after} {category_filter} }} ORDER BY ?sourceGraph',
+            scope_body = confirmed_scope(cfg.context_graph_id)
+            if category:
+                # Existential selection returns at most one match per partition.
+                # Enumerating all matching threats here consumes the shared read
+                # deadline before their selected properties can be fetched.
+                scope_body += f' GRAPH ?sourceGraph {{ FILTER EXISTS {{ {_entity_patterns(category)} }} }}'
+            partitions = client.page(f'SELECT DISTINCT ?sourceGraph WHERE {{ {scope_body} {after} }} ORDER BY ?sourceGraph',
                                      cfg.context_graph_id, limit=1)
             rows = partitions["result"]["bindings"]
             if not rows:
@@ -158,7 +179,7 @@ def sample_rules(cfg, *, client=None, cursor=None, category=""):
                 return Ruleset(context_graph_id=cfg.context_graph_id)
             cursor["graph"] = extract_binding(rows[0].get("sourceGraph"))
             cursor["last_graph"] = not partitions["hasMore"]
-        selected = client.page(f'SELECT DISTINCT ?sourceGraph ?threat WHERE {{ {_entities(cfg.context_graph_id, cursor["graph"])} {category_filter} }} ORDER BY ?threat',
+        selected = client.page(f'SELECT DISTINCT ?sourceGraph ?threat WHERE {{ {_entities(cfg.context_graph_id, cursor["graph"], category)} }} ORDER BY ?threat',
                                cfg.context_graph_id, limit=64, offset=cursor["offset"])
         rules = compile_reply(cfg, _selected_triples(cfg, client, selected["result"]["bindings"]))
         curator_tier.apply_curator_tier(rules, client, cfg)
