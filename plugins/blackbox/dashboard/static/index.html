@@ -806,6 +806,27 @@
     overflow: hidden;
   }
 
+  /* ---------- Trader Shield: announcement banner ---------- */
+  .ts-banner { position: relative; overflow: hidden; margin-top: 28px; border: 1px solid color-mix(in srgb, var(--signal) 55%, transparent);
+    border-radius: var(--radius); background: var(--panel); padding: 20px 56px 20px 22px; display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; }
+  .ts-glow { position: absolute; inset: -40% -10% auto auto; width: 340px; height: 340px; border-radius: 50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--signal) 22%, transparent), transparent 65%); pointer-events: none; animation: tsGlow 6s ease-in-out infinite; }
+  @keyframes tsGlow { 0%,100% { transform: translate(0,0); opacity: .8; } 50% { transform: translate(-30px,10px); opacity: 1; } }
+  .ts-copy { position: relative; display: grid; gap: 4px; flex: 1 1 380px; }
+  .ts-new { font-family: var(--mono-font); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--signal); }
+  .ts-title { font-size: 22px; font-weight: 850; font-stretch: 115%; text-transform: uppercase; letter-spacing: -.005em; }
+  .ts-sub { font-size: 13.5px; color: var(--muted-strong); max-width: 62ch; }
+  .ts-actions { position: relative; display: flex; flex-wrap: wrap; gap: 10px; }
+  .ts-btn { font: 700 13.5px var(--body-font); border-radius: var(--radius); padding: 10px 15px; border: 1px solid var(--border-strong); background: transparent;
+    color: var(--text); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+  .ts-btn.primary { background: var(--signal); border-color: var(--signal); color: #fff; }
+  .ts-btn:focus-visible, .ts-close:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  .ts-close { position: absolute; top: 12px; right: 12px; background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; padding: 6px; }
+  .ts-beta { font-family: var(--mono-font); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--signal);
+    border: 1px solid color-mix(in srgb, var(--signal) 50%, transparent); border-radius: 999px; padding: 2px 8px; vertical-align: 4px; margin-left: 6px; }
+  .ts-link { color: var(--signal); text-decoration: none; } .ts-link:hover { text-decoration: underline; }
+  @media (prefers-reduced-motion: reduce) { .ts-glow { animation: none; } }
+
   /* ---------- Wallet protection panel + settings (trader rules) ---------- */
   .wallet-picks { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
   .wallet-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
@@ -2833,6 +2854,21 @@
 
   <div class="wrap">
 
+    <!-- New product: Trader Shield (shown while not engaged, for a week from first sight, dismissible) -->
+    <div class="ts-banner" id="ts-banner" hidden role="region" aria-label="New: Trader Shield">
+      <div class="ts-glow" aria-hidden="true"></div>
+      <div class="ts-copy">
+        <span class="ts-new">New · Beta</span>
+        <div class="ts-title">Trader Shield</div>
+        <div class="ts-sub">Keep your AI agent away from your crypto wallets: no vault access, no seed phrases, no private keys leaving this machine. Your trading tools keep working.</div>
+      </div>
+      <div class="ts-actions">
+        <button type="button" class="ts-btn primary" id="ts-engage">Engage Trader Shield</button>
+        <a class="ts-btn" href="/trader-shield">Learn more →</a>
+      </div>
+      <button type="button" class="ts-close" id="ts-close" aria-label="Dismiss the Trader Shield announcement">&#10005;</button>
+    </div>
+
     <!-- Connected agents -->
     <section class="section" aria-label="Connected agents">
       <div class="section-head agents-head">
@@ -2854,11 +2890,11 @@
     </section>
 
     <!-- Wallet protection (trader rules): what was found on this machine, and how it is protected -->
-    <section class="section" aria-label="Wallet protection" id="wallet-protection" hidden>
+    <section class="section" aria-label="Trader Shield" id="wallet-protection" hidden>
       <div class="section-head">
         <div class="section-htext">
-          <h2>Wallet protection</h2>
-          <div class="section-note">What Blackbox found on this machine, and how it keeps your agent away from it.</div>
+          <h2>Trader Shield <span class="ts-beta">Beta</span></h2>
+          <div class="section-note">What Blackbox found on this machine, and how it keeps your agent away from it. <a href="/trader-shield" class="ts-link">Learn more</a></div>
         </div>
         <div class="head-right"><span class="wp-mode" id="wp-mode">…</span></div>
       </div>
@@ -5037,7 +5073,43 @@
   function wpRow(icon, cls, html) {
     return '<div class="wp-row"><span class="wp-ic ' + cls + '">' + icon + '</span><div>' + html + '</div></div>';
   }
+  // "New: Trader Shield" announcement — shown while Trader Shield is off, for a week from the
+  // first time this browser sees it, until dismissed. Per-browser convenience only (try/catch).
+  var TS_FIRST_SEEN_KEY = "blackbox.trader-shield.first-seen.v1", TS_DISMISSED_KEY = "blackbox.trader-shield.dismissed.v1";
+  var TS_BANNER_DAYS = 7;
+  function tsBannerDue() {
+    try {
+      if (localStorage.getItem(TS_DISMISSED_KEY)) return false;
+      var first = Number(localStorage.getItem(TS_FIRST_SEEN_KEY) || 0);
+      if (!first) { first = Date.now(); localStorage.setItem(TS_FIRST_SEEN_KEY, String(first)); }
+      return Date.now() - first < TS_BANNER_DAYS * 86400000;
+    } catch (_) { return true; }
+  }
+  function updateTraderShieldBanner(d) {
+    var banner = $("ts-banner");
+    if (banner) banner.hidden = !!(d && d.enabled) || !tsBannerDue();
+  }
+  (function wireTraderShieldBanner() {
+    var close = $("ts-close"), engage = $("ts-engage");
+    if (close) close.addEventListener("click", function () {
+      try { localStorage.setItem(TS_DISMISSED_KEY, String(Date.now())); } catch (_) {}
+      $("ts-banner").hidden = true;
+    });
+    if (engage) engage.addEventListener("click", function () {
+      engage.disabled = true; engage.textContent = "Engaging…";
+      postJSON("/api/settings", { wallet_protection: true, protected_wallets: ["metamask"] }).then(function (res) {
+        var ok = res && res.ok && res.body && res.body.ok;
+        engage.disabled = false;
+        engage.textContent = ok ? "Engaged ✓" : "Engage Trader Shield";
+        if (typeof showToast === "function") showToast(ok ? "Trader Shield is engaged." : "Couldn't engage Trader Shield.", ok ? "ok" : "err");
+        loadWalletProtection();
+        if (ok) setTimeout(function () { var el = $("wallet-protection"); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 400);
+      });
+    });
+  })();
+
   function renderWalletProtection(d) {
+    updateTraderShieldBanner(d);
     var section = $("wallet-protection");
     if (section) section.hidden = !d.enabled;   // only while Web3 wallet protection is on (Settings)
     if (!d.enabled) return;
@@ -8130,11 +8202,11 @@
 
       <!-- Web3 wallet protection (trader rules) -->
       <div class="set-group">
-        <div class="set-glabel">Web3 wallet protection</div>
+        <div class="set-glabel">Trader Shield · Beta</div>
         <div class="set-row">
           <div class="set-rl">
-            <div class="set-rt">Protect my crypto wallets</div>
-            <div class="set-rh">Keep your AI agent away from your wallets: it cannot open a wallet's key store (the encrypted vault in your browser), and seed phrases and private keys it handles are flagged, and blocked if it tries to send them off this machine. Your own trading tools keep working. Seed phrases and keys are always kept out of Blackbox's logs, whether this is on or off.</div>
+            <div class="set-rt">Engage Trader Shield</div>
+            <div class="set-rh"><a href="/trader-shield" class="ts-link">What is Trader Shield?</a> Keep your AI agent away from your wallets: it cannot open a wallet's key store (the encrypted vault in your browser), and seed phrases and private keys it handles are flagged, and blocked if it tries to send them off this machine. Your own trading tools keep working. Seed phrases and keys are always kept out of Blackbox's logs, whether this is on or off.</div>
           </div>
           <div class="set-rc">
             <label class="set-toggle"><input type="checkbox" id="set-wallet" /><span class="set-track"></span></label>

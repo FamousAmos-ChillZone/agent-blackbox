@@ -19,6 +19,7 @@ Usage::
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, List
 
 from ... import audit, detection
@@ -77,9 +78,20 @@ def wallet_protection_payload() -> Dict[str, Any]:
     }
 
 
+#: The Trader Shield explainer page (the dashboard's "Learn more").
+TRADER_SHIELD_PAGE = Path(__file__).resolve().parent.parent / "static" / "trader-shield.html"
+
+
 def register_protection_routes(app: Any) -> None:
-    """Add ``GET /api/wallet-protection`` to *app* (a FastAPI app)."""
+    """Add ``GET /api/wallet-protection`` and the ``/trader-shield`` page to *app* (a FastAPI app)."""
+    from fastapi.responses import FileResponse, HTMLResponse
 
     @app.get("/api/wallet-protection")
     def wallet_protection() -> Any:
         return wallet_protection_payload()
+
+    @app.get("/trader-shield", response_class=HTMLResponse)
+    def trader_shield_page() -> Any:
+        if not TRADER_SHIELD_PAGE.exists():
+            return HTMLResponse("<h1>Trader Shield</h1><p>page missing</p>", status_code=404)
+        return FileResponse(str(TRADER_SHIELD_PAGE), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})

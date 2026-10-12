@@ -113,3 +113,22 @@ def test_the_panel_is_off_until_the_mode_is_on(home, monkeypatch):
 def test_a_wallet_event_names_its_goal_instead_of_unknown(finding, goal):
     classified = classify(finding)
     assert (classified.threat_goal, classified.resource_at_risk) == (goal, "wallet-keys")
+
+
+def test_the_trader_shield_page_is_served_with_its_get_started_button():
+    """The dashboard's "Learn more" opens /trader-shield; its Engage button uses the same settings keys."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    app = FastAPI()
+    protection.register_protection_routes(app)
+    page = TestClient(app).get("/trader-shield")
+    assert page.status_code == 200 and "Engage Trader Shield" in page.text
+    assert "wallet_protection: true" in page.text and 'protected_wallets: ["metamask"]' in page.text
+    assert "https://" not in page.text.split("<script>")[0].split("</style>")[0]   # no external fonts or styles: works offline
+
+
+def test_the_dashboard_announces_trader_shield_only_while_it_is_off():
+    html = (protection.TRADER_SHIELD_PAGE.parent / "index.html").read_text(encoding="utf-8")
+    assert 'id="ts-banner" hidden' in html and 'href="/trader-shield"' in html
+    assert "banner.hidden = !!(d && d.enabled) || !tsBannerDue()" in html and "TS_BANNER_DAYS = 7" in html
