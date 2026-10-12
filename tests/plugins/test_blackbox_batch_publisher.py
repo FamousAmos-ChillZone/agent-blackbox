@@ -447,17 +447,24 @@ class _SealingNode:
 
     def __init__(self, *, lose_first_reply=False, reply=REPLIES[0]):
         self.sealed, self.lose_first_reply, self.published, self.reply = {}, lose_first_reply, [], reply
+        self.calls: list = []   # the node routes in the order they were hit (KI-351)
 
     def write_private_knowledge_asset(self, graph, name, quads):
         if name in self.sealed:
             raise DkgError(self.reply, status_code=400)
         self.sealed[name] = list(quads)
+        self.calls.append(("seal", name))
         if self.lose_first_reply:   # the node finished the write; our side timed out
             self.lose_first_reply = False
             raise DkgError("transport error: timed out")
 
+    def share_finalized_knowledge_asset(self, graph, name):
+        self.calls.append(("share", name))
+        return {"state": "succeeded"}
+
     def request(self, method, path, body=None, timeout=None):
         self.published.append(path)
+        self.calls.append(("publish", path))
         return {"ual": UAL, "txHash": "0xtx"}
 
     def query(self, sparql, graph, view=None, on_error=None):
@@ -474,6 +481,24 @@ def test_a_seal_the_node_already_finished_is_not_a_failure(reply):
     node.write_private_knowledge_asset = lambda *_: (_ for _ in ()).throw(DkgError("400 literal too large", status_code=400))
     with pytest.raises(DkgError):
         writer.seal("verified-batch-b-2", [])   # any other refusal still fails the step
+
+
+def test_a_batch_is_shared_in_full_before_it_is_published(world):
+    """KI-351: DKG 10.0.23 refuses /vm/publish for anything that is not a complete
+    shared-memory share (409 PUBLISH_NOT_FULL_SHARE), so the free share rides the seal step."""
+    node = _SealingNode()
+    world.publisher._writer = NodeBatchWriter(node, VERIFIED_GRAPH)
+    world.approve(_ioc(1), at=START - 6 * HOUR)
+    assert world.publisher.run(world.ctx).action == "published"
+    assert [step for step, _ in node.calls] == ["seal", "share", "publish"]
+
+
+def test_a_failed_share_fails_the_free_step_and_pays_for_nothing():
+    node = _SealingNode()
+    node.share_finalized_knowledge_asset = lambda *_: (_ for _ in ()).throw(DkgError("SWM share job j failed"))
+    with pytest.raises(DkgError):
+        NodeBatchWriter(node, VERIFIED_GRAPH).seal("verified-batch-b-1", [])
+    assert node.published == []
 
 
 def test_a_seal_that_timed_out_after_the_node_wrote_it_resumes_the_same_batch(world):

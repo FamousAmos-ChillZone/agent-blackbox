@@ -38,6 +38,7 @@ class FakeNode:
 
     def __init__(self):
         self.vm_published, self.shared, self.messages, self.sealed = [], [], [], []
+        self.order: list = []   # seal / share / publish, in call order (KI-351)
 
     def status(self):
         return {"networkId": NETWORK}
@@ -55,11 +56,13 @@ class FakeNode:
 
     def write_private_knowledge_asset(self, cg, name, quads):
         self.sealed.append((cg, name, quads))
+        self.order.append("seal")
         return {"name": name}
 
     def request(self, method, path, body=None, timeout=None):
         if path.endswith("/vm/publish"):
             self.vm_published.append((body["contextGraphId"], path, self.sealed[-1][2]))
+            self.order.append("publish")
             return {"status": "confirmed"}
         if path == "/api/chat":
             self.messages.append(body)
@@ -68,6 +71,10 @@ class FakeNode:
             return {"messages": [{"id": i + 1, "ts": 1000 + i, "peer": "A", "text": m["text"]}
                                  for i, m in enumerate(self.messages)]}
         raise AssertionError(path)
+
+    def share_finalized_knowledge_asset(self, cg, name):
+        self.order.append("share")
+        return {"state": "succeeded"}
 
     def share_knowledge_asset(self, cg, name, quads, **kw):
         self.shared.append((cg, name, quads))
@@ -362,6 +369,7 @@ def test_publish_to_verified_memory_seals_then_publishes():
     quads = [{"subject": "urn:x", "predicate": constants.IDENTIFIER_PRED, "object": '"dep:npm:x@1"'}]
     node_routes.publish_to_verified_memory(node, VM_GRAPH, "threat-x", quads)
     assert node.sealed[0][1] == "threat-x" and node.vm_published[0][1] == "/api/knowledge-assets/threat-x/vm/publish"
+    assert node.order == ["seal", "share", "publish"]   # KI-351: shared in full before the paid publish
 
 
 def test_a_stage_attestation_needs_two_keys_and_lands_in_the_community_graph(monkeypatch, tmp_path, curators):

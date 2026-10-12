@@ -320,6 +320,9 @@ class NodeBatchWriter:
         self._graph = graph
 
     def seal(self, name: str, quads: List[Dict[str, str]]) -> None:
+        """Write and seal the batch, then share it in full to shared memory — the
+        node publishes only a complete share (KI-351). Both are free, so a
+        failure here is a safe retry: nothing has been paid yet."""
         try:
             self._client.write_private_knowledge_asset(self._graph, name, quads)
         except DkgError as exc:
@@ -328,6 +331,7 @@ class NodeBatchWriter:
             # Without this the batch fails every beat and holds every later batch (P4 review).
             if not _already_sealed(exc):
                 raise
+        self._client.share_finalized_knowledge_asset(self._graph, name)
 
     def submit(self, name: str) -> SubmitReply:
         reply = self._client.request("POST", f"/api/knowledge-assets/{quote(name, safe='')}/vm/publish",

@@ -5,9 +5,12 @@ seam (:meth:`.dkg_client.DkgClient.request`). Route facts were read from the
 node's own source on the bench (DKG 10.0.20, 2026-10-02):
 
 * ``POST /api/knowledge-assets/{name}/vm/publish {contextGraphId}`` publishes
-  an already-sealed KA to verifiable memory (on-chain; needs the publishing
-  wallet funded — 200 confirmed, 207 minted but graph binding failed, 502 not
-  confirmed).
+  a sealed KA to verifiable memory (on-chain; needs the publishing wallet
+  funded — 200 confirmed, 207 minted but graph binding failed, 502 not
+  confirmed). Since DKG 10.0.23 the KA must first be a COMPLETE share in the
+  graph's shared memory (``/swm/share-async`` with ``entities: "all"``);
+  otherwise the node answers 409 PUBLISH_NOT_FULL_SHARE (KI-351, measured on
+  the Umanitek node 2026-10-12). Sharing is free; only the publish is paid.
 * ``POST /api/chat {to, text, contextGraphId?}`` sends one private
   point-to-point message to a peer (name or peer id); ``GET /api/messages``
   with ``direction=in&order=asc&since=&sinceId=`` reads the inbox losslessly.
@@ -44,13 +47,16 @@ class InboxMessage:
 
 
 def publish_to_verified_memory(client: DkgClient, graph: str, name: str, quads: List[Quad]) -> Dict[str, Any]:
-    """Create + seal *quads* as KA *name*, then publish it to verifiable memory.
+    """Create + seal *quads* as KA *name*, share it in full to the graph's shared
+    memory (DKG 10.0.23 publishes nothing else, KI-351), then publish it to
+    verifiable memory.
 
     Returns the node's publish result. Raises :class:`.dkg_client.DkgError` on
     any failure (a 502 "did not confirm" included): a promotion that did not
     confirm is NOT published, and the caller must say so.
     """
     client.write_private_knowledge_asset(graph, name, quads)
+    client.share_finalized_knowledge_asset(graph, name)
     return client.request("POST", f"/api/knowledge-assets/{quote(name, safe='')}/vm/publish", {"contextGraphId": graph})
 
 

@@ -78,7 +78,7 @@ def _file_lock(path: Path) -> threading.Lock:
 
 class PublishState(Enum):
     QUEUED = "queued"            # entries chosen, nothing written anywhere
-    SEALED = "sealed"            # the batch asset is built in working memory
+    SEALED = "sealed"            # the batch asset is built in working memory and shared in full (KI-351)
     SUBMITTED = "submitted"      # /vm/publish was called; the answer is not recorded yet
     MINTED = "minted"            # HTTP 207: on chain (paid) but not bound to the graph
     BOUND = "bound"              # bound and read back on the node: published means readable
