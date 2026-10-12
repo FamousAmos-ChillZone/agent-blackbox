@@ -277,3 +277,36 @@ def test_the_new_fields_stay_inside_the_reports_byte_caps():
     """Each new value is a short token: nothing a sighting adds can approach the literal cap."""
     fields = sighting.sighting_fields(_finding(), outcome="flagged")
     assert max(len(value) for value in fields.values()) <= report_schema.MAX_VALUE_CHARS
+
+
+# ------------------------------------------------------------ what the dashboard shows
+
+
+def test_a_community_threat_is_described_from_the_readers_own_verified_copy():
+    """Tomaz's question ("which injection was it?"): the reader names the pattern from its
+    OWN verified rule — the report never carries the text."""
+    from plugins.blackbox.dashboard import graph_pages
+    from plugins.blackbox.ruleset import compiler
+
+    rs = compiler.Ruleset()
+    rs.injection.append({"identifier": "injection:0250b88aa25cd7f84ac8735a", "source": "public",
+                         "name": "Instruction override — 'forget everything'", "severity": "high",
+                         "description": "Prompt-injection preface asking the model to discard context.",
+                         "pattern_src": "forget (all |everything )?(you were told)"})
+    profile = graph_pages.verified_profile(rs, "injection:0250b88aa25cd7f84ac8735a")
+    assert profile["name"].startswith("Instruction override") and profile["pattern"].startswith("forget")
+    assert graph_pages.verified_profile(rs, "injection:" + "f" * 24) == {}
+
+
+def test_the_local_record_carries_the_profile(monkeypatch, tmp_path):
+    """The operator's own findings log gets the same profile the report carries."""
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path))
+    recorded = []
+    monkeypatch.setattr(reporting.audit, "record", lambda **kw: recorded.append(kw))
+    monkeypatch.setattr(reporting, "DkgClient", lambda **kw: (_ for _ in ()).throw(RuntimeError("no node")))
+    finding = detection.Finding(identifier=IOC_DOMAIN, category="ioc", severity="high", title="evil",
+                                tool_name="web_fetch", source="public", rule_subject=VERIFIED_SUBJECT,
+                                fields={"ioc_type": "domain", "ioc_context": "fetched-by-tool"})
+    from plugins.blackbox.kernel.config import BlackboxConfig
+    reporting._report_and_audit(BlackboxConfig(), "pre_tool_call", [finding], {"tool_name": "web_fetch"})
+    assert recorded[0]["findings"][0]["sighting"]["outcome"] == "flagged"

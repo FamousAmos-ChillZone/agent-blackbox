@@ -61,6 +61,7 @@ def _report_and_audit(cfg: BlackboxConfig, event: str, findings: List[detection.
     policy decision (microseconds, no I/O) happens inline.
     """
     finding_dicts = [f.to_dict() for f in findings]
+    _attach_sightings(finding_dicts, detail)   # before recording, so the local record carries the profile too
     audit.record(event=event, findings=finding_dicts or None, detail=detail)
     if not findings:
         return
@@ -71,7 +72,6 @@ def _report_and_audit(cfg: BlackboxConfig, event: str, findings: List[detection.
         client = None
     policy = community.CommunitySharePolicy(cfg)
     reporter = identity.reporter_address(client) if client is not None else None
-    _attach_sightings(finding_dicts, detail)
     for finding in finding_dicts:
         # Custom rules, LLM opinions, and secret findings stay local — no private
         # KA, no sighting. Secret values must never risk reaching the shared graph.

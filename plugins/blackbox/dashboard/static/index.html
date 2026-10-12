@@ -1840,6 +1840,15 @@
   .modal-grid .cell { background: var(--panel); padding: 11px 13px; min-width: 0; }
   .modal-grid .cell.full { grid-column: 1 / -1; }
   .m-k { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--info); margin-bottom: 4px; }
+  /* Field explanations: a small (i) next to a label; hover or focus shows what the field means. */
+  .m-help { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px;
+    margin-left: 5px; border: 1px solid currentColor; border-radius: 50%; font-size: 9px; font-weight: 600; letter-spacing: 0;
+    text-transform: none; cursor: help; vertical-align: 1px; opacity: .75; }
+  .m-help:hover, .m-help:focus { opacity: 1; outline: none; }
+  .m-help:hover::after, .m-help:focus::after { content: attr(data-help); position: absolute; left: 50%; top: calc(100% + 6px);
+    transform: translateX(-50%); width: max-content; max-width: min(260px, 70vw); white-space: normal; text-align: left;
+    padding: 8px 10px; border-radius: 6px; background: var(--ink, #1d1b19); color: var(--paper, #fff); font-size: 11.5px;
+    line-height: 1.4; letter-spacing: 0; text-transform: none; font-weight: 400; z-index: 50; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
   .m-v { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
   .m-v.mono { font-family: var(--mono-font); font-size: 12px; }
   .modal-refs { margin-top: 16px; }
@@ -4398,113 +4407,74 @@
       severity: t.severity || "info", title: t.title || t.identifier || "Threat",
       source: t.source, confirmed: !!t.confirmed,
       tool_name: t.tool || "", framework: (s && s.agent) || "hermes",
-      ts: t.ts || 0
+      ts: t.ts || 0, profile: t.profile || {}, decision: t.decision || "",
+      session: s ? (fwLabel(s.agent) + " · " + (s.shortId || "local")) : ""
     };
   }
 
-  // Build {nodes, links} for the local tier from its session activity.
+  // Build {nodes, links} for the local tier: the same shape as the community and
+  // verified graphs — Local at the centre, one hub per threat type, one leaf per
+  // distinct threat (repeats folded into a count). The session, tool and time of
+  // each sighting live in the leaf's hover card and its detail, not in the
+  // layout: a per-session timeline chain sprawled into long tails once an agent
+  // ran many calls (2026-10-12).
+  var LOCAL_LEAVES_PER_TYPE = 40;
   function buildLocalGraphData(data) {
     var nodes = [], links = [];
     var sessions = (data && data.sessions) || [];
     var centerId = "__local__";
-    // Machine root — carries run-wide totals + time span for its hover card.
-    var spanStart = null, spanEnd = null;
+    var spanStart = null, spanEnd = null, byId = {}, order = [];
     sessions.forEach(function (s) {
       if (s.start && (spanStart === null || s.start < spanStart)) spanStart = s.start;
       if (s.end && (spanEnd === null || s.end > spanEnd)) spanEnd = s.end;
+      (s.events || []).forEach(function (ev) {
+        (ev.threats || []).forEach(function (t) {
+          var key = t.identifier || ((t.title || "threat") + ":" + (t.ts || 0));
+          var item = byId[key];
+          if (!item) { item = byId[key] = { t: t, s: s, ev: ev, count: 0 }; order.push(key); }
+          item.count += 1;
+          if ((t.ts || 0) >= (item.t.ts || 0)) { item.t = t; item.s = s; item.ev = ev; }   // keep the newest sighting
+        });
+      });
     });
     nodes.push({
       id: centerId, kind: "center", label: "Local", color: MINT, val: 26,
       sessionCount: sessions.length, threatTotal: (data && data.threatCount) || 0,
       start: spanStart, end: spanEnd
     });
-
-    sessions.forEach(function (s, si) {
-      var sid = "ls:" + (s.id || si);
-      var maxSev = s.maxSeverity ? sevClass(s.maxSeverity) : null;
-      var sessThreats = [];
-      (s.events || []).forEach(function (e) { (e.threats || []).forEach(function (t) { sessThreats.push(threatBrief(t)); }); });
-      var sessionNode = {
-        id: sid, kind: "session",
-        label: fwLabel(s.agent) + " · " + (s.shortId || "local"),
-        color: fwColor(s.agent),
-        ring: maxSev ? (SEV_COLOR[maxSev] || null) : null,
-        agent: s.agent, sessionId: s.id || "", shortId: s.shortId || "local",
-        status: s.status, model: s.model,
-        start: s.start || null, end: s.end || null, durationMs: s.durationMs,
-        maxSeverity: s.maxSeverity || null,
-        threatCount: s.threatCount || 0, toolCount: s.toolCount || 0,
-        threats: sessThreats,
-        val: 11 + Math.min((s.threatCount || 0) * 0.8, 8)
-      };
-      nodes.push(sessionNode);
-      links.push({ source: sid, target: centerId, kind: "hub" });
-
-      // Chain the session's tool/file/dependency calls in run order (skip pure
-      // model turns — the description is "tool calls", not API round-trips).
-      var acts = (s.events || []).filter(function (e) {
-        return e.type === "tool" || e.type === "file" || e.type === "dependency";
-      });
-      var CAP = 12, prev = sid;
-      acts.slice(0, CAP).forEach(function (ev, ei) {
-        var ck = catKey(localCallCat(ev));
-        var cid = sid + ":c" + ei;
-        var thr = ev.threats || [];
-        var cSev = callMaxSev(thr);
-        var ring = cSev ? SEV_COLOR[cSev] : (ev.resultStatus === "blocked" ? SEV_COLOR.critical : null);
-        nodes.push({
-          id: cid, kind: "call", cat: ck,
-          label: clip(localCallLabel(ev), 20),
-          color: CATS[ck].color, ring: ring,
-          blocked: ev.resultStatus === "blocked",
-          evType: ev.type,
-          tool: ev.tool, action: ev.action, path: ev.path, mode: ev.mode,
-          pkg: ev.type === "dependency" ? depCoord(ev) : "",
-          resultStatus: ev.resultStatus || null, durationMs: ev.durationMs,
-          ts: ev.ts || 0, agent: s.agent,
-          threats: thr.map(threatBrief),
-          val: 5
-        });
-        links.push({ source: cid, target: prev, kind: "step" });
-        prev = cid;
-        thr.forEach(function (t, ti) {
-          var tck = catKey(t.category), tsev = sevClass(t.severity);
-          nodes.push({
-            id: cid + ":t" + ti, kind: "lthreat", cat: tck,
-            label: clip(t.title || t.identifier || "Threat", 22),
-            color: CATS[tck].color, ring: SEV_COLOR[tsev] || SEV_COLOR.info,
-            severity: tsev, identifier: t.identifier || "", name: t.title || "",
-            tool: t.tool || ev.tool || "", ts: t.ts || ev.ts || 0,
-            finding: localFinding(t, s), val: 5
-          });
-          links.push({ source: cid + ":t" + ti, target: cid, kind: "threat" });
-        });
-      });
-      if (acts.length > CAP) {
-        var moreId = sid + ":more";
-        // Display-only truncation marker. Session details remain available from
-        // the parent session node without making this synthetic node modal-like.
-        nodes.push({ id: moreId, kind: "more", label: "+" + (acts.length - CAP) + " more", color: LABEL_MUTED, val: 4 });
-        links.push({ source: moreId, target: prev, kind: "step" });
-      }
-
-      // Loose threats (not tied to a specific call) hang straight off the session.
-      (s.events || []).filter(function (e) { return e.type === "threat"; }).forEach(function (ev, ei) {
-        (ev.threats || []).forEach(function (t, ti) {
-          var tck = catKey(t.category), tsev = sevClass(t.severity);
-          nodes.push({
-            id: sid + ":lt" + ei + "_" + ti, kind: "lthreat", cat: tck,
-            label: clip(t.title || t.identifier || "Threat", 22),
-            color: CATS[tck].color, ring: SEV_COLOR[tsev] || SEV_COLOR.info,
-            severity: tsev, identifier: t.identifier || "", name: t.title || "",
-            tool: t.tool || "", ts: t.ts || 0,
-            finding: localFinding(t, s), val: 5
-          });
-          links.push({ source: sid + ":lt" + ei + "_" + ti, target: sid, kind: "threat" });
-        });
-      });
+    var byCat = {};
+    order.forEach(function (key) {
+      var ck = catKey(byId[key].t.category);
+      (byCat[ck] = byCat[ck] || []).push(byId[key]);
     });
-
+    Object.keys(byCat).sort(function (a, b) { return byCat[b].length - byCat[a].length; }).forEach(function (ck) {
+      var items = byCat[ck].sort(function (a, b) { return (b.t.ts || 0) - (a.t.ts || 0); });
+      var sightings = items.reduce(function (n, it) { return n + it.count; }, 0);
+      var meta = CATS[ck] || { name: ck, color: "#858289" };
+      var hubId = "__lcat__:" + ck;
+      nodes.push({ id: hubId, kind: "hub", cat: ck, label: meta.name, count: sightings, color: meta.color,
+                   val: 13 + Math.min(19, Math.log(sightings + 1) * 3.2) });
+      links.push({ source: hubId, target: centerId, kind: "hub" });
+      items.slice(0, LOCAL_LEAVES_PER_TYPE).forEach(function (it, i) {
+        var t = it.t, tsev = sevClass(t.severity), finding = localFinding(t, it.s);
+        finding.sightings = it.count;
+        nodes.push({
+          id: hubId + ":" + i, kind: "lthreat", cat: ck,
+          label: clip(t.title || t.identifier || "Threat", 22) + (it.count > 1 ? " ×" + it.count : ""),
+          color: meta.color, ring: SEV_COLOR[tsev] || SEV_COLOR.info,
+          severity: tsev, identifier: t.identifier || "", name: t.title || "",
+          tool: t.tool || it.ev.tool || "", ts: t.ts || it.ev.ts || 0,
+          session: fwLabel(it.s.agent) + " · " + (it.s.shortId || "local"),
+          sightings: it.count, profile: t.profile || {}, finding: finding, val: 5
+        });
+        links.push({ source: hubId + ":" + i, target: hubId, kind: "leaf" });
+      });
+      if (items.length > LOCAL_LEAVES_PER_TYPE) {
+        nodes.push({ id: hubId + ":more", kind: "more", label: "+" + (items.length - LOCAL_LEAVES_PER_TYPE) + " more",
+                     color: LABEL_MUTED, val: 4 });
+        links.push({ source: hubId + ":more", target: hubId, kind: "leaf" });
+      }
+    });
     return { nodes: nodes, links: links };
   }
 
@@ -4845,6 +4815,8 @@
     var tmeta = [];
     if (node.tool) tmeta.push(node.tool);
     if (node.ts) tmeta.push(lclock(node.ts));
+    if (node.session) tmeta.push(node.session);
+    if (node.sightings > 1) tmeta.push("seen " + node.sightings + " times");
     return '<div class="graph-tip">' +
       '<div class="t-name">' + esc(title) + '</div>' +
       (node.identifier ? '<div class="t-id">' + esc(node.identifier) + '</div>' : '') +
@@ -4902,6 +4874,69 @@
     } catch (e) { return String(s); }
   }
 
+  // What every field in a threat's detail means, in plain words (shown on the (i) next to its label).
+  var FIELD_HELP = {
+    "Ecosystem": "The package registry the package comes from (npm, PyPI, crates…).",
+    "Package": "The package name, exactly as it is installed.",
+    "Version": "The exact version this record is about. Other versions may be fine.",
+    "Fixed in": "The first version without the problem, when one exists.",
+    "OWASP": "The OWASP Top 10 for LLM applications category. LLM01 is prompt injection.",
+    "Pattern": "The text pattern Blackbox matches. For a prompt injection this is the attacker's wording it looks for — never your own prompt.",
+    "Tool": "The agent tool involved (web_fetch, terminal, read_file…).",
+    "Arg shape": "The dangerous shape of the command, e.g. a remote script piped into a shell.",
+    "File category": "The kind of sensitive file touched (credentials, SSH key, .env…) — never the actual path.",
+    "Skill": "The agent skill or plugin this record is about.",
+    "Danger shape": "What makes the skill's code dangerous, e.g. unrestricted shell access.",
+    "Source": "The threat feed the verified record came from.",
+    "Contributor": "Who added this record to the graph.",
+    "Last updated": "When this record last changed in the graph.",
+    "Graph": "Where this record lives. Verifiable graph: Umanitek's curated threats (can block). Community graph: reports shared by other Blackbox nodes (flag only). Local: what happened on this machine.",
+    "Detected": "When Blackbox saw it on this machine.",
+    "Agent": "Which protected agent was involved.",
+    "Trigger": "Which check caught it: a tool call, a model request, or a file/package action.",
+    "Session": "The agent session it happened in.",
+    "Seen": "How many times this threat was met on this machine.",
+    "What it's after": "The threat's goal, from a fixed list (credential theft, wallet drain, agent hijack…).",
+    "At risk": "The KIND of resource the threat targets (cloud credentials, API keys, funds…) — never the actual file or account.",
+    "Technique": "The MITRE ATT&CK or ATLAS technique id — the industry's shared name for this attack method.",
+    "Outcome": "What Blackbox did: blocked the action, or flagged it and let it run (audit mode).",
+    "Agent action": "What the agent was doing when it met the threat (fetching a page, installing a package, reading a file…).",
+    "Seen via": "The tool that met the threat. A private or custom tool shows only as 'mcp-tool' or 'other'.",
+    "Found in": "Where the threat appeared: a fetched page, a tool's output, the prompt, a package or a skill.",
+    "Matched by": "How it was recognised: the verified graph, Blackbox's built-in checks, or a public advisory.",
+    "Verified rule": "The record in Umanitek's verified graph this matched. Every node can look it up in its own copy.",
+    "Blackbox version": "The Blackbox version that reported it.",
+    "Reporters": "How many different Blackbox nodes reported it — counted by signing key, so one node cannot pose as many.",
+    "Stage": "Where the community stands on it: reported, confirmed by curators, disputed or retracted.",
+    "Category": "The kind of threat (prompt injection, package, indicator, file access, skill, command).",
+    "Scope": "Which part of the graph this view covers.",
+    "Threats": "How many threats of this kind the graph holds.",
+    "Loaded sample": "How many of them the dashboard loaded to draw.",
+    "Sample severity mix": "How serious the loaded threats are, by severity."
+  };
+
+  // The threat profile a report carries (closed words only), as detail rows. Accepts the
+  // community rule's camelCase keys or a local finding's snake_case sighting.
+  function profileRows(p) {
+    p = p || {};
+    function pick(a, b) { return p[a] || p[b] || ""; }
+    function words(v) { return String(v || "").replace(/-/g, " "); }
+    var rows = [];
+    function add(k, v, mono) { if (v) rows.push([k, String(v), !!mono]); }
+    add("What it's after", words(pick("threatGoal", "threat_goal")));
+    var risk = pick("resourceAtRisk", "resource_at_risk");
+    add("At risk", risk === "none-identified" ? "" : words(risk));
+    add("Technique", pick("attackTechnique", "attack_technique"), true);
+    add("Outcome", pick("outcome", "outcome"));
+    add("Agent action", words(pick("agentAction", "agent_action")));
+    add("Seen via", pick("agentTool", "agent_tool"), true);
+    add("Found in", words(pick("injectionContext", "context") || pick("iocContext", "ioc_context")));
+    add("Matched by", pick("matchedBy", "matched_by"));
+    add("Verified rule", pick("verifiedSubject", "verified_subject"), true);
+    add("Blackbox version", pick("blackboxVersion", "blackbox_version"), true);
+    return rows;
+  }
+
   // [label, value, mono?] rows for the details grid, by category, skipping empties.
   function detailRows(d) {
     var rows = [];
@@ -4930,6 +4965,10 @@
     add("Contributor", d.contributor);
     add("Last updated", fmtDateFull(d.modified));
     add("Graph", { public: "Verifiable graph (VM)", community: "Community graph (SWM)", local: "Local graph (WM)" }[d.tier] || "Threat graph");
+    if (d.tier === "community") {
+      add("Stage", d.stage ? d.stage + (d.stageReason ? " — " + d.stageReason : "") : "");
+      rows = rows.concat(profileRows(d));
+    }
     return rows;
   }
 
@@ -4961,7 +5000,9 @@
       col = c.full ? 0 : (col + 1) % 2;
     });
     return '<div class="modal-grid">' + cells.map(function (c) {
-      return '<div class="cell' + (c.full ? ' full' : '') + '"><div class="m-k">' + esc(c.k) + '</div>' +
+      var help = FIELD_HELP[c.k] ? '<span class="m-help" tabindex="0" role="note" aria-label="' + esc(FIELD_HELP[c.k]) +
+        '" data-help="' + esc(FIELD_HELP[c.k]) + '">i</span>' : '';
+      return '<div class="cell' + (c.full ? ' full' : '') + '"><div class="m-k">' + esc(c.k) + help + '</div>' +
         '<div class="m-v' + (c.mono ? ' mono' : '') + '">' + esc(c.v) + '</div></div>';
     }).join("") + '</div>';
   }
@@ -5211,6 +5252,9 @@
     add("Agent", fwLabel(f.framework));
     add("Tool", f.tool_name || f.tool, true);
     add("Trigger", EVENT_LABEL[String(f.event || "")] || f.event);
+    add("Session", f.session);
+    add("Seen", f.sightings > 1 ? f.sightings + " times" : "");
+    rows = rows.concat(profileRows(f.profile || f.sighting));
     var base = gridHTML(rows);
     var advRefs = findingAdvisoryRefs(f);
     if (advRefs.length) base += refsHTML(advRefs);

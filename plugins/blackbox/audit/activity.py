@@ -213,7 +213,7 @@ def read_local_activity(max_sessions: int = 60) -> Dict[str, Any]:
             "source": fd.get("source"),
             "confirmed": bool(fd.get("confirmed")),
             "tool": fd.get("tool_name") or det.get("tool_name"),
-            "ts": f.get("ts") or 0,
+            "ts": f.get("ts") or 0, "profile": fd.get("sighting") or {},   # threat profiles: goal, at risk, outcome…
         }
         tcid = det.get("tool_call_id")
         if tcid:

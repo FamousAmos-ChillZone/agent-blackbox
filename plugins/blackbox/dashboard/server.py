@@ -1878,7 +1878,7 @@ def create_app(*, manage_blackbox: bool = False):
                 "identifier": safe_identifier(identifier),
                 "tier": "community",
                 "found": True,
-                "reporters": int(rule.get("reporterCount") or 0),
+                "reporters": int(rule.get("reporterCount") or 0), **graph_pages.verified_profile(rs, identifier),
             })
             return detail
         prefix = identifier.split(":", 1)[0].lower() if ":" in identifier else ""
