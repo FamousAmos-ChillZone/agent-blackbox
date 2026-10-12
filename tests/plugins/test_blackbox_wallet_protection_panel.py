@@ -132,3 +132,10 @@ def test_the_dashboard_announces_trader_shield_only_while_it_is_off():
     html = (protection.TRADER_SHIELD_PAGE.parent / "index.html").read_text(encoding="utf-8")
     assert 'id="ts-banner" hidden' in html and 'href="/trader-shield"' in html
     assert "banner.hidden = !!(d && d.enabled) || !tsBannerDue()" in html and "TS_BANNER_DAYS = 7" in html
+
+
+def test_the_panel_opens_settings_at_the_trader_shield_section():
+    html = (protection.TRADER_SHIELD_PAGE.parent / "index.html").read_text(encoding="utf-8")
+    assert 'id="wp-edit"' in html and 'id="set-trader-shield"' in html
+    wiring = html[html.index('var wpEdit = $("wp-edit")'):]
+    assert wiring.index("openSettings()") < wiring.index('$("set-trader-shield")')

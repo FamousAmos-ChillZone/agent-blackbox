@@ -809,6 +809,7 @@
   /* ---------- Trader Shield: announcement banner ---------- */
   .ts-banner { position: relative; overflow: hidden; margin-top: 28px; border: 1px solid color-mix(in srgb, var(--signal) 55%, transparent);
     border-radius: var(--radius); background: var(--panel); padding: 20px 56px 20px 22px; display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; }
+  .ts-banner[hidden] { display: none; }   /* display:flex above would otherwise override [hidden] */
   .ts-glow { position: absolute; inset: -40% -10% auto auto; width: 340px; height: 340px; border-radius: 50%;
     background: radial-gradient(circle, color-mix(in srgb, var(--signal) 22%, transparent), transparent 65%); pointer-events: none; animation: tsGlow 6s ease-in-out infinite; }
   @keyframes tsGlow { 0%,100% { transform: translate(0,0); opacity: .8; } 50% { transform: translate(-30px,10px); opacity: 1; } }
@@ -2896,7 +2897,7 @@
           <h2>Trader Shield <span class="ts-beta">Beta</span></h2>
           <div class="section-note">What Blackbox found on this machine, and how it keeps your agent away from it. <a href="/trader-shield" class="ts-link">Learn more</a></div>
         </div>
-        <div class="head-right"><span class="wp-mode" id="wp-mode">…</span></div>
+        <div class="head-right"><span class="wp-mode" id="wp-mode">…</span><button type="button" class="ts-btn" id="wp-edit">Edit settings</button></div>
       </div>
       <div class="panel"><div class="wp-grid" id="wp-body"><div class="empty" style="padding:24px 20px;">Checking this machine&hellip;</div></div></div>
     </section>
@@ -7717,6 +7718,13 @@
     overlay.__wired = true;
 
     $("settings-open").addEventListener("click", openSettings);
+    // The Trader Shield panel opens Settings straight at its own section.
+    var wpEdit = $("wp-edit");
+    if (wpEdit) wpEdit.addEventListener("click", function () {
+      openSettings();
+      var group = $("set-trader-shield");
+      if (group && group.scrollIntoView) setTimeout(function () { group.scrollIntoView({ block: "start" }); }, 60);
+    });
     $("set-close").addEventListener("click", cancelSettings);
     $("set-cancel").addEventListener("click", cancelSettings);
     overlay.addEventListener("click", function (e) { if (e.target === overlay) cancelSettings(); });
@@ -8201,7 +8209,7 @@
       </div>
 
       <!-- Web3 wallet protection (trader rules) -->
-      <div class="set-group">
+      <div class="set-group" id="set-trader-shield">
         <div class="set-glabel">Trader Shield · Beta</div>
         <div class="set-row">
           <div class="set-rl">
