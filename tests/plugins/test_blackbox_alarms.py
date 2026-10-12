@@ -74,8 +74,7 @@ def test_every_new_operator_state_has_its_class_and_a_what_to_do(over, klass, ne
 def test_quiet_curators_and_an_older_floor_are_not_alarms():
     assert health.operator_health(_inputs(curators_last_day="2026-09-25")) == []       # 7 days: fine
     assert health.operator_health(_inputs(min_reader_version="1.0.9")) == []            # my 1.1.0 is newer
-    assert health.operator_health(_inputs(curator_trusted=False, curators_last_day="2020-01-01")) != []   # untrusted: its own INFO only
-    assert not [i for i in health.operator_health(_inputs(curator_trusted=False, curators_last_day="2020-01-01")) if "published" in i.message]
+    assert health.operator_health(_inputs(curator_trusted=False, curators_last_day="2020-01-01")) == []   # untrusted: nothing to say
 
 
 # ------------------------------------------------------------------ the curator set

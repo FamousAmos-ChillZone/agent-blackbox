@@ -8,8 +8,7 @@ dashboard banner, so the two can never disagree (one Value Object, two views).
 
 Phase 1 states (the plan's operator list, those the code can decide today):
 stale node / old ruleset (ACTION), empty ruleset (ACTION), community read
-unavailable (INFO), community ingest paused (INFO), no trusted curator keys
-(INFO), curator backlog (INFO), curator key away (INFO), revoked threat
+unavailable (INFO), community ingest paused (INFO), curator backlog (INFO), curator key away (INFO), revoked threat
 (INFO, + ACTION when it blocked here), statements held by the budget (INFO).
 Signing-key revocation, manifest conflicts, minReaderVersion and heartbeat
 arrive with reader policy (R7b). The community authority's own alarms
@@ -230,9 +229,8 @@ def _community(inputs: HealthInputs) -> List[HealthItem]:
     if inputs.community_paused:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, "community ingest is paused by the curator",
                                 "nothing to do — verified rules still enforce"))
-    if not inputs.curator_trusted and not inputs.community_authority.trusted:
-        items.append(HealthItem(_OPERATOR, HealthClass.INFO, "no trusted curator keys on this network yet",
-                                "nothing to do — community reports count no author until a key manifest is pinned; verified rules still enforce"))
+    # No "no trusted curator keys" item: a network without a pinned manifest is the normal state, it asks
+    # nothing of the operator and changes no protection, so it is not an alarm (removed 2026-10-12).
     if inputs.backlog:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"curator BACKLOG (lanes {inputs.backlog})",
                                 "nothing to do — review times are extended; disputes and revocations still honoured"))
