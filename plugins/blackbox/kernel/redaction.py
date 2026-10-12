@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import re
 
+from .crypto_secrets import redact_seed_phrases
+
 # ---------------------------------------------------------------------------
 # Secret VALUE detection — an actual key/token/private-key present in tool args.
 # This is the "the agent is handling/leaking a real secret" signal, distinct
@@ -67,12 +69,13 @@ _SECRET_ASSIGNMENT_RE = re.compile(
 def redact_secret_values(text: str) -> str:
     """Replace every recognizable secret value in *text* with a marker.
 
-    Known secret shapes become typed markers (``[REDACTED_PRIVATE_KEY]``);
+    Wallet seed phrases become ``[REDACTED_SEED_PHRASE]``; known secret
+    shapes become typed markers (``[REDACTED_PRIVATE_KEY]``);
     bearer tokens become ``Bearer [REDACTED]``; secret-named assignments keep
     their key and lose their value (``DB_PASSWORD=[REDACTED]``). Truncate
     AFTER calling this, never before — a secret cut in half no longer matches.
     """
-    out = str(text)
+    out = redact_seed_phrases(str(text))   # wallet seed phrases first: words no shape rule recognises
     for typ, _severity, pattern in SECRET_VALUE_RULES:
         out = pattern.sub(f"[REDACTED_{typ.upper().replace('-', '_')}]", out)
     for typ, pattern in _REDACTION_ONLY_RULES:

@@ -14,6 +14,8 @@
  * no longer matches (KI-178).
  */
 
+import { redactSeedPhrases } from "./seedPhrase.js";
+
 /** Known secret shapes → typed markers. Mirrors `redaction.SECRET_VALUE_RULES`. */
 const SECRET_VALUE_RULES: ReadonlyArray<readonly [string, RegExp]> = [
   // The WHOLE private-key block — through its END line, or to the end of the
@@ -58,7 +60,7 @@ function marker(secretType: string): string {
  * rule pass, byte-for-byte the Python `redact_secret_values`. No truncation.
  */
 export function redactSecretValues(text: string): string {
-  let out = String(text);
+  let out = redactSeedPhrases(String(text)); // wallet seed phrases first, as in Python
   for (const [secretType, pattern] of SECRET_VALUE_RULES) out = out.replace(pattern, marker(secretType));
   for (const [secretType, pattern] of REDACTION_ONLY_RULES) out = out.replace(pattern, marker(secretType));
   out = out.replace(BEARER_RE, "Bearer [REDACTED]");

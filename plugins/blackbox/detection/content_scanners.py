@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List
 from . import shell_shapes
-from ..kernel import redaction, threat_ids
+from ..kernel import crypto_secrets, redaction, threat_ids
 
 # ---------------------------------------------------------------------------
 # Built-in injection heuristics (discovery layer — OWASP LLM01/LLM06)
@@ -123,7 +123,34 @@ def scan_secret_values(text: str) -> List[Dict[str, str]]:
                 out.append({"type": typ, "severity": severity})
         except re.error:  # pragma: no cover - static patterns
             continue
+    seed = _seed_phrase_severity(scan)
+    if seed:
+        out.append({"type": "seed-phrase", "severity": seed})
     return out
+
+
+def _seed_phrase_severity(text: str) -> str:
+    """How serious the worst seed phrase in *text* is, or ``""`` for none.
+
+    critical (blocks): a checksum-valid phrase of 18+ words, or of 12/15 words
+    with a cue ("seed", "recovery", numbered words) — MetaMask's Secret
+    Recovery Phrase is 12 words. high: a valid 12/15-word phrase without a cue
+    (1 in 16 random list-word runs passes the checksum). medium: a published
+    test phrase, or a 12+ run of list words whose checksum fails (a mistyped
+    phrase is still a secret). Sending any of them off the machine is raised to
+    critical by the caller.
+    """
+    rank = {"": 0, "medium": 1, "high": 2, "critical": 3}
+    worst = ""
+    for run in crypto_secrets.find_seed_phrase_runs(text):
+        if run.valid_words and not run.test_phrase and (run.valid_words >= 18 or run.has_cue):
+            severity = "critical"
+        elif run.valid_words and not run.test_phrase:
+            severity = "high"
+        else:
+            severity = "medium"
+        worst = max(worst, severity, key=rank.__getitem__)
+    return worst
 
 
 def looks_like_egress(text: str) -> bool:

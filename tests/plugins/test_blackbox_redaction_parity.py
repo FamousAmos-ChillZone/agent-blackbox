@@ -33,9 +33,25 @@ def _pem(label: str, cut_off: bool = False) -> str:
     return begin + "\n" + _BODY + ("" if cut_off else "\n" + end)
 
 
+_WORDS = (REPO / "plugins" / "blackbox" / "kernel" / "crypto_secrets" / "bip39_english.txt").read_text(encoding="ascii").split()
+
+
+def _phrase(count: int, start: int = 7, separator: str = " ") -> str:
+    """List words picked at runtime (checksum not needed: redaction is by run)."""
+    return separator.join(_WORDS[(start + 97 * i) % len(_WORDS)] for i in range(count))
+
+
 def _cases() -> list[str]:
     private = "PRIVATE"
+    numbered = " ".join(f"{i + 1}. {word}" for i, word in enumerate(_phrase(12).split()))
     return [
+        "seed: " + _phrase(12) + " done",
+        "srp " + _phrase(24, separator=",\n") + "!",
+        numbered,
+        "elevenish " + _phrase(11) + " qzx",                         # too short: stays
+        _phrase(6) + " notaword " + _phrase(6),                     # broken run: stays
+        "Café " + _phrase(12) + " 😀 " + _phrase(13, start=99),      # non-ASCII around runs
+        "word " * 3 + "the " + _phrase(12, start=3) + " and AKIA" + "ABCDEFGHIJKLMNOP",
         f"before {_pem('RSA ' + private)} after",
         f"x{_pem(private, cut_off=True)}",
         "aws " + "AKIA" + "ABCDEFGHIJKLMNOP" + " in args",
@@ -71,5 +87,12 @@ def test_both_runtimes_redact_identically(tmp_path):
     # And the pass did something: every secret-shaped input lost its material.
     for text, out in zip(cases, from_python):
         assert _BODY not in out and "hunter2secret" not in out
-        if text and text != cases[-4] and text != cases[-3]:
+        if text and text not in (cases[-4], cases[-3], cases[3], cases[4]):
             assert "[REDACTED" in out, text
+    assert from_python[3] == cases[3] and from_python[4] == cases[4]
+
+
+def test_both_runtimes_ship_the_same_pinned_wordlist():
+    python_copy = REPO / "plugins" / "blackbox" / "kernel" / "crypto_secrets" / "bip39_english.txt"
+    bridge_copy = REPO / "integrations" / "openclaw" / "src" / "bip39-english.txt"
+    assert python_copy.read_bytes() == bridge_copy.read_bytes()
