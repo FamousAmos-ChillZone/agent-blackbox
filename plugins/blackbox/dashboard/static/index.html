@@ -856,7 +856,8 @@
   .wev-all { background: none; border: 0; color: var(--signal); font: 600 11px var(--body-font); letter-spacing: 0; text-transform: none; cursor: pointer; padding: 0 0 0 6px; }
 
   /* ---------- Trader Shield: the full-screen wallet-events window (local only) ---------- */
-  .wev-overlay { position: fixed; inset: 0; z-index: 80; background: var(--bg); display: flex; flex-direction: column; }
+  .wev-overlay { position: fixed; inset: 0; z-index: 1000;   /* the modals' layer: above the sticky header */
+    background: var(--bg); display: flex; flex-direction: column; }
   .wev-overlay[hidden] { display: none; }
   .wev-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 24px 14px; border-bottom: 1px solid var(--border); }
   .wev-kicker { font-family: var(--mono-font); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--signal); }
@@ -5254,7 +5255,10 @@
             : "handled a wallet private key — the key that signs for an account";
     var where = e.session && e.session.model ? "In a conversation with " + e.session.model : "In an agent session";
     var asked = e.asked ? where + ", your agent was asked: <q>" + esc(e.asked) + "</q> " : where + ", ";
-    var acted = (e.asked ? "It then " : "your agent ") + (e.tool === "terminal" ? "ran a terminal command that would have " : "used its " + esc(e.tool || "tool") + " tool in a way that would have ") + did + ".";
+    // A blocked action never ran, so the agent "tried to"; a flagged one did run.
+    var verb = e.outcome === "blocked" ? "tried to " : "";
+    var acted = (e.asked ? "It then " : "your agent ") + verb + (e.tool === "terminal" ? (verb ? "run" : "ran") + " a terminal command that would have "
+              : (verb ? "use" : "used") + " its " + esc(e.tool || "tool") + " tool in a way that would have ") + did + ".";
     var outcome;
     if (e.outcome === "blocked") outcome = " <b>Blackbox stopped it before it ran</b> — nothing was read, copied or sent, and the agent was told why.";
     else if (wpLast && wpLast.mode === "audit") outcome = " <b>Blackbox let it run and recorded it</b>, because it is set to watch only (audit mode).";
