@@ -127,6 +127,9 @@ class Ruleset(live.LiveAnswering):
     kill_list_refused: str = ""
     #: R7b: "" | "STALE since <day>" | "PENDING until <day>" — the curator manifest's clock as of the last refresh.
     curator_manifest_state: str = ""
+    #: The trusted manifest's legacy pin ("" = no trusted manifest; None = the curator read could not
+    #: tell) — the live scope checks the shipped legacy asset list against it (trust-and-threat-lab R1).
+    curator_legacy_assets_hash: Optional[str] = None
     #: When this generation was compiled (epoch seconds; 0 = never). Shown as "last sync" and
     #: used for ages and staleness — never moved for scheduling (that is ``refresh_due_at``).
     synced_at: float = 0.0
@@ -270,23 +273,15 @@ class Ruleset(live.LiveAnswering):
         return len(self.graph_entries(source)) + (sum(self.live_counts().values()) if source == "public" else 0)
 
 
-def suppressed_subjects(tagged_rows: Iterable[tuple]) -> set:
-    """Subjects a PUBLIC CorrectionSignal row suppresses (``(row, source)`` pairs):
-    a curated correction withdraws the threat it targets from every tier."""
-    suppressed: set = set()
-    for row, row_source in tagged_rows:
-        if row_source != "public":
-            continue
-        if extract_binding(row.get("rdfType")) != constants.DEFENDER_CORRECTION_TYPE_IRI:
-            continue
-        action = extract_binding(row.get("correctionAction")).strip().lower()
-        target = extract_binding(row.get("targetSubject")).strip()
-        if action == constants.DEFENDER_CORRECTION_SUPPRESS and target:
-            suppressed.add(target)
-    return suppressed
+def suppressed_subjects(tagged_rows: Iterable[tuple], pin: live.CorrectionPin = live.NO_PIN) -> FrozenSet[str]:
+    """Subjects the PUBLIC CorrectionSignal rows suppress (``(row, source)`` pairs):
+    a curated correction withdraws the threat it targets from every tier. Once
+    *pin* holds the legacy pin, only a quorum-signed correction counts, on the
+    targets its signed payload names (:func:`.live.signed_suppressions`, R3)."""
+    return live.signed_suppressions(tagged_rows, *pin)
 
 
-def build_from_rows(rows: List[Dict[str, Any]], source: str = "public") -> Ruleset:
+def build_from_rows(rows: List[Dict[str, Any]], source: str = "public", pin: live.CorrectionPin = live.NO_PIN) -> Ruleset:
     """Build a :class:`Ruleset` from ``(rows, source)`` pairs or plain rows.
 
     *rows* may be a flat list of binding rows (all tagged *source*) or a list
@@ -301,7 +296,7 @@ def build_from_rows(rows: List[Dict[str, Any]], source: str = "public") -> Rules
     skill_seen: set = set()
     graph_seen: set = set()
     tagged_rows = [item if isinstance(item, tuple) else (item, source) for item in rows]
-    rs.suppressed_subjects = frozenset(suppressed_subjects(tagged_rows))
+    rs.suppressed_subjects = suppressed_subjects(tagged_rows, pin)
 
     for row, row_source in tagged_rows:
         if extract_binding(row.get("threat")) in rs.suppressed_subjects:
@@ -333,17 +328,15 @@ def build_from_rows(rows: List[Dict[str, Any]], source: str = "public") -> Rules
                 skill_seen.add(key)
                 rs.skill.append(rule)
         elif category == "ioc":
-            existing = rs.ioc.get(key)
-            # Public (curated) rules always win over community rows.
-            if existing is None or (
-                existing.get("source") == "community" and rule.get("source") == "public"
-            ):
-                rs.ioc[key] = rule
+            _keep_public_first(rs.ioc, key, rule)
         else:
-            existing = rs.dependency.get(key)
-            # Public (curated) rules always win over community rows.
-            if existing is None or (
-                existing.get("source") == "community" and rule.get("source") == "public"
-            ):
-                rs.dependency[key] = rule
+            _keep_public_first(rs.dependency, key, rule)
     return rs
+
+
+def _keep_public_first(table: Dict[str, Dict[str, Any]], key: str, rule: Dict[str, Any]) -> None:
+    """Store *rule* under *key* unless one is already there — public (curated)
+    rules always win over community rows, so only a community rule is replaced."""
+    existing = table.get(key)
+    if existing is None or (existing.get("source") == "community" and rule.get("source") == "public"):
+        table[key] = rule

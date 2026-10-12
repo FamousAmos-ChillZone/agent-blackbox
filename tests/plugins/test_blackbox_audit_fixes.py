@@ -89,7 +89,7 @@ def test_pypi_graph_threat_fires_for_underscore_variant():
             "packageVersion": "1.0", "severity": "critical", "name": "malware", "source": "public"}
     rs = ruleset_mod.build_from_rows([({"identifier": {"value": rid}, "packageEcosystem": {"value": "pypi"},
         "packageName": {"value": "foo-bar"}, "packageVersion": {"value": "1.0"},
-        "severity": {"value": "critical"}}, "public")])
+        "severity": {"value": "critical"}, "kind": {"value": "malware"}}, "public")])   # no kind = flag-only (R4)
     findings = detection.detect_dependency("shell", {"command": "pip install foo_bar==1.0"}, rs)
     assert findings and findings[0].confirmed
 
@@ -173,6 +173,7 @@ def test_concurrent_ruleset_refresh_reuses_completed_generation(monkeypatch, tmp
         "packageEcosystem": "npm",
         "packageName": "serialized",
         "packageVersion": "1.0.0",
+        "kind": "malware",
     }
 
     def slow_fetch(*_args, **_kwargs):
@@ -346,6 +347,7 @@ def test_ruleset_cache_never_crosses_custom_context_graphs(monkeypatch, tmp_path
         "packageEcosystem": "npm",
         "packageName": "graph-a",
         "packageVersion": "1.0.0",
+        "kind": "malware",
     }
     monkeypatch.setattr(ruleset_disk_cache.constants, "blackbox_home", lambda: tmp_path)
     monkeypatch.setattr(ruleset_refresh, "_memory", ruleset_refresh._new_memory())

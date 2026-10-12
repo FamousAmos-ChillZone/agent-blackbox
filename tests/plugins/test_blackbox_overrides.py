@@ -9,7 +9,7 @@ operator keeps a local release valve.
   pause; a pause longer than 7 days is not a valid statement.
 * After 7 days of curator silence the root alone may sign a revocation —
   and nothing else.
-* A dated manifest takes effect 72 h later (pending) and goes STALE at 60 d:
+* A dated manifest takes effect after the time-lock (pending) and goes STALE at 60 d:
   clock-forward keeps the malware rule blocking, freezes new raising
   statements, lets a revocation through, and shows STALE on status; the
   expiry alarm fires 30 days ahead.
@@ -53,7 +53,8 @@ def keys():
 
 def _manifest(keys, **over):
     base = dict(environment=NETWORK, graph="0xabc/agent-blackbox-vm", chain="", root_epoch=1, version=1,
-                curator_keys=tuple(sorted(keys["hex"])), threshold=2, promotion_author="0x" + "1" * 40,
+                curator_keys=tuple(sorted(keys["hex"])),
+                curator_operators=("operator-a", "operator-b", "operator-c"), threshold=2, promotion_author="0x" + "1" * 40,
                 legacy_assets_hash=km.legacy_assets_hash([]))
     base.update(over)
     return km.KeyManifest(**base)
@@ -169,8 +170,9 @@ def _rows_of(envelope):
 
 def test_the_manifest_clock_pending_valid_stale(keys):
     dated = _manifest(keys, issued_day="2026-10-01")
-    assert km.manifest_clock(dated, "2026-10-02") == ("pending", "2026-10-04")
-    assert km.manifest_clock(dated, "2026-10-04") == ("", "2026-11-30")
+    assert km.MANIFEST_TIME_LOCK_DAYS == 1                                             # founder decision 2026-10-11
+    assert km.manifest_clock(dated, "2026-10-01") == ("pending", "2026-10-02")
+    assert km.manifest_clock(dated, "2026-10-02") == ("", "2026-11-30")
     assert km.manifest_clock(dated, "2026-12-01") == ("stale", "2026-11-30")
     assert km.manifest_clock(_manifest(keys), "2030-01-01") == ("", "")                # undated: no clock
     assert "issuedDay" not in _manifest(keys).to_payload() and dated.to_payload()["issuedDay"] == "2026-10-01"

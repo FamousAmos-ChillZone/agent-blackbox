@@ -19,14 +19,13 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 from .. import ruleset
-from .. import community
 from . import state as sync_state
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig, load_blackbox_config
 from ..kernel.dkg_client import DkgClient, DkgError
 from .progress import capture_durable_progress_cursor, read_durable_progress
 from ..kernel import display_safety
-from . import managed_node, native
+from . import managed_node, native, side_subscriptions
 from .catchup_job import _catchup_denied, _catchup_job_id, _catchup_status
 
 logger = logging.getLogger(__name__)
@@ -384,10 +383,8 @@ def _cmd_sync_impl(args: argparse.Namespace) -> int:
                 )
 
         may_probe_private = private_graph and not getattr(args, "wait", False)
-        # Community graph rides the same sync: idempotent, fail-open, never
-        # blocks or fails the verified-graph transfer (B4).
-        if cfg.community_graph_id:
-            community.ensure_community_subscription(client, cfg)
+        # The community graph (B4) and an active successor graph (T2) ride the same sync, fail-open.
+        side_subscriptions.ensure_side_subscriptions(client, cfg)
         if not subscribed and (admitted or not private_graph or may_probe_private):
             try:
                 subscription = client.subscribe_context_graph(cfg.context_graph_id)

@@ -20,7 +20,7 @@ from .. import community
 from ..kernel import threat_ids
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient
-from . import compiler
+from . import compiler, row_adapters
 
 logger = logging.getLogger(__name__)
 
@@ -189,11 +189,18 @@ def reapply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: Blackbo
     the ruleset itself as the first-seen history and last-good fallback.
     """
     for table in (rs.dependency, rs.ioc):
-        for key in [k for k, rule in table.items() if rule.get("source") == "community"]:
+        for key in [k for k, rule in table.items() if _is_community_entry(rule)]:
             del table[key]
     rs.skill = [rule for rule in rs.skill if rule.get("source") != "community"]
     apply_community_tier(rs, client, cfg, rs)
     rs._graph_entries_cache.clear()
+
+
+def _is_community_entry(rule: Dict[str, Any]) -> bool:
+    """True for a rule the community tier materialized — NOT a verified rule
+    served flag-only (R4: it shares the ``community`` source but carries
+    ``asset_tier: flag``, and only the next full refresh may drop it)."""
+    return rule.get("source") == "community" and rule.get("asset_tier") != row_adapters.FLAG_TIER
 
 
 def _stage_fields(rule: community.CommunityRule, read: community.CommunityRead) -> Dict[str, str]:

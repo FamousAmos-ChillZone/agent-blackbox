@@ -27,7 +27,7 @@ from ..kernel.signing import key_manifest
 from ..kernel.signing.authority import Authority
 from ..kernel.signing.statement_order import CuratorStatement
 from . import dossier, keys, promotion, transport
-from .context import CurateContext
+from .context import CurateContext, KillListDraft, ManifestDraft, PromotionDraft, StatementDraft
 from .proposal import Proposal, ProposalState, ProposalStore
 from .publishing import MANIFEST_KIND, VerbError, next_sequence, publish
 from .publishing.publish import _validated_promotion
@@ -51,7 +51,7 @@ def propose_promotion(ctx: CurateContext, store: ProposalStore, *, identifier: s
     payload = promotion.payload_for(identifier, severity=severity, advisory=advisory, report_subjects=report_subjects,
                                     provenance=promotion.ProvenanceMap(), name=name)
     key = keys.curator_key_store().load_or_create()
-    envelope = promotion.sign(payload, key, ctx.manifest, sequence=next_sequence(ctx, store, identifier))
+    envelope = ctx.sign(PromotionDraft(payload, sequence=next_sequence(ctx, store, identifier)), key)
     return _stored(store, CuratorStatement.PROMOTION.value, identifier, envelope, ctx.verified_graph,
                    {signing.public_key_hex(key): evidence})
 
@@ -69,8 +69,8 @@ def propose_statement(ctx: CurateContext, store: ProposalStore, *, kind: Curator
                         if graph is None else "no community graph is configured on this node")
     key = keys.curator_key_store().load_or_create()
     try:
-        envelope = community.sign_curator_statement(kind, identifier, sequence=next_sequence(ctx, store, identifier),
-                                                     fields=fields, key=key, manifest=ctx.manifest, graph=graph)
+        envelope = ctx.sign(StatementDraft(kind, identifier, fields, sequence=next_sequence(ctx, store, identifier),
+                                           graph=graph), key)
     except ValueError as exc:
         raise VerbError(str(exc)) from exc
     return _stored(store, kind.value, identifier, envelope, graph, {signing.public_key_hex(key): evidence or "n/a"})
@@ -218,7 +218,7 @@ def propose_kill_list(ctx: CurateContext, store: ProposalStore, *, entries: List
                                   entries=tuple(e for e in parsed if e is not None))
     key = keys.curator_key_store().load_or_create()
     try:
-        envelope = killlist.sign_kill_list(kill_list, key, ctx.manifest, ctx.verified_graph)
+        envelope = ctx.sign(KillListDraft(kill_list, ctx.verified_graph), key)
     except ValueError as exc:
         raise VerbError(str(exc)) from exc
     return _stored(store, killlist.KILL_LIST_STATEMENT, "kill-list", envelope, ctx.verified_graph,
@@ -250,9 +250,9 @@ def approve(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, evide
         raise VerbError(f"this confirmation cites evidence; co-sign it only after your own check of it "
                         f"(--evidence {_EVIDENCE_HELP}) — each key checks the truth itself")
     try:
-        cosigned = signing.cosign(envelope, my_key)
+        cosigned = ctx.cosign(envelope, my_key)
         if root and proposal.kind == killlist.KILL_LIST_STATEMENT:
-            cosigned = signing.cosign(cosigned, keys.root_key_store().load_or_create())
+            cosigned = ctx.cosign(cosigned, keys.root_key_store().load_or_create())
     except ValueError as exc:   # round 4: a third signature can outgrow the 4 KB envelope
         raise VerbError(f"cannot add this signature: {exc} — split the list into smaller versions") from exc
     proposal = proposal.with_envelope(cosigned, {signing.public_key_hex(my_key): evidence or "n/a"})
@@ -276,29 +276,32 @@ def _check_first_signer(ctx: CurateContext, envelope: signing.SignedEnvelope, pr
 # -- manifest (sandbox) --------------------------------------------------------
 
 
-def manifest_proposal(ctx: CurateContext, store: ProposalStore, *, curator_keys: List[str], threshold: int,
-                      promotion_author: str, root_epoch: int, version: int, legacy_uals: Iterable[str],
+def manifest_proposal(ctx: CurateContext, store: ProposalStore, *, curator_keys: List[str],
+                      curator_operators: List[str], threshold: int, promotion_author: str, root_epoch: int, version: int, legacy_uals: Iterable[str],
                       issued_day: str = "") -> Proposal:
     """SANDBOX: a root-signed key manifest for the ACTING authority, bound to
     the graph that authority's manifest lives in (the community graph for the
     community authority), stored APPROVED (one root signature is the whole
     quorum) for `curate publish`. On a pinned network or graph the root is
     offline; its manifest arrives as a file, not from this verb (R7b).
-    *issued_day* dates it (60-day validity, 72 h time-lock); "" = no clock."""
+    *issued_day* dates it (60-day validity, 1-day time-lock); "" = no clock.
+    *curator_operators* names the organisation running each key, in the same order."""
     if not ctx.sandbox:   # KI-256
         raise VerbError("this network has a pinned root; manifests come from the offline root (R7b)")
     graph = ctx.manifest_graph
     if not graph:
         raise VerbError("no community graph is configured on this node")
+    if len(curator_operators) != len(curator_keys) or len(set(curator_keys)) != len(curator_keys):
+        raise VerbError("give each distinct curator key exactly one operator, in the same order")
     community_authority = ctx.authority is Authority.COMMUNITY
     manifest = key_manifest.KeyManifest(
         environment=ctx.environment, graph=graph, chain="", root_epoch=root_epoch, version=version,
-        curator_keys=tuple(sorted(curator_keys)), threshold=threshold,
+        **key_manifest.roster(dict(zip(curator_keys, curator_operators))), threshold=threshold,
         promotion_author=key_manifest.NO_PROMOTION_AUTHOR if community_authority else promotion_author,
         legacy_assets_hash=key_manifest.legacy_assets_hash(() if community_authority else legacy_uals),
         issued_day=issued_day)
     root: Ed25519PrivateKey = keys.root_key_store(ctx.authority).load_or_create()
-    envelope = key_manifest.sign_manifest(manifest, root)
+    envelope = ctx.sign(ManifestDraft(manifest), root)
     proposal = Proposal.new(MANIFEST_KIND, "curator", envelope, graph,
                             checks={signing.public_key_hex(root): "root"})
     proposal = proposal.transition(ProposalState.PROPOSED).transition(ProposalState.APPROVED)

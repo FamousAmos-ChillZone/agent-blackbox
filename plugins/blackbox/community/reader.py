@@ -87,7 +87,7 @@ PREFIX g: <http://umanitek.ai/ontology/guardian/>
 SELECT ?r ?identifier ?reporter ?severity ?kind ?iocType ?toolName ?argShape
        ?packageName ?packageVersion ?packageEcosystem ?category ?skillName
        ?dangerShape ?pattern ?injectionContext ?skillArtifactHash ?skillRegistry ?iocContext ?reportReason
-       ?signedStatement WHERE {{
+       ?matchedBy ?blackboxVersion ?signedStatement WHERE {{
   ?r a g:ThreatReport ;
      g:identifier ?identifier ;
      g:reporter ?reporter ;
@@ -108,6 +108,8 @@ SELECT ?r ?identifier ?reporter ?severity ?kind ?iocType ?toolName ?argShape
   OPTIONAL {{ ?r g:skillRegistry ?skillRegistry }}
   OPTIONAL {{ ?r g:iocContext ?iocContext }}
   OPTIONAL {{ ?r g:reportReason ?reportReason }}
+  OPTIONAL {{ ?r g:matchedBy ?matchedBy }}
+  OPTIONAL {{ ?r g:blackboxVersion ?blackboxVersion }}
   OPTIONAL {{ ?r g:signedStatement ?signedStatement }}
   {cursor}
 }} ORDER BY STR(?r) LIMIT {_COMMUNITY_PAGE_SIZE}

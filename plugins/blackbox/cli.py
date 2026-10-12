@@ -22,7 +22,7 @@ from .kernel.dkg_client import DkgClient
 from .attach import cmd_attach, cmd_detach
 from .chat import add_blackbox_chat_args, cmd_chat
 from .community import add_report_parser, print_community_status
-from .curate import add_curate_parser
+from .curate import add_curate_parser, status_health_items
 from .dashboard import cmd_dashboard
 from .detection import cmd_setup_llm
 from .overrides import add_rules_parser
@@ -192,6 +192,7 @@ def _print_health(cfg: Any, rs: Any, client: DkgClient, reachable: bool) -> None
                                                  pending_shares=retries.pending, shares_given_up=retries.given_up,
                                                  sharing_consent_problem=community.consent.why_not(),
                                                  verified_lookup_problem=ruleset.live.HEALTH.read().problem()))
+    items += status_health_items(time.time())   # a curator node's own alarms: self-test suspension, halted quorum
     if cfg.community_graph_id:   # who curates, who is trusted, what is confirmed (the dashboard's trust panel shows the same)
         for line in community.trust_status_lines(community.trust_panel(read)):
             print(line)

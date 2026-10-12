@@ -28,6 +28,7 @@ from collections import Counter, deque
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
+from ..kernel.browser_boundary import BrowserBoundary
 from ..sync import state as sync_state
 from ..sync import read_durable_progress
 from . import community_routes, graph_pages, lifecycle, sync_meter, sync_timing
@@ -53,6 +54,7 @@ _BLACKBOX_READY_PERCENT = 80.0
 _BLACKBOX_MIN_OVERDUE_SEC = 10 * 60.0
 _BLACKBOX_STALLED_SYNC_SEC = 10 * 60.0
 _BLACKBOX_PROFILE = "agent-blackbox"
+_LOOPBACK_HOST_NAMES = frozenset({"127.0.0.1", "localhost", "[::1]"})  # the only Hosts the dashboard answers to
 _BLACKBOX_RUNTIME_HOST = "127.0.0.1"
 _BLACKBOX_RUNTIME_PORT = 9121
 _BLACKBOX_RESTART_DELAY_SEC = 2.0
@@ -813,45 +815,12 @@ def create_app(*, manage_blackbox: bool = False):
 
     app = FastAPI(title="Agent Blackbox", docs_url=None, redoc_url=None)
 
-    # ------------------------------------------------------------------
-    # Browser-boundary hardening (KI-028 / LES-006). Loopback binding keeps
-    # the network out, but the operator's BROWSER is on loopback too: a
-    # malicious webpage can fire cross-origin POSTs at localhost, and DNS
-    # rebinding makes an attacker page look same-origin. Two structural
-    # gates, enforced in ONE middleware:
-    #   1. Host + Origin allowlist — only genuine local origins pass.
-    #   2. A per-process session token required on every state-changing
-    #      request. The UI receives it via /api/session (same-origin only,
-    #      unreachable through DNS rebinding thanks to gate 1).
-    # ------------------------------------------------------------------
+    # Browser-boundary hardening (KI-028 / LES-006): Host + Origin allowlist
+    # and a per-process change token on every state-changing request. The UI
+    # receives the token via /api/session (same-origin only, unreachable
+    # through DNS rebinding thanks to the Host gate).
     _session_token = secrets.token_urlsafe(32)
-    _ALLOWED_HOST_NAMES = {"127.0.0.1", "localhost", "[::1]"}
-
-    def _local_host(value: str) -> bool:
-        host = (value or "").split(":", 1)[0].strip().lower()
-        return host in _ALLOWED_HOST_NAMES
-
-    @app.middleware("http")
-    async def _browser_boundary(request, call_next):
-        host = request.headers.get("host", "")
-        if not _local_host(host):
-            return JSONResponse({"error": "forbidden host"}, status_code=403)
-        origin = request.headers.get("origin", "")
-        if origin:
-            # An Origin is present on cross-site and fetch() requests; only
-            # our own loopback origins may pass. Same-origin UI requests
-            # always carry a loopback origin or none at all.
-            from urllib.parse import urlsplit
-
-            if not _local_host(urlsplit(origin).netloc):
-                return JSONResponse({"error": "forbidden origin"}, status_code=403)
-        if request.method not in ("GET", "HEAD", "OPTIONS"):
-            token = request.headers.get("x-blackbox-token", "")
-            if not secrets.compare_digest(token, _session_token):
-                return JSONResponse(
-                    {"error": "missing or invalid session token"}, status_code=403
-                )
-        return await call_next(request)
+    BrowserBoundary(_LOOPBACK_HOST_NAMES, lambda _request: _session_token).install(app)
 
     @app.get("/api/session")
     def session():

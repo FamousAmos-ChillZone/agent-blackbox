@@ -35,7 +35,8 @@ def keys():
 @pytest.fixture(scope="module")
 def manifest(keys):
     return km.KeyManifest(environment=NETWORK, graph=VM_GRAPH, chain="", root_epoch=1, version=1,
-                          curator_keys=tuple(sorted(signing.public_key_hex(k) for k in keys[:3])), threshold=2,
+                          curator_keys=tuple(sorted(signing.public_key_hex(k) for k in keys[:3])),
+                          curator_operators=("operator-a", "operator-b", "operator-c"), threshold=2,
                           promotion_author="0x" + "1" * 40, legacy_assets_hash=km.legacy_assets_hash([]))
 
 

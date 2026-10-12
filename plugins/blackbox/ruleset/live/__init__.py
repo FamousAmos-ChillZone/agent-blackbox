@@ -25,6 +25,9 @@ small scope travels in ``ruleset.json``.
 * :class:`FallbackIndex` / :func:`maintain_fallback_index` — the OPT-IN on-disk index
   (``verified_lookup_fallback: index``), a last resort that answers only after the store
   could not; off by default.
+* :func:`signed_suppressions` / :class:`CorrectionPin` — which verified-graph corrections a reader honours:
+  legacy ones as before, newer ones only with a quorum-signed ``blackbox.correction``
+  envelope and only on the targets inside its signed payload (trust-and-threat-lab R3).
 * :data:`HEALTH` — the record of what lookups could and could not answer
   (``verified_lookup_state.json``): a degraded store is an operator alarm.
 
@@ -38,10 +41,11 @@ Usage::
 
 from .answering import LiveAnswering
 from .browse import LivePage, public_page
+from .corrections import NO_PIN, CorrectionPin, signed_suppressions
 from .fallback_index import FALLBACK_INDEX, FALLBACK_OFF, FallbackIndex
 from .fallback_index import maintain as maintain_fallback_index
 from .health import HEALTH, LookupHealth, LookupState
 from .lookup import CLEAN, COULD_NOT_TELL, HIT, LookupAnswer, VerifiedLookup
 from .scope import VerifiedScope, refresh_scope, scope_for_generation
 
-__all__ = ["CLEAN", "COULD_NOT_TELL", "FALLBACK_INDEX", "FALLBACK_OFF", "FallbackIndex", "HEALTH", "HIT", "maintain_fallback_index", "LiveAnswering", "LivePage", "LookupAnswer", "LookupHealth", "LookupState", "public_page", "VerifiedLookup", "VerifiedScope", "refresh_scope", "scope_for_generation"]
+__all__ = ["CLEAN", "CorrectionPin", "COULD_NOT_TELL", "FALLBACK_INDEX", "FALLBACK_OFF", "FallbackIndex", "HEALTH", "HIT", "maintain_fallback_index", "LiveAnswering", "NO_PIN", "LivePage", "LookupAnswer", "LookupHealth", "LookupState", "public_page", "signed_suppressions", "VerifiedLookup", "VerifiedScope", "refresh_scope", "scope_for_generation"]

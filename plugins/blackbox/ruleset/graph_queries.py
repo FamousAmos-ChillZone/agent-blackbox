@@ -10,13 +10,17 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Sequence
+
+from ..kernel import constants
 
 _SELECT_COLUMNS = """?threat ?rdfType ?identifier ?severity ?name ?description
        ?pattern ?toolName ?argShape ?packageName ?packageVersion
        ?packageEcosystem ?advisoryId ?curated ?category ?skillName
        ?skillVersion ?dangerShape ?kind ?iocValue ?targetSubject
        ?correctionAction ?canonicalType ?observationCategory
-       ?lifecycleStatus ?normalizedValue ?provenanceJson ?sourceId"""
+       ?lifecycleStatus ?normalizedValue ?provenanceJson ?sourceId
+       ?signedStatement"""
 
 _DEFENDER_PREFIXES = """PREFIX defender: <urn:defender:>
 PREFIX dp: <urn:defender:p:>
@@ -27,6 +31,13 @@ PREFIX schema: <http://schema.org/>
 _FORBIDDEN_IRI_CHARS = frozenset('<>"{}|^`\\\r\n\t')
 #: A wallet-namespaced graph id starts with its owner's address (lowercased here).
 _WALLET_ADDRESS = re.compile(r"0x[0-9a-f]{40}")
+
+
+#: The correction lane: target and action, plus the curator envelope literal a
+#: post-pin correction must carry (trust-and-threat-lab R3, :mod:`.live.corrections`).
+CORRECTION_PROPERTIES = f"""    OPTIONAL {{ ?threat dp:targetSubject ?targetSubject . }}
+    OPTIONAL {{ ?threat dp:action ?correctionAction . }}
+    OPTIONAL {{ ?threat <{constants.SIGNED_STATEMENT_PRED}> ?signedStatement . }}"""
 
 
 def _threat_cursor_filter(after: str) -> str:
@@ -170,8 +181,7 @@ def _defender_threats_sparql(
         ),
         _defender_page_sparql(
             "CorrectionSignal",
-            """    OPTIONAL { ?threat dp:targetSubject ?targetSubject . }
-    OPTIONAL { ?threat dp:action ?correctionAction . }""",
+            CORRECTION_PROPERTIES,
             limit,
             after,
             graph_uri,
@@ -193,8 +203,7 @@ SMALL_TIER_SIGNALS = (
     OPTIONAL { ?threat dp:severity ?severity . }
     OPTIONAL { ?threat schema:name ?name . }
     OPTIONAL { ?threat schema:description ?description . }"""),
-    ("CorrectionSignal", """    OPTIONAL { ?threat dp:targetSubject ?targetSubject . }
-    OPTIONAL { ?threat dp:action ?correctionAction . }"""),
+    ("CorrectionSignal", CORRECTION_PROPERTIES),
 )
 
 
@@ -262,6 +271,16 @@ def _context_graph_data_uri(cg_id: str) -> str:
     return f"did:dkg:context-graph:{value}"
 
 
+def verifiable_memory_prefix(cg_id: str) -> str:
+    """The IRI prefix every confirmed asset graph of verified graph *cg_id*
+    starts with (``did:dkg:context-graph:<cg_id>/_verifiable_memory/``); ""
+    for an id that is not safe to embed. Takes any verified graph — the
+    configured one or its successor (trust-and-threat-lab R5) — so a reader can
+    tell which graph an asset belongs to by its IRI alone."""
+    data_graph = _context_graph_data_uri(cg_id)
+    return f"{data_graph}/_verifiable_memory/" if data_graph else ""
+
+
 def _verified_partitions_sparql(cg_id: str) -> str:
     """The verified graph's VM assertion graphs, PINNED to the graph owner.
 
@@ -277,7 +296,7 @@ def _verified_partitions_sparql(cg_id: str) -> str:
     data_graph = _context_graph_data_uri(cg_id)
     if not data_graph:
         return ""
-    vm_prefix = f"{data_graph}/_verifiable_memory/"
+    vm_prefix = verifiable_memory_prefix(cg_id)
     pin = _owner_pin(cg_id)
     return f"""PREFIX dkg: <http://dkg.io/ontology/>
 SELECT DISTINCT ?assertionGraph ?status WHERE {{
@@ -312,7 +331,7 @@ def _verified_partition_totals_sparql(cg_id: str) -> str:
     data_graph = _context_graph_data_uri(cg_id)
     if not data_graph:
         return ""
-    vm_prefix = f"{data_graph}/_verifiable_memory/"
+    vm_prefix = verifiable_memory_prefix(cg_id)
     return f"""PREFIX dkg: <http://dkg.io/ontology/>
 SELECT (COUNT(DISTINCT ?ka) AS ?assets) (SUM(?publicTriples) AS ?triples) WHERE {{
   GRAPH <{data_graph}/_meta> {{
@@ -324,6 +343,21 @@ SELECT (COUNT(DISTINCT ?ka) AS ?assets) (SUM(?publicTriples) AS ?triples) WHERE 
   FILTER(STRSTARTS(STR(?assertionGraph), {json.dumps(vm_prefix)}))
 }}
 """
+
+
+def signed_rows_sparql(graphs: Sequence[str], limit: int) -> str:
+    """The facts lane's once-per-NEW-asset read (trust-and-threat-lab R2, §03.4):
+    every triple of every SIGNED subject — one carrying the promotion envelope
+    literal under ``SIGNED_STATEMENT_PRED`` — in *graphs*. VALUES-bound to the
+    named graphs (index lookups, never a scan; LES-013/LES-040) and LIMITed, so
+    a caller that gets *limit* rows back knows the answer may be cut short.
+    "" when no graph IRI is safe to embed."""
+    values = " ".join(f"<{graph}>" for graph in graphs
+                      if graph and not any(char in _FORBIDDEN_IRI_CHARS for char in graph))
+    if not values:
+        return ""
+    return (f"SELECT ?g ?t ?p ?o WHERE {{ VALUES ?g {{ {values} }} GRAPH ?g {{ "
+            f"?t <{constants.SIGNED_STATEMENT_PRED}> ?signed . ?t ?p ?o . }} }} LIMIT {int(limit)}")
 
 
 # ---------------------------------------------------------------------------

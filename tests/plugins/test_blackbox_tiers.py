@@ -60,7 +60,7 @@ def test_build_from_rows_public_wins_dependency_collision_last_wins_regression()
     ident = "dep:npm:evil-pkg@1.0.0"
     vm_row = {
         "identifier": ident, "packageEcosystem": "npm", "packageName": "evil-pkg",
-        "packageVersion": "1.0.0", "severity": "critical", "name": "curated",
+        "packageVersion": "1.0.0", "severity": "critical", "name": "curated", "kind": "malware",
     }
     swm_row = {
         "identifier": ident, "packageEcosystem": "npm", "packageName": "evil-pkg",
@@ -95,6 +95,7 @@ def test_defender_entities_are_expanded_into_individual_rules():
             "packageVersion": "1.0.0",
             "severity": "critical",
             "name": f"package-{i}@1.0.0",
+            "kind": "malware",            # a verified rule without kind is flag-only (R4)
         })
     for i in range(103):
         rows.append({

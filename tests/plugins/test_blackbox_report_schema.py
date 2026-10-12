@@ -7,11 +7,12 @@ refused. Rejects never leave the machine.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from plugins.blackbox.community import report_builder
+from plugins.blackbox.community import report_builder, report_schema
 from plugins.blackbox.community.report_schema import ReportValidationError, validate_report
 from plugins.blackbox.kernel import constants, threat_ids
 
@@ -218,3 +219,166 @@ def test_a_malformed_ipv6_is_refused_by_the_grammar_not_repaired():
     for bad in ("2001:db8::zz", "2001:db8:::1", "[2001:db8::1"):
         canonical = threat_ids.normalize_ioc_value("ip", bad)
         assert not threat_ids.ioc_value_is_well_formed("ip", canonical), bad
+
+
+# ------------------------------- trust-and-threat-lab §03.6 (REP1): common fields, IOC reason, widened formats
+
+
+IOC_DOMAIN = threat_ids.ioc_identifier("domain", "evil.example")
+
+
+def test_matched_by_outside_the_vocabulary_is_refused():
+    for matched_by in sorted(report_schema.MATCHED_BY):
+        assert _ok("ioc", IOC_DOMAIN, ioc_type="domain", ioc_context="in-skill", matched_by=matched_by).matched_by == matched_by
+    for bad in ("heuristic", "verified graph", "llm", "VERIFIED-ish"):
+        _bad("ioc", IOC_DOMAIN, ioc_type="domain", ioc_context="in-skill", matched_by=bad)
+
+
+def test_blackbox_version_must_be_a_release_number():
+    for version in ("1.1.0", constants.__version__, "1.2.0rc1", "1.2.0+local", "10.0.20"):
+        assert _ok("ioc", IOC_DOMAIN, ioc_type="domain", ioc_context="in-skill",
+                   blackbox_version=version).blackbox_version == version
+    for bad in ("latest", "1", "v1.1.0", "1.1.0 beta", "1.1.0‮", "1." + "1" * 200):
+        _bad("ioc", IOC_DOMAIN, ioc_type="domain", ioc_context="in-skill", blackbox_version=bad)
+
+
+def test_the_common_fields_are_optional_so_older_reports_stay_valid():
+    record = _ok("ioc", IOC_DOMAIN, ioc_type="domain", ioc_context="in-skill")
+    assert (record.matched_by, record.blackbox_version, record.common_fields()) == ("", "", {})
+
+
+def test_an_ioc_reason_comes_from_the_fixed_list():
+    for reason in sorted(report_schema.IOC_REASONS):
+        record = _ok("ioc", IOC_DOMAIN, ioc_type="domain", ioc_context="in-skill", reason=reason)
+        assert dict(record.evidence)["reason"] == reason
+    for bad in ("it looked bad", "typosquat", "advisory:MAL-1", "https://evil.example"):
+        _bad("ioc", IOC_DOMAIN, ioc_type="domain", ioc_context="in-skill", reason=bad)
+
+
+def test_a_package_matched_by_the_verified_graph_needs_no_advisory_id():
+    record = _ok("dependency", *_dep()[:1], **_dep(reason="verified-match", matched_by="verified")[1])
+    assert dict(record.evidence)["reason"] == "verified-match" and "advisory_id" not in dict(record.evidence)
+    _bad("dependency", *_dep()[:1], **_dep(reason="verified-match")[1])                         # only a verified match
+    _bad("dependency", *_dep()[:1], **_dep(reason="verified-match", matched_by="built-in")[1])
+    _bad("dependency", *_dep("*")[:1], **_dep("*", reason="verified-match", matched_by="verified")[1])
+
+
+def test_an_injection_found_in_a_tools_input_can_be_reported():
+    inj = threat_ids.injection_identifier("ignore previous instructions")
+    assert dict(_ok("injection", inj, context="in-tool-input").evidence)["context"] == "in-tool-input"
+    assert set(constants.INJECTION_CONTEXTS) < set(report_schema.INJECTION_CONTEXTS)   # widened, nothing dropped
+
+
+def test_a_skill_matched_by_the_verified_graph_is_reported_by_name_and_version():
+    record = _ok("skill", "skill:evil@1.0", skill_name="evil", skill_version="1.0", matched_by="verified")
+    assert record.evidence == (("skill_name", "evil"), ("skill_version", "1.0"))
+    _bad("skill", "skill:evil@1.0", skill_name="evil", skill_version="1.0", matched_by="built-in")   # KI-159 holds
+    _bad("skill", "skill:evil@1.0", skill_name="evil", skill_version="1.0", matched_by="verified", registry="local")
+
+
+def _real_report_of_every_category():
+    """(identifier, evidence) — one real item per category, each stating both common fields."""
+    common = {"matched_by": "built-in", "blackbox_version": constants.__version__}
+    return [
+        (threat_ids.injection_identifier("ignore previous instructions"),
+         {"context": "in-tool-input", "owasp_category": "LLM01", **common}),
+        ("escalation:terminal:rm-rf-system-paths", {"tool_name": "terminal", "arg_shape": "rm-rf-system-paths", **common}),
+        ("dep:npm:evil@1.0", {"ecosystem": "npm", "package_name": "evil", "package_version": "1.0", "kind": "malware",
+                              "reason": "verified-match", **common, "matched_by": "verified"}),
+        ("dep:pypi:evil-pkg@2.0", {"ecosystem": "pypi", "package_name": "evil-pkg", "package_version": "2.0",
+                                   "kind": "malware", "reason": "advisory:MAL-2026-1", "advisory_id": "MAL-2026-1",
+                                   **common, "matched_by": "advisory"}),
+        ("fileaccess:read_file:ssh-private-key", {"tool_name": "read_file", "file_category": "ssh-private-key", **common}),
+        ("skill:evil@1.0", {"skill_name": "evil", "skill_version": "1.0", **common, "matched_by": "verified"}),
+        ("skill:evil@2.0", {"registry": "clawhub", "skill_name": "evil", "skill_version": "2.0", **common}),
+        (f"skill:artifact:{SHA}:credential-exfil", {"artifact_hash": SHA, "danger_shape": "credential-exfil", **common}),
+        (IOC_DOMAIN, {"ioc_type": "domain", "ioc_context": "fetched-by-tool", "reason": "phishing", **common}),
+    ]
+
+
+def test_writer_to_reader_parity_for_one_real_item_of_every_category():
+    """LES-032: the reader re-validates exactly what the writer validated and signed —
+    every writer-built report verifies, and the read side carries both common fields."""
+    from _community_rows import GRAPH, NETWORK, Reporter, signed_row
+    from plugins.blackbox.community import graph_stats
+    from plugins.blackbox.community.verification import ReportVerifier, verify_report_rows
+
+    items = _real_report_of_every_category()
+    assert {threat_ids.category_for(identifier) for identifier, _ in items} == set(report_schema._VALIDATORS)
+    reporter = Reporter("0xparity")
+    rows = [signed_row(identifier, reporter, category=threat_ids.category_for(identifier), **evidence)
+            for identifier, evidence in items]
+    verifier = ReportVerifier(NETWORK, GRAPH)
+    reports, dropped = verify_report_rows(rows, verifier)
+    assert dropped == 0 and verifier.drops["schema"] == 0
+    for (identifier, evidence), report in zip(items, reports):
+        fields = dict(report.fields)
+        assert report.identifier == identifier
+        assert (fields["matchedBy"], fields["blackboxVersion"]) == (evidence["matched_by"], evidence["blackbox_version"])
+    board = {t["identifier"]: t for t in graph_stats.most_reported_threats(reports, limit=len(items))}
+    assert board["dep:npm:evil@1.0"]["matched_by"] == ["verified"]
+    assert board[IOC_DOMAIN]["blackbox_versions"] == [constants.__version__]
+
+
+def test_the_reader_refuses_a_signed_matched_by_the_writer_would_refuse():
+    """A modified client can sign anything: the reader drops a signed report whose
+    common field is outside the closed vocabulary, as the writer would refuse to build it."""
+    from _community_rows import GRAPH, NETWORK, Reporter, signed_row
+    from plugins.blackbox.community.report_signer import REPORT_STATEMENT, ReportSigner
+    from plugins.blackbox.community.verification import ReportVerifier
+
+    reporter = Reporter("0xforger")
+    row = signed_row(IOC_DOMAIN, reporter, matched_by="verified")
+    payload = json.loads(row["signedStatement"])["payload"]
+    forged = {**payload, "matched_by": "trust-me"}
+    row = {**row, "matchedBy": "trust-me",
+           "signedStatement": ReportSigner(private_key=reporter.key, environment=NETWORK, graph=GRAPH).sign(REPORT_STATEMENT, forged)}
+    verifier = ReportVerifier(NETWORK, GRAPH)
+    assert verifier.verify(row) is None and verifier.drops["schema"] == 1
+
+
+def test_a_row_showing_another_matched_by_than_it_signed_is_dropped():
+    from _community_rows import GRAPH, NETWORK, Reporter, signed_row
+    from plugins.blackbox.community.verification import ReportVerifier
+
+    row = signed_row(IOC_DOMAIN, Reporter("0xtamper"), matched_by="built-in")
+    assert ReportVerifier(NETWORK, GRAPH).verify(row) is not None
+    assert ReportVerifier(NETWORK, GRAPH).verify({**row, "matchedBy": "verified"}) is None
+
+
+def test_the_builder_writes_the_common_fields_under_their_own_predicates_and_signs_them():
+    quads = report_builder.build_report_quads(identifier=IOC_DOMAIN, category="ioc", severity="high",
+                                              reporter_address="0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a",
+                                              ioc_type="domain", ioc_context="in-skill", reason="scam",
+                                              matched_by="advisory", blackbox_version="1.1.0")
+    by_predicate = {q["predicate"]: q["object"] for q in quads}
+    assert by_predicate[constants.MATCHED_BY_PRED] == '"advisory"'
+    assert by_predicate[constants.BLACKBOX_VERSION_PRED] == '"1.1.0"'
+    assert by_predicate[constants.REPORT_REASON_PRED] == '"scam"'
+    plain = report_builder.build_report_quads(identifier=IOC_DOMAIN, category="ioc", severity="high",
+                                              reporter_address="0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a",
+                                              ioc_type="domain", ioc_context="in-skill")
+    assert not {constants.MATCHED_BY_PRED, constants.BLACKBOX_VERSION_PRED} & {q["predicate"] for q in plain}
+
+
+def test_the_reader_holds_the_verified_only_gates_against_a_forged_matched_by():
+    """REP1 review: the two widened formats that need ``matched_by=verified`` (a
+    verified-match dependency, a skill by name + version without a registry) are
+    refused on READ when a modified client signs them with any other matched_by —
+    the reader runs the writer's gates on the signed payload (LES-032)."""
+    from _community_rows import GRAPH, NETWORK, Reporter, signed_row
+    from plugins.blackbox.community.report_signer import REPORT_STATEMENT, ReportSigner
+    from plugins.blackbox.community.verification import ReportVerifier
+
+    reporter = Reporter("0xdowngrade")
+    signer = ReportSigner(private_key=reporter.key, environment=NETWORK, graph=GRAPH)
+    rows = [signed_row("dep:npm:evil@1.0", reporter, reason="verified-match", matched_by="verified"),
+            signed_row("skill:evil@1.0", reporter, skill_name="evil", skill_version="1.0", matched_by="verified")]
+    verifier = ReportVerifier(NETWORK, GRAPH)
+    assert all(verifier.verify(row) is not None for row in rows)              # genuine verified matches pass
+    for row in rows:
+        payload = json.loads(row["signedStatement"])["payload"]
+        forged = {**row, "matchedBy": "built-in",
+                  "signedStatement": signer.sign(REPORT_STATEMENT, {**payload, "matched_by": "built-in"})}
+        assert verifier.verify(forged) is None
+    assert verifier.drops["schema"] == 2

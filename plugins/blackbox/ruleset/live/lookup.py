@@ -131,7 +131,9 @@ class VerifiedLookup:
         return LookupAnswer(rules, HIT if rules else CLEAN)
 
     def _rules_from(self, rows: Iterable[Dict[str, str]], category: str) -> Dict[str, Dict[str, Any]]:
-        """Triples → rules through the compiler's own builders, scope applied."""
+        """Triples → rules through the compiler's own builders, scope applied
+        (a FLAG-tier asset's rules capped at flag, a signed asset's served from
+        their signed payload, a transplanted row dropped — :meth:`VerifiedScope.as_tier_allows`)."""
         by_graph: Dict[str, List[Tuple[str, str, str]]] = {}
         for row in rows:
             graph = extract_binding(row.get("g"))
@@ -148,7 +150,9 @@ class VerifiedLookup:
                 _category, key, rule = mapped
                 if rule.get("identifier") in self.scope.revoked_identifiers:
                     continue
-                rules.setdefault(key, rule)
+                allowed = self.scope.as_tier_allows(graph, category, key, rule)
+                if allowed is not None:
+                    rules.setdefault(key, allowed)
         return rules
 
 

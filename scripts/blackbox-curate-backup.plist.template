@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Agent Blackbox — nightly curator-state backup pull (launchd, the administering Mac).
+  Fill the __PLACEHOLDERS__ with absolute paths, save as
+  ~/Library/LaunchAgents/ai.umanitek.blackbox-curate-backup.plist, then:
+      launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.umanitek.blackbox-curate-backup.plist
+  __RECIPIENT__ is the backup CERTIFICATE only (public); the private key stays off this Mac.
+  PATH puts Homebrew first: the pull needs OpenSSL 3, not macOS's LibreSSL.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.umanitek.blackbox-curate-backup</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__SCRIPT__</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>BLACKBOX_BACKUP_NODES</key>
+        <string>__NODES_FILE__</string>
+        <key>BLACKBOX_BACKUP_RECIPIENT</key>
+        <string>__RECIPIENT__</string>
+        <key>BLACKBOX_BACKUP_DIR</key>
+        <string>__BACKUP_DIR__</string>
+    </dict>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>17</integer>
+    </dict>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>__LOG_DIR__/blackbox-curate-backup.log</string>
+    <key>StandardErrorPath</key>
+    <string>__LOG_DIR__/blackbox-curate-backup.log</string>
+</dict>
+</plist>

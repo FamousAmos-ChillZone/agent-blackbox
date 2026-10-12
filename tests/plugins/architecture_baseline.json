@@ -1,10 +1,10 @@
 {
-  "_comment": "Baselined when the structure guard landed (2026-10-01). Numbers may only shrink: lower them in the commit that shrinks the code; delete an entry once it is under the alarm. Never raise one.",
+  "_comment": "Baselined when the structure guard landed (2026-10-01). Numbers may only shrink: lower them in the commit that shrinks the code; delete an entry once it is under the alarm. Never raise one. HEADROOM BUDGET (2026-10-11) for files under the alarm that new curator work will grow — they may NOT be added here; a feature commit may not carry any past 400 lines, so an extraction (own commit, suite green) lands first: curate/service/beat.py 23 lines left (377), ruleset/compiler.py 51 (349), curate/verbs.py 68 (332), community/trust/authority_read.py 138 (262), kernel/signing/key_manifest.py 147 (253).",
   "files": {
-    "dashboard/server.py": 2030,
+    "dashboard/server.py": 1999,
     "kernel/config.py": 427,
     "kernel/dkg_client.py": 641,
-    "sync/command.py": 1405
+    "sync/command.py": 1402
   },
   "functions": {
     "attach/hermes_homes.py::attach_hermes": 58,
@@ -22,7 +22,7 @@
     "dashboard/server.py::_profile_activity_state": 61,
     "dashboard/server.py::_sync_activity": 271,
     "dashboard/server.py::_sync_ruleset_once": 66,
-    "dashboard/server.py::create_app": 1217,
+    "dashboard/server.py::create_app": 1184,
     "dashboard/server.py::create_app._blackbox_runtime_loop": 87,
     "dashboard/server.py::create_app._ruleset_sync_loop": 51,
     "dashboard/server.py::create_app.agents": 166,
@@ -38,13 +38,13 @@
     "kernel/config.py::load_blackbox_config": 133,
     "kernel/settings.py::_validate": 99,
     "ruleset/compiler.py::Ruleset.graph_entries": 47,
-    "ruleset/compiler.py::build_from_rows": 61,
+    "ruleset/compiler.py::build_from_rows": 51,
     "ruleset/fetching.py::fetch_tier": 49,
     "ruleset/locks.py::_ruleset_refresh_lock": 75,
     "ruleset/refresh_cycle.py::_refresh_unlocked": 69,
-    "ruleset/row_adapters.py::_row_to_rule": 120,
+    "ruleset/row_adapters.py::_row_to_rule": 100,
     "sync/command.py::_catchup_authoritative_vm": 468,
-    "sync/command.py::_cmd_sync_impl": 624,
+    "sync/command.py::_cmd_sync_impl": 622,
     "sync/managed_node.py::_managed_dkg_node_executable": 40,
     "sync/managed_node.py::_restart_managed_dkg": 82,
     "sync/progress.py::read_durable_progress": 62

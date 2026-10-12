@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from typing import AbstractSet, Any, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from ...kernel import constants, signing
 from ...kernel.config import BlackboxConfig
@@ -58,16 +58,22 @@ class _Resolved:
     ``manifest`` readers act on (None: no curator statement of this authority
     counts), whether two trusted manifests ``conflict``, whether the manifest
     could not be read (``unavailable``), the authority's statements from the
-    VERIFIED graph (``enforcement_rows`` — the verified authority only) and
-    the trusted manifest rows worth storing (the community authority only)."""
+    VERIFIED graph (``enforcement_rows`` — the verified authority only), the
+    trusted manifest rows worth storing (the community authority only), whether
+    a conflict at or below this reader's sticky order was ignored
+    (``ignored_conflict``, T1), the sticky (order, content hash) to store and
+    the ``freeze_order`` whose rows the store must keep."""
 
     authority: Authority
-    roots: FrozenSet[str] = frozenset()
+    roots: trust_anchors.RootPins = trust_anchors.RootPins()
     manifest: Optional[key_manifest.KeyManifest] = None
     conflict: bool = False
     unavailable: bool = False
     enforcement_rows: Tuple[Row, ...] = ()
     manifest_rows: Tuple[Dict[str, str], ...] = ()
+    ignored_conflict: bool = False
+    sticky: Tuple[Optional[Tuple[int, int]], str] = (None, "")
+    freeze_order: Optional[Tuple[int, int]] = None
 
 
 def read_curator_view(client: DkgClient, cfg: BlackboxConfig, environment: str = "", *,
@@ -87,8 +93,8 @@ def read_curator_view(client: DkgClient, cfg: BlackboxConfig, environment: str =
     except Exception as exc:  # node unreachable: no curator view this time
         logger.debug("blackbox: curator view skipped (%s)", exc)
         return curator_view.CuratorView()
-    verified_roots = trust_anchors.trusted_roots(environment) if environment else frozenset()
-    community_roots = _community_roots(cfg) if environment else frozenset()
+    verified_roots = trust_anchors.RootPins.for_environment(environment) if environment else trust_anchors.RootPins()
+    community_roots = _community_roots(cfg) if environment else trust_anchors.RootPins()
     if not verified_roots and not community_roots:
         return curator_view.CuratorView()   # no root, no manifest, no curator statement counts
     today = curator_view.today_utc()
@@ -96,13 +102,19 @@ def read_curator_view(client: DkgClient, cfg: BlackboxConfig, environment: str =
     store = trust_store.TrustStore()
     stored = store.load(graph) if graph else trust_store.StoredTrust()
     statements, readable, complete = _community_statements(client, graph, stored, interest)
-    verified = _resolve_verified(client, cfg, environment, verified_roots, today)
+    verified_graph = cfg.context_graph_id
+    verified = _resolve_verified(client, cfg, environment, verified_roots,
+                                 store.load(verified_graph) if verified_graph else trust_store.StoredTrust(), today)
     community = _resolve_community(client, cfg, environment, community_roots, stored, today)
     kept, community_keys = _verifiable(statements, verified, community, graph)
     admission = raising_budget.admit([row for row in kept if trust_store.statement_key(row) in community_keys],
                                      stored.admitted, first_read=stored.baseline_until is None, today=today)
+    if verified_graph:
+        store.remember_effective(verified_graph, *verified.sticky)   # D31: the list acted on is sticky
     if graph:
-        store.remember(graph, community.manifest_rows, kept, admitted=admission.admitted)
+        store.remember_effective(graph, *community.sticky)
+        store.remember(graph, community.manifest_rows, kept, admitted=admission.admitted,
+                       keep_orders=[community.freeze_order] if community.freeze_order else [])
     verified_view = _view(verified, statements, readable, cfg, today)
     acted_on = [row for row in statements if trust_store.statement_key(row) not in admission.held]
     community_view = replace(_view(community, acted_on, readable, cfg, today), held_raising=len(admission.held),
@@ -112,14 +124,14 @@ def read_curator_view(client: DkgClient, cfg: BlackboxConfig, environment: str =
     return combine(verified_view, community_view, today=today)
 
 
-def _community_roots(cfg: BlackboxConfig) -> FrozenSet[str]:
+def _community_roots(cfg: BlackboxConfig) -> trust_anchors.RootPins:
     """The community roots for this node's community graph — none when the
     community graph is also configured as the verified graph (the two
     authorities must never share a graph)."""
     graph = cfg.community_graph_id
     if not graph or graph == cfg.context_graph_id:
-        return frozenset()
-    return trust_anchors.community_roots(graph)
+        return trust_anchors.RootPins()
+    return trust_anchors.RootPins.unbound(trust_anchors.community_roots(graph))
 
 
 def _community_statements(client: DkgClient, graph: str, stored: trust_store.StoredTrust,
@@ -140,8 +152,8 @@ def _community_statements(client: DkgClient, graph: str, stored: trust_store.Sto
     return rows, found.complete or bool(stored.statements), found.complete
 
 
-def _resolve_verified(client: DkgClient, cfg: BlackboxConfig, environment: str, roots: FrozenSet[str],
-                      today: str) -> _Resolved:
+def _resolve_verified(client: DkgClient, cfg: BlackboxConfig, environment: str, roots: trust_anchors.RootPins,
+                      stored: trust_store.StoredTrust, today: str) -> _Resolved:
     """The VERIFIED authority: its manifest and enforcement statements, both
     from the verified graph (one writer, so it is read by scan as before)."""
     if not roots:
@@ -151,17 +163,29 @@ def _resolve_verified(client: DkgClient, cfg: BlackboxConfig, environment: str, 
     if manifest_rows is None:   # KI-228: a FAILED page is not an empty one
         return _Resolved(Authority.VERIFIED, roots, unavailable=True)
     manifests = manifest_policy.trusted_manifests(manifest_rows, environment, verified, roots)
-    manifest = manifest_policy.effective_manifest(manifests, today)   # R7b time-lock; round 4: dated beats undated, conflicts freeze
-    conflict = manifest_policy.manifests_conflict(manifests)   # R10b SECURITY alarm
-    if manifest is None:
-        return _Resolved(Authority.VERIFIED, roots, conflict=conflict)
+    resolved = _resolve_manifest(Authority.VERIFIED, roots, manifests, stored, today)
+    if resolved.manifest is None:
+        return resolved
     rows = page_rows(client, verified, memory, curator_statements.curator_statements_sparql)
     if rows is None:   # KI-228: enforcement statements live here; a failed page must freeze, not erase
-        return _Resolved(Authority.VERIFIED, roots, manifest, conflict, unavailable=True)
-    return _Resolved(Authority.VERIFIED, roots, manifest, conflict, enforcement_rows=tuple(rows))
+        return replace(resolved, unavailable=True)
+    return replace(resolved, enforcement_rows=tuple(rows))
 
 
-def _resolve_community(client: DkgClient, cfg: BlackboxConfig, environment: str, roots: FrozenSet[str],
+def _resolve_manifest(authority: Authority, roots: trust_anchors.RootPins, manifests: List[key_manifest.ManifestVerdict],
+                      stored: trust_store.StoredTrust, today: str) -> _Resolved:
+    """The reader policy for one authority (:mod:`.manifests`, D31): the manifest
+    acted on given this node's sticky order, the freezing conflict (R10b), the
+    ignored one (T1), the sticky pair to store next and the freeze to keep."""
+    sticky = stored.effective_order
+    manifest = manifest_policy.effective_manifest(manifests, today, sticky, sticky_hash=stored.effective_hash)
+    return _Resolved(authority, roots, manifest, manifest_policy.manifests_conflict(manifests, sticky),
+                     ignored_conflict=manifest_policy.ignored_conflict(manifests, sticky),
+                     sticky=manifest_policy.sticky_after(manifests, today, sticky, stored.effective_hash),
+                     freeze_order=manifest_policy.freeze_order(manifests, sticky))
+
+
+def _resolve_community(client: DkgClient, cfg: BlackboxConfig, environment: str, roots: trust_anchors.RootPins,
                        stored: trust_store.StoredTrust, today: str) -> _Resolved:
     """The COMMUNITY authority: its manifest from the community graph (stored
     copies plus a lookup), verified against the roots pinned for THIS graph."""
@@ -171,12 +195,11 @@ def _resolve_community(client: DkgClient, cfg: BlackboxConfig, environment: str,
     found = bounded_read.lookup_manifests(client, graph, trust_store.manifest_orders(stored.manifests))
     rows = bounded_read.fold([*stored.manifests, *found.rows])
     manifests = manifest_policy.trusted_manifests(rows, environment, graph, roots)
-    manifest = manifest_policy.effective_manifest(manifests, today)
+    resolved = _resolve_manifest(Authority.COMMUNITY, roots, manifests, stored, today)
     # Nothing trusted known is "no community authority" only when the lookup was
     # complete; otherwise this node simply could not look (KI-241, KI-244).
-    return _Resolved(Authority.COMMUNITY, roots, manifest, manifest_policy.manifests_conflict(manifests),
-                     unavailable=manifest is None and not found.complete,
-                     manifest_rows=tuple(_trusted_manifest_rows(rows, environment, graph, roots)))
+    return replace(resolved, unavailable=resolved.manifest is None and not found.complete,
+                   manifest_rows=tuple(_trusted_manifest_rows(rows, environment, graph, roots)))
 
 
 def _view(resolved: _Resolved, statements: Sequence[Row], readable: bool, cfg: BlackboxConfig,
@@ -184,6 +207,12 @@ def _view(resolved: _Resolved, statements: Sequence[Row], readable: bool, cfg: B
     """One authority's view from its resolved manifest and the community-graph
     *statements*. With a manifest but nothing known about the community graph's
     statements, the view is unavailable: unknown is not "they said nothing"."""
+    return replace(_statements_view(resolved, statements, readable, cfg, today),
+                   manifest_conflict_ignored=resolved.ignored_conflict)
+
+
+def _statements_view(resolved: _Resolved, statements: Sequence[Row], readable: bool, cfg: BlackboxConfig,
+                     today: str) -> curator_view.CuratorView:
     if resolved.manifest is None or resolved.unavailable:
         return curator_view.CuratorView(authority=resolved.authority, manifest=resolved.manifest,
                                         manifest_conflict=resolved.conflict, unavailable=resolved.unavailable)
@@ -192,16 +221,18 @@ def _view(resolved: _Resolved, statements: Sequence[Row], readable: bool, cfg: B
                                         manifest_conflict=resolved.conflict, unavailable=True)
     return curator_view.build_view(resolved.manifest, resolved.enforcement_rows, statements,
                                    verified_graph=cfg.context_graph_id, community_graph=cfg.community_graph_id,
-                                   today=today, manifest_conflict=resolved.conflict, root_keys=resolved.roots,
+                                   today=today, manifest_conflict=resolved.conflict, root_keys=resolved.roots.keys,
                                    community_readable=readable, authority=resolved.authority)
 
 
-def _trusted_manifest_rows(rows: Iterable[Row], environment: str, graph: str, roots: AbstractSet[str]) -> List[Dict[str, str]]:
-    """The manifest rows a trusted root signed for this network and graph (worth storing)."""
+def _trusted_manifest_rows(rows: Iterable[Row], environment: str, graph: str,
+                           roots: trust_anchors.RootPins) -> List[Dict[str, str]]:
+    """The manifest rows a trusted root signed for this network and graph (worth
+    storing — freeze-only ones too: a conflict must survive the next read)."""
     kept = []
     for row in rows:
         envelope = signing.from_text(str(row.get(curator_statements.SIGNED_STATEMENT_VAR, "")))
-        if key_manifest.verify_manifest(envelope, environment=environment, graph=graph, root_keys=roots) is not None:
+        if key_manifest.verify_manifest(envelope, environment=environment, graph=graph, roots=roots) is not None:
             kept.append({"r": str(row.get("r", "")), "identifier": "", "signedStatement": str(row.get("signedStatement", ""))})
     return kept
 
@@ -222,7 +253,7 @@ def _verifiable(statements: Iterable[Row], verified: _Resolved, community: _Reso
         for resolved in (verified, community):
             if resolved.manifest is None:
                 continue
-            record = curator_statements.parse_statement(row, resolved.manifest, graph=graph, root_keys=resolved.roots,
+            record = curator_statements.parse_statement(row, resolved.manifest, graph=graph, root_keys=resolved.roots.keys,
                                                         curators_silent=True)
             if record is not None and record.kind in allowed_kinds(resolved.authority, in_verified_graph=False):
                 key = trust_store.statement_key(row)

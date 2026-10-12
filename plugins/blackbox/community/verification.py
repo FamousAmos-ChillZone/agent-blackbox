@@ -58,6 +58,8 @@ EVIDENCE_PAYLOAD_KEYS: Mapping[str, str] = {
     "skillRegistry": "registry",            # Refine R1 (§04)
     "iocContext": "ioc_context",            # Refine R1 (§04)
     "reportReason": "reason",               # Refine R1 (§04)
+    "matchedBy": "matched_by",              # trust-and-threat-lab §03.6 (common field)
+    "blackboxVersion": "blackbox_version",  # trust-and-threat-lab §03.6 (common field)
 }
 
 #: The reader query variable that carries the envelope.

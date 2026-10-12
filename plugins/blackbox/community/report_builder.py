@@ -51,8 +51,16 @@ _EVIDENCE_FIELDS: Dict[str, Tuple[Tuple[str, str], ...]] = {
     # curators' evidence queries bound nothing for it. The value itself already
     # lives IN the identifier (ioc:{type}:{value}); the type travels as its own
     # field so reviewers can filter without parsing.
-    "ioc": (("ioc_type", constants.IOC_TYPE_PRED), ("ioc_context", constants.IOC_CONTEXT_PRED)),
+    "ioc": (("ioc_type", constants.IOC_TYPE_PRED), ("ioc_context", constants.IOC_CONTEXT_PRED),
+            ("reason", constants.REPORT_REASON_PRED)),   # §03.6: why the indicator is bad (IOC_REASONS)
 }
+
+#: The common fields any category may carry (trust-and-threat-lab §03.6), in
+#: emission order after the evidence: (keyword argument, predicate).
+_COMMON_FIELDS: Tuple[Tuple[str, str], ...] = (
+    ("matched_by", constants.MATCHED_BY_PRED),
+    ("blackbox_version", constants.BLACKBOX_VERSION_PRED),
+)
 
 
 def _day(ts: Optional[datetime]) -> datetime:
@@ -65,10 +73,11 @@ def _day(ts: Optional[datetime]) -> datetime:
 
 
 def _evidence(record: report_schema.ReportRecord) -> List[Tuple[str, str, str]]:
-    """(name, predicate, value) for each field of a VALIDATED record, in the
-    table's emission order."""
-    values = dict(record.evidence)
-    return [(name, predicate, values[name]) for name, predicate in _EVIDENCE_FIELDS.get(record.category, ()) if name in values]
+    """(name, predicate, value) for each field of a VALIDATED record — its
+    evidence in the table's emission order, then the common fields it states."""
+    values = {**dict(record.evidence), **record.common_fields()}
+    table = (*_EVIDENCE_FIELDS.get(record.category, ()), *_COMMON_FIELDS)
+    return [(name, predicate, values[name]) for name, predicate in table if name in values]
 
 
 def _signature_quad(subject: str, signer: ReportSigner, statement_type: str, payload: Dict[str, str]) -> rdf_terms.Quad:
@@ -94,6 +103,8 @@ def build_report_quads(
     passed as keyword arguments; what each category may carry, and every
     rule it must meet, is :mod:`.report_schema` (Refine R1) — a bad report
     raises :class:`.report_schema.ReportValidationError` and is never built.
+    The common fields ``matched_by`` and ``blackbox_version`` (§03.6) are
+    keyword arguments like the evidence and are written and signed with it.
     Timestamps are rounded to the day (decision 25). With a *signer* the
     report carries a signed envelope over its fields (R0b).
     """

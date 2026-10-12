@@ -16,7 +16,11 @@ from typing import Any, Optional
 
 from . import node_ui_views
 from .commands import cmd_curate
+from .console import add_console_parser
 from .context import CompiledRuleset
+from .lab.commands import add_lab_parser
+from .publishing.commands import add_publishing_parser
+from .service.commands import add_service_parser
 
 
 def add_curate_parser(sub: "argparse._SubParsersAction", *, compiled_ruleset: Optional[CompiledRuleset] = None) -> None:
@@ -49,9 +53,12 @@ def add_curate_parser(sub: "argparse._SubParsersAction", *, compiled_ruleset: Op
     _add_consent(h)
     verbs_.add_parser("upkeep", help="Re-publish this node's current statements before shared memory forgets them")
     _add_handoff(verbs_)
-    _add_service(verbs_)
-    w = verbs_.add_parser("watch", help="Intake: announce NEW threats to a webhook")
-    w.add_argument("--webhook", required=True)
+    add_service_parser(verbs_)
+    add_console_parser(verbs_)
+    add_lab_parser(verbs_)
+    add_publishing_parser(verbs_)
+    w = verbs_.add_parser("watch", help="Intake: announce NEW threats and alarms to this node's sink")
+    w.add_argument("--webhook", default="", help="a webhook URL (default: <curate home>/alarm_sink.json)")
     w.add_argument("--interval", type=float, default=60.0)
     w.add_argument("--once", action="store_true")
     vi = verbs_.add_parser("views", help="Install the saved node-UI queries (query catalog)")
@@ -68,11 +75,13 @@ def _add_keys(verbs_: Any) -> None:
     k.add_argument("--root", action="store_true", help="SANDBOX: also create/show a local root key")
     m = verbs_.add_parser("manifest", help="SANDBOX: stage a root-signed key manifest (then `publish`)")
     m.add_argument("--curator-key", dest="curator_keys", action="append", required=True, metavar="HEX")
+    m.add_argument("--curator-operator", dest="curator_operators", action="append", required=True, metavar="NAME",
+                   help="the organisation running each --curator-key, in the same order (a quorum counts one key per operator)")
     m.add_argument("--threshold", type=int, default=2)
     m.add_argument("--promotion-author", dest="promotion_author", default="", metavar="ADDRESS",
                    help="verified authority only: the pinned publisher of verified rows")
     m.add_argument("--issued-day", dest="issued_day", default="", metavar="YYYY-MM-DD",
-                   help="date the manifest (60-day validity, 72 h time-lock); omit for no clock")
+                   help="date the manifest (60-day validity, 1-day time-lock); omit for no clock")
     m.add_argument("--root-epoch", dest="root_epoch", type=int, default=1)
     m.add_argument("--manifest-version", dest="manifest_version", type=int, default=1,
                    help="the manifest's version number (never --version: Hermes owns that name, KI-276)")
@@ -112,19 +121,6 @@ def _add_handoff(verbs_: Any) -> None:
     b.add_argument("--root", default="", metavar="HEX", help="the community root key (default: the one pinned for the graph)")
     b.add_argument("--network", default="", metavar="ID", help="the network id the bundle must be for (default: this node's)")
     b.add_argument("--graph", default="", metavar="ID", help="the community graph the bundle must be for (default: this node's)")
-
-
-def _add_service(verbs_: Any) -> None:
-    """The curator service's verbs (``policy``, ``run``)."""
-    r = verbs_.add_parser("run", help="The curator service: heartbeat, routine confirmations, the ladder, keep-alive; the rest waits for a person")
-    r.add_argument("--peer", action="append", metavar="PEER", help="another curator's node (name or peer id); repeat for each")
-    r.add_argument("--interval", type=float, default=300.0, help="seconds between beats (default 300, at least 60)")
-    r.add_argument("--once", action="store_true", help="one beat, then exit")
-    o = verbs_.add_parser("policy", help="The automation policy: what the curator service may sign on its own; accept or withdraw it")
-    change = o.add_mutually_exclusive_group()
-    change.add_argument("--accept", action="store_true", help="accept the policy exactly as shown (needs --code)")
-    change.add_argument("--withdraw", action="store_true", help="withdraw the standing consent")
-    o.add_argument("--code", default=None, help="the 8-hex code shown under the policy text")
 
 
 def _add_reputation(verbs_: Any) -> None:

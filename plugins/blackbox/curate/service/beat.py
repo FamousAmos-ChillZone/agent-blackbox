@@ -8,15 +8,20 @@ in the same order:
 3. co-sign — for each proposal the policy allows, check it AGAIN on this
    node, co-sign and publish; everything else waits for a person;
 4. first signatures — for each new threat in the queue: confirm a dependency
-   this node itself found a malicious-package advisory for (sign, send to the
-   other curators), defer or lapse by the clock, acknowledge the rest;
+   the outside sources gave a malicious-package advisory for (sign, send to the
+   other curators), defer or lapse by the clock, acknowledge the rest. Before
+   it: the source look-ups and the lab's collect; after it: the lab's submit;
 5. credit — record the outcome of every published verdict in the private ledger;
 6. ladder — propose the listings, renewals and delistings the ledger calls for;
-7. keep alive — re-publish this node's current statements before shared memory forgets them.
+7. keep alive — re-publish this node's current statements before shared memory forgets them;
+8. publish a batch (``--publisher`` node only); then the weekly withdrawal
+   re-check and the alarms. Those steps' bodies live in their own modules
+   (:mod:`.steps` adapts each to the beat).
 
 Nothing is signed unless this machine's key is a curator key of the trusted
 manifest AND its operator accepted the automation policy as it reads today
-(:mod:`.policy_consent`). Without that the beat still reads, credits and
+(:mod:`.policy_consent`) AND its self-test passes (:mod:`.self_test` — a failing
+curator is suspended until a run passes). Without that the beat still reads, credits and
 lists what waits for a person. Two nodes reach the same answer separately:
 the first signs after its own check, the second signs only after ITS own
 check; a proposal the second node cannot reproduce is not co-signed.
@@ -41,23 +46,26 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import replace
-from datetime import date, datetime, timezone
-from typing import Callable, List, Mapping, Optional, Sequence
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Callable, List, Mapping, Optional, Sequence
 
 from ... import community
 from ...community import reputation
 from ...kernel import signing
 from ...kernel.signing.statement_order import CuratorStatement
 from .. import keys, publishing, queue, transport, verbs
-from ..context import CurateContext, verified_identifiers
+from ..context import CurateContext
 from ..ladder import outcomes
 from ..proposal import Proposal, ProposalState, ProposalStore
 from ..upkeep import heartbeat, published
-from . import evidence, inbox, policy
+from . import evidence, inbox, policy, self_test
 from .budget import ServiceBudget
 from .policy import Action, Facts, PolicyDecision
 from .policy_consent import PolicyConsent
-from .report import BeatReport, HumanItem, Run, standing
+from .report import SETTLED, BeatReport, HumanItem, Run, standing
+
+if TYPE_CHECKING:   # .steps is imported when a beat is built: it loads curate.sources, which reads this package
+    from .steps import ServiceSteps
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +73,6 @@ logger = logging.getLogger(__name__)
 ContextFactory = Callable[[Sequence[str]], CurateContext]
 OwnLookup = Callable[[str], evidence.OwnCheck]
 
-#: Verdicts after which the service has nothing more to do for a threat.
-_SETTLED = frozenset({CuratorStatement.CONFIRMATION, CuratorStatement.REJECTION, CuratorStatement.REVOCATION})
 #: Which daily limit an action counts against (reductions and notices: none).
 _LIMITED = {Action.CONFIRM: "confirm", Action.LIST: "list"}
 #: The note on a proposal the other curators have been sent.
@@ -80,21 +86,32 @@ class Beat:
     """The curator service's beat. *context* builds a fresh context for the
     identifiers a beat needs; *peers* — the other curators' nodes (proposals
     are sent to each); *lookup* — this node's own advisory check (injected so
-    a test can stand in for the public source)."""
+    a test can stand in for the public source) — the co-sign re-check; *steps* — the
+    trust-and-threat-lab steps (:class:`.steps.ServiceSteps`; none when not given)."""
 
     def __init__(self, context: ContextFactory, *, peers: Sequence[str] = (), lookup: OwnLookup = evidence.own_check,
                  store: Optional[ProposalStore] = None, consent: Optional[PolicyConsent] = None,
                  budget: Optional[ServiceBudget] = None, ledger: Optional[reputation.ReputationLedger] = None,
-                 clock: Callable[[], float] = time.time) -> None:
+                 clock: Callable[[], float] = time.time, tester: Optional[self_test.SelfTest] = None,
+                 steps: Optional[ServiceSteps] = None) -> None:
         self._context, self._peers, self._lookup, self._clock = context, tuple(peers), lookup, clock
+        self._tester = tester or self_test.SelfTest()   # *tester*: the self-test, run at start, daily, and while failing
         self._store, self._consent, self._budget, self._ledger = store, consent, budget, ledger
+        self._steps = steps or _no_steps()
 
     # -- the fixed order ----------------------------------------------------
 
     def run(self) -> BeatReport:
-        run = self._begin()
-        for step in (self._heartbeat, self._read, self._cosign, self._first_signatures, self._credit, self._ladder,
-                     self._keep_alive):
+        run, more = self._begin(), self._steps
+        for step in (self._heartbeat, self._read, self._cosign,
+                     more.look_up,         # SRC1: the outside sources, budgeted
+                     more.lab_collect,     # L2: finished lab runs, before the verdicts
+                     self._first_signatures,
+                     more.lab_submit,      # L4: lab jobs for what no source lists
+                     self._credit, self._ladder, self._keep_alive,
+                     more.publish_batch,   # step 8, P4: the --publisher node only
+                     more.withdrawal,      # SRC4: weekly
+                     more.watch):          # W1-W3: alarms, the dead-man beat, metrics
             name = step.__name__.strip("_").replace("_", " ")
             try:
                 step(run)
@@ -114,12 +131,14 @@ class Beat:
                   *(f"author:{key}" for key in ledger.keys())]
         ctx = self._context(wanted)
         my_key = keys.curator_key_store().public_key_hex()
+        today = datetime.fromtimestamp(self._clock(), timezone.utc).date().isoformat()
+        suspended = self_test.why_suspended(self._tester.check(today))   # a failed self-test signs nothing
         why_not = ""
         if ctx.manifest is None or my_key not in ctx.manifest.curator_keys:
             why_not = "this machine's key is not a curator key of a trusted manifest"
         elif not (self._consent or PolicyConsent()).accepted(policy.policy_text(), my_key):
             why_not = "the automation policy is not accepted on this machine (`blackbox curate policy`)"
-        today = datetime.fromtimestamp(self._clock(), timezone.utc).date().isoformat()
+        why_not = why_not or suspended
         return Run(ctx=ctx, store=store, ledger=ledger, budget=self._budget or ServiceBudget(), today=today,
                     my_key=my_key, why_not=why_not)
 
@@ -178,6 +197,7 @@ class Beat:
         if inbox.published_elsewhere(run.ctx, proposal, envelope):
             done = proposal.transition(ProposalState.APPROVED).transition(ProposalState.PUBLISHED, note="published by another curator")
             run.store.save(done)
+            transport.DeliveryLedger().delivered(proposal.id)
         elif proposal.note != SENT:
             self._send(run, proposal)
 
@@ -210,29 +230,14 @@ class Beat:
         if action is Action.CONFIRM:
             return Facts(malicious_advisory=check.advisory, evidence_cited=fields.get("evidence", ""))
         if action is Action.DEFER:
-            return Facts(corroborated=self._stage(run, identifier) == "corroborated",
+            return Facts(corroborated=evidence.community_stage(run.ctx.compiled, identifier) == "corroborated",
                          lookup_clean=check.status is evidence.Lookup.CLEAN)
         if action is Action.LAPSE_DEFERRAL:
-            return Facts(deferral_age_days=self._deferral_age(run, identifier))
+            return Facts(deferral_age_days=evidence.deferral_age_days(run.ctx.own_view, identifier, run.today))
         if action in (Action.LIST, Action.DELIST) and identifier.startswith("author:"):
             return Facts(ledger_calls_for=evidence.ledger_calls_for(identifier[len("author:"):], run.ctx.own_view,
                                                                     run.ledger, run.today))
         return Facts()
-
-    @staticmethod
-    def _stage(run: Run, identifier: str) -> str:
-        rules = run.ctx.compiled.community if run.ctx.compiled is not None else {}
-        return str((rules.get(identifier) or {}).get("stage", ""))
-
-    @staticmethod
-    def _deferral_age(run: Run, identifier: str) -> int:
-        record = run.ctx.own_view.verdicts.get(identifier)
-        if record is None or record.kind is not CuratorStatement.DEFERRAL:
-            return -1
-        try:
-            return (date.fromisoformat(run.today) - date.fromisoformat(record.day)).days
-        except ValueError:
-            return -1
 
     def _allowed(self, run: Run, decision: PolicyDecision, what: str) -> bool:
         """May the service sign this automatic decision NOW: it may sign at
@@ -266,36 +271,37 @@ class Beat:
                 delivered += 1 if verbs.send(run.ctx, proposal, peer).get("delivered") else 0
             except Exception as exc:   # one unreachable curator must not stop the others being asked
                 logger.info("blackbox curate service: proposal %s not delivered to %s (%s)", proposal.id, peer, exc)
+        ledger = transport.DeliveryLedger()
         if delivered:
             run.store.save(replace(proposal, note=SENT))
-        else:
-            run.errors.append(f"proposal {proposal.id} reached no other curator yet (retrying next beat)")
+            ledger.delivered(proposal.id)
+        else:   # retried every beat; an alarm from the third (transport.ALARM_AFTER_BEATS)
+            run.errors.append(ledger.failed(proposal.id, now=self._clock()).text())
 
     # -- 4 first signatures --------------------------------------------------
 
     def _first_signatures(self, run: Run) -> None:
-        compiled = run.ctx.compiled
-        if compiled is None:
+        if run.ctx.compiled is None:
             return
-        view = queue.delta_view(compiled.community, verified_identifiers(compiled, compiled.community))
+        view = run.queue_view()
         in_flight = {proposal.identifier for proposal in run.store.open(now=self._clock())}
         for item in view.new:
             verdict = run.ctx.own_view.verdicts.get(item.identifier)
             kind = verdict.kind if verdict is not None else None
-            if kind not in _SETTLED and item.identifier not in in_flight and item.identifier not in run.settled:
+            if kind not in SETTLED and item.identifier not in in_flight and item.identifier not in run.settled:
                 self._each(run, item.identifier, self._routine, item, kind)
 
     def _routine(self, run: Run, item: queue.QueueItem, kind: Optional[CuratorStatement]) -> None:
         """The routine work for one new threat, most valuable first: confirm on
-        this node's own advisory; else the deferral clock; else a person."""
+        the advisory the sources found; else the deferral clock; else a person."""
         identifier = item.identifier
-        check = self._lookup(identifier)
+        check = run.checks.get(identifier, evidence.NOT_LOOKED_UP)   # this beat's look-ups: never one call per item
         confirm = policy.decide(Action.CONFIRM, identifier, Facts(malicious_advisory=check.advisory, evidence_cited=check.evidence))
         if confirm.automatic:
             self._first_key(run, CuratorStatement.CONFIRMATION, identifier, {}, check.evidence, confirm)
             return
         if kind is CuratorStatement.DEFERRAL:
-            lapse = policy.decide(Action.LAPSE_DEFERRAL, identifier, Facts(deferral_age_days=self._deferral_age(run, identifier)))
+            lapse = policy.decide(Action.LAPSE_DEFERRAL, identifier, Facts(deferral_age_days=evidence.deferral_age_days(run.ctx.own_view, identifier, run.today)))
             if lapse.automatic:
                 self._single_key(run, CuratorStatement.DEFERRAL_LAPSED, identifier, lapse)
             return
@@ -375,3 +381,8 @@ class Beat:
     def _keep_alive(self, run: Run) -> None:
         if run.may_sign:
             run.kept_alive = published.publish_due(run.ctx.client, run.ctx.cfg, now=self._clock())
+
+
+def _no_steps() -> "ServiceSteps":
+    from .steps import ServiceSteps   # see the TYPE_CHECKING import above
+    return ServiceSteps()

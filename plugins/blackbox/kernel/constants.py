@@ -40,13 +40,15 @@ CURATOR_STATEMENT_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}CuratorStatement"
 #: A root-signed curator key manifest (Refine R7a/R2), in the verified graph.
 KEY_MANIFEST_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}KeyManifest"
 
-#: The curator ROOT keys each DKG network trusts (network id -> Ed25519 public
-#: keys, hex). Readers trust only key manifests signed by these. Empty until
-#: the pilot gate names the root custodians (Refine R7b/R13): with no root,
-#: no curator statement counts anywhere. A network listed here can NOT be
-#: overridden at runtime; only unlisted (sandbox) networks accept roots from
-#: the BLACKBOX_CURATOR_ROOT_KEYS environment variable.
-CURATOR_ROOT_KEYS: Mapping[str, Tuple[str, ...]] = {}
+#: The curator ROOT keys each DKG network trusts, bound to the root epoch each
+#: may sign: ``{network id: {root_epoch: (Ed25519 public keys, hex)}}`` — e.g.
+#: ``{mainnet: {1: (root_a,), 2: (root_b,)}}``. Readers trust only key
+#: manifests signed by these; a pinned root signing another epoch can only
+#: freeze readers (``trust_anchors.RootPins``). Empty until the root ceremony
+#: (Refine R7b/R13): with no root, no curator statement counts anywhere. A
+#: network listed here can NOT be overridden at runtime; only unlisted (sandbox)
+#: networks accept roots from the BLACKBOX_CURATOR_ROOT_KEYS environment variable.
+CURATOR_ROOT_KEYS: Mapping[str, Mapping[int, Tuple[str, ...]]] = {}
 #: A reporter withdrawing its own report (Refine R1, lifecycle RETRACT).
 RETRACTION_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}Retraction"
 #: One reporter's weekly sighting digest (Refine R2b): verified threats met
@@ -86,6 +88,10 @@ SKILL_ARTIFACT_HASH_PRED = f"{BLACKBOX_ONTOLOGY}skillArtifactHash"
 IOC_CONTEXT_PRED = f"{BLACKBOX_ONTOLOGY}iocContext"
 REPORT_REASON_PRED = f"{BLACKBOX_ONTOLOGY}reportReason"
 SKILL_REGISTRY_PRED = f"{BLACKBOX_ONTOLOGY}skillRegistry"
+#: Trust-and-threat-lab §03.6 (REP1): how the reporter's node matched the threat
+#: (``report_schema.MATCHED_BY``) and which Blackbox release built the report.
+MATCHED_BY_PRED = f"{BLACKBOX_ONTOLOGY}matchedBy"
+BLACKBOX_VERSION_PRED = f"{BLACKBOX_ONTOLOGY}blackboxVersion"
 
 # threat kind: distinguishes active malware from a mere vulnerability. Only
 # ``malware`` blocks (at/above block_severity); ``vulnerability`` always flags

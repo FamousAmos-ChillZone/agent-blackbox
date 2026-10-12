@@ -146,3 +146,59 @@ def test_a_bare_object_with_dicts_is_still_indexed_directly():
     findings = detection.detect_dependency("bash", {"command": "npm install evil-pkg@1.2.3"}, bare)
     assert [f.identifier for f in findings] == ["dep:npm:evil-pkg@1.2.3"]
     assert detection.detect_ioc("bash", {"command": "curl 203.0.113.9"}, bare) == []
+
+
+# ------------------------------------------------------------------ R4: a verified rule without a kind flags only
+
+
+def _verified_dep_row(**fields):
+    row = {"threat": "urn:defender:dep:npm-unkinded", "rdfType": "urn:defender:DependencySignal",
+           "identifier": "dep:npm:unkinded-pkg@1.0.0", "severity": "critical", **fields}
+    return {name: {"value": value} for name, value in row.items()}
+
+
+@pytest.mark.parametrize("kind, source, confirmed, blocks", [
+    ("", "community", False, False),         # missing kind: flag-only (trust-and-threat-lab R4, §03.4)
+    ("malware", "public", True, True),        # kind=malware: blocks as before
+])
+def test_a_verified_rule_without_a_kind_is_served_flag_only(kind, source, confirmed, blocks):
+    from plugins.blackbox.guard import hooks
+    from plugins.blackbox.kernel.config import BlackboxConfig
+    from plugins.blackbox.ruleset import row_adapters
+
+    category, key, rule = row_adapters._row_to_rule(_verified_dep_row(**({"kind": kind} if kind else {})), "public")
+    assert (category, key, rule["source"]) == ("dependency", "npm:unkinded-pkg@1.0.0", source)
+    assert ("asset_tier" in rule) is not confirmed
+    rs = compiler.Ruleset()
+    rs.live_lookup = lambda: FakeLookup({key: rule})
+    findings = detection.detect_dependency("bash", {"command": "npm install unkinded-pkg@1.0.0"}, rs)
+    assert [(f.identifier, f.confirmed) for f in findings] == [("dep:npm:unkinded-pkg@1.0.0", confirmed)]
+    assert bool(hooks._would_block(BlackboxConfig(mode="block"), findings)) is blocks
+
+
+def test_a_community_rule_without_a_kind_keeps_its_own_tier():
+    from plugins.blackbox.ruleset import row_adapters
+
+    _category, _key, rule = row_adapters._row_to_rule(_verified_dep_row(), "community")
+    assert rule["source"] == "community" and "asset_tier" not in rule
+
+
+def test_the_flag_only_source_and_tier_match_the_live_scope():
+    from plugins.blackbox.ruleset import row_adapters
+    from plugins.blackbox.ruleset.live import asset_facts, scope
+
+    assert row_adapters.FLAG_ONLY_SOURCE == scope.FLAG_ONLY_SOURCE
+    assert row_adapters.FLAG_TIER == asset_facts.AssetTier.FLAG.value
+
+
+def test_re_applying_the_community_tier_keeps_a_flag_only_verified_rule(monkeypatch):
+    """The pulse wipes the community entries it re-materializes; a verified rule served flag-only
+    shares their source but is not one of them — only the next full refresh may drop it."""
+    from plugins.blackbox.ruleset import community_tier, row_adapters
+
+    _category, key, flagged = row_adapters._row_to_rule(_verified_dep_row(), "public")
+    materialized = {"identifier": "dep:npm:reported@1.0.0", "source": "community", "severity": "high"}
+    rs = compiler.Ruleset(dependency={key: flagged, "npm:reported@1.0.0": materialized})
+    monkeypatch.setattr(community_tier, "apply_community_tier", lambda *a, **k: None)
+    community_tier.reapply_community_tier(rs, object(), None)
+    assert rs.dependency == {key: flagged}

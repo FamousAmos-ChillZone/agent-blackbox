@@ -290,7 +290,8 @@ def test_the_watch_loop_builds_a_fresh_view_every_round(monkeypatch):
 
     def fresh_context(args):
         rounds.append(len(rounds) + 1)
-        return type("Ctx", (), {"compiled": None})()
+        return type("Ctx", (), {"compiled": None, "manifest": None,
+                                "own_view": type("View", (), {"manifest_expires_day": ""})()})()
 
     def stop_after_three_rounds(seconds):
         if len(rounds) >= 3:
@@ -299,6 +300,7 @@ def test_the_watch_loop_builds_a_fresh_view_every_round(monkeypatch):
     monkeypatch.setattr(commands, "_ctx", fresh_context)
     monkeypatch.setattr(commands.verbs, "curator_alarms", lambda ctx, compiled, **kw: [])
     monkeypatch.setattr(commands.time, "sleep", stop_after_three_rounds)
-    with pytest.raises(KeyboardInterrupt):
-        commands._watch(argparse.Namespace(webhook="", once=False, interval=5.0))
+    monkeypatch.setattr(commands.watch.delivery.urllib.request, "urlopen", lambda request, timeout: (_ for _ in ()).throw(OSError("offline")))
+    with pytest.raises(KeyboardInterrupt):   # W3: an empty --webhook now means "this node's credential file"
+        commands._watch(argparse.Namespace(webhook="https://example.test/hook", once=False, interval=5.0))
     assert rounds == [1, 2, 3]

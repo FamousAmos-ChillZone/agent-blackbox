@@ -77,7 +77,8 @@ def fixture_app(monkeypatch, tmp_path):
     monkeypatch.setenv("BLACKBOX_CURATOR_ROOT_KEYS", signing.public_key_hex(root))
     keys = {"root": root, "curators": curators}
     manifest = km.KeyManifest(environment=NETWORK, graph=adv.VM_GRAPH, chain="", root_epoch=1, version=2,
-                              curator_keys=tuple(sorted(signing.public_key_hex(k) for k in curators)), threshold=2,
+                              curator_keys=tuple(sorted(signing.public_key_hex(k) for k in curators)),
+                              curator_operators=("operator-a", "operator-b", "operator-c"), threshold=2,
                               promotion_author="0x" + "1" * 40, legacy_assets_hash=km.legacy_assets_hash([]))
     cfg = BlackboxConfig(report=True, community_graph_id=GRAPH, context_graph_id=adv.VM_GRAPH, sync_interval=900)
     alice, bob, carol, newcomer = (adv._reporter(n) for n in ("alice", "bob", "carol", "newcomer"))

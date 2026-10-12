@@ -29,7 +29,8 @@ HOSTILE = 'ioc:url:https://x.example/?q=<script>alert(1)</script>'
 
 def _view():
     manifest = km.KeyManifest(environment="net", graph="vm", chain="", root_epoch=1, version=3,
-                              curator_keys=("a" * 64, "b" * 64, "c" * 64), threshold=2,
+                              curator_keys=("a" * 64, "b" * 64, "c" * 64),
+                              curator_operators=("operator-a", "operator-b", "operator-c"), threshold=2,
                               promotion_author="0x" + "1" * 40, legacy_assets_hash=km.legacy_assets_hash([]))
     revoked = CuratorRecord(kind=Kind.REVOCATION, identifier="dep:npm:x@1", sequence=5, day="2026-10-02",
                             fields=(("reason", "false-positive"),), signers=frozenset({"a" * 64, "b" * 64}))

@@ -108,8 +108,9 @@ class FallbackIndex:
                     f"SELECT key, graph, rule FROM {table} WHERE {column} IN ({marks})", chunk):   # noqa: S608 — ours
                 if graph in self.scope.assertion_graphs:
                     loaded = json.loads(rule)
-                    if loaded.get("identifier") not in self.scope.revoked_identifiers:
-                        rules[key] = loaded
+                    allowed = self.scope.as_tier_allows(graph, table, key, loaded)   # same tier rule as the store lookup
+                    if allowed is not None and loaded.get("identifier") not in self.scope.revoked_identifiers:
+                        rules[key] = allowed
         if rules:
             return LookupAnswer(rules, HIT, "fallback index")
         return LookupAnswer({}, CLEAN if self.complete() else COULD_NOT_TELL, "fallback index")

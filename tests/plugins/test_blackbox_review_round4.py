@@ -54,7 +54,8 @@ def keys():
 
 def _manifest(keys, **over):
     base = dict(environment=NETWORK, graph="0xabc/agent-blackbox-vm", chain="", root_epoch=1, version=1,
-                curator_keys=tuple(sorted(keys["hex"])), threshold=2, promotion_author="0x" + "1" * 40,
+                curator_keys=tuple(sorted(keys["hex"])),
+                curator_operators=("operator-a", "operator-b", "operator-c"), threshold=2, promotion_author="0x" + "1" * 40,
                 legacy_assets_hash=km.legacy_assets_hash([]))
     base.update(over)
     return km.KeyManifest(**base)
@@ -110,7 +111,7 @@ def test_an_undated_manifest_never_beats_a_dated_one_and_a_conflict_freezes(keys
     undated_newer = _manifest(keys, version=2)
     assert trust_manifests.effective_manifest([dated, undated_newer], TODAY) == dated
     assert trust_manifests.effective_manifest([undated_newer], TODAY) == undated_newer                   # nothing dated: it serves
-    pending = _manifest(keys, version=3, issued_day="2026-10-01")
+    pending = _manifest(keys, version=3, issued_day=TODAY)
     assert trust_manifests.effective_manifest([dated, pending], TODAY) == dated
     twin = km.KeyManifest(**{**pending.__dict__, "promotion_author": "0x" + "2" * 40})
     assert trust_manifests.effective_manifest([dated, pending, twin], "2026-10-10") == dated            # conflicting order skipped

@@ -106,7 +106,7 @@ class TestVerification:
         assert ruleset.verified_identifiers(rows, proofs) == {"dep:npm:a@1"}
 
     def test_verified_rows_reach_public_tier(self):
-        rows = [_row("dep:npm:evil@1.0.0", severity="critical", name="evil")]
+        rows = [_row("dep:npm:evil@1.0.0", severity="critical", name="evil", kind="malware")]
         verified = ruleset.verified_identifiers(rows, {"p": _proof_for(rows)})
         tagged = [(r, "public" if r["identifier"] in verified else "community") for r in rows]
         rs = ruleset.build_from_rows(tagged)
@@ -115,17 +115,20 @@ class TestVerification:
 
 
 class TestDualFormat:
-    """Detection supports current full VM threats plus legacy proof-era data."""
+    """Detection supports current full VM threats plus legacy proof-era data.
+
+    Every dependency row carries ``kind``: a verified one without it is served
+    flag-only (trust-and-threat-lab R4)."""
 
     def test_full_format_vm_threat_is_public(self):
         # A node with current full-threat KAs on VM: the VM tier yields threat
         # rows directly, tagged public — no proof needed.
-        vm_rows = [{"identifier": "dep:npm:legacy@1.0.0", "severity": "critical", "name": "legacy"}]
+        vm_rows = [{"identifier": "dep:npm:legacy@1.0.0", "severity": "critical", "name": "legacy", "kind": "malware"}]
         rs = ruleset.build_from_rows([(r, "public") for r in vm_rows])
         assert next(iter(rs.dependency.values()))["source"] == "public"
 
     def test_legacy_format_swm_plus_proof_is_public(self):
-        swm = [_row("dep:npm:modern@2.0.0", severity="critical", name="modern")]
+        swm = [_row("dep:npm:modern@2.0.0", severity="critical", name="modern", kind="malware")]
         verified = ruleset.verified_identifiers(swm, {"p": _proof_for(swm)})
         rs = ruleset.build_from_rows(
             [(r, "public" if r["identifier"] in verified else "community") for r in swm]
@@ -134,8 +137,8 @@ class TestDualFormat:
 
     def test_both_formats_coexist_in_one_ruleset(self):
         # Full threat from VM + legacy threat from SWM+proof, merged.
-        vm = [{"identifier": "dep:npm:legacy@1.0.0", "severity": "high", "name": "legacy"}]
-        swm = [_row("dep:npm:modern@2.0.0", severity="high", name="modern")]
+        vm = [{"identifier": "dep:npm:legacy@1.0.0", "severity": "high", "name": "legacy", "kind": "malware"}]
+        swm = [_row("dep:npm:modern@2.0.0", severity="high", name="modern", kind="malware")]
         verified = ruleset.verified_identifiers(swm, {"p": _proof_for(swm)})
         tagged = [(r, "public") for r in vm] + [
             (r, "public" if r["identifier"] in verified else "community") for r in swm
