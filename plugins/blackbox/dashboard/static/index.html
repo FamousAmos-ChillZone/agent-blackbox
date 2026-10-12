@@ -3877,14 +3877,22 @@
       return;
     }
     var sharing = s.paused ? "paused" : (s.sharing_enabled ? "on" : "off");
+    // Which graph and whether this node is connected yet (optional fields: an older
+    // daemon omits them, LES-018). Until it is connected, say so instead of counts.
+    var connected = !s.join_state || s.join_state === "joined";
+    var tile = $("stat-community-meta");
+    tile.textContent = connected
+      ? (s.graph ? s.graph + " \u00b7 " : "") + num(s.contributing_agents || 0) + " agent" +
+        (s.contributing_agents === 1 ? "" : "s") + " \u00b7 " + num(s.corroborated_2plus || 0) + " with 2+ reporters"
+      : (s.join_text || "connecting to the community graph");
+    tile.title = (s.graph_id ? "Community graph " + s.graph_id + ". " : "") +
+      "Threats other Blackbox agents reported. They flag for you and never block.";
     $("stat-community-count").textContent = num(s.community_threats || 0);
-    $("stat-community-meta").textContent = num(s.contributing_agents || 0) + " agent" +
-      (s.contributing_agents === 1 ? "" : "s") + " \u00b7 " + num(s.corroborated_2plus || 0) + " with 2+ reporters";
     $("stat-sharing-state").textContent = sharing;
     var last = s.last_share;
     $("stat-sharing-meta").textContent = last
       ? "last share " + fmtAgo(last.ts) + " \u00b7 " + (last.outcome || (last.ok ? "accepted" : "failed"))
-      : (s.sharing_enabled ? "nothing shared yet" : "turn on in settings");
+      : (s.sharing_enabled ? "on by default \u00b7 nothing shared yet" : "off \u00b7 turn on in settings");
   }
 
   function loadCommunityStats() {
@@ -7760,7 +7768,7 @@
         <div class="set-row">
           <div class="set-rl">
             <div class="set-rt">Community sharing</div>
-            <div class="set-rh">Share privacy-safe threat signatures with the community graph. Your prompts and files never leave this machine.</div>
+            <div class="set-rh">On by default. When your agent meets a threat the verified graph already lists, share its privacy-safe signature (identifier and type) with the community graph. Your prompts, commands and files never leave this machine. Switch off any time.</div>
           </div>
           <div class="set-rc">
             <label class="set-toggle"><input type="checkbox" id="set-report" /><span class="set-track"></span></label>

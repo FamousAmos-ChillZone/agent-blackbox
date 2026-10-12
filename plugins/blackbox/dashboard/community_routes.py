@@ -70,11 +70,14 @@ def community_stats_payload(verified_reports: VerifiedReportsRead) -> Any:
     """The launch instruments: contributing agents, corroboration, health."""
     from .. import community, ruleset
     from ..kernel.config import load_blackbox_config
+    from ..kernel.dkg_client import DkgClient
 
     cfg = load_blackbox_config()
     rs = ruleset.peek(cfg)
     community_rules = getattr(rs, "community", {}) or {}
     now = time.time()
+    graph = str(getattr(cfg, "community_graph_id", "") or "")
+    join = community.read_join_state(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home), graph) if graph else None
     corroborated = sum(1 for r in community_rules.values() if int(r.get("reporterCount") or 0) >= 2)
     # Reports-today from OUR ingest observations (KI-012), not
     # reporter-supplied timestamps.
@@ -95,6 +98,12 @@ def community_stats_payload(verified_reports: VerifiedReportsRead) -> Any:
         "last_share": ledger[0] if ledger else None,
         # distinct VERIFIED signers (R0d); None when no community graph is configured
         "contributing_agents": community.contributing_agent_count(verified_reports(cfg)) if cfg.community_graph_id else None,
+        # which graph this node joined and whether it is connected yet (2026-10-12: a new
+        # install saw "some community graph" and a "not authorized" log line with no explanation)
+        "graph": safe_text(graph.rsplit("/", 1)[-1], 80) if graph else None,
+        "graph_id": safe_text(graph, 200) if graph else None,
+        "join_state": join.value if join else None,
+        "join_text": community.JOIN_STATE_TEXT[join] if join else None,
     }
 
     return stats

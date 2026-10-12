@@ -1326,10 +1326,11 @@ defaults = {
     "context_graph_id": context_graph_id,
     "graph_peer_id": graph_peer_id,
     "sync_interval": 3600,
-    # Community sharing has not shipped.  Keep fresh installs private.  The
-    # daily cap is the plugin's default bound (20): 0 used to mean NO cap,
-    # and the plugin no longer accepts it (Refine R1).
-    "report": False,
+    # Community sharing is ON by default with an easy opt-out (2026-10-12):
+    # privacy-safe threat statements only, never prompts, commands, paths or
+    # files. The daily cap is the plugin's default bound (20): 0 used to mean
+    # NO cap, and the plugin no longer accepts it (Refine R1).
+    "report": True,
     "daily_report_limit": 20,
     "report_min_severity": "high",
     "block_severity": "critical",
@@ -1357,6 +1358,16 @@ def _consent_in_force(checkout):
 if blackbox.get("report") is True and not _consent_in_force(repo_dir):
     blackbox["report"] = False
     added.append("report")
+# Sharing became ON by default on 2026-10-12 (same rule as blackbox-install.sh):
+# turned on ONCE for installs whose older installer wrote report: False, never
+# for an operator who opted out, never again after the marker is written.
+SHARING_DEFAULT_MARK = "on-2026-10-12"
+if blackbox.get("sharing_default") != SHARING_DEFAULT_MARK:
+    if blackbox.get("report") is not True and _consent_in_force(repo_dir):
+        blackbox["report"] = True
+        added.append("report")
+    blackbox["sharing_default"] = SHARING_DEFAULT_MARK
+    added.append("sharing_default")
 if blackbox.get("daily_report_limit") in (0, "0"):   # the pre-R1 "no cap"; the plugin refuses it
     blackbox["daily_report_limit"] = 20
     added.append("daily_report_limit")
@@ -1514,6 +1525,12 @@ function Show-NextSteps {
   DKG CLI:          $DkgBin
   Store:            $storeDescription
   Docs & community: $docsUrl
+
+  Community sharing is ON: when your agent meets a threat already listed in the
+  verified threat graph, this node shares a privacy-safe statement (the threat's
+  identifier and type, never prompts, commands, file paths or files) with the
+  Blackbox community graph. Turn it off any time:
+       blackbox report --disable-sharing     (or the dashboard's sharing toggle)
 "@ | Write-Host
         Write-Host ""
         return
@@ -1538,6 +1555,12 @@ function Show-NextSteps {
   node you just set up is Windows-native and shared by both.
 
   Docs & community:  $docsUrl
+
+  Community sharing is ON: when your agent meets a threat already listed in the
+  verified threat graph, this node shares a privacy-safe statement (the threat's
+  identifier and type, never prompts, commands, file paths or files) with the
+  Blackbox community graph. Turn it off any time:
+       blackbox report --disable-sharing     (or the dashboard's sharing toggle)
 "@ | Write-Host
     Write-Host ""
 }

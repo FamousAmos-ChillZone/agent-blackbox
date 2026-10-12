@@ -1694,10 +1694,11 @@ defaults = {
     "context_graph_id": context_graph_id,
     "graph_peer_id": graph_peer_id,
     "sync_interval": 3600,
-    # Community sharing has not shipped.  Keep fresh installs private.  The
-    # daily cap is the plugin's default bound (20): 0 used to mean NO cap,
-    # and the plugin no longer accepts it (Refine R1).
-    "report": False,
+    # Community sharing is ON by default with an easy opt-out (2026-10-12):
+    # privacy-safe threat statements only, never prompts, commands, paths or
+    # files. The daily cap is the plugin's default bound (20): 0 used to mean
+    # NO cap, and the plugin no longer accepts it (Refine R1).
+    "report": True,
     "daily_report_limit": 20,
     "report_min_severity": "high",
     "block_severity": "critical",
@@ -1725,6 +1726,18 @@ def _consent_in_force(checkout):
 if blackbox.get("report") is True and not _consent_in_force(repo_dir):
     blackbox["report"] = False
     added.append("report")
+# Sharing became ON by default on 2026-10-12. Older installers wrote
+# `report: False` automatically ("not shipped yet"), so an upgrade turns it on
+# ONCE, recorded by the marker below. An operator who opted out (a withdrawn
+# record: _consent_in_force says no) is left off, and a `report: false` set
+# after the marker exists is never flipped again.
+SHARING_DEFAULT_MARK = "on-2026-10-12"
+if blackbox.get("sharing_default") != SHARING_DEFAULT_MARK:
+    if blackbox.get("report") is not True and _consent_in_force(repo_dir):
+        blackbox["report"] = True
+        added.append("report")
+    blackbox["sharing_default"] = SHARING_DEFAULT_MARK
+    added.append("sharing_default")
 # `daily_report_limit: 0` was the pre-R1 "no cap" and the plugin refuses it;
 # any other operator-chosen cap is kept.
 if blackbox.get("daily_report_limit") in (0, "0"):
@@ -1905,6 +1918,20 @@ start_dashboard() {
     step "Log: $log_file"
 }
 
+# Community sharing is ON by default (2026-10-12): every summary says so, what
+# is sent, and the one command that turns it off.
+print_sharing_notice() {
+    cat <<'EOF'
+
+  Community sharing is ON: when your agent meets a threat already listed in the
+  verified threat graph, this node shares a privacy-safe statement (the threat's
+  identifier and type, never prompts, commands, file paths or files) with the
+  Blackbox community graph. Turn it off any time:
+
+      blackbox report --disable-sharing        (or the dashboard's sharing toggle)
+EOF
+}
+
 # ── Guided next steps (short — everything above already ran) ─────────────────
 next_steps() {
     local docs_url="${REPO_URL%.git}"
@@ -1936,6 +1963,7 @@ ${path_note}
 
   Docs:        $docs_url
 EOF
+        print_sharing_notice
         echo ""
         return 0
     fi
@@ -1971,6 +1999,7 @@ EOF
   Store:      $store_note
   Docs:        $docs_url
 EOF
+        print_sharing_notice
         echo ""
         return 0
     fi
@@ -1985,6 +2014,7 @@ ${path_note}
   Sync now:    blackbox sync --wait
   Docs:        $docs_url
 EOF
+    print_sharing_notice
     echo ""
 }
 

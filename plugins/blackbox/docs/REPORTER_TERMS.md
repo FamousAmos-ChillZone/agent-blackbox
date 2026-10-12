@@ -1,6 +1,15 @@
 # Agent Blackbox — Reporter Terms (community graph)
 
-Version: 1.1 (draft for counsel review, 2026-10-03)
+Version: 1.2 (draft for counsel review, 2026-10-12)
+
+## What changed in version 1.2
+
+- Community sharing is now ON by default when Blackbox is installed, with an
+  easy opt-out (it was off until you opted in). The installer and the
+  dashboard say so; turning it off is one command or one toggle, and it stops
+  sharing on the next action (section 5).
+- Changing these terms no longer pauses sharing; this page always shows the
+  version in force.
 
 ## What changed in version 1.1
 
@@ -15,11 +24,11 @@ Version: 1.1 (draft for counsel review, 2026-10-03)
 - Erasure rotates your SIGNING key; your node's wallet address is not changed
   by it (section 5).
 
-These terms apply to the OPERATOR of a machine running Agent Blackbox who
-turns on community sharing (`report: true`) and records consent. Sharing is
-OFF by default; nothing described here happens until you consent, and you
-can withdraw at any time with `blackbox report --withdraw-consent` — sharing
-stops on the next action.
+These terms apply to the OPERATOR of a machine running Agent Blackbox.
+Community sharing is ON by default (`report: true`). You can turn it off at
+any time with `blackbox report --disable-sharing`, `blackbox report
+--withdraw-consent` or the dashboard's sharing toggle; sharing stops on the
+next action, and turning it back on is just as easy.
 
 ## 1. What you share
 
@@ -110,13 +119,14 @@ stops counting it, but the record of the statement stays on the network.
   every statement also carries, is not changed by this command. Each group of
   curators deletes its ledger salt on request (crypto-shredding) and stops
   keeping your listing alive.
-- **Withdraw consent:** `blackbox report --withdraw-consent`.
+- **Turn sharing off (opt out):** `blackbox report --withdraw-consent` (or
+  `--disable-sharing`, or the dashboard toggle).
 - Requests that need a human: the contact points in the controller map
   (one for the community curators, one for Umanitek); either forwards a
   request it cannot serve to the other.
 
 ## 6. Changes
 
-These terms are bound to their content: your consent is recorded against
-the exact text you read. When the text changes, sharing stops until you
-read the new version and consent again.
+The version in force is the one shipped with your installation, and its
+"What changed" section lists every change. An opt-out stays in force across
+versions until you turn sharing back on.

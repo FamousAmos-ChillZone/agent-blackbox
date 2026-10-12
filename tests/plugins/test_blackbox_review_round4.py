@@ -139,6 +139,7 @@ def test_withdrawn_consent_stops_keep_alive_retries_and_digests(real_consent, tm
             sent.append(a[1])
             return {"state": "succeeded"}
 
+    real_consent.withdraw()                                                     # the operator opted out
     assert not real_consent.in_force()
     assert keep_alive.publish_due_copies(Node(), cfg, store, now=1_800_000_000.0 + 11 * 86_400) == 0
     assert share_retry.retry_due_shares(Node(), cfg, queue) == 0 and sent == []

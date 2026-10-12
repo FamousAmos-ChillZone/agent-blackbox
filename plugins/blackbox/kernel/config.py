@@ -117,7 +117,7 @@ class BlackboxConfig:
     dkg_home: str = field(default_factory=lambda: str(constants.blackbox_dkg_home()))
     dkg_bin: str = field(default_factory=lambda: str(constants.blackbox_dkg_bin()))
     sync_interval: int = 3600
-    report: bool = False
+    report: bool = True   # community sharing ON by default, opt-out (2026-10-12)
     daily_report_limit: int = constants.DEFAULT_DAILY_REPORT_LIMIT
     report_min_severity: str = "high"
     #: Community context graph address (env BLACKBOX_COMMUNITY_GRAPH_ID →
@@ -361,9 +361,9 @@ def load_blackbox_config() -> BlackboxConfig:
         dkg_home=dkg_home,
         dkg_bin=dkg_bin,
         sync_interval=max(3600, _as_int(_env_or(entry, env="BLACKBOX_SYNC_INTERVAL", key="sync_interval", default=3600), 3600)),
-        # Community sharing switches (README: `report` / `report_min_severity`): `report` defaults OFF;
-        # the daily cap defaults to a real bound so the safeguard exists the moment sharing turns on (KI-002).
-        report=_as_bool(_env_or(entry, env="BLACKBOX_REPORT", key="report", default=False), False),
+        # Community sharing switches (README: `report` / `report_min_severity`): `report` defaults ON
+        # (opt-out, 2026-10-12); the daily cap is a real bound from the first report (KI-002).
+        report=_as_bool(_env_or(entry, env="BLACKBOX_REPORT", key="report", default=True), True),
         daily_report_limit=constants.effective_daily_report_limit(_as_int(_env_or(entry, env="BLACKBOX_DAILY_REPORT_LIMIT", key="daily_report_limit", default=constants.DEFAULT_DAILY_REPORT_LIMIT), constants.DEFAULT_DAILY_REPORT_LIMIT)),
         community_shadow=_as_bool(_env_or(entry, env="BLACKBOX_COMMUNITY_SHADOW", key="community_shadow", default=False), False),
         verified_lookup_fallback=_fallback_mode(_env_or(entry, env="BLACKBOX_VERIFIED_LOOKUP_FALLBACK", key="verified_lookup_fallback", default="off")),

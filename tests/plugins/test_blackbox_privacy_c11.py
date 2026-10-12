@@ -1,8 +1,9 @@
-"""Community Curation C11 — the privacy documents, consent asked again, and erasure across the new stores.
+"""Community Curation C11 — the privacy documents, what changed, and erasure across the new stores.
 
-* The reporter terms changed (the community curators), so a consent given to
-  the old text is not in force: sharing stops, the operator is told why in
-  every place it could look, and retractions still work.
+* Sharing is on by default (2026-10-12): a change of the reporter terms no
+  longer stops it; someone who accepted an earlier text is shown what changed
+  when they accept again; an opt-out is explained plainly in every place the
+  operator could look, and retractions still work.
 * The three documents name the community authority and what it decides.
 * Erasure on a curator node covers every store this build added that holds
   anything about a reporter; every file the new code writes is classified.
@@ -39,7 +40,7 @@ OLD_TERMS = "# Agent Blackbox — Reporter Terms\n\nVersion: 1.0 (draft)\n\nThe 
 
 @pytest.fixture
 def consented_to_old_terms(real_consent, monkeypatch, tmp_path):
-    """An operator who consented to version 1.0; the shipped terms are now 1.1."""
+    """An operator who accepted version 1.0; the shipped terms are newer."""
     monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
     shipped = real_consent.terms_text
     monkeypatch.setattr(real_consent, "terms_text", lambda: OLD_TERMS)
@@ -48,46 +49,46 @@ def consented_to_old_terms(real_consent, monkeypatch, tmp_path):
     return real_consent
 
 
-# ------------------------------------------------------------------ consent is asked again, and says why
+# ------------------------------------------------------------------ terms changes, opt-outs, and how they are said
 
 
-def test_a_consent_to_the_old_terms_is_not_in_force_and_every_gate_says_why(consented_to_old_terms, capsys):
+def test_a_change_of_the_terms_never_stops_sharing(consented_to_old_terms, capsys):
     consent = consented_to_old_terms
-    assert not consent.in_force()
-    why = consent.why_not()
-    assert "the reporter terms changed since you consented to version 1.0" in why and "now version 1.1" in why
-    ok, reason = sharing.CommunitySharePolicy(CFG).decide(FINDING, "0x" + "a" * 40)
-    assert not ok and reason == why                                                   # automatic sharing stops
-    assert submission_gate.refusal_for(CFG, reduction=False) == 2 and why in capsys.readouterr().out   # manual reports stop
-    assert submission_gate.refusal_for(CFG, reduction=True) is None                       # retractions and disputes still go
+    assert consent.in_force() and consent.why_not() == ""
+    assert sharing.CommunitySharePolicy(CFG).decide(FINDING, "0x" + "a" * 40)[0]          # automatic sharing goes on
+    assert submission_gate.refusal_for(CFG, reduction=False) is None                       # manual reports go on
 
 
-def test_the_consent_prompt_says_why_it_asks_again_and_what_changed(consented_to_old_terms, capsys):
+def test_accepting_again_shows_what_changed_since_the_earlier_version(consented_to_old_terms, capsys):
     assert report_rights.record_consent() == 0
     out = capsys.readouterr().out
-    asked, changed, full = out.index("You are asked again because"), out.index("## What changed in version 1.1"), out.index("Version: 1.1")
-    assert asked < changed < full and "community graph now has its OWN curators" in out
-    assert consented_to_old_terms.in_force() and consented_to_old_terms.why_not() == ""
+    told, changed, full = (out.index("The terms changed since you accepted version 1.0"),
+                           out.index("## What changed in version 1.2"), out.index("Version: 1.2"))
+    assert told < changed < full and "ON by default" in out
     report_rights.record_consent()
-    assert "You are asked again" not in capsys.readouterr().out                       # a current consent is not re-explained
+    assert "The terms changed" not in capsys.readouterr().out                           # an up-to-date acceptance is not re-explained
 
 
-@pytest.mark.parametrize("state, needle", [("never", "no sharing consent is recorded"), ("withdrawn", "sharing consent was withdrawn on")])
-def test_never_given_and_withdrawn_are_said_plainly(real_consent, monkeypatch, tmp_path, state, needle):
+def test_an_opt_out_is_said_plainly_and_every_gate_agrees(real_consent, monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
-    if state == "withdrawn":
-        real_consent.record(), real_consent.withdraw()
-    assert needle in real_consent.why_not()
-    monkeypatch.setattr(real_consent, "terms_text", lambda: "")
-    assert "terms are missing" in real_consent.why_not()
+    assert real_consent.why_not() == ""                                                  # the default: nothing to explain
+    real_consent.withdraw()
+    why = real_consent.why_not()
+    assert "community sharing was turned off on" in why and "--enable-sharing" in why
+    ok, reason = sharing.CommunitySharePolicy(CFG).decide(FINDING, "0x" + "a" * 40)
+    assert not ok and reason == why                                                      # automatic sharing stops
+    assert submission_gate.refusal_for(CFG, reduction=False) == 2 and why in capsys.readouterr().out
+    assert submission_gate.refusal_for(CFG, reduction=True) is None                        # retractions and disputes still go
 
 
-def test_an_operator_with_sharing_on_and_stale_consent_sees_an_action_item(consented_to_old_terms):
+def test_an_operator_who_opted_out_with_sharing_still_switched_on_sees_an_action_item(real_consent, monkeypatch, tmp_path):
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
+    real_consent.withdraw()
     rs = type("Rs", (), {"synced_at": 1.0, "counts": lambda self: {"injection": 5}, "community_paused": False, "kill_list": {}})()
-    why = consented_to_old_terms.why_not()
+    why = real_consent.why_not()
     items = health.operator_health(health.gather(CFG, rs, True, None, {}, 2.0, sharing_consent_problem=why))
     stopped = [item for item in items if item.message.startswith("community sharing is on but stopped")]
-    assert len(stopped) == 1 and stopped[0].klass is health.HealthClass.ACTION and "--consent" in stopped[0].what_to_do
+    assert len(stopped) == 1 and stopped[0].klass is health.HealthClass.ACTION and "--enable-sharing" in stopped[0].what_to_do
     off = BlackboxConfig(report=False, community_graph_id=GRAPH)                      # sharing off: nothing is stopped
     assert not any("stopped" in item.message for item in health.operator_health(health.gather(off, rs, True, None, {}, 2.0,
                                                                                               sharing_consent_problem=why)))
@@ -103,7 +104,7 @@ def test_status_and_the_dashboard_pass_the_consent_state_to_health():
 
 def test_the_terms_name_both_curator_groups_and_what_a_listing_publishes():
     terms = consent_module.terms_text()
-    assert consent_module.terms_version(terms) == "1.1" and consent_module.changes_section(terms).startswith("## What changed in version 1.1")
+    assert consent_module.terms_version(terms) == "1.2" and consent_module.changes_section(terms).startswith("## What changed in version 1.2")
     for phrase in ("COMMUNITY curators", "never block", "at most 90 days", "index", "wallet address", "is not changed",
                    "signed statements", "always a person's decision"):
         assert phrase in terms, phrase
@@ -114,10 +115,10 @@ def test_the_controller_map_and_the_dpia_carry_the_community_authority_and_the_o
     controllers = (DOCS / "CONTROLLER_MAP.md").read_text(encoding="utf-8")
     dpia = (DOCS / "DPIA.md").read_text(encoding="utf-8")
     assert "Version: 1.1" in controllers and "Community curators' operator" in controllers and "decision 15" in controllers
-    assert "Version: 1.3" in dpia and "community_trust.json" in dpia and "Export bundle" in dpia and "art. 22" in dpia
+    assert "Version: 1.4" in dpia and "OPT-OUT" in dpia and "COUNSEL REVIEW REQUIRED" in dpia and "community_trust.json" in dpia and "Export bundle" in dpia and "art. 22" in dpia
     checklist = dpia.split("## 8. Compliant-by-default checklist", 1)[1]
     rows = re.findall(r"^\| (?!Item|---)(.+?) \| (\w[\w ,]*?) \|", checklist, re.M)
-    assert len(rows) == 10 and {state for _, state in rows} <= {"done", "partly", "not applicable", "done, one name open"}
+    assert len(rows) == 10 and {state for _, state in rows} <= {"done", "partly", "not applicable", "done, one name open", "departed"}
 
 
 # ------------------------------------------------------------------ erasure and export cover the new stores

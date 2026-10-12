@@ -74,20 +74,18 @@ def run_local_verb(args: argparse.Namespace) -> int:
 
 
 def record_consent() -> int:
-    """``--consent``: print the reporter terms, record consent bound to their content (R13)."""
+    """``--consent``: print the reporter terms and record acceptance of them — the
+    opt-back-in after an opt-out (sharing is on by default, 2026-10-12)."""
     text = consent.terms_text()
-    if not text:
-        print("The reporter terms are missing from this installation; nothing can be consented to.")
-        return 1
     earlier = consent.current()
-    if earlier is not None and not earlier.withdrawn_at and earlier.terms_hash != consent.terms_hash(text):
-        # C11: say why we are asking again before the full text, and what changed.
-        print(f"You are asked again because {consent.why_not().split(' (`blackbox')[0]}.")
+    if text and earlier is not None and earlier.terms_hash and earlier.terms_hash != consent.terms_hash(text):
+        # C11: someone who accepted an earlier text sees what changed first.
+        print(f"The terms changed since you accepted version {earlier.terms_version}.")
         changed = consent.changes_section(text)
         if changed:
             print(changed)
         print("The full terms follow.\n")
-    print(text)
+    print(text or "The reporter terms are missing from this installation; recording the choice anyway.")
     entry = consent.record()
     if entry is None:
         return 1
@@ -95,21 +93,23 @@ def record_consent() -> int:
     if _sharing_on():
         print("Sharing is on. Turn it off with `blackbox report --disable-sharing`.")
     else:
-        print("Sharing is still OFF: consent alone sends nothing. Turn it on with")
+        print("Sharing is still OFF in the settings. Turn it on with")
         print("`blackbox report --enable-sharing` (or the dashboard's Community sharing toggle).")
-    print("Withdraw consent at any time with `blackbox report --withdraw-consent`.")
+    print("Opt out at any time with `blackbox report --withdraw-consent`.")
     return 0
 
 
 def set_sharing(on: bool) -> int:
     """``--enable-sharing`` / ``--disable-sharing``: the ``report`` switch (KI-299).
 
-    Goes through ``kernel.settings.write_settings`` — the path the dashboard
-    toggle uses — with the real consent state, so "on" without consent is
-    refused there, not by a second copy of the rule here.
+    Sharing is on by default (2026-10-12). Turning it ON is also the opt-back-in
+    after an earlier opt-out, so it records a fresh acceptance first; the write
+    goes through ``kernel.settings.write_settings``, the path the dashboard
+    toggle uses, with the resulting state.
     """
     from ...kernel import settings
-    result = settings.write_settings({"report": on}, sharing_consent=consent.in_force())
+    payload = {"report": on}
+    result = settings.write_settings(payload, sharing_consent=consent.for_settings(payload))
     if not result.get("ok"):
         for error in result.get("errors") or ["the setting could not be saved"]:
             print(f"Not changed: {error}")
@@ -117,7 +117,7 @@ def set_sharing(on: bool) -> int:
     if on:
         print("Sharing is on: findings that pass the sharing rules are shared with the community graph.")
     else:
-        print("Sharing is off: nothing new leaves this node. Consent stays recorded.")
+        print("Sharing is off: nothing new leaves this node.")
     return 0
 
 
@@ -131,11 +131,14 @@ def _sharing_on() -> bool:
 
 def withdraw_consent() -> int:
     """``--withdraw-consent``: sharing stops on the next action."""
+    if not consent.in_force():
+        print("Community sharing was already off.")
+        return 0
     if consent.withdraw():
-        print("Consent withdrawn: nothing further leaves this machine for the community graph.")
-    else:
-        print("No consent was in force.")
-    return 0
+        print("Community sharing turned off: nothing further leaves this machine for the community graph.")
+        return 0
+    print("Could not save the opt-out, so sharing is still ON. Check that the Blackbox home is writable and try again.")
+    return 1
 
 
 def export_document(store: reporter_key.ReporterKeyStore) -> Dict[str, Any]:
@@ -229,4 +232,5 @@ def erase_identity(store: reporter_key.ReporterKeyStore, *, confirmed: bool) -> 
     # statement is the node's wallet address, which this command does not change.
     print("Your next report is signed by a new reporter key. The node's wallet address stays the same;")
     print("statements already on the network keep carrying it.")
+    print("Community sharing is now OFF; `blackbox report --enable-sharing` turns it back on.")
     return 0
