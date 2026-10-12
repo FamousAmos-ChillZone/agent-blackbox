@@ -23,6 +23,7 @@ community pulse beats while the dashboard runs even with no browser open (KI-283
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
@@ -213,6 +214,58 @@ def health_payload(community_read: CommunityReadSource, node_reachable: Callable
             "ruleset_age": health.ruleset_age_text(inputs.ruleset_age_s), "community_paused": inputs.community_paused}
 
 
+def _envelope_proof(signed_text: str) -> Dict[str, Any]:
+    """What a signed statement proves, read from the statement itself: the signer's
+    key, the record fingerprint (sha256 of exactly the signed bytes — anyone can
+    recompute it), the network and graph the signature is bound to, the signed day.
+    Empty when *signed_text* is not a readable envelope."""
+    from ..kernel import signing
+
+    envelope = signing.from_text(signed_text or "")
+    if envelope is None or not envelope.signatures:
+        return {}
+    return {"signer": "ed25519:" + safe_text(envelope.signatures[0].signer, 80),
+            "fingerprint": "sha256:" + signing.content_id(envelope),
+            "network": safe_text(envelope.environment, 80), "graph": safe_text(envelope.graph, 200),
+            "day": safe_text(envelope.payload.get("day"), 16), "schema": int(envelope.schema_version)}
+
+
+def threat_proof_payload(identifier: str, tier: str, verified_reports: VerifiedReportsRead) -> Dict[str, Any]:
+    """The proof behind one threat (threat profiles, 2026-10-12).
+
+    ``community``: every VERIFIED report of *identifier* this node holds — each
+    one's signer key, reporter address, record fingerprint, network/graph binding
+    and signed day (a forged or altered report never gets here: the reader drops
+    it before counting) — plus whether the reports count toward confirmation.
+    ``local``: whether this node shared the threat, when and with what outcome
+    (the share ledger), and the proof of the report it signed (its keep-alive copy).
+    """
+    from .. import audit, community, ruleset
+    from ..kernel import reporter_key
+    from ..kernel.config import load_blackbox_config
+
+    cfg = load_blackbox_config()
+    out: Dict[str, Any] = {"identifier": safe_identifier(identifier), "tier": tier}
+    if tier == "community":
+        reports = [r for r in verified_reports(cfg) if r.identifier == identifier]
+        out["reports"] = [{**_envelope_proof(r.signed), "reporter": safe_text(r.reporter, 64), "verified": True}
+                          for r in reports]
+        rule = (getattr(ruleset.peek(cfg), "community", {}) or {}).get(identifier) or {}
+        out["counted"] = safe_text(rule.get("counted"), 8)
+        out["unlisted"] = safe_text(rule.get("unlistedReporters"), 8)
+        out["disputed"] = safe_text(rule.get("disputed"), 8)
+        return out
+    shares = [row for row in audit.read_share_ledger(limit=500) if row.get("identifier") == identifier]
+    out["shares"] = [{"ts": safe_text(row.get("ts"), 32), "outcome": safe_text(row.get("outcome") or
+                      ("accepted" if row.get("ok") else "failed"), 32)} for row in shares[:5]]
+    live = next((report for report in community.keep_alive.LiveReportStore().all() if report.identifier == identifier), None)
+    signed = next((q.get("object", "") for q in (live.quads if live else ()) if q.get("predicate", "").endswith("signedStatement")), "")
+    out["report"] = _envelope_proof(json.loads(signed) if signed.startswith('"') else signed) if signed else {}
+    store = reporter_key.ReporterKeyStore()
+    out["own_key"] = ("ed25519:" + store.public_key_hex()) if store.path.exists() else ""
+    return out
+
+
 def register_community_routes(app: Any, *, community_read: CommunityReadSource,
                               node_reachable: Optional[Callable[[Any], bool]] = None,
                               pulse_driver: Optional[PulseDriver] = None) -> CommunityEndpoints:
@@ -238,6 +291,10 @@ def register_community_routes(app: Any, *, community_read: CommunityReadSource,
     @app.get("/api/reports")
     def reports(limit: int = Query(50, ge=1, le=200)) -> Any:
         return reports_payload(verified_reports, limit)
+
+    @app.get("/api/threat-proof")
+    def threat_proof(identifier: str = Query(..., min_length=1), tier: str = Query("community")) -> Any:
+        return threat_proof_payload(identifier, "community" if tier == "community" else "local", verified_reports)
 
     @app.get("/api/community-statements")
     def community_statements() -> Any:

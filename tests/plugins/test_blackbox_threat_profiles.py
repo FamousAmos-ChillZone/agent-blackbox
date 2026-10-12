@@ -320,3 +320,48 @@ def test_the_findings_log_keeps_the_profile(monkeypatch, tmp_path):
     audit.record(event="pre_tool_call", findings=[finding], detail={"tool_name": "web_fetch"})
     row = json.loads((tmp_path / "findings.jsonl").read_text(encoding="utf-8").splitlines()[-1])
     assert row["finding"]["sighting"]["outcome"] == "blocked" and row["finding"]["sighting"]["threat_goal"] == "phishing-lure"
+
+
+# ------------------------------------------------------------ the proof behind a threat (dashboard)
+
+
+class _NoRules:
+    community: dict = {}
+
+
+def test_the_community_proof_shows_each_verified_signer_and_fingerprint(monkeypatch):
+    from plugins.blackbox import ruleset
+    from plugins.blackbox.dashboard import community_routes
+
+    monkeypatch.setattr(ruleset, "peek", lambda cfg: _NoRules())
+    alice, bob = Reporter("0xalice"), Reporter("0xbob")
+    verifier = ReportVerifier(NETWORK, GRAPH)
+    reports = [verifier.verify(signed_row(IOC_DOMAIN, alice)), verifier.verify(signed_row(IOC_DOMAIN, bob)),
+               verifier.verify(signed_row("ioc:domain:other.example", alice))]
+    proof = community_routes.threat_proof_payload(IOC_DOMAIN, "community", lambda cfg: reports)
+    assert sorted(r["signer"] for r in proof["reports"]) == sorted("ed25519:" + r.author for r in (alice, bob))
+    for shown, report in zip(proof["reports"], reports[:2]):
+        assert shown["fingerprint"] == "sha256:" + signing.content_id(signing.from_text(report.signed))
+        assert (shown["network"], shown["graph"], shown["verified"]) == (NETWORK, GRAPH, True)
+
+
+def test_the_local_proof_shows_what_this_machine_shared_and_signed(monkeypatch, tmp_path):
+    from plugins.blackbox import audit
+    from plugins.blackbox.community import keep_alive
+    from plugins.blackbox.dashboard import community_routes
+
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path))
+    reporter = Reporter("0xme")
+    quads = report_builder.build_report_quads(
+        identifier=IOC_DOMAIN, category="ioc", severity="high", reporter_address=reporter.address,
+        signer=ReportSigner(private_key=reporter.key, environment=NETWORK, graph=GRAPH),
+        ioc_type="domain", ioc_context="fetched-by-tool")
+    audit.record_share_outcome(identifier=IOC_DOMAIN, category="ioc", severity="high", subject=quads[0]["subject"],
+                               asset_name="report-x", ok=True, outcome="accepted")
+    keep_alive.LiveReportStore().remember(graph=GRAPH, name="report-x", identifier=IOC_DOMAIN,
+                                          subject=quads[0]["subject"], severity="high", quads=quads,
+                                          epoch=keep_alive.current_epoch(0, 30))
+    proof = community_routes.threat_proof_payload(IOC_DOMAIN, "local", lambda cfg: [])
+    assert proof["shares"][0]["outcome"] == "accepted"
+    assert proof["report"]["signer"] == "ed25519:" + reporter.author and proof["report"]["fingerprint"].startswith("sha256:")
+    assert proof["own_key"] == ""   # no key file in this home: the proof never creates one

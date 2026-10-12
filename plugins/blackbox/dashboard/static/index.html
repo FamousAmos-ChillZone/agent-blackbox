@@ -4912,8 +4912,55 @@
     "Scope": "Which part of the graph this view covers.",
     "Threats": "How many threats of this kind the graph holds.",
     "Loaded sample": "How many of them the dashboard loaded to draw.",
-    "Sample severity mix": "How serious the loaded threats are, by severity."
+    "Sample severity mix": "How serious the loaded threats are, by severity.",
+    "Signed by": "The reporting node's own signing key (Ed25519). It is made when Blackbox is installed and never leaves that machine; only the holder of the key could have signed this report.",
+    "Reporter": "The reporting node's agent address. A label only: reporters are counted by signing key, so one node cannot pose as many.",
+    "Signature": "Every report is checked before it counts. A forged, altered or replayed report fails the check and never reaches this dashboard.",
+    "Fingerprint": "A hash of exactly what was signed. Change one letter of the report and the signature no longer matches; anyone can recompute it.",
+    "Valid for": "The network and community graph the signature is bound to. A report signed for a test network or another graph cannot be replayed here.",
+    "Signed on": "The day the report was signed (reports carry the day, never the time).",
+    "Counts toward confirmation": "How many reporters are on the curators' trusted list. Until curators publish that list, every report still flags but none counts toward confirmation.",
+    "Shared": "Whether this machine shared this threat with the community graph, when, and whether the network accepted it.",
+    "Your signing key": "This machine's own signing key — the key every report it shares is signed with."
   };
+
+  // The proof behind a threat, from GET /api/threat-proof: who signed each report,
+  // its fingerprint, what the signature is bound to, and (local) what this machine shared.
+  function shortKey(k) { k = String(k || ""); return k.length > 30 ? k.slice(0, 18) + "…" + k.slice(-8) : k; }
+  function proofHTML(p) {
+    if (!p) return "";
+    var html = "";
+    if (p.tier === "community") {
+      (p.reports || []).forEach(function (r, i) {
+        var rows = [["Signed by", shortKey(r.signer), true], ["Reporter", r.reporter, true],
+                    ["Signature", r.verified ? "valid ✓ — checked on this node" : "not checked", false],
+                    ["Fingerprint", r.fingerprint, true], ["Valid for", (r.network || "") + " · " + (r.graph || ""), true],
+                    ["Signed on", r.day, false]];
+        html += '<div class="m-sech">Proof · report ' + (i + 1) + ' of ' + p.reports.length + '</div>' +
+          gridHTML(rows.filter(function (row) { return row[1]; }));
+      });
+      if (!(p.reports || []).length) html += '<div class="m-sech">Proof</div><div class="modal-empty">No signed report for this threat has reached this node yet.</div>';
+      else if (p.counted !== "") html += gridHTML([["Counts toward confirmation", (p.counted || "0") + " of " + p.reports.length + " reporter" + (p.reports.length === 1 ? "" : "s") + (p.disputed === "yes" ? " · disputed" : ""), false]]);
+      return html;
+    }
+    var rows = [];
+    var last = (p.shares || [])[0];
+    rows.push(["Shared", last ? (last.outcome + " · " + last.ts.replace("T", " ").replace("Z", " UTC")) : "not shared from this machine", false]);
+    if (p.report && p.report.fingerprint) {
+      rows.push(["Signed by", shortKey(p.report.signer), true]);
+      rows.push(["Fingerprint", p.report.fingerprint, true]);
+      rows.push(["Valid for", (p.report.network || "") + " · " + (p.report.graph || ""), true]);
+      rows.push(["Signed on", p.report.day, false]);
+    } else if (p.own_key) {
+      rows.push(["Your signing key", shortKey(p.own_key), true]);
+    }
+    return '<div class="m-sech">Proof</div>' + gridHTML(rows);
+  }
+  function loadProof(identifier, tier, onReady) {
+    if (!identifier) return;
+    getJSON("/api/threat-proof?tier=" + encodeURIComponent(tier) + "&identifier=" + encodeURIComponent(identifier))
+      .then(function (p) { onReady(proofHTML(p)); }).catch(function () {});
+  }
 
   // The (i) explanations: one floating bubble, placed under (or above) the icon and
   // clamped inside the window, so a panel's edges never cut it off.
@@ -5203,6 +5250,12 @@
     }
 
     $("tm-body").innerHTML = body;
+    if (d.tier === "community") {
+      var shownFor = d.identifier;
+      loadProof(d.identifier, "community", function (html) {
+        if ($("tm-id").textContent === shownFor && html) $("tm-body").insertAdjacentHTML("beforeend", html);
+      });
+    }
   }
 
   function openThreatModal(node) {
@@ -5360,6 +5413,9 @@
     var idrow = $("tm-idrow"); if (idrow) idrow.style.display = id ? "" : "none";
     var copyBtn = $("tm-copy"); if (copyBtn) { copyBtn.textContent = "Copy"; copyBtn.classList.remove("ok"); }
     $("tm-body").innerHTML = findingBaseHTML(f);
+    loadProof(id, "local", function (html) {
+      if (TM.finding === f && html) { f.proofHTML = html; $("tm-body").insertAdjacentHTML("beforeend", html); }
+    });
     overlay.classList.add("open");
     overlay.setAttribute("aria-hidden", "false");
 
@@ -5370,7 +5426,7 @@
     var apply = function (d) {
       if (TM.finding !== f) return;   // user moved on
       var intel = threatIntelHTML(d || {});
-      if (intel) $("tm-body").innerHTML = findingBaseHTML(f) + intel;
+      if (intel) $("tm-body").innerHTML = findingBaseHTML(f) + intel + (f.proofHTML || "");
     };
     var lookup = function (i) {
       if (i >= tiers.length || TM.finding !== f) return;
