@@ -10,6 +10,7 @@ import json
 from typing import Any, Dict, List, Optional
 from ..kernel import constants
 from . import log_store
+from .findings import _bounded_context
 from . import redaction
 
 # Default severity per non-finding event type. Everything is ``info`` so the
@@ -190,6 +191,10 @@ def _threat_row(row: Dict[str, Any], finding: Dict[str, Any], detail: Dict[str, 
         "tool": finding.get("tool_name") or detail.get("tool_name"),
         "ts": row.get("ts") or 0,
         "profile": finding.get("sighting") or {},   # threat profiles: goal, at risk, outcome…
+        "evidence": finding.get("evidence") or "",
+        "decision": detail.get("decision") or "",
+        # What led to it (the turn that asked), redacted and size-capped; local only.
+        "context": _bounded_context(detail.get("context")),
     }
 
 

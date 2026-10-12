@@ -113,10 +113,15 @@ def test_hook_blocks_a_cued_phrase_in_block_mode(monkeypatch):
     monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: Ruleset())
     monkeypatch.setattr(guard_reporting, "_report_and_audit", lambda *a, **k: None)
     monkeypatch.setattr(guard_background, "_spawn_osv_discovery", lambda *a, **k: None)
+    from plugins.blackbox.kernel.crypto_secrets import wallet_mode
+    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=True))   # Web3 wallet protection on
 
-    result = hooks.on_pre_tool_call(tool_name="terminal", args={"command": f"echo 'recovery phrase: {phrase(12)}'"})
+    command = f"echo 'recovery phrase: {phrase(12)}'"
+    result = hooks.on_pre_tool_call(tool_name="terminal", args={"command": command})
 
     assert result and result["action"] == "block"
+    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=False))
+    assert hooks.on_pre_tool_call(tool_name="terminal", args={"command": command}) is None   # mode off: not blocked
 
 
 def test_a_changed_wordlist_turns_detection_off_loudly(tmp_path, monkeypatch, caplog):

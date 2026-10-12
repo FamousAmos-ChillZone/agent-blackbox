@@ -120,8 +120,15 @@ def test_hook_blocks_a_terminal_read_of_metamask_in_block_mode(monkeypatch):
     monkeypatch.setattr(guard_reporting, "_report_and_audit", lambda *a, **k: None)
     monkeypatch.setattr(guard_background, "_spawn_osv_discovery", lambda *a, **k: None)
     command = f"base64 ~/.config/google-chrome/Default/Local\\ Extension\\ Settings/{CHROME_ID}/000003.log"
+    from plugins.blackbox.kernel.crypto_secrets import wallet_mode
+    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=True))   # Web3 wallet protection on
 
     result = hooks.on_pre_tool_call(tool_name="terminal", args={"command": command})
 
     assert result and result["action"] == "block"
     assert hooks.on_pre_tool_call(tool_name="terminal", args={"command": "cat README.md"}) is None
+    # Mode off (the default), or MetaMask not chosen: the same read is not blocked.
+    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=False))
+    assert hooks.on_pre_tool_call(tool_name="terminal", args={"command": command}) is None
+    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=True, wallets=()))
+    assert hooks.on_pre_tool_call(tool_name="terminal", args={"command": command}) is None

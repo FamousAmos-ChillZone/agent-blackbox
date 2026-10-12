@@ -49,6 +49,13 @@ _FILE: Dict[str, Classification] = {
     "password-store": Classification("credential-theft", "password-store", "T1555"),
     "browser-cookies": Classification("credential-theft", "browser-session", "T1539"),
     "system-shadow": Classification("credential-theft", "system-accounts", "T1003.008"),
+    # A browser wallet's key store: the encrypted vault, cracked offline once copied (ATT&CK: Credentials from Web Browsers).
+    "crypto-wallet": Classification("wallet-drain", "wallet-keys", "T1555.003"),
+}
+#: A secret the agent handled or sent (local-only findings): which secret type -> what it opens.
+_SECRET: Dict[str, Classification] = {
+    "seed-phrase": Classification("wallet-drain", "wallet-keys", "T1552.001"),
+    "wallet-private-key": Classification("wallet-drain", "wallet-keys", "T1552.001"),
 }
 #: Dangerous command shape -> what running it does.
 _COMMAND: Dict[str, Classification] = {
@@ -120,6 +127,8 @@ _BY_CATEGORY: Dict[str, Callable[[Mapping[str, Any]], Classification]] = {
     "escalation": lambda finding: _COMMAND.get(str(_fields(finding).get("arg_shape") or ""), UNKNOWN),
     "skill": _skill,
     "ioc": _indicator,
+    "secret": lambda finding: _SECRET.get(str(finding.get("identifier") or "").split(":", 1)[-1],
+                                          Classification("credential-theft", "api-keys", "T1552")),
 }
 
 

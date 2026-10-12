@@ -55,15 +55,20 @@ def _events() -> List[Dict[str, Any]]:
 def wallet_protection_payload() -> Dict[str, Any]:
     """What the panel shows (see the module doc). Fail-open: a part that cannot be read is empty."""
     cfg = load_blackbox_config()
+    mode = crypto_secrets.wallet_mode.current()
     try:
         wallets = detection.found_wallets()
     except Exception:   # a filesystem error means "none found", never a broken page
         wallets = []
     return {
+        "enabled": mode.enabled,                 # the panel shows only while Web3 wallet protection is on
+        "wallet_mode": mode.as_json(),
         "mode": "block" if cfg.block_enabled else "audit",
         "block_severity": safe_text(cfg.block_severity, 16),
-        "wallets": [{key: (safe_text(value, 64) if isinstance(value, str) else [safe_text(a, 32) for a in value])
-                     for key, value in wallet.items()} for wallet in wallets],
+        "wallets": [{**{key: (safe_text(value, 64) if isinstance(value, str) else [safe_text(a, 32) for a in value])
+                        for key, value in wallet.items()},
+                     "protected": mode.enabled and str(wallet.get("wallet") or "").lower() in mode.wallets}
+                    for wallet in wallets],
         "seed_checker": bool(crypto_secrets.wordlist_ready()),
         "private_keys": True,
         "protected_paths": [safe_text(p, 120) for p in (cfg.protected_paths or ())][:20],

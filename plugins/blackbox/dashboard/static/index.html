@@ -806,7 +806,11 @@
     overflow: hidden;
   }
 
-  /* ---------- Wallet protection panel (trader rules) ---------- */
+  /* ---------- Wallet protection panel + settings (trader rules) ---------- */
+  .wallet-picks { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
+  .wallet-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+  .wallet-pick.soon { color: var(--muted); cursor: default; }
+  .wallet-pick.soon span { font-size: 11px; }
   .wp-mode { font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 4px 10px; border-radius: 999px; }
   .wp-mode.block { background: color-mix(in srgb, var(--mint) 18%, transparent); color: var(--mint); }
   .wp-mode.audit { background: color-mix(in srgb, #d99a1e 20%, transparent); color: #b7791f; }
@@ -2850,7 +2854,7 @@
     </section>
 
     <!-- Wallet protection (trader rules): what was found on this machine, and how it is protected -->
-    <section class="section" aria-label="Wallet protection" id="wallet-protection">
+    <section class="section" aria-label="Wallet protection" id="wallet-protection" hidden>
       <div class="section-head">
         <div class="section-htext">
           <h2>Wallet protection</h2>
@@ -4440,7 +4444,8 @@
       severity: t.severity || "info", title: t.title || t.identifier || "Threat",
       source: t.source, confirmed: !!t.confirmed,
       tool_name: t.tool || "", framework: (s && s.agent) || "hermes",
-      ts: t.ts || 0, profile: t.profile || {}, decision: t.decision || ""
+      ts: t.ts || 0, profile: t.profile || {}, decision: t.decision || "",
+      evidence: t.evidence || "", context: t.context || null
     };
   }
 
@@ -4930,6 +4935,9 @@
     "Agent": "Which protected agent was involved.",
     "Trigger": "Which check caught it: a tool call, a model request, or a file/package action.",
     "Seen": "How many separate times Blackbox detected this threat on this machine, and when the first and the latest were.",
+    "Reached for": "What the agent tried to get at. Blackbox checks the location only — it never opens the wallet.",
+    "Why it matters": "What someone could do with it if it left this machine.",
+    "What led to it": "The request in the conversation just before the agent acted (kept on this machine only). It shows whether you asked, or something the agent read pushed it there.",
     "What it's after": "The threat's goal, from a fixed list (credential theft, wallet drain, agent hijack…).",
     "At risk": "The KIND of resource the threat targets (cloud credentials, API keys, funds…) — never the actual file or account.",
     "Technique": "The MITRE ATT&CK or ATLAS technique id — the industry's shared name for this attack method.",
@@ -5030,6 +5038,9 @@
     return '<div class="wp-row"><span class="wp-ic ' + cls + '">' + icon + '</span><div>' + html + '</div></div>';
   }
   function renderWalletProtection(d) {
+    var section = $("wallet-protection");
+    if (section) section.hidden = !d.enabled;   // only while Web3 wallet protection is on (Settings)
+    if (!d.enabled) return;
     var block = d.mode === "block";
     var mode = $("wp-mode");
     if (mode) {
@@ -5040,8 +5051,9 @@
     }
     var guard = block ? "protected — blocked if the agent reaches for it" : "watched — flagged, not blocked (audit mode)";
     var found = (d.wallets || []).map(function (w) {
-      return wpRow("✓", "ok", "<b>" + esc(w.wallet) + "</b> · " + esc(w.browser) + (w.profile ? " · profile “" + esc(w.profile) + "”" : "") +
-        '<div class="wp-sub">' + esc((w.areas || []).join(", ")) + " — " + guard + "</div>");
+      return wpRow(w.protected ? "✓" : "–", w.protected ? "ok" : "none", "<b>" + esc(w.wallet) + "</b> · " + esc(w.browser) +
+        (w.profile ? " · profile “" + esc(w.profile) + "”" : "") + '<div class="wp-sub">' + esc((w.areas || []).join(", ")) + " — " +
+        (w.protected ? guard : "not selected in Settings, so not protected") + "</div>");
     });
     if (!found.length) found.push(wpRow("–", "none", "No browser wallet found on this machine." +
       '<div class="wp-sub">Blackbox checks the usual browser folders by name every few minutes; it never opens a vault.</div>'));
@@ -5079,6 +5091,39 @@
   }
   setTimeout(loadWalletProtection, 300);
   setInterval(loadWalletProtection, 30000);
+
+  // A wallet event explains itself: what the agent reached for, why that matters, and what asked for it.
+  var WALLET_WHY = {
+    vault: "The vault holds your seed phrase and private keys, encrypted with your wallet password. Copied off this machine it can be cracked offline, and whoever cracks it can empty the wallet.",
+    seed: "A seed phrase IS the wallet: anyone who has the words controls every account in it, on any device, forever.",
+    key: "A private key signs transactions for its account. Whoever holds it can move the funds."
+  };
+  function walletKind(f) {
+    var id = String(f.identifier || "");
+    if (/:crypto-wallet$/.test(id)) return "vault";
+    if (id === "secret:seed-phrase") return "seed";
+    if (id === "secret:wallet-private-key") return "key";
+    return "";
+  }
+  function walletRows(f) {
+    var kind = walletKind(f);
+    if (!kind) return [];
+    var rows = [];
+    var wallet = (/\(([^)]+)\)/.exec(String(f.title || f.evidence || "")) || [])[1] || "a wallet";
+    var how = /^copy/.test(String(f.evidence || "")) ? "by copying or archiving a folder that contains it" : "by reading it directly";
+    if (kind === "vault") rows.push(["Reached for", wallet + "'s vault (the wallet's key store), " + how]);
+    if (kind === "seed") rows.push(["Reached for", "a seed phrase (wallet recovery words) in what the agent was handling or sending"]);
+    if (kind === "key") rows.push(["Reached for", "a wallet private key, written next to a key label"]);
+    rows.push(["Why it matters", WALLET_WHY[kind]]);
+    var turns = (f.context && Array.isArray(f.context.turns)) ? f.context.turns : [];
+    for (var i = turns.length - 1; i >= 0; i--) {
+      if (turns[i] && String(turns[i].role || "").toLowerCase() === "user" && turns[i].text) {
+        rows.push(["What led to it", "Asked: “" + String(turns[i].text).slice(0, 280) + "”"]);
+        break;
+      }
+    }
+    return rows;
+  }
 
   // The threat profile a report carries (closed words only), as detail rows. Accepts the
   // community rule's camelCase keys or a local finding's snake_case sighting.
@@ -5192,7 +5237,7 @@
     var cells = rows.map(function (r) {
       return { k: r[0], v: r[1], mono: !!r[2],
         full: (r[0] === "Pattern" || r[0] === "Description" || r[0] === "Evidence" || r[0] === "Source" || r[0] === "Feed" ||
-               r[0] === "Fingerprint") };
+               r[0] === "Fingerprint" || r[0] === "Reached for" || r[0] === "Why it matters" || r[0] === "What led to it") };
     });
     // Fill the 2-col grid without gaps: a half cell that would sit alone in
     // its row (next cell is full-width, or it is the last) spans the row.
@@ -5466,6 +5511,7 @@
     add("Trigger", EVENT_LABEL[String(f.event || "")] || f.event);
     // Every time this machine recorded the threat (each is a separate detection), with when.
     add("Seen", f.sightings > 1 ? f.sightings + " times · first " + shortWhen(f.firstSeen) + " · last " + shortWhen(f.ts) : "");
+    rows = rows.concat(walletRows(f));
     rows = rows.concat(profileRows(f.profile || f.sighting));
     var base = gridHTML(rows);
     var advRefs = findingAdvisoryRefs(f);
@@ -7257,7 +7303,9 @@
       report: false, report_min_severity: "high",
       discover: true, osv_lookup: true,
       categories: cats, protected_paths: [],
-      category_labels: {}
+      category_labels: {},
+      wallet_protection: false, protected_wallets: ["metamask"],
+      wallet_supported: [{ id: "metamask", name: "MetaMask" }], wallet_planned: []
     };
   }
 
@@ -7271,6 +7319,11 @@
     out.report = data.report === true;
     out.discover = data.discover !== false;
     out.osv_lookup = data.osv_lookup !== false;
+    var wp = (data.wallet_protection && typeof data.wallet_protection === "object") ? data.wallet_protection : {};
+    out.wallet_protection = wp.enabled === true;
+    if (Array.isArray(wp.wallets)) out.protected_wallets = wp.wallets.slice(0, 20);
+    if (Array.isArray(wp.supported) && wp.supported.length) out.wallet_supported = wp.supported;
+    if (Array.isArray(wp.planned)) out.wallet_planned = wp.planned;
     var cats = (data.categories && typeof data.categories === "object") ? data.categories : {};
     SET_CATS.forEach(function (c) {
       var item = cats[c.key] || {};
@@ -7402,7 +7455,25 @@
     renderCategoriesUI();
     renderPathsUI();
     renderAdvancedUI();
+    renderWalletUI();
     renderThemeUI();
+  }
+
+  // Web3 wallet protection: the mode switch and the wallets to guard (supported ones tickable,
+  // the rest listed as coming soon).
+  function renderWalletUI() {
+    if (!setState || !$("set-wallet")) return;
+    $("set-wallet").checked = !!setState.wallet_protection;
+    var chosen = setState.protected_wallets || [];
+    var rows = (setState.wallet_supported || []).map(function (w) {
+      return '<label class="wallet-pick"><input type="checkbox" data-wallet="' + esc(w.id) + '"' +
+        (chosen.indexOf(w.id) >= 0 ? " checked" : "") + (setState.wallet_protection ? "" : " disabled") + " /> " +
+        esc(w.name) + "</label>";
+    });
+    (setState.wallet_planned || []).forEach(function (name) {
+      rows.push('<label class="wallet-pick soon"><input type="checkbox" disabled /> ' + esc(name) + ' <span>coming soon</span></label>');
+    });
+    $("set-wallets").innerHTML = rows.join("");
   }
 
   function setStatus(msg, kind) {
@@ -7432,7 +7503,9 @@
       osv_lookup: !!setState.osv_lookup,
       report: !!setState.report,
       categories: cats,
-      protected_paths: setState.protected_paths.slice(0, 100)
+      protected_paths: setState.protected_paths.slice(0, 100),
+      wallet_protection: !!setState.wallet_protection,
+      protected_wallets: (setState.protected_wallets || []).slice(0, 20)
     };
   }
 
@@ -7482,6 +7555,7 @@
         setStatus("");
         closeSettings();
         showToast("Changes saved successfully.", "ok");
+        if (typeof loadWalletProtection === "function") loadWalletProtection();   // the panel shows/hides with the mode
       } else {
         var errs = Array.isArray(result.errors) && result.errors.length
           ? result.errors.join(" · ")
@@ -7606,6 +7680,16 @@
     // advanced toggles
     $("set-discover").addEventListener("change", function () {
       if (!setState) return; setState.discover = this.checked; markDirty();
+    });
+    $("set-wallet").addEventListener("change", function () {
+      if (!setState) return; setState.wallet_protection = this.checked; renderWalletUI(); markDirty();
+    });
+    $("set-wallets").addEventListener("change", function (e) {
+      var id = e.target && e.target.getAttribute("data-wallet");
+      if (!setState || !id) return;
+      var list = (setState.protected_wallets || []).filter(function (w) { return w !== id; });
+      if (e.target.checked) list.push(id);
+      setState.protected_wallets = list; markDirty();
     });
     $("set-osv").addEventListener("change", function () {
       if (!setState) return; setState.osv_lookup = this.checked; markDirty();
@@ -8041,6 +8125,27 @@
         <div class="path-add">
           <input type="text" class="path-input" id="set-path-input" placeholder="~/.ssh/*  ·  *.pem  ·  ~/secrets" aria-label="Add a protected path" autocomplete="off" spellcheck="false" />
           <button type="button" class="path-add-btn" id="set-path-add">Add</button>
+        </div>
+      </div>
+
+      <!-- Web3 wallet protection (trader rules) -->
+      <div class="set-group">
+        <div class="set-glabel">Web3 wallet protection</div>
+        <div class="set-row">
+          <div class="set-rl">
+            <div class="set-rt">Protect my crypto wallets</div>
+            <div class="set-rh">Keep your AI agent away from your wallets: it cannot open a wallet's key store (the encrypted vault in your browser), and seed phrases and private keys it handles are flagged, and blocked if it tries to send them off this machine. Your own trading tools keep working. Seed phrases and keys are always kept out of Blackbox's logs, whether this is on or off.</div>
+          </div>
+          <div class="set-rc">
+            <label class="set-toggle"><input type="checkbox" id="set-wallet" /><span class="set-track"></span></label>
+          </div>
+        </div>
+        <div class="set-row">
+          <div class="set-rl">
+            <div class="set-rt">Wallets to protect</div>
+            <div class="set-rh">Choose the wallets installed on this machine.</div>
+            <div class="wallet-picks" id="set-wallets"></div>
+          </div>
         </div>
       </div>
 

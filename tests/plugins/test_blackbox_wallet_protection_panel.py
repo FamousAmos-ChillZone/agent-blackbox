@@ -66,3 +66,50 @@ def test_only_wallet_events_are_listed_with_blocked_or_flagged(home, monkeypatch
     events = protection.wallet_protection_payload()["events"]
     assert sorted((e["identifier"], e["outcome"]) for e in events) == [
         ("fileaccess:terminal:crypto-wallet", "blocked"), ("secret:wallet-private-key", "flagged")]
+
+
+# ------------------------------------------------------------ Web3 wallet protection is a mode
+
+
+from plugins.blackbox.community.sighting import classify
+from plugins.blackbox.kernel import settings
+from plugins.blackbox.kernel.crypto_secrets import wallet_mode
+
+
+def test_the_mode_is_off_by_default_and_governs_only_wallet_findings():
+    mode = wallet_mode.from_entry({})
+    assert mode.enabled is False and mode.wallets == ("metamask",)
+    vault = {"identifier": "fileaccess:terminal:crypto-wallet", "fields": {"wallet": "metamask"}}
+    assert not mode.allows_finding(vault) and not mode.allows_finding({"identifier": "secret:seed-phrase"})
+    assert mode.allows_finding({"identifier": "dep:npm:evil@1.0.0"})   # not a wallet finding: untouched
+    chosen = wallet_mode.from_entry({"wallet_protection": True, "protected_wallets": ["MetaMask", "phantom"]})
+    assert chosen.wallets == ("metamask",) and chosen.allows_finding(vault)   # unsupported names are dropped
+
+
+def test_settings_accept_the_mode_and_refuse_an_unknown_wallet():
+    assert wallet_mode.validate({"wallet_protection": True, "protected_wallets": ["metamask"]}) == (
+        {"wallet_protection": True, "protected_wallets": ["metamask"]}, [])
+    _, errors = wallet_mode.validate({"protected_wallets": ["not-a-wallet"]})
+    assert errors and wallet_mode.validate({"wallet_protection": "yes"})[1]
+    assert "wallet_protection" in settings.read_settings()
+
+
+def test_the_panel_is_off_until_the_mode_is_on(home, monkeypatch):
+    monkeypatch.setattr(protection, "load_blackbox_config", lambda: BlackboxConfig(mode="block"))
+    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=False))
+    assert protection.wallet_protection_payload()["enabled"] is False
+    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=True))
+    _vault(home, "Local Extension Settings", METAMASK_CHROME)
+    wallet_files.EXISTING_STORES.reset()   # the folder scan is cached for minutes
+    payload = protection.wallet_protection_payload()
+    assert payload["enabled"] is True and payload["wallets"][0]["protected"] is True
+
+
+@pytest.mark.parametrize("finding, goal", [
+    ({"category": "fileaccess", "fields": {"file_category": "crypto-wallet"}}, "wallet-drain"),
+    ({"category": "secret", "identifier": "secret:seed-phrase"}, "wallet-drain"),
+    ({"category": "secret", "identifier": "secret:wallet-private-key"}, "wallet-drain"),
+])
+def test_a_wallet_event_names_its_goal_instead_of_unknown(finding, goal):
+    classified = classify(finding)
+    assert (classified.threat_goal, classified.resource_at_risk) == (goal, "wallet-keys")
