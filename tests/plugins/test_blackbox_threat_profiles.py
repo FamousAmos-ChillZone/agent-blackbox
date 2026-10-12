@@ -365,3 +365,13 @@ def test_the_local_proof_shows_what_this_machine_shared_and_signed(monkeypatch, 
     assert proof["shares"][0]["outcome"] == "accepted"
     assert proof["report"]["signer"] == "ed25519:" + reporter.author and proof["report"]["fingerprint"].startswith("sha256:")
     assert proof["own_key"] == ""   # no key file in this home: the proof never creates one
+
+
+def test_a_proof_names_this_nodes_network_instead_of_its_hash():
+    from plugins.blackbox.dashboard import community_routes
+
+    network = {"id": NETWORK, "name": "DKG V10 Base Mainnet"}
+    assert community_routes._named({"network": NETWORK}, network)["network_name"] == "DKG V10 Base Mainnet"
+    other = community_routes._named({"network": "some-test-net"}, network)
+    assert other["this_network"] is False and "network_name" not in other
+    assert community_routes._named({}, network) == {}

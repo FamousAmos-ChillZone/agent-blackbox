@@ -1845,6 +1845,7 @@
     margin-left: 5px; border: 1px solid currentColor; border-radius: 50%; font-size: 9px; font-weight: 600; letter-spacing: 0;
     text-transform: none; cursor: help; vertical-align: 1px; opacity: .75; }
   .m-help:hover, .m-help:focus { opacity: 1; outline: none; }
+  .proof-sum { margin: 2px 0 10px; font-size: 13.5px; color: var(--ok, #2f7d4f); font-weight: 500; }
   .m-help:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
   /* One floating bubble on <body>, positioned by script and kept inside the window —
      an in-panel bubble was clipped by the detail panel's edges. */
@@ -4891,7 +4892,7 @@
     "File category": "The kind of sensitive file touched (credentials, SSH key, .env…) — never the actual path.",
     "Skill": "The agent skill or plugin this record is about.",
     "Danger shape": "What makes the skill's code dangerous, e.g. unrestricted shell access.",
-    "Source": "The threat feed the verified record came from.",
+    "Source": "Who first reported this threat before Umanitek verified it into the graph — a security company, an open-source list or a research project. The line next to it says what that source is.",
     "Contributor": "Who added this record to the graph.",
     "Last updated": "When this record last changed in the graph.",
     "Graph": "Where this record lives. Verifiable graph: Umanitek's curated threats (can block). Community graph: reports shared by other Blackbox nodes (flag only). Local: what happened on this machine.",
@@ -4920,7 +4921,7 @@
     "Reporter": "The reporting node's agent address. A label only: reporters are counted by signing key, so one node cannot pose as many.",
     "Signature": "Every report is checked before it counts. A forged, altered or replayed report fails the check and never reaches this dashboard.",
     "Fingerprint": "A hash of exactly what was signed. Change one letter of the report and the signature no longer matches; anyone can recompute it.",
-    "Valid for": "The network and community graph the signature is bound to. A report signed for a test network or another graph cannot be replayed here.",
+    "Network": "The DKG network the signature is bound to. A report signed on a test network cannot be replayed on this one.",
     "Signed on": "The day the report was signed (reports carry the day, never the time).",
     "Counts toward confirmation": "How many reporters are on the curators' trusted list. Until curators publish that list, every report still flags but none counts toward confirmation.",
     "Shared": "Whether this machine shared this threat with the community graph, when, and whether the network accepted it.",
@@ -4930,33 +4931,34 @@
   // The proof behind a threat, from GET /api/threat-proof: who signed each report,
   // its fingerprint, what the signature is bound to, and (local) what this machine shared.
   function shortKey(k) { k = String(k || ""); return k.length > 30 ? k.slice(0, 18) + "…" + k.slice(-8) : k; }
+  // One proof block: a summary line in plain words, then the details that back it.
+  function graphShort(g) { g = String(g || ""); var i = g.lastIndexOf("/"); return i >= 0 ? g.slice(i + 1) : g; }
+  function networkText(r) { return r.network_name ? r.network_name + (r.this_network ? " · this node's network" : "") : shortKey(r.network); }
+  function proofBlock(title, summary, r) {
+    var rows = [["Signed by", shortKey(r.signer), true], ["Fingerprint", r.fingerprint, true],
+                ["Network", networkText(r), false], ["Graph", graphShort(r.graph), true], ["Signed on", r.day, false]];
+    return '<div class="m-sech">' + esc(title) + '</div><div class="proof-sum">' + esc(summary) + '</div>' +
+      gridHTML(rows.filter(function (row) { return row[1]; }));
+  }
   function proofHTML(p) {
     if (!p) return "";
-    var html = "";
     if (p.tier === "community") {
-      (p.reports || []).forEach(function (r, i) {
-        var rows = [["Signed by", shortKey(r.signer), true], ["Reporter", r.reporter, true],
-                    ["Signature", r.verified ? "valid ✓ — checked on this node" : "not checked", false],
-                    ["Fingerprint", r.fingerprint, true], ["Valid for", (r.network || "") + " · " + (r.graph || ""), true],
-                    ["Signed on", r.day, false]];
-        html += '<div class="m-sech">Proof · report ' + (i + 1) + ' of ' + p.reports.length + '</div>' +
-          gridHTML(rows.filter(function (row) { return row[1]; }));
-      });
-      if (!(p.reports || []).length) html += '<div class="m-sech">Proof</div><div class="modal-empty">No signed report for this threat has reached this node yet.</div>';
-      else if (p.counted !== "") html += gridHTML([["Counts toward confirmation", (p.counted || "0") + " of " + p.reports.length + " reporter" + (p.reports.length === 1 ? "" : "s") + (p.disputed === "yes" ? " · disputed" : ""), false]]);
-      return html;
+      var reports = p.reports || [];
+      if (!reports.length) return '<div class="m-sech">Proof</div><div class="modal-empty">No signed report for this threat has reached this node yet.</div>';
+      var html = reports.map(function (r, i) {
+        var title = reports.length > 1 ? "Proof · report " + (i + 1) + " of " + reports.length : "Proof";
+        return proofBlock(title, (r.verified ? "✓ Signature valid" : "Signature not checked") + " · reported by " + shortKey(r.reporter), r);
+      }).join("");
+      var counted = (p.counted || "0") + " of " + reports.length + " reporter" + (reports.length === 1 ? "" : "s");
+      return html + gridHTML([["Counts toward confirmation", counted + (p.disputed === "yes" ? " · disputed" : ""), false]]);
     }
-    var rows = [];
     var last = (p.shares || [])[0];
-    rows.push(["Shared", last ? (last.outcome + " · " + last.ts.replace("T", " ").replace("Z", " UTC")) : "not shared from this machine", false]);
+    var when = last ? shortWhen(Date.parse(last.ts) / 1000) : "";
     if (p.report && p.report.fingerprint) {
-      rows.push(["Signed by", shortKey(p.report.signer), true]);
-      rows.push(["Fingerprint", p.report.fingerprint, true]);
-      rows.push(["Valid for", (p.report.network || "") + " · " + (p.report.graph || ""), true]);
-      rows.push(["Signed on", p.report.day, false]);
-    } else if (p.own_key) {
-      rows.push(["Your signing key", shortKey(p.own_key), true]);
+      return proofBlock("Proof", "✓ You shared this · " + (last ? last.outcome + " " + when : "signed"), p.report);
     }
+    var rows = [["Shared", last ? last.outcome + " · " + when : "not shared — this finding stayed on this machine", false]];
+    if (p.own_key) rows.push(["Your signing key", shortKey(p.own_key), true]);
     return '<div class="m-sech">Proof</div>' + gridHTML(rows);
   }
   function loadProof(identifier, tier, onReady) {
@@ -5021,6 +5023,29 @@
   };
   var IOC_TYPE_LABEL = { domain: "Domain", ip: "IP address", url: "URL", hash: "File hash", wallet: "Wallet address", contract: "Contract address" };
   var FEED_LABEL = { phishing_database: "Phishing.Database", maltrail_static: "Maltrail (static trails)" };
+  // What each threat source is, in one line — matched by name, case-insensitive.
+  var SOURCE_INFO = [
+    [/socket/i, "Socket — a supply-chain security company that scans new npm and PyPI releases for malware"],
+    [/openssf|ossf|malicious.?packages|^mal-/i, "OpenSSF Malicious Packages — the open-source community's shared list of confirmed malicious packages"],
+    [/osv/i, "OSV.dev — Google's open database of vulnerabilities and malicious packages across ecosystems"],
+    [/ghsa|github.*advis/i, "GitHub Advisory Database — security advisories reviewed by GitHub"],
+    [/phishing.?database/i, "Phishing.Database — a public, continuously tested list of active phishing domains and IPs"],
+    [/maltrail/i, "Maltrail — an open-source list of known malware, command-and-control and attack infrastructure"],
+    [/urlhaus/i, "URLhaus (abuse.ch) — URLs used to spread malware"],
+    [/malwarebazaar/i, "MalwareBazaar (abuse.ch) — samples and file hashes of known malware"],
+    [/threatfox/i, "ThreatFox (abuse.ch) — indicators of compromise shared by researchers"],
+    [/abuse\.?ch/i, "abuse.ch — a non-profit that tracks malware, botnets and the infrastructure behind them"],
+    [/phishtank/i, "PhishTank — a community-verified database of phishing sites"],
+    [/urlscan/i, "urlscan.io — a service that scans and classifies suspicious websites"],
+    [/scamsniffer/i, "ScamSniffer — a Web3 security service that tracks crypto drainer sites and wallets"],
+    [/mcptox/i, "MCPTox — research on poisoned MCP servers and tools aimed at AI agents"],
+    [/umanitek/i, "Umanitek — curated directly into the verified graph by Umanitek's curators"]
+  ];
+  function sourceText(name) {
+    name = String(name || "");
+    for (var i = 0; i < SOURCE_INFO.length; i++) if (SOURCE_INFO[i][0].test(name)) return SOURCE_INFO[i][1];
+    return name;
+  }
   function iocKindLabel(k) { k = String(k || ""); return IOC_KIND_LABEL[k] || IOC_KIND_LABEL[k.toLowerCase()] || ""; }
 
   // [label, value, mono?] rows for the details grid, by category, skipping empties.
@@ -5045,13 +5070,13 @@
     } else if (cat === "ioc") {
       add("Threat type", iocKindLabel(d.kind || d.reportReason));
       add("Indicator", IOC_TYPE_LABEL[d.iocType || d.ioc_type] || d.iocType || d.ioc_type);
-      add("Feed", FEED_LABEL[d.sourceId] || d.sourceId);
+      add("Feed", sourceText(FEED_LABEL[d.sourceId] || d.sourceId));
     } else if (cat === "skill") {
       add("Skill", d.skill, true);
       add("Version", d.skill_version, true);
       add("Danger shape", d.danger_shape, true);
     }
-    add("Source", (d.sources || []).join(", "));
+    add("Source", (d.sources || []).map(sourceText).join("; "));
     add("Contributor", d.contributor);
     add("Last updated", fmtDateFull(d.modified));
     add("Graph", { public: "Verifiable graph (VM)", community: "Community graph (SWM)", local: "Local graph (WM)" }[d.tier] || "Threat graph");
@@ -5078,7 +5103,8 @@
     if (!rows.length) return "";
     var cells = rows.map(function (r) {
       return { k: r[0], v: r[1], mono: !!r[2],
-        full: (r[0] === "Pattern" || r[0] === "Description" || r[0] === "Evidence") };
+        full: (r[0] === "Pattern" || r[0] === "Description" || r[0] === "Evidence" || r[0] === "Source" || r[0] === "Feed" ||
+               r[0] === "Fingerprint") };
     });
     // Fill the 2-col grid without gaps: a half cell that would sit alone in
     // its row (next cell is full-width, or it is the last) spans the row.
@@ -5268,11 +5294,12 @@
         ({ public: "verifiable", community: "community", local: "local" }[d.tier] || "local") + ' graph yet.</div>';
     }
 
-    $("tm-body").innerHTML = body;
+    $("tm-body").innerHTML = body + '<div id="tm-proof"></div>';
     if (d.tier === "community") {
       var shownFor = d.identifier;
       loadProof(d.identifier, "community", function (html) {
-        if ($("tm-id").textContent === shownFor && html) $("tm-body").insertAdjacentHTML("beforeend", html);
+        var slot = $("tm-proof");
+        if ($("tm-id").textContent === shownFor && slot) slot.innerHTML = html;   // replaced, never appended
       });
     }
   }
@@ -5431,10 +5458,11 @@
     $("tm-id").textContent = id;
     var idrow = $("tm-idrow"); if (idrow) idrow.style.display = id ? "" : "none";
     var copyBtn = $("tm-copy"); if (copyBtn) { copyBtn.textContent = "Copy"; copyBtn.classList.remove("ok"); }
-    $("tm-body").innerHTML = findingBaseHTML(f);
-    loadProof(id, "local", function (html) {
-      if (TM.finding === f && html) { f.proofHTML = html; $("tm-body").insertAdjacentHTML("beforeend", html); }
-    });
+    // One paint from three parts, so re-renders replace the proof instead of stacking copies.
+    var parts = { intel: "", proof: "" };
+    var paint = function () { if (TM.finding === f) $("tm-body").innerHTML = findingBaseHTML(f) + parts.intel + parts.proof; };
+    paint();
+    loadProof(id, "local", function (html) { parts.proof = html; paint(); });
     overlay.classList.add("open");
     overlay.setAttribute("aria-hidden", "false");
 
@@ -5447,7 +5475,7 @@
       var intel = threatIntelHTML(d || {});
       if (d && iocKindLabel(d.kind) && $("tm-tags").innerHTML.indexOf("kind-malware") < 0)
         $("tm-tags").insertAdjacentHTML("beforeend", '<span class="m-tag kind-malware">' + esc(iocKindLabel(d.kind)) + '</span>');
-      if (intel) $("tm-body").innerHTML = findingBaseHTML(f) + intel + (f.proofHTML || "");
+      if (intel) { parts.intel = intel; paint(); }
     };
     var lookup = function (i) {
       if (i >= tiers.length || TM.finding !== f) return;

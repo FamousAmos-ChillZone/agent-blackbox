@@ -230,6 +230,26 @@ def _envelope_proof(signed_text: str) -> Dict[str, Any]:
             "day": safe_text(envelope.payload.get("day"), 16), "schema": int(envelope.schema_version)}
 
 
+def _node_network(cfg: Any) -> Dict[str, str]:
+    """This node's DKG network: its id and readable name ("DKG V10 Base Mainnet"), so a
+    proof can say "this node's network" instead of a hash. Empty when the node is down."""
+    from ..kernel.dkg_client import DkgClient
+
+    try:
+        status = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home).status(timeout=2.0)
+    except Exception:   # fail open: the proof still shows the raw network id
+        return {}
+    return {"id": str(status.get("networkId") or ""),
+            "name": safe_text(status.get("networkName") or status.get("networkConfig"), 80)}
+
+
+def _named(proof: Dict[str, Any], network: Dict[str, str]) -> Dict[str, Any]:
+    """*proof* with ``network_name`` set when it is bound to this node's network."""
+    if proof and network.get("id") and proof.get("network") == network["id"]:
+        return {**proof, "network_name": network.get("name") or "", "this_network": True}
+    return {**proof, "this_network": False} if proof else proof
+
+
 def threat_proof_payload(identifier: str, tier: str, verified_reports: VerifiedReportsRead) -> Dict[str, Any]:
     """The proof behind one threat (threat profiles, 2026-10-12).
 
@@ -245,11 +265,12 @@ def threat_proof_payload(identifier: str, tier: str, verified_reports: VerifiedR
     from ..kernel.config import load_blackbox_config
 
     cfg = load_blackbox_config()
+    network = _node_network(cfg)
     out: Dict[str, Any] = {"identifier": safe_identifier(identifier), "tier": tier}
     if tier == "community":
         reports = [r for r in verified_reports(cfg) if r.identifier == identifier]
-        out["reports"] = [{**_envelope_proof(r.signed), "reporter": safe_text(r.reporter, 64), "verified": True}
-                          for r in reports]
+        out["reports"] = [{**_named(_envelope_proof(r.signed), network), "reporter": safe_text(r.reporter, 64),
+                           "verified": True} for r in reports]
         rule = (getattr(ruleset.peek(cfg), "community", {}) or {}).get(identifier) or {}
         out["counted"] = safe_text(rule.get("counted"), 8)
         out["unlisted"] = safe_text(rule.get("unlistedReporters"), 8)
@@ -260,7 +281,7 @@ def threat_proof_payload(identifier: str, tier: str, verified_reports: VerifiedR
                       ("accepted" if row.get("ok") else "failed"), 32)} for row in shares[:5]]
     live = next((report for report in community.keep_alive.LiveReportStore().all() if report.identifier == identifier), None)
     signed = next((q.get("object", "") for q in (live.quads if live else ()) if q.get("predicate", "").endswith("signedStatement")), "")
-    out["report"] = _envelope_proof(json.loads(signed) if signed.startswith('"') else signed) if signed else {}
+    out["report"] = _named(_envelope_proof(json.loads(signed) if signed.startswith('"') else signed) if signed else {}, network)
     store = reporter_key.ReporterKeyStore()
     out["own_key"] = ("ed25519:" + store.public_key_hex()) if store.path.exists() else ""
     return out
