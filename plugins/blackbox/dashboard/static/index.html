@@ -849,6 +849,70 @@
   .wp-ev .o { font-weight: 700; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
   .wp-ev .o.blocked { color: #d0342c; } .wp-ev .o.flagged { color: #c9821a; }
   @media (max-width: 700px) { .wp-col { border-right: 0; border-bottom: 1px solid var(--border); } .wp-col:last-child { border-bottom: 0; } }
+  button.wp-ev { width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--border); color: inherit; font: inherit;
+    font-size: 12.5px; cursor: pointer; border-radius: 0; }
+  button.wp-ev:hover { background: color-mix(in srgb, var(--signal) 6%, transparent); }
+  button.wp-ev:focus-visible, .wev-all:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+  .wev-all { background: none; border: 0; color: var(--signal); font: 600 11px var(--body-font); letter-spacing: 0; text-transform: none; cursor: pointer; padding: 0 0 0 6px; }
+
+  /* ---------- Trader Shield: the full-screen wallet-events window (local only) ---------- */
+  .wev-overlay { position: fixed; inset: 0; z-index: 80; background: var(--bg); display: flex; flex-direction: column; }
+  .wev-overlay[hidden] { display: none; }
+  .wev-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 24px 14px; border-bottom: 1px solid var(--border); }
+  .wev-kicker { font-family: var(--mono-font); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--signal); }
+  .wev-head h2 { margin: 4px 0 2px; font-size: 24px; font-weight: 850; font-stretch: 112%; text-transform: uppercase; }
+  .wev-note { color: var(--muted-strong); font-size: 13px; }
+  .wev-close { background: none; border: 1px solid var(--border-strong); border-radius: var(--radius); color: var(--text); width: 40px; height: 40px; cursor: pointer; flex: 0 0 auto; }
+  .wev-private { display: flex; gap: 10px; align-items: flex-start; margin: 12px 24px 0; padding: 10px 14px; font-size: 12.5px; line-height: 1.5;
+    border: 1px solid color-mix(in srgb, var(--mint) 45%, transparent); background: color-mix(in srgb, var(--mint) 8%, transparent); border-radius: var(--radius); }
+  .wev-private b { color: var(--mint); }
+  .wev-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 0; margin-top: 12px; border-top: 1px solid var(--border); }
+  .wev-list { overflow-y: auto; border-right: 1px solid var(--border); }
+  .wev-item { display: grid; gap: 3px; width: 100%; text-align: left; padding: 12px 18px; background: none; border: 0; border-bottom: 1px solid var(--border);
+    color: var(--text); font: inherit; cursor: pointer; border-left: 3px solid transparent; }
+  .wev-item:hover { background: color-mix(in srgb, var(--signal) 5%, transparent); }
+  .wev-item[aria-current="true"] { background: var(--panel); border-left-color: var(--signal); }
+  .wev-item:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+  .wev-item .t { font-size: 13.5px; font-weight: 650; }
+  .wev-item .m { font-size: 11.5px; color: var(--muted); }
+  .wev-item code { font-family: var(--mono-font); font-size: 11px; color: var(--muted-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+  .wev-chip { justify-self: start; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; border-radius: 999px; padding: 2px 8px; }
+  .wev-chip.blocked { color: #fff; background: #d0342c; } .wev-chip.flagged { color: #fff; background: #c9821a; }
+  .wev-detail { overflow-y: auto; padding: 22px 28px 40px; min-width: 0; }
+  .wev-detail h3 { margin: 8px 0 4px; font-size: 22px; line-height: 1.25; }
+  .wev-when { color: var(--muted); font-size: 12.5px; }
+  .wev-story { margin: 16px 0 0; font-size: 15px; line-height: 1.6; max-width: 72ch; }
+  .wev-story q { font-style: italic; }
+  .wev-sec { margin-top: 26px; }
+  .wev-sec > h4 { margin: 0 0 10px; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .wev-facts { display: grid; grid-template-columns: minmax(120px, 170px) 1fr; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+  .wev-facts > div { padding: 9px 14px; border-bottom: 1px solid var(--border); font-size: 13px; line-height: 1.5; min-width: 0; overflow-wrap: anywhere; }
+  .wev-facts > .k { color: var(--muted); }
+  .wev-facts > div:nth-last-child(-n+2) { border-bottom: 0; }
+  .wev-facts .mono { font-family: var(--mono-font); font-size: 12px; }
+  .wev-todo { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 13.5px; line-height: 1.5; max-width: 72ch; }
+  .wev-steps { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--border); }
+  .wev-step { position: relative; display: grid; grid-template-columns: 64px 1fr; gap: 10px; padding: 7px 0 7px 16px; font-size: 13px; }
+  .wev-step::before { content: ""; position: absolute; left: -6px; top: 13px; width: 10px; height: 10px; border-radius: 50%; background: var(--border-strong); }
+  .wev-step .off { font-family: var(--mono-font); font-size: 11.5px; color: var(--muted); padding-top: 1px; }
+  .wev-step .what { min-width: 0; overflow-wrap: anywhere; }
+  .wev-step .what code { font-family: var(--mono-font); font-size: 12px; }
+  .wev-step .kind { color: var(--muted); font-size: 11.5px; margin-right: 6px; }
+  .wev-step.this { background: color-mix(in srgb, var(--signal) 9%, transparent); border-radius: 0 var(--radius) var(--radius) 0; }
+  .wev-step.this::before { background: var(--signal); box-shadow: 0 0 0 4px color-mix(in srgb, var(--signal) 25%, transparent); }
+  .wev-step .here { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--signal); margin-left: 8px; }
+  .wev-empty { padding: 40px 24px; color: var(--muted); }
+  @media (max-width: 760px) {
+    .wev-head { padding: 14px 16px 10px; } .wev-head h2 { font-size: 20px; }
+    .wev-private { margin: 10px 16px 0; }
+    .wev-body { display: block; overflow-y: auto; }
+    .wev-list { max-height: 34vh; border-right: 0; border-bottom: 1px solid var(--border); }
+    .wev-detail { overflow: visible; padding: 18px 16px 32px; }
+    .wev-facts { grid-template-columns: 1fr; }
+    .wev-facts > .k { border-bottom: 0; padding-bottom: 0; }
+    .wev-facts > div:nth-last-child(2) { border-bottom: 0; }
+    .wev-step { grid-template-columns: 54px 1fr; }
+  }
 
   /* ---------- Connected agents strip ---------- */
   .agents-strip {
@@ -5109,7 +5173,9 @@
     });
   })();
 
+  var wpLast = null;   // the latest panel payload (the events window reads its mode)
   function renderWalletProtection(d) {
+    wpLast = d;
     updateTraderShieldBanner(d);
     var section = $("wallet-protection");
     if (section) section.hidden = !d.enabled;   // only while Web3 wallet protection is on (Settings)
@@ -5148,11 +5214,13 @@
     ];
     var col2 = '<div class="wp-col"><div class="wp-h">Always watching</div>' + watch.join("") + "</div>";
     var events = (d.events || []).slice(0, 6).map(function (e) {
-      return '<div class="wp-ev"><span class="o ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span><span>" + esc(e.title || e.identifier) +
-        '</span><span class="wp-sub">' + esc(shortWhen(e.ts)) + "</span><span class=\"wp-sub\">" + esc(e.tool ? "via " + e.tool : "") + "</span></div>";
+      return '<button type="button" class="wp-ev" data-wev-open="' + esc(e.identifier) + '" data-wev-ts="' + esc(String(e.ts || "")) +
+        '" title="Open the full report"><span class="o ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span><span>" + esc(e.title || e.identifier) +
+        '</span><span class="wp-sub">' + esc(shortWhen(e.ts)) + "</span><span class=\"wp-sub\">" + esc(e.tool ? "via " + e.tool : "") + "</span></button>";
     });
     var col3 = '<div class="wp-col"><div class="wp-h">Recent wallet events ' +
-      wpHelp("The latest times your agent reached for a wallet, a seed phrase or a private key, and what Blackbox did.") + "</div>" +
+      wpHelp("The latest times your agent reached for a wallet, a seed phrase or a private key, and what Blackbox did. Click one for the full story.") +
+      (events.length ? '<button type="button" class="wev-all" data-wev-open="">View all →</button>' : "") + "</div>" +
       (events.length ? events.join("") : '<div class="wp-sub">Nothing yet — no agent has reached for a wallet or key.</div>') + "</div>";
     $("wp-body").innerHTML = col1 + col2 + col3;
   }
@@ -5164,6 +5232,136 @@
   }
   setTimeout(loadWalletProtection, 300);
   setInterval(loadWalletProtection, 30000);
+
+  // ---------- Trader Shield: the full-screen wallet-events window (GET /api/wallet-protection/events) ----------
+  // Every wallet event with the story of what happened, read from THIS machine's logs only.
+  // Elements are looked up when the window opens (its markup sits after this script).
+  var wev = { events: [], selected: 0, lastFocus: null };
+  function wevWhen(ts) {
+    try { return new Date(ts * 1000).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" }); }
+    catch (_) { return ""; }
+  }
+  function wevOffset(ts, start) {
+    var s = Math.max(0, (ts || 0) - (start || 0));
+    return s < 60 ? "+" + s.toFixed(1) + "s" : "+" + Math.floor(s / 60) + "m " + Math.round(s % 60) + "s";
+  }
+  function wevWallet(e) { return (/\(([^)]+)\)/.exec(String(e.title || "")) || [])[1] || "a wallet"; }
+  function wevStory(e) {
+    var kind = walletKind(e), wallet = wevWallet(e), copying = /^copy/.test(String(e.evidence || ""));
+    var did = kind === "vault" ? (copying ? "copied " + wallet + "'s vault (the encrypted file that holds its keys) by archiving or copying a folder that contains it"
+                                          : "opened " + wallet + "'s vault (the encrypted file that holds its keys)")
+            : kind === "seed" ? "handled a seed phrase — the recovery words that control a whole wallet"
+            : "handled a wallet private key — the key that signs for an account";
+    var where = e.session && e.session.model ? "In a conversation with " + e.session.model : "In an agent session";
+    var asked = e.asked ? where + ", your agent was asked: <q>" + esc(e.asked) + "</q> " : where + ", ";
+    var acted = (e.asked ? "It then " : "your agent ") + (e.tool === "terminal" ? "ran a terminal command that would have " : "used its " + esc(e.tool || "tool") + " tool in a way that would have ") + did + ".";
+    var outcome;
+    if (e.outcome === "blocked") outcome = " <b>Blackbox stopped it before it ran</b> — nothing was read, copied or sent, and the agent was told why.";
+    else if (wpLast && wpLast.mode === "audit") outcome = " <b>Blackbox let it run and recorded it</b>, because it is set to watch only (audit mode).";
+    else outcome = " <b>Blackbox flagged it and let it run</b>: handling a key on this machine is allowed (trading tools need it); sending it off the machine is what gets blocked.";
+    return asked + acted + outcome;
+  }
+  function wevTodo(e) {
+    var kind = walletKind(e), blocked = e.outcome === "blocked", out = [];
+    if (blocked) out.push("Nothing left this machine. No action is needed for this event.");
+    if (kind === "vault" && blocked) out.push("If you asked for this on purpose (a browser backup, say), do it yourself outside the agent — Blackbox will keep agents away from the vault.");
+    if (kind === "vault" && !blocked) out.push("The action ran. Look for the copy it made (an archive or folder) and delete it, then turn on Block in Settings so it is stopped next time.");
+    if (kind !== "vault" && !blocked) out.push("If this " + (kind === "seed" ? "seed phrase" : "key") + " was ever pasted or sent somewhere you don't control, move the funds to a new wallet.");
+    out.push(e.asked ? "If you did not ask for this, check what the agent read just before (a web page, file or message) — it may have been told to." :
+                       "Check what the agent read just before (a web page, file or message) — it may have been told to do this.");
+    return out;
+  }
+  function wevFacts(e) {
+    var rows = walletRows({ identifier: e.identifier, title: e.title, evidence: e.evidence }).map(function (r) { return [r[0], r[1], false]; });
+    if (e.command) rows.push(["Command", e.command, true]);
+    rows.push(["Tool", e.tool || "—", false], ["Decision", e.outcome === "blocked" ? "Blocked before it ran" : "Flagged (it ran)", false],
+              ["Severity", e.severity || "—", false]);
+    profileRows(e.profile).forEach(function (r) {
+      if (r[0] === "Outcome" || r[0] === "Seen via" || String(r[1]) === "unknown") return;
+      rows.push(r);
+    });
+    rows.push(["Rule", e.identifier, true]);
+    var s = e.session || {};
+    rows.push(["Session", [s.agent, s.model, s.status, (s.steps || 0) + " steps", s.id ? "#" + s.id : ""].filter(Boolean).join(" · "), false]);
+    return '<div class="wev-facts">' + rows.map(function (r) {
+      return '<div class="k">' + esc(r[0]) + '</div><div' + (r[2] ? ' class="mono"' : "") + ">" + esc(r[1]) + "</div>";
+    }).join("") + "</div>";
+  }
+  var WEV_KIND = { api: "model", tool: "tool", file: "file", dependency: "install", threat: "threat" };
+  function wevTimeline(e) {
+    var start = (e.session && e.session.start) || (e.timeline[0] && e.timeline[0].ts) || 0;
+    return '<ol class="wev-steps">' + (e.timeline || []).map(function (step) {
+      var flags = (step.threats || []).length ? " · " + step.threats.join(", ") : "";
+      var label = step.type === "tool" ? (step.tool ? esc(step.tool) + ": " : "") + "<code>" + esc(step.label || "") + "</code>" : esc(step.label || "");
+      return '<li class="wev-step' + (step.this ? " this" : "") + '"><span class="off">' + esc(wevOffset(step.ts, start)) + '</span><span class="what"><span class="kind">' +
+        esc(WEV_KIND[step.type] || step.type) + "</span>" + label + esc(step.result ? " → " + step.result : "") + esc(flags) +
+        (step.this ? '<span class="here">← this event</span>' : "") + "</span></li>";
+    }).join("") + "</ol>";
+  }
+  function wevRenderDetail() {
+    var e = wev.events[wev.selected], box = $("wev-detail");
+    if (!box) return;
+    if (!e) { box.innerHTML = '<div class="wev-empty">No wallet events yet — no agent has reached for a wallet, a seed phrase or a key.</div>'; return; }
+    box.innerHTML = '<span class="wev-chip ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span><h3>" + esc(e.title || e.identifier) + "</h3>" +
+      '<div class="wev-when">' + esc(wevWhen(e.ts)) + (e.tool ? " · via " + esc(e.tool) : "") + "</div>" +
+      '<p class="wev-story">' + wevStory(e) + "</p>" +
+      '<div class="wev-sec"><h4>What to do</h4><ul class="wev-todo">' + wevTodo(e).map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul></div>" +
+      '<div class="wev-sec"><h4>The details</h4>' + wevFacts(e) + "</div>" +
+      '<div class="wev-sec"><h4>What happened in that session</h4>' + wevTimeline(e) + "</div>";
+    box.scrollTop = 0;
+  }
+  function wevRenderList() {
+    var list = $("wev-list");
+    if (!list) return;
+    list.innerHTML = wev.events.map(function (e, i) {
+      return '<button type="button" class="wev-item" data-wev-index="' + i + '"' + (i === wev.selected ? ' aria-current="true"' : "") + '>' +
+        '<span class="wev-chip ' + esc(e.outcome) + '">' + esc(e.outcome) + '</span><span class="t">' + esc(e.title || e.identifier) + "</span>" +
+        '<span class="m">' + esc(shortWhen(e.ts)) + (e.session && e.session.model ? " · " + esc(e.session.model) : "") + "</span>" +
+        (e.command ? "<code>" + esc(e.command) + "</code>" : "") + "</button>";
+    }).join("");
+  }
+  function wevSelect(i) {
+    wev.selected = Math.max(0, Math.min(i, wev.events.length - 1));
+    wevRenderList(); wevRenderDetail();
+  }
+  function wevPick(identifier, ts) {   // the event the panel row was clicked for (same rule, nearest time)
+    var best = 0, bestGap = Infinity;
+    wev.events.forEach(function (e, i) {
+      var gap = Math.abs((e.ts || 0) - ts);
+      if ((!identifier || e.identifier === identifier) && gap < bestGap) { best = i; bestGap = gap; }
+    });
+    return identifier ? best : 0;
+  }
+  function openWalletEvents(identifier, ts) {
+    var overlay = $("wallet-events");
+    if (!overlay) return;
+    wev.lastFocus = document.activeElement;
+    overlay.hidden = false;
+    lockSettingsPageScroll();
+    $("wev-detail").innerHTML = '<div class="wev-empty">Loading…</div>';
+    $("wev-close").focus();
+    getJSON("/api/wallet-protection/events").then(function (d) {
+      wev.events = (d && Array.isArray(d.events)) ? d.events : [];
+      wevSelect(wevPick(identifier, Number(ts) || 0));
+    }).catch(function () {
+      $("wev-detail").innerHTML = '<div class="wev-empty">The wallet events could not be read right now.</div>';
+    });
+  }
+  function closeWalletEvents() {
+    var overlay = $("wallet-events");
+    if (!overlay || overlay.hidden) return;
+    overlay.hidden = true;
+    unlockSettingsPageScroll();
+    if (wev.lastFocus && wev.lastFocus.focus) wev.lastFocus.focus();
+  }
+  document.addEventListener("click", function (e) {
+    var opener = e.target && e.target.closest ? e.target.closest("[data-wev-open]") : null;
+    if (opener) { openWalletEvents(opener.getAttribute("data-wev-open"), opener.getAttribute("data-wev-ts")); return; }
+    var item = e.target && e.target.closest ? e.target.closest("[data-wev-index]") : null;
+    if (item) { wevSelect(Number(item.getAttribute("data-wev-index"))); return; }
+    if (e.target && e.target.closest && e.target.closest("#wev-close")) closeWalletEvents();
+  });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeWalletEvents(); });
 
   // A wallet event explains itself: what the agent reached for, why that matters, and what asked for it.
   var WALLET_WHY = {
@@ -8119,6 +8317,24 @@
 </div>
 
 <!-- Settings panel — reuses the .modal-overlay / .modal system -->
+<!-- Trader Shield: every wallet event, read from this machine's logs only (wired lazily by the script above) -->
+<div class="wev-overlay" id="wallet-events" hidden role="dialog" aria-modal="true" aria-labelledby="wev-title">
+  <div class="wev-head">
+    <div>
+      <div class="wev-kicker">Trader Shield · Beta</div>
+      <h2 id="wev-title">Wallet events</h2>
+      <div class="wev-note">Every time your agent reached for a wallet, a seed phrase or a private key — what it was doing, and what Blackbox did.</div>
+    </div>
+    <button type="button" class="wev-close" id="wev-close" aria-label="Close wallet events">✕</button>
+  </div>
+  <div class="wev-private" role="note"><span aria-hidden="true">🔒</span><span><b>Private to this machine.</b> This report is read from Blackbox's own logs on this computer.
+    Wallet events are never shared with the community graph — not even a summary — and secrets in commands or messages were removed before they were written down.</span></div>
+  <div class="wev-body">
+    <nav class="wev-list" id="wev-list" aria-label="Wallet events"></nav>
+    <article class="wev-detail" id="wev-detail" aria-live="polite"></article>
+  </div>
+</div>
+
 <div class="modal-overlay" id="settings-modal" aria-hidden="true">
   <div class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="set-title">
     <button class="modal-close" id="set-close" aria-label="Close settings">&#10005;</button>

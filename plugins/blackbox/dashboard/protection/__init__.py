@@ -12,6 +12,9 @@
 * ``events`` — the latest wallet-related findings (vault access, seed phrases,
   labelled private keys), each blocked or flagged, newest first.
 
+``GET /api/wallet-protection/events`` is the full local report behind the panel's
+"Wallet events" window (:mod:`.events`: every event with its session timeline).
+
 Usage::
 
     register_protection_routes(app)   # from dashboard.server.create_app
@@ -26,15 +29,9 @@ from ... import audit, detection
 from ...kernel import crypto_secrets
 from ...kernel.config import load_blackbox_config
 from ..safe_payloads import safe_identifier, safe_text
+from .events import is_wallet_identifier, wallet_event_report
 
-#: Finding identifiers that belong to wallet protection.
-WALLET_IDENTIFIERS = ("secret:seed-phrase", "secret:wallet-private-key")
-WALLET_FILE_SUFFIX = ":" + "crypto-wallet"
 MAX_EVENTS = 20
-
-
-def _is_wallet_event(identifier: str) -> bool:
-    return identifier in WALLET_IDENTIFIERS or identifier.endswith(WALLET_FILE_SUFFIX)
 
 
 def _events() -> List[Dict[str, Any]]:
@@ -42,7 +39,7 @@ def _events() -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for row in audit.read_findings(limit=500):   # flattened rows, newest first
         identifier = str(row.get("identifier") or "")
-        if not _is_wallet_event(identifier):
+        if not is_wallet_identifier(identifier):
             continue
         out.append({"ts": row.get("ts"), "identifier": safe_identifier(identifier),
                     "title": safe_text(row.get("title"), 160), "severity": safe_text(row.get("severity"), 16),
@@ -83,12 +80,16 @@ TRADER_SHIELD_PAGE = Path(__file__).resolve().parent.parent / "static" / "trader
 
 
 def register_protection_routes(app: Any) -> None:
-    """Add ``GET /api/wallet-protection`` and the ``/trader-shield`` page to *app* (a FastAPI app)."""
+    """Add ``GET /api/wallet-protection``, its ``/events`` report and the ``/trader-shield`` page to *app*."""
     from fastapi.responses import FileResponse, HTMLResponse
 
     @app.get("/api/wallet-protection")
     def wallet_protection() -> Any:
         return wallet_protection_payload()
+
+    @app.get("/api/wallet-protection/events")
+    def wallet_protection_events() -> Any:
+        return wallet_event_report()
 
     @app.get("/trader-shield", response_class=HTMLResponse)
     def trader_shield_page() -> Any:

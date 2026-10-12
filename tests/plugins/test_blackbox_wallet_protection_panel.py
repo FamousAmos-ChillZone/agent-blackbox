@@ -139,3 +139,11 @@ def test_the_panel_opens_settings_at_the_trader_shield_section():
     assert 'id="wp-edit"' in html and 'id="set-trader-shield"' in html
     wiring = html[html.index('var wpEdit = $("wp-edit")'):]
     assert wiring.index("openSettings()") < wiring.index('$("set-trader-shield")')
+
+
+def test_every_panel_event_opens_the_full_local_report_window():
+    html = (protection.TRADER_SHIELD_PAGE.parent / "index.html").read_text(encoding="utf-8")
+    assert 'class="wp-ev" data-wev-open="' in html and 'data-wev-open="">View all' in html
+    assert 'id="wallet-events" hidden' in html and ".wev-overlay[hidden] { display: none; }" in html
+    assert 'getJSON("/api/wallet-protection/events")' in html
+    assert "Private to this machine." in html
