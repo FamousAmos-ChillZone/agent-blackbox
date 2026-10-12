@@ -1,6 +1,7 @@
 """Release contract: curated public VM only; community SWM is coming soon."""
 
 import time
+import pytest
 from argparse import Namespace
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from plugins.blackbox.ruleset import fetching as ruleset_fetching
 from plugins.blackbox.ruleset import refresh_cycle as ruleset_refresh
 from plugins.blackbox.kernel import config, constants
 from plugins.blackbox.dashboard import server
-from _vm_partitions import answer_partition_query, is_partition_query
+from _vm_partitions import answer_lane_query, is_lane_query
 
 
 DASHBOARD_HTML = (
@@ -40,7 +41,7 @@ def test_refresh_queries_only_verifiable_memory(monkeypatch, tmp_path):
 
     monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
     monkeypatch.setattr(ruleset_refresh, "_memory", ruleset_refresh._new_memory())
-    cfg = config.BlackboxConfig()
+    cfg = config.BlackboxConfig(community_graph_id="")
     ruleset.refresh(cfg, Client())
 
     assert queries
@@ -49,8 +50,12 @@ def test_refresh_queries_only_verifiable_memory(monkeypatch, tmp_path):
     assert "dkg:assertionGraph" in metadata_query
     assert "/_meta>" in metadata_query
     data_graph = f"did:dkg:context-graph:{cfg.context_graph_id}"
-    assert {view for _query, view in queries[1:]} == {None}
-    assert all(f"GRAPH <{data_graph}>" in query for query, _view in queries[1:])
+    # The small-tier lanes read the confirmed assets' graphs (GRAPH ?g under the VM
+    # prefix, through the verified-memory view); the root rows read the data graph.
+    assert {view for _query, view in queries[1:]} <= {None, "verifiable-memory"}
+    vm_prefix = f'"{data_graph}/_verifiable_memory/"'
+    assert all(f"GRAPH <{data_graph}>" in query or ("GRAPH ?g {" in query and vm_prefix in query)
+               for query, _view in queries[1:])
 
 
 def test_cached_community_rules_are_discarded():
@@ -71,6 +76,7 @@ def test_cached_community_rules_are_discarded():
     assert [r["identifier"] for r in restored.graph_threats] == ["public"]
 
 
+@pytest.mark.usefixtures("no_community_graph")
 def test_sharing_stays_dormant_without_a_community_graph_address(monkeypatch):
     """Contract update (community-graph build B2): the `report` key is LIVE,
     but community sharing remains dormant by construction until a community
@@ -81,7 +87,7 @@ def test_sharing_stays_dormant_without_a_community_graph_address(monkeypatch):
     monkeypatch.delenv("BLACKBOX_COMMUNITY_GRAPH_ID", raising=False)
     cfg = config.load_blackbox_config()
     assert cfg.report is True  # the switch is real now
-    assert cfg.community_graph_id == ""  # shipped default: no address
+    assert cfg.community_graph_id == ""  # an install with no community graph
     assert cfg.community_enabled is False  # → every community path dormant
     assert cfg.daily_report_limit > 0  # the cap exists the moment sharing can
 
@@ -118,6 +124,7 @@ def test_openclaw_runtime_reads_vm_only_and_reporting_is_opt_in():
     assert 'row.source !== "community"' in ruleset_src
 
 
+@pytest.mark.usefixtures("no_community_graph")
 def test_report_command_submits_nothing_when_community_dormant(monkeypatch, capsys):
     """Contract update (community-graph build B6): the command is REAL now,
     but with no community graph configured (the shipped default) it must
@@ -404,6 +411,7 @@ def test_dashboard_reuses_fresh_large_ruleset_without_querying_blazegraph(monkey
     }
 
 
+@pytest.mark.usefixtures("no_community_graph")
 def test_dashboard_community_surfaces_live_but_dormant_without_graph(monkeypatch):
     """Contract update (community-graph build B7): the community surfaces are
     LIVE endpoints now. With no community graph configured (the shipped
@@ -437,42 +445,51 @@ def test_a_refused_partition_keeps_the_last_good_tier_and_never_reads_the_broad_
     load (bench v21, 2026-10-06)."""
     cg = "0xC/agent-blackbox-vm"
     partition = f"did:dkg:context-graph:{cg}/_verifiable_memory/0xc/1"
-    views = []
+    queries = []
 
     class Client:
         def query(self, sparql, _cg, on_error=None, view="unset", **kwargs):
-            views.append(view)
+            queries.append(sparql)
             if "dkg:assertionGraph" in sparql:
                 return [{"assertionGraph": partition, "status": "confirmed"}]
-            return on_error  # every partition read refused
+            return on_error  # every verified read refused
 
     assert ruleset_fetching.fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY) is None
-    assert constants.VIEW_VERIFIABLE_MEMORY not in views
+    assert all("GRAPH" in query for query in queries[1:])   # every verified read names its graphs
 
 
-def test_a_readable_partition_is_read_as_triples_never_through_the_verified_view(monkeypatch):
-    """The confirmed-partition trust path, now one plain triple read per asset."""
+def test_small_tiers_are_read_by_graph_scoped_lanes_and_only_confirmed_assets_count(monkeypatch):
+    """DKG-lookup B6: the compiled tiers come from typed lanes over ``GRAPH ?g`` under the
+    VM prefix (never an unscoped verified-view query, bench v21); a tentative asset's
+    rows are dropped; dependency / IOC rows are not compiled at all (looked up live)."""
     cg = "0xC/agent-blackbox-vm"
     data_graph = f"did:dkg:context-graph:{cg}"
-    partition = f"{data_graph}/_verifiable_memory/0xc/1"
-    rows_by_partition = {partition: [{
-        "threat": "urn:guardian:threat:z", "rdfType": "urn:defender:IocSignal",
-        "severity": "high", "category": "domain", "iocValue": "bad.example",
-    }]}
-    views = []
+    confirmed, tentative = f"{data_graph}/_verifiable_memory/0xc/1", f"{data_graph}/_verifiable_memory/0xc/2"
+    rows_by_partition = {
+        confirmed: [
+            {"threat": "urn:defender:signal:inj", "rdfType": "urn:defender:InjectionSignal", "pattern": "ignore previous"},
+            {"threat": "urn:guardian:threat:z", "rdfType": "urn:defender:IocSignal",
+             "severity": "high", "category": "domain", "iocValue": "bad.example"},
+        ],
+        tentative: [{"threat": "urn:defender:signal:tent", "rdfType": "urn:defender:InjectionSignal", "pattern": "x"}],
+    }
+    asked = []
 
     class Client:
         def query(self, sparql, _cg, on_error=None, view="unset", **kwargs):
-            views.append(view)
+            asked.append((sparql, view))
             if "dkg:assertionGraph" in sparql:
-                return [{"assertionGraph": partition, "status": "confirmed"}]
-            if is_partition_query(sparql):
-                return answer_partition_query(sparql, rows_by_partition)
+                return [{"assertionGraph": confirmed, "status": "confirmed"},
+                        {"assertionGraph": tentative, "status": "tentative"}]
+            if is_lane_query(sparql):
+                return answer_lane_query(sparql, rows_by_partition)
             return []
 
     rows = ruleset_fetching.fetch_tier(Client(), cg, constants.VIEW_VERIFIABLE_MEMORY)
-    assert rows and any(r.get("iocValue") == "bad.example" for r in rows)
-    assert constants.VIEW_VERIFIABLE_MEMORY not in views
+    assert [r["threat"] for r in rows] == ["urn:defender:signal:inj"]
+    lanes = [(q, v) for q, v in asked if is_lane_query(q)]
+    assert lanes and all(v == constants.VIEW_VERIFIABLE_MEMORY and "GRAPH ?g {" in q for q, v in lanes)
+    assert not any("GRAPH <" in q for q, v in lanes)   # no per-asset reads
 
 
 def test_lane_pager_survives_daemon_row_cap(monkeypatch):

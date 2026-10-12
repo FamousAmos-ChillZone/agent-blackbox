@@ -10,22 +10,33 @@ derive, and free text is refused. Rejects never leave the machine.
 What a report may carry, per category (the evidence keys are the builder's
 keyword names):
 
-* ``injection`` — ``context`` (required, decision 24) + optional
+* ``injection`` — ``context`` (required, decision 24; :data:`INJECTION_CONTEXTS`,
+  which adds ``in-tool-input`` — an injection found in a tool's input) + optional
   ``owasp_category``. Never the pattern text: the identifier is already its
   hash (KI-115/161).
 * ``escalation`` — ``tool_name`` (a shell tool) + ``arg_shape`` (a known shape).
 * ``dependency`` — ``ecosystem``, canonical ``package_name``,
   ``package_version``, ``kind`` = ``malware`` (a vulnerability report cannot
   be built — decision 22), ``reason`` (``DEPENDENCY_REASONS`` or
-  ``advisory:<id>``; a whole-package ``*`` version only with a
-  ``WHOLE_PACKAGE_REASONS`` reason), optional ``advisory_id``.
+  ``advisory:<id>``, or ``verified-match`` when ``matched_by`` is ``verified``
+  — the verified graph lists it, no advisory id needed; a whole-package ``*``
+  version only with a ``WHOLE_PACKAGE_REASONS`` reason), optional ``advisory_id``.
 * ``fileaccess`` — ``tool_name`` + ``file_category`` (a known category).
 * ``skill`` — either a known-bad named version from a public registry
-  (``registry`` + ``skill_name`` + ``skill_version``), or a local/unknown
+  (``registry`` + ``skill_name`` + ``skill_version``; the registry may be left
+  out only when ``matched_by`` is ``verified`` — a name the verified graph
+  already publishes reveals nothing about the reporter), or a local/unknown
   skill as ``artifact_hash`` (sha256 of its code) + ``danger_shape`` — never
   its name or version (KI-159).
-* ``ioc`` — ``ioc_type`` (a known type) + ``ioc_context`` (where it was met);
-  the canonical value is the identifier.
+* ``ioc`` — ``ioc_type`` (a known type) + ``ioc_context`` (where it was met)
+  + optional ``reason`` (:data:`IOC_REASONS`); the canonical value is the identifier.
+
+Every category may also carry two COMMON fields (trust-and-threat-lab §03.6),
+in the same flat mapping as the evidence — exactly as they sit in a signed
+payload, so a reader's re-check that feeds the payload's non-core keys back in
+validates them too (LES-032): ``matched_by`` (:data:`MATCHED_BY`) and
+``blackbox_version`` (a release number). Both are optional: reports signed
+before they existed stay valid, and the record holds ``""`` for "not stated".
 
 The vocabularies are plan §04's, kept in ``kernel.constants``.
 
@@ -62,6 +73,21 @@ _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 #: A heuristic's id is its pattern hash; a verified-corpus id is the threat's
 #: slug (``injection:seed-000``) — either way a lowercase slug, never free text.
 _INJECTION_ID = re.compile(r"injection:[a-z0-9][a-z0-9._-]{0,63}")
+#: A Blackbox release number (``1.1.0``, ``1.2.0rc1``, ``1.2.0+local``) — never free text.
+_BLACKBOX_VERSION = re.compile(r"[0-9]{1,4}(\.[0-9]{1,4}){1,3}([a-z0-9.+-]{0,24})")
+
+#: How the reporter's node matched the threat: the verified graph's rules, the
+#: built-in detectors, or a public advisory (§03.6).
+MATCHED_BY = frozenset({"verified", "built-in", "advisory"})
+#: Why an indicator of compromise is reported (§03.6) — a closed code, never text.
+IOC_REASONS = frozenset({"phishing", "malware-delivery", "command-and-control", "credential-harvest",
+                         "exfil-endpoint", "scam"})
+#: Where an injection may be reported from: the R1 contexts plus a tool's input (§03.6).
+INJECTION_CONTEXTS = (*constants.INJECTION_CONTEXTS, "in-tool-input")
+#: The dependency reason of a package the verified graph lists (``matched_by=verified`` only).
+VERIFIED_MATCH_REASON = "verified-match"
+#: The common fields every category may carry beside its evidence.
+COMMON_FIELD_KEYS = ("matched_by", "blackbox_version")
 
 
 class ReportValidationError(ValueError):
@@ -73,7 +99,9 @@ class ReportRecord:
     """One validated report: what the builder emits and the signer signs.
 
     ``evidence`` holds (builder keyword, value) pairs, sorted — only keys the
-    category allows, every value checked.
+    category allows, every value checked. ``matched_by`` (one of
+    :data:`MATCHED_BY`) and ``blackbox_version`` are the common fields;
+    ``""`` means the report does not state it.
     """
 
     identifier: str
@@ -81,6 +109,13 @@ class ReportRecord:
     severity: str
     framework: str
     evidence: Tuple[Tuple[str, str], ...]
+    matched_by: str = ""
+    blackbox_version: str = ""
+
+    def common_fields(self) -> Dict[str, str]:
+        """The common fields this report states, keyed like the evidence."""
+        stated = {"matched_by": self.matched_by, "blackbox_version": self.blackbox_version}
+        return {key: value for key, value in stated.items() if value}
 
 
 def _fail(message: str) -> None:
@@ -110,7 +145,7 @@ def _one_of(name: str, value: Optional[str], allowed) -> str:
 
 
 def _injection(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
-    out = {"context": _one_of("context", ev.get("context"), constants.INJECTION_CONTEXTS)}
+    out = {"context": _one_of("context", ev.get("context"), INJECTION_CONTEXTS)}
     if ev.get("owasp_category"):
         out["owasp_category"] = _one_of("owasp_category", ev["owasp_category"],
                                         {c.lower() for c in constants.OWASP_LLM_CATEGORIES}).upper()
@@ -129,7 +164,7 @@ def _dependency(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
     name = threat_ids.canonical_package_name(eco, raw_name)
     if str(ev.get("kind") or "").lower() != constants.KIND_MALWARE:
         _fail("a dependency report must be kind=malware (vulnerabilities stay local — decision 22)")
-    reason, advisory = _dependency_reason(ev)
+    reason, advisory = _dependency_reason(ev, verified=ev.get("matched_by") == "verified")
     version = str(ev.get("package_version") or "").strip()
     if version == "*":   # a whole-package report: every version is malware
         if reason not in constants.WHOLE_PACKAGE_REASONS:
@@ -143,9 +178,10 @@ def _dependency(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
     return threat_ids.dependency_identifier(eco, name, version), out
 
 
-def _dependency_reason(ev: Mapping[str, str]) -> Tuple[str, str]:
-    """(reason, advisory id): the closed reason, or ``advisory:<id>`` — whose id
-    must equal ``advisory_id`` when both are given."""
+def _dependency_reason(ev: Mapping[str, str], *, verified: bool) -> Tuple[str, str]:
+    """(reason, advisory id): the closed reason, ``advisory:<id>`` — whose id
+    must equal ``advisory_id`` when both are given — or, for a package the
+    verified graph matched (*verified*), ``verified-match``."""
     reason = str(ev.get("reason") or "").strip()
     advisory = _token("advisory_id", ev.get("advisory_id"), required=False)
     if reason.lower().startswith(constants.ADVISORY_REASON_PREFIX):
@@ -153,7 +189,8 @@ def _dependency_reason(ev: Mapping[str, str]) -> Tuple[str, str]:
         if advisory and advisory != cited:
             _fail("the reason's advisory and advisory_id differ")
         return constants.ADVISORY_REASON_PREFIX + cited, cited
-    allowed = (*constants.DEPENDENCY_REASONS, constants.ADVISORY_REASON_PREFIX + "<id>")
+    allowed = (*constants.DEPENDENCY_REASONS, constants.ADVISORY_REASON_PREFIX + "<id>",
+               *((VERIFIED_MATCH_REASON,) if verified else ()))
     return _one_of("reason", reason, allowed), advisory
 
 
@@ -172,16 +209,33 @@ def _skill(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
             _fail("artifact_hash must be the sha256 hex of the skill's code")
         shape = _one_of("danger_shape", ev.get("danger_shape"), detection.SKILL_DANGER_SHAPES)
         return threat_ids.skill_artifact_identifier(digest, shape), {"artifact_hash": digest, "danger_shape": shape}
-    registry = _one_of("registry", ev.get("registry"), constants.SKILL_REGISTRIES)   # never local (KI-159)
     name = _token("skill_name", ev.get("skill_name"))
     version = _token("skill_version", ev.get("skill_version"))
-    return (threat_ids.skill_version_identifier(name, version),
-            {"registry": registry, "skill_name": name, "skill_version": version})
+    out = {"skill_name": name, "skill_version": version}
+    if ev.get("registry") or ev.get("matched_by") != "verified":   # a verified match is already public
+        out["registry"] = _one_of("registry", ev.get("registry"), constants.SKILL_REGISTRIES)   # never local (KI-159)
+    return threat_ids.skill_version_identifier(name, version), out
 
 
 def _ioc(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
-    return None, {"ioc_type": _one_of("ioc_type", ev.get("ioc_type"), threat_ids.IOC_TYPES),
-                  "ioc_context": _one_of("ioc_context", ev.get("ioc_context"), constants.IOC_CONTEXTS)}
+    out = {"ioc_type": _one_of("ioc_type", ev.get("ioc_type"), threat_ids.IOC_TYPES),
+           "ioc_context": _one_of("ioc_context", ev.get("ioc_context"), constants.IOC_CONTEXTS)}
+    if ev.get("reason"):
+        out["reason"] = _one_of("reason", ev["reason"], IOC_REASONS)
+    return None, out
+
+
+def _common_fields(given: Mapping[str, str]) -> Dict[str, str]:
+    """The common fields *given* states (:data:`COMMON_FIELD_KEYS`), checked."""
+    out: Dict[str, str] = {}
+    if given.get("matched_by"):
+        out["matched_by"] = _one_of("matched_by", given["matched_by"], MATCHED_BY)
+    if given.get("blackbox_version"):
+        version = str(given["blackbox_version"]).strip()
+        if not _BLACKBOX_VERSION.fullmatch(version):
+            _fail("blackbox_version must be a release number such as 1.1.0")
+        out["blackbox_version"] = version
+    return out
 
 
 _VALIDATORS: Dict[str, Callable[[Mapping[str, str]], Tuple[Optional[str], Dict[str, str]]]] = {
@@ -220,7 +274,10 @@ def _check_identifier(category: str, identifier: str, derived: Optional[str], ev
 
 def validate_report(*, identifier: str, category: str, severity: str, framework: str,
                     evidence: Mapping[str, Optional[str]], ts: Optional[datetime] = None) -> ReportRecord:
-    """The validated record for one report, or :class:`ReportValidationError`."""
+    """The validated record for one report, or :class:`ReportValidationError`.
+
+    *evidence* is the flat field mapping: the category's evidence plus any
+    :data:`COMMON_FIELD_KEYS` (a signed payload's non-core keys, as is)."""
     validator = _VALIDATORS.get(category)
     if validator is None:
         _fail(f"category must be one of: {', '.join(sorted(_VALIDATORS))}")
@@ -230,14 +287,16 @@ def validate_report(*, identifier: str, category: str, severity: str, framework:
     if ts is not None and _aware(ts) > datetime.now(timezone.utc) + MAX_CLOCK_SKEW:
         _fail("a report cannot be dated in the future")
     given = {k: v for k, v in evidence.items() if v not in (None, "")}
-    derived, out = validator(given)
-    unknown = set(given) - set(out)
+    common = _common_fields(given)
+    derived, out = validator({**given, **common})   # validators may read the checked common fields
+    unknown = set(given) - set(out) - set(COMMON_FIELD_KEYS)
     if unknown:
         _fail(f"fields not allowed in a {category} report: {', '.join(sorted(unknown))}")
     _check_identifier(category, str(identifier or "").strip(), derived, out)
     return ReportRecord(identifier=identifier.strip(), category=category,
                         severity=constants.normalize_severity(severity), framework=framework_name,
-                        evidence=tuple(sorted(out.items())))
+                        evidence=tuple(sorted(out.items())), matched_by=common.get("matched_by", ""),
+                        blackbox_version=common.get("blackbox_version", ""))
 
 
 def validate_dispute(*, identifier: str, reason: str) -> Tuple[str, str]:

@@ -216,10 +216,9 @@ def test_the_route_is_served_and_the_page_asks_for_it(monkeypatch):
     community_routes.register_community_routes(app, community_read=lambda cfg: read)
     response = TestClient(app, base_url="http://127.0.0.1").get("/api/trust")
     assert response.status_code == 200 and response.json()["confirmed_total"] == 1
-    page = PAGE.read_text(encoding="utf-8")
-    assert 'getJSON("/api/trust").then(renderTrust' in page and "loadTrust();" in page
-    for element in ("trust-authorities", "trust-reporters-body", "trust-confirmed-body", "trust-note"):
-        assert f'id="{element}"' in page and f'$("{element}")' in page
+    # The dashboard's Community graph section (and its Trust pane) was removed at Amos's direction
+    # (2026-10-10); /api/trust stays for `blackbox status` parity and other clients.
+    assert 'id="community-panel"' not in PAGE.read_text(encoding="utf-8")
 
 
 # ------------------------------------------------------------------ a reporter's progress

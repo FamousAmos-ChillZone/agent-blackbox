@@ -11,15 +11,23 @@ A re-promotion (a higher-sequence promotion after a revocation) takes effect
 at the next full compile of the verified graph. Delaying an un-revoke is the
 safe direction, because it raises enforcement.
 
-Usage (from the refresh cycle)::
+The pulse fast path (trust-and-threat-lab R4, D26): when the community graph
+changes — the verified authority posts a revocation's advisory twin there —
+the 20 s pulse calls :func:`withdraw_revoked`, which only ever ADDS
+revocations. Everything that can raise enforcement (a kill list, an
+un-revoke, the manifest state) waits for the full refresh.
 
-    curator_tier.apply_curator_tier(rs, client, config)
+Usage::
+
+    curator_tier.apply_curator_tier(rs, client, config)   # the refresh cycle
+    curator_tier.withdraw_revoked(rs, client, config)     # the pulse beat
 """
 
 from __future__ import annotations
 
 import logging
 import time
+from dataclasses import replace
 from typing import Any
 
 from .. import community, killlist
@@ -41,9 +49,35 @@ def apply_curator_tier(rs: compiler.Ruleset, client: DkgClient, config: Blackbox
     _apply_kill_list(rs, client, config, view)
     rs.curator_manifest_state = ({"stale": "STALE since ", "pending": "PENDING until "}.get(view.manifest_state, "")
                                  + view.manifest_state_day) if view.manifest_state else ""
+    rs.curator_revoked = frozenset(view.revoked)
+    rs.curator_legacy_assets_hash = (view.manifest.legacy_assets_hash if view.manifest is not None
+                                     else None if view.unavailable else "")   # unavailable: could not tell (LES-011)
     removed = rs.drop_identifiers(view.revoked)
     if removed:
         logger.info("blackbox: %d verified rule(s) withdrawn by curator revocation", removed)
+    return removed
+
+
+def withdraw_revoked(rs: compiler.Ruleset, client: DkgClient, config: BlackboxConfig) -> int:
+    """Reductions only (D26): withdraw the verified rules newly revoked since
+    *rs* was built — dropped from the compiled tables and added to the live
+    scope's revoked set. A revocation the view no longer lists stays revoked
+    until the full refresh (an un-revoke raises enforcement). Returns how
+    many compiled rules were removed; fail-open (removes nothing)."""
+    try:
+        view = community.read_curator_view(client, config)
+    except Exception as exc:  # pragma: no cover - fail open (an outer boundary)
+        logger.warning("blackbox: curator revocations not applied on this pulse: %s", exc)
+        return 0
+    newly = frozenset(view.revoked) - rs.curator_revoked
+    if not newly:
+        return 0
+    rs.curator_revoked = rs.curator_revoked | newly
+    if rs.verified_scope is not None:
+        rs.verified_scope = replace(rs.verified_scope,
+                                    revoked_identifiers=rs.verified_scope.revoked_identifiers | newly)
+    removed = rs.drop_identifiers(newly)
+    logger.info("blackbox: %d revocation(s) applied on pulse (%d compiled rule(s) withdrawn)", len(newly), removed)
     return removed
 
 

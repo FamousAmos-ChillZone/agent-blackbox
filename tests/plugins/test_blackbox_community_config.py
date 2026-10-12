@@ -57,13 +57,23 @@ def test_default_is_shipped_constant(clean_env):
     assert cfg.community_graph_id == constants.DEFAULT_COMMUNITY_GRAPH_ID
 
 
-def test_shipped_default_is_empty_until_production_graph_exists(clean_env):
-    """KI-035 launch-safety rule: a release must never point the fleet at a
-    dev graph. Until the production graph id lands here, the default MUST be
-    empty — which keeps community_enabled False by construction."""
-    assert constants.DEFAULT_COMMUNITY_GRAPH_ID == ""
-    # KI-216: the owner peer id ships as a PAIR with the graph id — both empty or both set
+def test_the_shipped_default_is_the_production_community_graph(clean_env):
+    """KI-035 launch-safety rule: a release never points the fleet at a dev or
+    test graph. The shipped default is the production graph, owned by the
+    Umanitek wallet, and its owner peer ships with it (KI-216: both or neither)."""
+    graph = constants.DEFAULT_COMMUNITY_GRAPH_ID
+    assert graph == "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-community"
+    assert not any(word in graph.lower() for word in ("test", "dev", "sim", "bench", "demo"))
+    assert constants.DEFAULT_COMMUNITY_GRAPH_PEER_ID.startswith("12D3KooW")
     assert bool(constants.DEFAULT_COMMUNITY_GRAPH_PEER_ID) == bool(constants.DEFAULT_COMMUNITY_GRAPH_ID)
+
+
+def test_a_fresh_install_reads_the_community_graph_but_sends_nothing_without_consent(clean_env):
+    """Reading community flags needs only the address; sharing still needs the
+    operator's own consent (privacy: opt-in, never on by default)."""
+    cfg = _load_with_entry(clean_env, {})
+    assert cfg.community_graph_id == constants.DEFAULT_COMMUNITY_GRAPH_ID
+    assert cfg.report is False and cfg.community_enabled is False
 
 
 # ---------------------------------------------------------------------------

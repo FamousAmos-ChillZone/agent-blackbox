@@ -138,7 +138,7 @@ def test_the_services_own_limits_are_below_every_readers_cap():
 def test_the_policy_text_is_pinned_so_a_change_is_a_deliberate_act():
     """Standing consent names this hash. Changing the table or a limit changes it and makes every
     curator operator accept again — update this value only together with the plan (section 07)."""
-    assert service.policy_hash() == "2e74cdf4421ccd2c21851c4b48748352a42f64b566c569397dbddff840299a2f"
+    assert service.policy_hash() == "d0aa36467282200cd3ac3b5e197f0f66ef53cae91cd1abec95c6081deedacd90"
 
 
 def test_consent_is_bound_to_the_exact_text_and_the_key():

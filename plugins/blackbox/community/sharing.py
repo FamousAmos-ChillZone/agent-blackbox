@@ -107,16 +107,28 @@ class CommunitySharePolicy:
         return _schema_decision(finding)
 
 
+#: Finding fields that describe THIS machine's check, never the threat: they stay in the
+#: local audit and are never put into a shared report (``answered_by`` says the local
+#: fallback index answered because the graph store was down — DKG-lookup).
+LOCAL_ONLY_FIELDS = frozenset({"answered_by"})
+
+
+def shareable_fields(finding: Dict[str, Any]) -> Dict[str, Any]:
+    """The finding's evidence fields a report may carry: set, and not local-only."""
+    fields = finding.get("fields") if isinstance(finding.get("fields"), dict) else {}
+    return {k: v for k, v in fields.items() if v is not None and k not in LOCAL_ONLY_FIELDS}
+
+
 def _schema_decision(finding: Dict[str, Any]) -> "tuple[bool, str]":
     """Whether *finding* builds a valid report (the R1 schema), and why not."""
-    fields = finding.get("fields") if isinstance(finding.get("fields"), dict) else {}
+    fields = shareable_fields(finding)
     try:
         report_schema.validate_report(
             identifier=str(finding.get("identifier") or ""),
             category=str(finding.get("category") or ""),
             severity=str(finding.get("severity") or "info"),
             framework=HOST_FRAMEWORK,
-            evidence={k: v for k, v in fields.items() if v is not None},
+            evidence=fields,
         )
     except report_schema.ReportValidationError as exc:
         return False, f"not a valid report, stays local: {exc}"
@@ -204,7 +216,7 @@ def _share_sighting(
         return
     try:
         # Reports contain signatures, never raw prompts, paths, or source files.
-        fields = finding.get("fields") if isinstance(finding.get("fields"), dict) else {}
+        fields = shareable_fields(finding)
         q = community.build_report_quads(
             identifier=identifier,
             category=str(finding.get("category") or ""),
@@ -212,7 +224,7 @@ def _share_sighting(
             reporter_address=reporter,
             framework=HOST_FRAMEWORK,
             signer=signer,
-            **{k: v for k, v in fields.items() if v is not None},
+            **fields,
         )
         outcome, detail = send_report(client, cfg.community_graph_id, name, q)
     except Exception as exc:  # pragma: no cover - fail open (building the report failed)

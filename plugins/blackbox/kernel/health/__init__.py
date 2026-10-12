@@ -13,7 +13,9 @@ unavailable (INFO), community ingest paused (INFO), no trusted curator keys
 (INFO, + ACTION when it blocked here), statements held by the budget (INFO).
 Signing-key revocation, manifest conflicts, minReaderVersion and heartbeat
 arrive with reader policy (R7b). The community authority's own alarms
-(Community Curation C10) are :mod:`.community_authority`.
+(Community Curation C10) are :mod:`.community_authority`; the manifest watcher
+(a new root-signed list, curator heartbeat gaps, renewal reminders —
+trust-and-threat-lab W1) is :mod:`.manifest_watch`.
 
 A kernel sub-package (the kernel folder is at its file limit).
 
@@ -31,6 +33,7 @@ from .. import constants
 # Imported under its own name: the HealthInputs field below is also called community_authority, and a class
 # body that reads a module through a name it is defining works only by evaluation order.
 from . import community_authority as community_alarms
+from . import manifest_watch as manifest_watcher   # the same reason: a HealthInputs field is called manifest_watch
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, List, Mapping, Optional
@@ -89,6 +92,7 @@ class HealthInputs:
     today: str = ""                      # UTC day the inputs were gathered
     heartbeat_missing_keys: int = 0      # curator keys with no heartbeat in HEARTBEAT_SILENCE_DAYS
     manifest_conflict: bool = False      # two trusted manifests, one order, different content
+    manifest_conflict_ignored: bool = False   # T1: a conflict at/below the sticky order, ignored
     min_reader_version: str = ""         # the manifest's floor; my_version is constants.__version__
     my_version: str = ""
     env_mismatch_rows: int = 0           # rows signed for another network / graph
@@ -98,12 +102,20 @@ class HealthInputs:
     manifest_state: str = ""             # R7b: "" | "pending" | "stale"
     manifest_state_day: str = ""         # the day it takes effect / expired
     manifest_expires_day: str = ""       # the 30-day-ahead key-expiry alarm
+    #: DKG-lookup B5: why live verified lookups are degraded ("" = answering). The
+    #: caller passes ``ruleset.live.HEALTH.read().problem()`` (the kernel reads no feature).
+    verified_lookup_problem: str = ""
+    #: trust-and-threat-lab R1: why the shipped legacy asset list was refused ("" = fine) — the
+    #: caller passes ``rs.verified_scope.legacy_refused``; the last-good asset tiers stay in force.
+    legacy_list_refused: str = ""
     #: Community Curation C11: why sharing is stopped by consent ("" = in force or sharing off) — the
     #: caller passes ``community.consent.why_not()`` only when `report: true`.
     sharing_consent_problem: str = ""
     #: Community Curation: the same facts for the COMMUNITY authority (its own manifest and curators).
     community_authority: community_alarms.CommunityAuthorityInputs = field(
         default_factory=community_alarms.CommunityAuthorityInputs)
+    #: trust-and-threat-lab W1: the manifest watcher's facts (``manifest_watch.watch_inputs``); shown with or without a community.
+    manifest_watch: manifest_watcher.ManifestWatchInputs = field(default_factory=manifest_watcher.ManifestWatchInputs)
 
 
 #: A ruleset older than this many sync intervals is stale.
@@ -122,12 +134,17 @@ def operator_health(inputs: HealthInputs) -> List[HealthItem]:
     """The operator's alarms for *inputs*, ACTION and SECURITY first."""
     items: List[HealthItem] = []
     items += _node_and_ruleset(inputs)
+    items += _wrap(manifest_watcher.alarms(inputs.manifest_watch))
     if inputs.community_configured:
         items += _community(inputs)
         items += _trust(inputs)
-        items += [HealthItem(_OPERATOR, HealthClass(klass), message, what_to_do)
-                  for klass, message, what_to_do in community_alarms.alarms(inputs.community_authority)]
+        items += _wrap(community_alarms.alarms(inputs.community_authority))
     return sorted(items, key=lambda item: (item.klass is HealthClass.INFO, item.message))
+
+
+def _wrap(alarms: List[community_alarms.Alarm]) -> List[HealthItem]:
+    """A sub-module's (class, message, what to do) tuples as operator items."""
+    return [HealthItem(_OPERATOR, HealthClass(klass), message, what_to_do) for klass, message, what_to_do in alarms]
 
 
 def _version_tuple(text: str) -> tuple:
@@ -154,6 +171,10 @@ def _trust(inputs: HealthInputs) -> List[HealthItem]:
     if inputs.manifest_conflict:
         items.append(HealthItem(_OPERATOR, HealthClass.SECURITY, "curator key manifest CONFLICT: two trusted manifests disagree",
                                 "the graph is frozen at the last trusted version; blocks still enforce — update Blackbox and tell the curators"))
+    if inputs.manifest_conflict_ignored:
+        items.append(HealthItem(_OPERATOR, HealthClass.SECURITY,
+                                "curator key manifest conflict IGNORED: a root-signed list contradicts one this node already acts on",
+                                "nothing changes on this node — it keeps the list it acts on; tell the curators a root key may be compromised"))
     if inputs.min_reader_version and _version_tuple(inputs.min_reader_version) > _version_tuple(inputs.my_version):
         items.append(HealthItem(_OPERATOR, HealthClass.ACTION,
                                 f"the curators require Blackbox {inputs.min_reader_version}; this node runs {inputs.my_version}",
@@ -168,7 +189,7 @@ def _trust(inputs: HealthInputs) -> List[HealthItem]:
         items.append(HealthItem(_OPERATOR, HealthClass.ACTION, f"curator key manifest STALE since {inputs.manifest_state_day}",
                                 "verified rules still block and reductions still apply; new enforcement-raising statements are frozen — update Blackbox or wait for a fresh manifest"))
     if inputs.manifest_state == "pending":
-        items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"a new curator key manifest takes effect on {inputs.manifest_state_day} (72 h time-lock)",
+        items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"a new curator key manifest takes effect on {inputs.manifest_state_day} (time-lock)",
                                 "nothing to do — the previous manifest stays in force until then"))
     if inputs.manifest_expires_day and inputs.today and 0 <= _days_between(inputs.today, inputs.manifest_expires_day) <= 30:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"the curator key manifest expires on {inputs.manifest_expires_day}",
@@ -189,6 +210,15 @@ def _node_and_ruleset(inputs: HealthInputs) -> List[HealthItem]:
     if inputs.rule_count == 0:
         items.append(HealthItem(_OPERATOR, HealthClass.ACTION, "UNPROTECTED: the threat ruleset is empty",
                                 "run `blackbox sync --wait` to load the threat graph"))
+    if inputs.verified_lookup_problem:
+        items.append(HealthItem(_OPERATOR, HealthClass.ACTION,
+                                f"DEGRADED: verified rules cannot be looked up — {inputs.verified_lookup_problem}",
+                                "actions pass unchecked by the verified graph; check the DKG node and its store, "
+                                "then run `blackbox sync --wait`"))
+    if inputs.legacy_list_refused:
+        items.append(HealthItem(_OPERATOR, HealthClass.SECURITY, f"legacy asset list refused: {inputs.legacy_list_refused}",
+                                "nothing to do — the last-good asset tiers stay in force; reinstall Blackbox from the "
+                                "official release and tell the curators"))
     return items
 
 
@@ -299,11 +329,14 @@ def red(item: HealthItem) -> bool:
 
 
 def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked_by_identifier: Mapping[str, int],
-           now: float, *, pending_shares: int = 0, shares_given_up: int = 0, sharing_consent_problem: str = "") -> HealthInputs:
+           now: float, *, pending_shares: int = 0, shares_given_up: int = 0, sharing_consent_problem: str = "",
+           verified_lookup_problem: str = "",
+           watch: Optional[manifest_watcher.ManifestWatchInputs] = None) -> HealthInputs:
     """Build :class:`HealthInputs` from a config, a compiled ruleset, node
     reachability, the last community read (or None), how many actions each
     threat blocked here (``audit.blocked_counts_by_identifier()``) and the
-    share-retry counts (``community.share_retry_stats()``)."""
+    share-retry counts (``community.share_retry_stats()``); *watch* is the
+    manifest watcher's facts (``manifest_watch.watch_inputs``), None = not watched."""
     view = getattr(read, "curator", None)
     revoked = {ident: int(blocked_by_identifier.get(ident, 0)) for ident in (view.revoked if view is not None else ())}
     kill_list = getattr(rs, "kill_list", None) or {}
@@ -322,22 +355,26 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         held_back=int(getattr(read, "held_back", 0) or 0),
         pending_shares=int(pending_shares),
         sharing_consent_problem=sharing_consent_problem if getattr(cfg, "community_enabled", False) else "",
+        verified_lookup_problem=verified_lookup_problem,
         shares_given_up=int(shares_given_up),
         curators_last_day=(view.last_statement_day if view is not None else ""),
         today=datetime.fromtimestamp(now, timezone.utc).date().isoformat(),
         heartbeat_missing_keys=_heartbeat_missing(view, now),
         manifest_conflict=bool(view is not None and view.manifest_conflict),
+        manifest_conflict_ignored=bool(view is not None and view.manifest_conflict_ignored),
         min_reader_version=(view.manifest.min_reader_version if view is not None and view.manifest is not None else ""),
         my_version=constants.__version__,
         env_mismatch_rows=int(getattr(read, "env_mismatch", 0) or 0),
         future_dated_rows=int(getattr(read, "future_dated", 0) or 0),
         kill_list_version=int(kill_list.get("version", 0) or 0) if isinstance(kill_list, dict) else 0,
         kill_list_refused=str(getattr(rs, "kill_list_refused", "") or ""),
+        legacy_list_refused=str(getattr(getattr(rs, "verified_scope", None), "legacy_refused", "") or ""),
         manifest_state=(view.manifest_state if view is not None else ""),
         manifest_state_day=(view.manifest_state_day if view is not None else ""),
         manifest_expires_day=(view.manifest_expires_day if view is not None else ""),
         community_authority=community_alarms.gather(
             getattr(view, "community", None), datetime.fromtimestamp(now, timezone.utc).date().isoformat()),
+        manifest_watch=watch or manifest_watcher.ManifestWatchInputs(),
     )
 
 

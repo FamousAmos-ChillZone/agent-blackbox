@@ -134,8 +134,11 @@ CLASSIFIED = {
     "curate/policy_consent.json": "the operator's policy acceptance: names no reporter",
     "curate/service_budget.json": "today's counts: names no reporter",
     "curate/consent.jsonl": "the record of published acts (accountability): codes and summaries",
+    "curate/signing_log.jsonl": "the record of signatures this node made: kind, digest, own key, time — names no reporter",
     "curate/proposals/*.json": "the record of proposed and published statements (accountability)",
     "curate/inbox_cursor.json": "a message position: names nobody",
+    "curate/self_test.json": "the last self-test result over synthetic fixtures: names nobody",
+    "curate/undelivered.json": "proposal ids no other curator received yet and for how many beats: names nobody",
     "curate/curator_key.pem": "this curator's own key",
     "curate/community_root_key.pem": "the SANDBOX community root key (never on a pinned network)",
 }

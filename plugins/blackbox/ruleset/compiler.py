@@ -13,12 +13,13 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Sequence, Tuple
 from ..kernel import constants, threat_ids
 from . import anchors
 from ..kernel.dkg_client import DkgClient, extract_binding
 from . import graph_queries
 from . import row_adapters
+from . import live
 
 logger = logging.getLogger(__name__)
 
@@ -85,8 +86,13 @@ def _copy_community_stats(entry: Dict[str, Any], rule: Dict[str, Any]) -> None:
 
 
 @dataclass
-class Ruleset:
-    """Compiled detection rules. See :mod:`detection` for how each is used."""
+class Ruleset(live.LiveAnswering):
+    """Compiled detection rules. See :mod:`detection` for how each is used.
+
+    What a generation ANSWERS at check time — live lookups, verified subsets, the
+    dashboard's live page — comes from :class:`live.LiveAnswering` (a mixin over
+    ``verified_scope`` and the compiled dicts; compiler.py sits at its size alarm).
+    """
 
     injection: List[Dict[str, Any]] = field(default_factory=list)
     escalation: List[Dict[str, Any]] = field(default_factory=list)
@@ -121,6 +127,9 @@ class Ruleset:
     kill_list_refused: str = ""
     #: R7b: "" | "STALE since <day>" | "PENDING until <day>" — the curator manifest's clock as of the last refresh.
     curator_manifest_state: str = ""
+    #: The trusted manifest's legacy pin ("" = no trusted manifest; None = the curator read could not
+    #: tell) — the live scope checks the shipped legacy asset list against it (trust-and-threat-lab R1).
+    curator_legacy_assets_hash: Optional[str] = None
     #: When this generation was compiled (epoch seconds; 0 = never). Shown as "last sync" and
     #: used for ages and staleness — never moved for scheduling (that is ``refresh_due_at``).
     synced_at: float = 0.0
@@ -128,6 +137,16 @@ class Ruleset:
     #: after ``synced_at``. Set earlier while the graph is still arriving or came back empty (KI-288).
     refresh_due_at: float = 0.0
     context_graph_id: str = ""
+    #: DKG-lookup: what a live verified lookup may believe this generation (the
+    #: confirmed owner-pinned assets, suppressions, revocations, aliases, store
+    #: endpoint). ``None`` until the first refresh that built one.
+    verified_scope: Optional[live.VerifiedScope] = None
+    #: Identifiers the curator revoked as of this generation (Refine R2); the
+    #: scope carries them so a live lookup withdraws the same rules the compile did.
+    curator_revoked: FrozenSet[str] = frozenset()
+    #: Subjects a public CorrectionSignal suppressed in THIS compile (not persisted:
+    #: the scope keeps its own copy) — what the live scope withdraws too.
+    suppressed_subjects: FrozenSet[str] = frozenset()
     _graph_entries_cache: Dict[str, List[Dict[str, Any]]] = field(
         default_factory=dict,
         init=False,
@@ -141,14 +160,25 @@ class Ruleset:
         due = self.synced_at + interval
         return min(due, self.refresh_due_at) if self.refresh_due_at else due
 
+    def live_counts(self) -> Dict[str, int]:
+        """Verified rules held in the live tiers (``dependency``, ``ioc``), from the
+        scope's aggregate counts (its per-ecosystem breakdown is not included); {}
+        when this generation has no scope."""
+        counts = self.verified_scope.verified_counts if self.verified_scope is not None else {}
+        return {tier: int(counts[tier]) for tier in ("dependency", "ioc") if tier in counts}
+
     def counts(self) -> Dict[str, int]:
+        """Rules per category: the compiled lists / dicts plus the live tiers'
+        verified counts (a compiled dict holds community-materialised rules once a
+        scope exists, so the two never count the same rule twice)."""
+        live_counts = self.live_counts()
         return {
             "injection": len(self.injection),
             "escalation": len(self.escalation),
-            "dependency": len(self.dependency),
+            "dependency": len(self.dependency) + live_counts.get("dependency", 0),
             "fileaccess": len(self.fileaccess),
             "skill": len(self.skill),
-            "ioc": len(self.ioc),
+            "ioc": len(self.ioc) + live_counts.get("ioc", 0),
             "community": len(self.community),
         }
 
@@ -185,8 +215,10 @@ class Ruleset:
         return before - sum(1 for _ in self.iter_rules())
 
     def source_count(self, source: str) -> int:
-        """How many rules are tagged with *source* (``public`` | ``community``)."""
-        return sum(1 for _cat, r in self.iter_rules() if r.get("source") == source)
+        """How many rules are tagged with *source* (``public`` | ``community``);
+        public includes the live tiers' verified counts."""
+        compiled = sum(1 for _cat, r in self.iter_rules() if r.get("source") == source)
+        return compiled + (sum(self.live_counts().values()) if source == "public" else 0)
 
     def graph_entries(self, source: str) -> List[Dict[str, Any]]:
         cached = self._graph_entries_cache.get(source)
@@ -237,10 +269,19 @@ class Ruleset:
         return entries
 
     def graph_count(self, source: str) -> int:
-        return len(self.graph_entries(source))
+        """Graph threats of *source*: the compiled entries plus, for public, the live tiers."""
+        return len(self.graph_entries(source)) + (sum(self.live_counts().values()) if source == "public" else 0)
 
 
-def build_from_rows(rows: List[Dict[str, Any]], source: str = "public") -> Ruleset:
+def suppressed_subjects(tagged_rows: Iterable[tuple], pin: live.CorrectionPin = live.NO_PIN) -> FrozenSet[str]:
+    """Subjects the PUBLIC CorrectionSignal rows suppress (``(row, source)`` pairs):
+    a curated correction withdraws the threat it targets from every tier. Once
+    *pin* holds the legacy pin, only a quorum-signed correction counts, on the
+    targets its signed payload names (:func:`.live.signed_suppressions`, R3)."""
+    return live.signed_suppressions(tagged_rows, *pin)
+
+
+def build_from_rows(rows: List[Dict[str, Any]], source: str = "public", pin: live.CorrectionPin = live.NO_PIN) -> Ruleset:
     """Build a :class:`Ruleset` from ``(rows, source)`` pairs or plain rows.
 
     *rows* may be a flat list of binding rows (all tagged *source*) or a list
@@ -254,25 +295,11 @@ def build_from_rows(rows: List[Dict[str, Any]], source: str = "public") -> Rules
     fa_seen: set = set()
     skill_seen: set = set()
     graph_seen: set = set()
-    tagged_rows = []
-    suppressed_subjects: set = set()
-    for item in rows:
-        if isinstance(item, tuple):
-            row, row_source = item
-        else:
-            row, row_source = item, source
-        tagged_rows.append((row, row_source))
-        if row_source != "public":
-            continue
-        if extract_binding(row.get("rdfType")) != constants.DEFENDER_CORRECTION_TYPE_IRI:
-            continue
-        action = extract_binding(row.get("correctionAction")).strip().lower()
-        target = extract_binding(row.get("targetSubject")).strip()
-        if action == constants.DEFENDER_CORRECTION_SUPPRESS and target:
-            suppressed_subjects.add(target)
+    tagged_rows = [item if isinstance(item, tuple) else (item, source) for item in rows]
+    rs.suppressed_subjects = suppressed_subjects(tagged_rows, pin)
 
     for row, row_source in tagged_rows:
-        if extract_binding(row.get("threat")) in suppressed_subjects:
+        if extract_binding(row.get("threat")) in rs.suppressed_subjects:
             continue
         graph_entry = row_adapters._row_to_graph_entry(row, row_source)
         if graph_entry:
@@ -301,17 +328,15 @@ def build_from_rows(rows: List[Dict[str, Any]], source: str = "public") -> Rules
                 skill_seen.add(key)
                 rs.skill.append(rule)
         elif category == "ioc":
-            existing = rs.ioc.get(key)
-            # Public (curated) rules always win over community rows.
-            if existing is None or (
-                existing.get("source") == "community" and rule.get("source") == "public"
-            ):
-                rs.ioc[key] = rule
+            _keep_public_first(rs.ioc, key, rule)
         else:
-            existing = rs.dependency.get(key)
-            # Public (curated) rules always win over community rows.
-            if existing is None or (
-                existing.get("source") == "community" and rule.get("source") == "public"
-            ):
-                rs.dependency[key] = rule
+            _keep_public_first(rs.dependency, key, rule)
     return rs
+
+
+def _keep_public_first(table: Dict[str, Dict[str, Any]], key: str, rule: Dict[str, Any]) -> None:
+    """Store *rule* under *key* unless one is already there — public (curated)
+    rules always win over community rows, so only a community rule is replaced."""
+    existing = table.get(key)
+    if existing is None or (existing.get("source") == "community" and rule.get("source") == "public"):
+        table[key] = rule

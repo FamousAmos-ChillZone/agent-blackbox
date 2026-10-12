@@ -27,8 +27,12 @@ Public surface:
   :data:`EVIDENCE_REFERENCE` (the closed format of the evidence a confirmation cites).
 * :func:`trust_panel` / :func:`trust_status_lines` — who curates, who is trusted, what is confirmed: one read
   model for the dashboard's trust panel and `blackbox status` (Community Curation C10).
+* :func:`verified_manifest_history` / :func:`manifest_on_day` — the verified authority's root-signed
+  manifests and which one was in force on a day: the verified scope tiers each new asset once against it
+  (trust-and-threat-lab R2, F-050).
 * :func:`stage_for` (+ :class:`Stage`, :class:`Enforcement`, :class:`StageResult`) —
-  a community threat's local stage from the counted-author list (R3).
+  a community threat's local stage from the counted-author list (R3); :func:`clusters_for`
+  (+ :class:`Clusters`) — the partner and established clusters behind it (the lab trigger reads them).
 * :func:`record_verified_sighting` / :func:`publish_due_digests` — the
   seen-again counter: tally verified matches, publish one weekly digest (R2b).
 * :mod:`shadow` — the shadow phase (R15): the MONITOR clamp and the §12 metrics log.
@@ -74,7 +78,7 @@ from .pulse import fingerprint as community_fingerprint
 from .statements.lifetimes import lifetime_days
 from .statements.author_budget import FirstSeenStore as _FirstSeenStore
 from .share_retry import retry_due_shares, share_retry_stats
-from .stages import Enforcement, Stage, StageResult, stage_for
+from .stages import Clusters, Enforcement, Stage, StageResult, clusters_for, stage_for
 from .statements.curator_view import VERIFIED_GRAPH_KINDS, CuratorView, counted_dispute_weight
 from .statements.curator_statements import EVIDENCE_REFERENCE
 from .statements.curator_statements import manifest_quads as key_manifest_quads
@@ -89,9 +93,10 @@ from .reader import (
     ReadState,
     read_verified_reports,
 )
-from .trust import known_curator_statements, read_curator_view
+from .trust import ActiveGraph, active_verified_graph, known_curator_statements, read_curator_view
 from .trust import status_lines as trust_status_lines
 from .trust import trust_panel
+from .trust.manifest_history import manifest_on_day, verified_manifest_history
 from ..kernel.sparql_text import page_rows
 from ..kernel.signing.trust_anchors import trusted_roots as curator_trusted_roots
 from .statements.curator_view import today_utc as curator_today
@@ -120,6 +125,8 @@ __all__ = [
     "add_report_parser",
     "cmd_report",
     "ensure_community_subscription",
+    "ActiveGraph",
+    "active_verified_graph",
     "community_pause_active",
     "community_agents",
     "community_report_count",
@@ -153,6 +160,8 @@ __all__ = [
     "retry_due_shares",
     "share_retry_stats",
     "stage_for",
+    "clusters_for",
+    "Clusters",
     "read_curator_view",
     "known_curator_statements",
     "trust_panel",
@@ -160,6 +169,8 @@ __all__ = [
     "page_rows",
     "curator_trusted_roots",
     "curator_today",
+    "manifest_on_day",
+    "verified_manifest_history",
     "record_verified_sighting",
     "read_verified_reports",
     "reports_signed_by",

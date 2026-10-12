@@ -197,7 +197,8 @@ def health_payload(community_read: CommunityReadSource, node_reachable: Callable
     retries = community.share_retry_stats()
     inputs = health.gather(cfg, rs, node_reachable(cfg), read, audit.blocked_counts_by_identifier(), time.time(),
                            pending_shares=retries.pending, shares_given_up=retries.given_up,
-                           sharing_consent_problem=community.consent.why_not())
+                           sharing_consent_problem=community.consent.why_not(),
+                           verified_lookup_problem=ruleset.live.HEALTH.read().problem())
     items = health.operator_health(inputs)
     return {"items": [{**item.as_dict(), "red": health.red(item)} for item in items],
             "ruleset_age": health.ruleset_age_text(inputs.ruleset_age_s), "community_paused": inputs.community_paused}

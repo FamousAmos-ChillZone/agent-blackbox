@@ -1559,6 +1559,7 @@ def test_required_release_sync_persists_subscription_after_direct_connect_failur
             context_graph_id=constants.DEFAULT_CONTEXT_GRAPH_ID,
             dkg_url=constants.DEFAULT_DKG_URL,
             graph_peer_id=constants.DEFAULT_GRAPH_PEER_ID,
+            community_graph_id="",   # this test is about the verified sync alone
         ),
     )
     monkeypatch.setattr(sync_command.ruleset, "peek", lambda _cfg: EmptyRuleset())

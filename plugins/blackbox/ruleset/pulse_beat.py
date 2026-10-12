@@ -1,5 +1,7 @@
 """The community pulse beat (R16): between full refreshes, retry refused shares
-and re-apply the community tier when the community graph changed.
+and re-apply the community tier when the community graph changed — and with it
+the curator tier's revocations (trust-and-threat-lab R4, D26: a reduction, so
+it may ride the pulse; nothing that raises enforcement does).
 
 The probe itself (``community.PULSE``) only answers "did the graph change?";
 this module owns the BEAT — spawning at most one background thread, at most
@@ -21,7 +23,7 @@ from typing import Optional
 from .. import community
 from ..kernel.config import BlackboxConfig, load_blackbox_config
 from ..kernel.dkg_client import DkgClient
-from . import community_tier, disk_cache, locks
+from . import community_tier, curator_tier, disk_cache, locks
 
 logger = logging.getLogger(__name__)
 
@@ -86,16 +88,38 @@ def _background_pulse(config: BlackboxConfig) -> None:
             _pulsing = False
 
 
+def request_refresh_now(config: BlackboxConfig) -> bool:
+    """Mark the cached generation due for a full refresh NOW and write it through
+    (disk + memory, under the refresh lock), so the dashboard worker and every
+    agent hook refresh on their next look (``Ruleset.refresh_due``). Called when
+    :class:`.partitions.GrowthWatch` sees new verified assets on the node.
+    False when a refresh holds the lock — it is reading the node already."""
+    from . import refresh_cycle   # lazy: refresh_cycle imports this module
+
+    with locks._ruleset_refresh_lock(blocking=False) as held:
+        if not held:
+            return False
+        rs = refresh_cycle.peek(config)
+        rs.refresh_due_at = time.time()
+        disk_cache._write_cache(rs)
+        refresh_cycle._memory.store(rs)
+    logger.info("blackbox: new verified assets on the node — refreshing now instead of at the next scheduled sync")
+    return True
+
+
 def _reapply_community(config: BlackboxConfig, client: DkgClient) -> None:
     """Re-read the community tier onto the cached generation and write it
     through (disk + memory), so every process picks it up on its next call.
-    Skipped when a full refresh holds the lock — it will read everything."""
+    Revocations are withdrawn first, in the full refresh's order (curator
+    tier, then community). Skipped when a full refresh holds the lock — it
+    will read everything."""
     from . import refresh_cycle   # lazy: refresh_cycle imports this module
 
     with locks._ruleset_refresh_lock(blocking=False) as held:
         if not held:
             return
         rs = refresh_cycle.peek(config)
+        curator_tier.withdraw_revoked(rs, client, config)
         community_tier.reapply_community_tier(rs, client, config)
         rs.community_fingerprint = community.PULSE.last_fingerprint   # KI-208: the baseline travels with the tier
         disk_cache._write_cache(rs)

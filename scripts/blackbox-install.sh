@@ -45,6 +45,8 @@ if [ -n "$BLACKBOX_INSTALL_SCRIPT" ] && [ -f "$BLACKBOX_INSTALL_SCRIPT" ]; then
 fi
 DKG_NETWORK="${BLACKBOX_DKG_NETWORK:-mainnet-base}"   # a valid dkg mainnet (mainnet-base | mainnet-gnosis). Base uses ETH for gas. No testnet.
 BLACKBOX_HOME="${BLACKBOX_HOME:-$HERMES_HOME/blackbox}"
+BLACKBOX_SYSTEMD_DIR=/etc/systemd/system   # where system units go (node service units below)
+BLACKBOX_PTRACE_SCOPE_FILE=/proc/sys/kernel/yama/ptrace_scope   # read by register_key_console
 BLACKBOX_DKG_PORT_EXPLICIT=false
 [ -n "${BLACKBOX_DKG_PORT+x}" ] && BLACKBOX_DKG_PORT_EXPLICIT=true
 BLACKBOX_DKG_STORE_URL_EXPLICIT=false
@@ -2204,10 +2206,54 @@ secure_dkg_token_perms() {
 }
 
 # ---------------------------------------------------------------------------
+# Node service units (curator nodes and benches) — Linux + systemd only, each
+# OPT-IN behind its own flag. blackbox-install.ps1 has no mirror on purpose:
+# these units exist only on the Ubuntu curator nodes and benches.
+# ---------------------------------------------------------------------------
+have_systemd() {
+    [ "$(uname -s)" = Linux ] && command -v systemctl >/dev/null 2>&1
+}
+
+# A system unit when this user may write one, otherwise a user unit.
+can_write_system_units() {
+    [ -w "$BLACKBOX_SYSTEMD_DIR" ] || [ "$(id -u)" = 0 ]
+}
+
+# install_node_unit NAME LABEL <<UNIT … UNIT — write NAME.service from stdin,
+# enable it and (re)start it; LABEL names it in the messages ("curator service
+# registered (NAME)"). Restart, not `enable --now`: a re-run that changes a flag
+# (e.g. adds --publisher) must reach a unit that is already running (KI-317).
+install_node_unit() {
+    local name="$1" label="$2" unit
+    if can_write_system_units; then
+        unit="$BLACKBOX_SYSTEMD_DIR/$name.service"
+        cat > "$unit"
+        if systemctl daemon-reload && systemctl enable "$name" >/dev/null 2>&1 \
+                && systemctl restart "$name" >/dev/null 2>&1; then
+            ok "$label service registered ($name)"
+        else
+            warn "could not enable the $label service; enable manually: systemctl enable --now $name"
+        fi
+    else
+        unit="$HOME/.config/systemd/user/$name.service"
+        mkdir -p "$(dirname "$unit")"
+        cat > "$unit"
+        if systemctl --user daemon-reload && systemctl --user enable "$name" >/dev/null 2>&1 \
+                && systemctl --user restart "$name" >/dev/null 2>&1; then
+            ok "$label user service registered ($name)"
+        else
+            warn "could not enable the user service; enable manually: systemctl --user enable --now $name"
+        fi
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # The curator service (Community Curation C9) — OPT-IN, curator nodes only.
 # An ordinary protected agent never runs it; nothing here is registered unless
 # the installer is told this machine is a curator node:
 #   BLACKBOX_CURATOR_SERVICE=1 BLACKBOX_CURATOR_PEERS="peer-a,peer-b" bash blackbox-install.sh
+# BLACKBOX_CURATOR_PUBLISHER=1 adds `--publisher` (beat step 8, the batch
+# publisher): ONLY on the node that holds the publishing wallet (D27).
 # The service runs `blackbox curate run` as its own process (never inside an
 # agent). It SIGNS NOTHING until the operator has read and accepted the
 # automation policy on this machine:
@@ -2231,17 +2277,16 @@ register_curator_service() {
     done
     IFS="$old_ifs"
     [ -n "$peer_args" ] || warn "no curator peers given (BLACKBOX_CURATOR_PEERS): proposals will wait until a peer is configured"
-    if [ "$(uname -s)" != Linux ] || ! command -v systemctl >/dev/null 2>&1; then
+    local publisher_arg=""
+    if [ "${BLACKBOX_CURATOR_PUBLISHER:-0}" = 1 ]; then
+        publisher_arg=" --publisher"
+    fi
+    if ! have_systemd; then
         warn "the curator service unit is provided for Linux with systemd only."
-        warn "Start it yourself on this machine:  blackbox curate run$peer_args"
+        warn "Start it yourself on this machine:  blackbox curate run$peer_args$publisher_arg"
         return 0
     fi
-    local unit=/etc/systemd/system/blackbox-curator.service
-    if [ ! -w /etc/systemd/system ] && [ "$(id -u)" != 0 ]; then
-        unit="$HOME/.config/systemd/user/blackbox-curator.service"
-        mkdir -p "$(dirname "$unit")"
-    fi
-    cat > "$unit" <<CURATOR_UNIT
+    install_node_unit blackbox-curator curator <<CURATOR_UNIT
 [Unit]
 Description=Agent Blackbox curator service (routine curation for the community graph)
 After=network-online.target blackbox-dkg.service
@@ -2251,23 +2296,222 @@ Wants=blackbox-dkg.service
 Type=simple
 Environment=HERMES_HOME=$HERMES_HOME
 Environment=BLACKBOX_HOME=$BLACKBOX_HOME
-ExecStart=$HERMES_BIN blackbox curate run$peer_args
+ExecStart=$HERMES_BIN blackbox curate run$peer_args$publisher_arg
 Restart=on-failure
 RestartSec=30
 
 [Install]
 WantedBy=multi-user.target default.target
 CURATOR_UNIT
-    if [ "$unit" = /etc/systemd/system/blackbox-curator.service ]; then
-        systemctl daemon-reload && systemctl enable --now blackbox-curator >/dev/null 2>&1 \
-            && ok "curator service registered (blackbox-curator)" \
-            || warn "could not enable the curator service; enable manually: systemctl enable --now blackbox-curator"
-    else
-        systemctl --user daemon-reload && systemctl --user enable --now blackbox-curator >/dev/null 2>&1 \
-            && ok "curator user service registered (blackbox-curator)" \
-            || warn "could not enable the user service; enable manually: systemctl --user enable --now blackbox-curator"
-    fi
     step "  It signs nothing until you accept the automation policy:  blackbox curate policy"
+    if [ -n "$publisher_arg" ]; then
+        step "  This node is the batch publisher (--publisher): run it on the wallet holder only"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# The curate watcher (W3) — OPT-IN: alarms and NEW threats to this node's own
+# channel. The URL is a credential (a Slack webhook URL is a bearer secret), so
+# it is written to <curate home>/alarm_sink.json (mode 600, never replaced once
+# there) and never into the world-readable unit or the process's arguments:
+#   BLACKBOX_CURATOR_WEBHOOK="https://hooks.slack.com/services/…" bash blackbox-install.sh
+# On a bench this registers blackbox-curate-watch, a long-running
+# `curate watch --interval` (never a `--once` timer: the watcher keeps when it
+# last posted metrics in memory). On a curator node (BLACKBOX_CURATOR_SERVICE=1)
+# the beat already polls the same alarms, so only the sink is written.
+# Disable anytime:  systemctl disable --now blackbox-curate-watch
+# ---------------------------------------------------------------------------
+register_curate_watch() {
+    local url="${BLACKBOX_CURATOR_WEBHOOK:-}"
+    [ -n "$url" ] || return 0
+    heading "Setting up this node's alarm channel"
+    # Only characters that need no JSON escaping and no systemd/shell quoting.
+    local allowed='A-Za-z0-9._~:/?#@=&%+-'
+    case "$url" in
+        https://?*) ;;
+        *) warn "refused BLACKBOX_CURATOR_WEBHOOK: it must be an https:// URL"; return 0 ;;
+    esac
+    case "$url" in
+        *[!$allowed]*) warn "refused BLACKBOX_CURATOR_WEBHOOK: it holds a character outside $allowed"; return 0 ;;
+    esac
+    local kind=webhook sink="$BLACKBOX_HOME/curate/alarm_sink.json"
+    case "$url" in
+        https://hooks.slack.com/*) kind=slack ;;
+    esac
+    if [ -e "$sink" ]; then
+        step "  kept the existing $sink (edit it to change the channel)"
+    elif (umask 077 && mkdir -p "$(dirname "$sink")" && printf '{"kind": "%s", "url": "%s"}\n' "$kind" "$url" > "$sink"); then
+        ok "alarm channel written ($kind, $sink, mode 600)"
+    else
+        warn "could not write $sink; the watcher has no channel until it exists"
+        return 0
+    fi
+    if [ "${BLACKBOX_CURATOR_SERVICE:-0}" = 1 ]; then
+        step "  the curator service's beat posts this node's alarms; no separate watcher is registered"
+        return 0
+    fi
+    if ! have_systemd; then
+        warn "the curate watch unit is provided for Linux with systemd only."
+        warn "Start it yourself on this machine:  blackbox curate watch --interval 60"
+        return 0
+    fi
+    install_node_unit blackbox-curate-watch "curate watch" <<WATCH_UNIT
+[Unit]
+Description=Agent Blackbox curate watcher (alarms and new threats to this node's channel)
+After=network-online.target blackbox-dkg.service
+Wants=blackbox-dkg.service
+
+[Service]
+Type=simple
+Environment=HERMES_HOME=$HERMES_HOME
+Environment=BLACKBOX_HOME=$BLACKBOX_HOME
+ExecStart=$HERMES_BIN blackbox curate watch --interval 60
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target default.target
+WATCH_UNIT
+}
+
+# A TCP port a service may own: digits only, 1024-65535.
+valid_service_port() {
+    case "$1" in
+        ""|*[!0-9]*|??????*) return 1 ;;
+    esac
+    [ "$1" -ge 1024 ] && [ "$1" -le 65535 ]
+}
+
+# ---------------------------------------------------------------------------
+# The lab tunnel (§03.5) — OPT-IN, the node that runs the lab controller only:
+#   BLACKBOX_LAB_TUNNEL=lab@lab-1.example bash blackbox-install.sh
+# An autossh forward from 127.0.0.1:<BLACKBOX_LAB_TUNNEL_PORT, default 8790> to
+# the lab API on the lab host's own loopback (<BLACKBOX_LAB_PORT, default 8790>,
+# `python -m threat_lab serve`), with the lab-only key (BLACKBOX_LAB_TUNNEL_KEY,
+# default <curate home>/lab/tunnel_key) and nothing else. The lab host's key is
+# pinned (StrictHostKeyChecking=yes): connect once by hand first to accept it.
+# The lab controller then reaches the lab at http://127.0.0.1:<tunnel port>.
+# Disable anytime:  systemctl disable --now blackbox-lab-tunnel
+# ---------------------------------------------------------------------------
+register_lab_tunnel() {
+    local host="${BLACKBOX_LAB_TUNNEL:-}"
+    [ -n "$host" ] || return 0
+    heading "Registering the lab tunnel"
+    local local_port="${BLACKBOX_LAB_TUNNEL_PORT:-8790}" lab_port="${BLACKBOX_LAB_PORT:-8790}"
+    local key="${BLACKBOX_LAB_TUNNEL_KEY:-$BLACKBOX_HOME/curate/lab/tunnel_key}"
+    # A leading '-' would reach ssh as an option; one optional user@ only.
+    case "$host" in
+        -*|@*|*@|*@*@*|*[!A-Za-z0-9._@-]*)
+            warn "refused BLACKBOX_LAB_TUNNEL '$host': [user@]host with letters, digits, . _ - only"; return 0 ;;
+    esac
+    if ! valid_service_port "$local_port" || ! valid_service_port "$lab_port"; then
+        warn "refused the lab tunnel ports ($local_port, $lab_port): each must be a number from 1024 to 65535"
+        return 0
+    fi
+    case "$key" in
+        /*) ;;
+        *) warn "refused BLACKBOX_LAB_TUNNEL_KEY '$key': it must be an absolute path"; return 0 ;;
+    esac
+    case "$key" in
+        *[!A-Za-z0-9._/-]*) warn "refused BLACKBOX_LAB_TUNNEL_KEY '$key': letters, digits, . _ - / only"; return 0 ;;
+    esac
+    local forward="-o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -i $key -L 127.0.0.1:$local_port:127.0.0.1:$lab_port $host"
+    if ! have_systemd; then
+        warn "the lab tunnel unit is provided for Linux with systemd only."
+        warn "Start it yourself on this machine:  autossh -M 0 -N $forward"
+        return 0
+    fi
+    local autossh
+    autossh="$(command -v autossh || true)"
+    if [ -z "$autossh" ]; then
+        warn "autossh is not installed (sudo apt-get install autossh); re-run the installer after installing it"
+        return 0
+    fi
+    [ -f "$key" ] || warn "no lab-only key at $key yet: the tunnel retries until it is there"
+    install_node_unit blackbox-lab-tunnel "lab tunnel" <<TUNNEL_UNIT
+[Unit]
+Description=Agent Blackbox lab tunnel (SSH forward to the threat lab's loopback API)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=AUTOSSH_GATETIME=0
+ExecStart=$autossh -M 0 -N $forward
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target default.target
+TUNNEL_UNIT
+    step "  first connection: ssh -i $key $host once by hand to pin the lab host's key"
+}
+
+# ---------------------------------------------------------------------------
+# The key console (§03.2, C3) — OPT-IN, the node that holds root A only:
+#   sudo BLACKBOX_KEY_CONSOLE=1 bash blackbox-install.sh
+# A SYSTEM unit (root needed): `curate console` on 127.0.0.1:9710 as its own
+# system user, with no new privileges, a read-only system, no writable+executable
+# memory and no core dumps. ProtectHome is left off because the Hermes install
+# and the curate home live under a home folder. Operator steps (printed below):
+#   - kernel.yama.ptrace_scope >= 2 on the host, so no process of any uid but
+#     root can read the console's memory while it holds a decrypted key;
+#   - give blackbox-console access to the curate home and the Hermes install;
+#   - <curate home>/console_settings.json (see curate/console/commands.py);
+#   - tailscale serve --bg http://127.0.0.1:9710 (never Funnel; needs tailnet admin).
+# Disable anytime:  systemctl disable --now blackbox-console
+# ---------------------------------------------------------------------------
+register_key_console() {
+    [ "${BLACKBOX_KEY_CONSOLE:-0}" = 1 ] || return 0
+    heading "Registering the key console (this node holds root A)"
+    local port=9710 user=blackbox-console
+    if ! have_systemd || [ "$(id -u)" != 0 ]; then
+        warn "the key console is a systemd SYSTEM unit on Linux: re-run the installer as root with BLACKBOX_KEY_CONSOLE=1."
+        warn "Nothing was registered; the console is not running."
+        return 0
+    fi
+    if ! id "$user" >/dev/null 2>&1 \
+            && ! useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$user"; then
+        warn "could not create the $user system user; the key console was not registered"
+        return 0
+    fi
+    install_node_unit blackbox-console "key console" <<CONSOLE_UNIT
+[Unit]
+Description=Agent Blackbox key console (root A; reached only through tailscale serve)
+After=network-online.target
+
+[Service]
+Type=simple
+User=$user
+Group=$user
+Environment=HERMES_HOME=$HERMES_HOME
+Environment=BLACKBOX_HOME=$BLACKBOX_HOME
+ExecStart=$HERMES_BIN blackbox curate console --port $port
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=$BLACKBOX_HOME/curate
+MemoryDenyWriteExecute=yes
+LimitCORE=0
+PrivateTmp=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+UMask=0077
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+CONSOLE_UNIT
+    local scope
+    scope="$(cat "$BLACKBOX_PTRACE_SCOPE_FILE" 2>/dev/null || true)"
+    case "$scope" in
+        2|3) ok "kernel.yama.ptrace_scope is $scope" ;;
+        *) warn "kernel.yama.ptrace_scope is ${scope:-unavailable}; the key console needs 2 or more. On this host run:"
+           step "  echo 'kernel.yama.ptrace_scope = 2' > /etc/sysctl.d/60-blackbox-ptrace.conf && sysctl --system" ;;
+    esac
+    step "  give $user access:  setfacl -R -m u:$user:rwX $BLACKBOX_HOME/curate  (and read access to the Hermes install)"
+    step "  write $BLACKBOX_HOME/curate/console_settings.json (tailscaleLogin, magicDnsHost, loginPassphraseHash)"
+    step "  then, as the tailnet admin:  tailscale serve --bg http://127.0.0.1:$port   (never Funnel)"
 }
 
 main() {
@@ -2293,6 +2537,9 @@ main() {
     register_boot_service
     register_dashboard_service
     register_curator_service
+    register_curate_watch
+    register_lab_tunnel
+    register_key_console
     next_steps
     if [ "$BLACKBOX_INSTALL_INCOMPLETE" = true ]; then
         exit 1

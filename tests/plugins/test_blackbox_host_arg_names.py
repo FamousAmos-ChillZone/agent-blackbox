@@ -77,10 +77,11 @@ print(json.dumps({"version": bool(getattr(args, "version", False)), "command": a
 
 
 @pytest.mark.parametrize("argv, attribute, value", [
-    (["blackbox", "curate", "--authority", "community", "manifest", "--curator-key", "a" * 64, "--threshold", "2",
+    (["blackbox", "curate", "--authority", "community", "manifest", "--curator-key", "a" * 64, "--curator-operator", "acme", "--threshold", "2",
       "--manifest-version", "3"], "manifest_version", 3),
     (["blackbox", "report", "--type", "dependency", "--ecosystem", "npm", "--name", "loadyaml", "--package-version", "1.0.0",
       "--kind", "malware", "--reason", "typosquat"], "package_version", "1.0.0"),
+    (["blackbox", "curate", "run", "--publisher", "--peer", "x"], "publisher", True),    # SVC4 (LES-035)
 ])
 def test_the_commands_that_broke_now_reach_the_plugin_through_the_real_hermes_parser(argv, attribute, value, tmp_path):
     import json
