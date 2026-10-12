@@ -31,6 +31,8 @@ const SECRET_VALUE_RULES: ReadonlyArray<readonly [string, RegExp]> = [
   ["stripe-key", /\b(?:sk|rk)_live_[0-9a-zA-Z]{20,}/g],
   ["gcp-service-account-key", /"type"\s*:\s*"service_account"/g],
   ["jwt", /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g],
+  // A raw wallet key only right after a key label (it is shaped like a tx hash).
+  ["wallet-private-key", /\b(?:[A-Za-z0-9_]*(?:private[ _-]?key|priv[_-]?key|secret[ _-]?key|signer[ _-]?key)[A-Za-z0-9_]*|pk)["']?[ \t]*(?:[:=]|\bis\b)[ \t]*["']?(?:0x)?[0-9a-fA-F]{64}\b/gi],
 ];
 
 /** Redaction-only shapes (too broad to be detection signals). Mirrors `_REDACTION_ONLY_RULES`. */

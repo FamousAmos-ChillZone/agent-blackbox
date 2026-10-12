@@ -43,6 +43,15 @@ SECRET_VALUE_RULES = (
     ("stripe-key", "high", re.compile(r"\b(?:sk|rk)_live_[0-9a-zA-Z]{20,}")),
     ("gcp-service-account-key", "high", re.compile(r'"type"\s*:\s*"service_account"')),
     ("jwt", "medium", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")),
+    # A raw wallet key (MetaMask "Export private key": 64 hex) is shaped exactly
+    # like a transaction hash, so it counts only right after a key LABEL —
+    # PRIVATE_KEY=, "privateKey": "…", private key: …, PK= (Polymarket's env
+    # name). The label goes with the value when redacted. Handling one flags
+    # (an agent's own trading config holds one); sending it out is critical.
+    ("wallet-private-key", "high", re.compile(
+        r"\b(?:[A-Za-z0-9_]*(?:private[ _-]?key|priv[_-]?key|secret[ _-]?key|signer[ _-]?key)[A-Za-z0-9_]*|pk)"
+        r"[\"']?[ \t]*(?:[:=]|\bis\b)[ \t]*[\"']?(?:0x)?[0-9a-fA-F]{64}\b",
+        re.IGNORECASE)),
 )
 
 

@@ -25,6 +25,7 @@ SCRIPT = REPO / "integrations" / "openclaw" / "test" / "redaction-parity.mjs"
 # Filler built at runtime: recognizable shapes, never real material.
 _BODY = "FAKEKEYMATERIAL" * 4
 _ALNUM = "abcdefghijklmnopqrstuvwxyz0123456789"
+_HEX = ("0123456789abcdef" * 4)[::-1]                    # 64 hex, built at runtime
 
 
 def _pem(label: str, cut_off: bool = False) -> str:
@@ -52,6 +53,8 @@ def _cases() -> list[str]:
         _phrase(6) + " notaword " + _phrase(6),                     # broken run: stays
         "Café " + _phrase(12) + " 😀 " + _phrase(13, start=99),      # non-ASCII around runs
         "word " * 3 + "the " + _phrase(12, start=3) + " and AKIA" + "ABCDEFGHIJKLMNOP",
+        "PRIVATE" + "_KEY=0x" + _HEX + " and " + '{"privateKey": "' + _HEX + '"}',
+        "PK=" + _HEX + " txHash: 0x" + _HEX + " apk_sha256: " + _HEX,          # only the labelled one goes
         f"before {_pem('RSA ' + private)} after",
         f"x{_pem(private, cut_off=True)}",
         "aws " + "AKIA" + "ABCDEFGHIJKLMNOP" + " in args",
