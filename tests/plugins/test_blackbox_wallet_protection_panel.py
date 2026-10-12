@@ -147,3 +147,11 @@ def test_every_panel_event_opens_the_full_local_report_window():
     assert 'id="wallet-events" hidden' in html and ".wev-overlay[hidden] { display: none; }" in html
     assert 'getJSON("/api/wallet-protection/events")' in html
     assert "Private to this machine." in html
+
+
+def test_protected_files_lists_what_trader_shield_guards_read_only():
+    html = (protection.TRADER_SHIELD_PAGE.parent / "index.html").read_text(encoding="utf-8")
+    rows = html[html.index("function shieldPathRows()"):html.index("function renderWalletUI()")]
+    assert "if (!setState || !setState.wallet_protection) return" in rows   # only while engaged
+    assert "path-del" not in rows   # read-only: no remove button
+    assert "host.innerHTML = own + shieldPathRows();" in html
