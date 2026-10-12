@@ -1845,10 +1845,12 @@
     margin-left: 5px; border: 1px solid currentColor; border-radius: 50%; font-size: 9px; font-weight: 600; letter-spacing: 0;
     text-transform: none; cursor: help; vertical-align: 1px; opacity: .75; }
   .m-help:hover, .m-help:focus { opacity: 1; outline: none; }
-  .m-help:hover::after, .m-help:focus::after { content: attr(data-help); position: absolute; left: 50%; top: calc(100% + 6px);
-    transform: translateX(-50%); width: max-content; max-width: min(260px, 70vw); white-space: normal; text-align: left;
-    padding: 8px 10px; border-radius: 6px; background: var(--ink, #1d1b19); color: var(--paper, #fff); font-size: 11.5px;
-    line-height: 1.4; letter-spacing: 0; text-transform: none; font-weight: 400; z-index: 50; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+  .m-help:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+  /* One floating bubble on <body>, positioned by script and kept inside the window —
+     an in-panel bubble was clipped by the detail panel's edges. */
+  .m-help-tip { position: fixed; z-index: 1000; max-width: min(280px, calc(100vw - 32px)); padding: 8px 10px;
+    border-radius: 6px; background: #1d1b19; color: #fff; font-size: 12px; line-height: 1.45; letter-spacing: 0;
+    text-transform: none; font-weight: 400; box-shadow: 0 6px 18px rgba(0,0,0,.2); pointer-events: none; }
   .m-v { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
   .m-v.mono { font-family: var(--mono-font); font-size: 12px; }
   .modal-refs { margin-top: 16px; }
@@ -4914,6 +4916,31 @@
     "Loaded sample": "How many of them the dashboard loaded to draw.",
     "Sample severity mix": "How serious the loaded threats are, by severity."
   };
+
+  // The (i) explanations: one floating bubble, placed under (or above) the icon and
+  // clamped inside the window, so a panel's edges never cut it off.
+  (function () {
+    var tip = null;
+    function show(el) {
+      if (!tip) { tip = document.createElement("div"); tip.className = "m-help-tip"; tip.setAttribute("role", "tooltip"); document.body.appendChild(tip); }
+      tip.textContent = el.getAttribute("data-help") || "";
+      tip.hidden = false;
+      var r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight, m = 16;
+      var left = Math.min(Math.max(m, r.left + r.width / 2 - w / 2), window.innerWidth - w - m);
+      var top = r.bottom + 8;
+      if (top + h > window.innerHeight - m) top = Math.max(m, r.top - h - 8);
+      tip.style.left = left + "px";
+      tip.style.top = top + "px";
+    }
+    function hide() { if (tip) tip.hidden = true; }
+    function helpOf(e) { return e.target && e.target.closest ? e.target.closest(".m-help") : null; }
+    document.addEventListener("mouseover", function (e) { var el = helpOf(e); if (el) show(el); });
+    document.addEventListener("mouseout", function (e) { if (helpOf(e)) hide(); });
+    document.addEventListener("focusin", function (e) { var el = helpOf(e); if (el) show(el); });
+    document.addEventListener("focusout", function (e) { if (helpOf(e)) hide(); });
+    document.addEventListener("click", function (e) { var el = helpOf(e); if (el) { e.stopPropagation(); show(el); } }, true);
+    window.addEventListener("scroll", hide, true);
+  })();
 
   // The threat profile a report carries (closed words only), as detail rows. Accepts the
   // community rule's camelCase keys or a local finding's snake_case sighting.
