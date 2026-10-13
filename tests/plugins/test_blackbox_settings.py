@@ -574,6 +574,7 @@ def test_the_dashboard_answers_400_and_saves_nothing_for_a_partly_valid_body(mon
 
     server = load_blackbox("dashboard.server")
     monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
+    monkeypatch.setenv("HOME", str(tmp_path))   # the app's agent discovery must not find the real ~/.hermes
     settings.write_settings({"wallet_protection": True})
     with TestClient(server.create_app(), base_url="http://127.0.0.1:9700") as client:
         token = client.get("/api/session").json()["token"]
