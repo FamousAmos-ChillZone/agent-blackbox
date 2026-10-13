@@ -30,6 +30,7 @@ from .finding import ANSWERED_BY_FALLBACK, FALLBACK_REASON, Finding, _rule_sourc
 from .injection_detection import detect_injection, discover_injection, injection_scan_text
 from .ioc_detection import detect_ioc, ioc_context
 from .skill_detection import detect_skill
+from .wallet_files import detect_wallet_files
 from ..kernel import threat_ids
 
 logger = logging.getLogger(__name__)
@@ -391,8 +392,9 @@ def detect_all(tool_name: str, args: Any, ruleset: Any, discover: bool = True) -
     findings.extend(detect_fileaccess(tool_name, args, ruleset))
     findings.extend(detect_skill(tool_name, args, ruleset))
     findings.extend(detect_ioc(tool_name, args, ruleset, ioc_context(tool_name, args)))
-    # Secret exposure always runs (not gated by discovery): personal, never a graph candidate.
+    # Secret exposure and wallet key stores always run (not gated by discovery): personal, never shared.
     findings.extend(detect_secret_exposure(tool_name, args))
+    findings.extend(detect_wallet_files(tool_name, args))
     if not discover:
         findings = [f for f in findings if f.source != "heuristic"]
     return findings

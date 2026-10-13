@@ -25,6 +25,7 @@ SCRIPT = REPO / "integrations" / "openclaw" / "test" / "redaction-parity.mjs"
 # Filler built at runtime: recognizable shapes, never real material.
 _BODY = "FAKEKEYMATERIAL" * 4
 _ALNUM = "abcdefghijklmnopqrstuvwxyz0123456789"
+_HEX = ("0123456789abcdef" * 4)[::-1]                    # 64 hex, built at runtime
 
 
 def _pem(label: str, cut_off: bool = False) -> str:
@@ -33,9 +34,52 @@ def _pem(label: str, cut_off: bool = False) -> str:
     return begin + "\n" + _BODY + ("" if cut_off else "\n" + end)
 
 
+_WORDS = (REPO / "plugins" / "blackbox" / "kernel" / "crypto_secrets" / "bip39_english.txt").read_text(encoding="ascii").split()
+
+
+def _phrase(count: int, start: int = 7, separator: str = " ") -> str:
+    """List words picked at runtime (checksum not needed: redaction is by run)."""
+    return separator.join(_WORDS[(start + 97 * i) % len(_WORDS)] for i in range(count))
+
+
+_BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def _base58(data: bytes) -> str:
+    number, out = int.from_bytes(data, "big"), ""
+    while number:
+        number, digit = divmod(number, 58)
+        out = _BASE58[digit] + out
+    return "1" * (len(data) - len(data.lstrip(b"\0"))) + out
+
+
+def _solana_key() -> bytes:
+    """A real Solana secret key, made at runtime: Ed25519 seed + its public key."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    private = Ed25519PrivateKey.generate()
+    return private.private_bytes_raw() + private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+
+
 def _cases() -> list[str]:
     private = "PRIVATE"
+    phantom, keyfile = _base58(_solana_key()), "[" + ", ".join(str(b) for b in _solana_key()) + "]"
+    lookalike = _base58(bytes(range(64)))   # signature-shaped, not seed + public key
+    numbered = " ".join(f"{i + 1}. {word}" for i, word in enumerate(_phrase(12).split()))
     return [
+        "seed: " + _phrase(12) + " done",
+        "srp " + _phrase(24, separator=",\n") + "!",
+        numbered,
+        "elevenish " + _phrase(11) + " qzx",                         # too short: stays
+        _phrase(6) + " notaword " + _phrase(6),                     # broken run: stays
+        "Café " + _phrase(12) + " 😀 " + _phrase(13, start=99),      # non-ASCII around runs
+        "phantom export " + phantom + " then tx " + lookalike + " ok",  # the key goes, the signature stays
+        "id.json " + keyfile + " end",
+        "cut off " + _base58(_solana_key())[:60],                     # truncated at the end: still removed
+        "word " * 3 + "the " + _phrase(12, start=3) + " and AKIA" + "ABCDEFGHIJKLMNOP",
+        "PRIVATE" + "_KEY=0x" + _HEX + " and " + '{"privateKey": "' + _HEX + '"}',
+        "PK=" + _HEX + " txHash: 0x" + _HEX + " apk_sha256: " + _HEX,          # only the labelled one goes
         f"before {_pem('RSA ' + private)} after",
         f"x{_pem(private, cut_off=True)}",
         "aws " + "AKIA" + "ABCDEFGHIJKLMNOP" + " in args",
@@ -71,5 +115,12 @@ def test_both_runtimes_redact_identically(tmp_path):
     # And the pass did something: every secret-shaped input lost its material.
     for text, out in zip(cases, from_python):
         assert _BODY not in out and "hunter2secret" not in out
-        if text and text != cases[-4] and text != cases[-3]:
+        if text and text not in (cases[-4], cases[-3], cases[3], cases[4]):
             assert "[REDACTED" in out, text
+    assert from_python[3] == cases[3] and from_python[4] == cases[4]
+
+
+def test_both_runtimes_ship_the_same_pinned_wordlist():
+    python_copy = REPO / "plugins" / "blackbox" / "kernel" / "crypto_secrets" / "bip39_english.txt"
+    bridge_copy = REPO / "integrations" / "openclaw" / "src" / "bip39-english.txt"
+    assert python_copy.read_bytes() == bridge_copy.read_bytes()

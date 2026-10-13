@@ -14,6 +14,9 @@
  * no longer matches (KI-178).
  */
 
+import { redactSeedPhrases } from "./seedPhrase.js";
+import { redactSolanaKeys } from "./solanaKey.js";
+
 /** Known secret shapes → typed markers. Mirrors `redaction.SECRET_VALUE_RULES`. */
 const SECRET_VALUE_RULES: ReadonlyArray<readonly [string, RegExp]> = [
   // The WHOLE private-key block — through its END line, or to the end of the
@@ -29,6 +32,8 @@ const SECRET_VALUE_RULES: ReadonlyArray<readonly [string, RegExp]> = [
   ["stripe-key", /\b(?:sk|rk)_live_[0-9a-zA-Z]{20,}/g],
   ["gcp-service-account-key", /"type"\s*:\s*"service_account"/g],
   ["jwt", /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g],
+  // A raw wallet key only right after a key label (it is shaped like a tx hash).
+  ["wallet-private-key", /\b(?:[A-Za-z0-9_]*(?:private[ _-]?key|priv[_-]?key|secret[ _-]?key|signer[ _-]?key)[A-Za-z0-9_]*|pk)["']?[ \t]*(?:[:=]|\bis\b)[ \t]*["']?(?:0x)?[0-9a-fA-F]{64}\b/gi],
 ];
 
 /** Redaction-only shapes (too broad to be detection signals). Mirrors `_REDACTION_ONLY_RULES`. */
@@ -58,7 +63,8 @@ function marker(secretType: string): string {
  * rule pass, byte-for-byte the Python `redact_secret_values`. No truncation.
  */
 export function redactSecretValues(text: string): string {
-  let out = String(text);
+  let out = redactSeedPhrases(String(text)); // wallet seed phrases first, as in Python
+  out = redactSolanaKeys(out); // then verified Solana keys, as in Python
   for (const [secretType, pattern] of SECRET_VALUE_RULES) out = out.replace(pattern, marker(secretType));
   for (const [secretType, pattern] of REDACTION_ONLY_RULES) out = out.replace(pattern, marker(secretType));
   out = out.replace(BEARER_RE, "Bearer [REDACTED]");

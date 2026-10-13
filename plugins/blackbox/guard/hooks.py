@@ -280,17 +280,40 @@ def _untrusted_request_sources(user_message: Any, request_messages: Any) -> List
         # developer, and assistant content must never create a user finding.
         if role == "user":
             add("in-user-prompt", session_context._message_text(msg.get("content")))
-        elif role == "tool":
-            name = str(msg.get("name") or tool_names.get(str(msg.get("tool_call_id") or ""), "")).lower()
+            continue
+        result = _tool_result(msg)
+        if result is not None:
+            call_id, content, name = result
+            name = str(name or tool_names.get(call_id, "")).lower()
             context = "in-fetched-page" if name.startswith(detection.FETCH_TOOL_PREFIXES) else "in-tool-output"
-            add(context, session_context._message_text(msg.get("content")))
+            add(context, session_context._message_text(content))
     return sources
 
 
+def _tool_result(msg: Any) -> Optional[Tuple[str, Any, str]]:
+    """``(call id, content, tool name or "")`` when *msg* is a tool's result, else None.
+
+    Two wire shapes reach ``pre_api_request``: Chat Completions sends
+    ``{"role": "tool", "tool_call_id", "content"}``; the Responses API (OpenAI direct,
+    Codex — Hermes passes ``api_kwargs["input"]``) sends
+    ``{"type": "function_call_output", "call_id", "output"}``. Reading only the first
+    left every Responses-API agent's tool output unscanned for injection (KI-365)."""
+    if not isinstance(msg, dict):
+        return None
+    if str(msg.get("role") or "").lower() == "tool":
+        return str(msg.get("tool_call_id") or ""), msg.get("content"), str(msg.get("name") or "")
+    if msg.get("type") == "function_call_output":
+        return str(msg.get("call_id") or ""), msg.get("output"), ""
+    return None
+
+
 def _tool_names_by_call_id(messages: List[Any]) -> Dict[str, str]:
-    """``tool_call_id`` -> tool name, from the assistant turns' ``tool_calls``."""
+    """``tool_call_id`` -> tool name, from the assistant turns' ``tool_calls`` (Chat
+    Completions) and from ``function_call`` items (Responses API)."""
     names: Dict[str, str] = {}
     for msg in messages:
+        if isinstance(msg, dict) and msg.get("type") == "function_call" and msg.get("call_id"):
+            names[str(msg["call_id"])] = str(msg.get("name") or "")
         calls = msg.get("tool_calls") if isinstance(msg, dict) else None
         for call in calls if isinstance(calls, list) else []:
             function = call.get("function") if isinstance(call, dict) else None

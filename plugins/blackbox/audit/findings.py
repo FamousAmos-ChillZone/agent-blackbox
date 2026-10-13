@@ -88,6 +88,7 @@ def _flatten_finding_row(rec: Dict[str, Any], default_fw: str) -> Dict[str, Any]
         "decision": str(detail.get("decision") or ""),
         # Local-only conversation snapshot (redacted upstream).
         "context": _bounded_context(detail.get("context") or finding.get("context")),
+        "found_in": finding.get("found_in") or "",
     }
 
 
@@ -258,7 +259,16 @@ def _finding_summary(finding: Dict[str, Any]) -> Dict[str, Any]:
         "ts": time.time(),
         # threat profiles: the closed-vocabulary sighting the guard attached (goal, at risk, outcome…).
         "sighting": {str(k)[:64]: str(v)[:128] for k, v in (finding.get("sighting") or {}).items()},
+        # Where an injection was met — a closed word (constants.INJECTION_CONTEXTS), never content.
+        "found_in": _found_in(finding),
     }
+
+
+def _found_in(finding: Dict[str, Any]) -> str:
+    """The closed context an injection finding was met in ("in-tool-output", …), or ""."""
+    fields = finding.get("fields")
+    context = fields.get("context") if isinstance(fields, dict) else None
+    return context if context in constants.INJECTION_CONTEXTS else ""
 
 
 # ---------------------------------------------------------------------------
