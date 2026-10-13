@@ -7,7 +7,8 @@ a found approval means. Each form has its own parser:
 
 * :mod:`.cast_forms` — Foundry ``cast`` and ``spl-token`` command lines;
 * :mod:`.calldata` — raw ABI calldata, however its hex is written;
-* script code (ethers / web3 / viem) — below.
+* :mod:`.script_forms` — ethers / web3.py / viem code, variables followed;
+* :mod:`.permits` — EIP-712 permit signatures (EIP-2612 and Permit2).
 
 Usage::
 
@@ -20,14 +21,12 @@ from __future__ import annotations
 import re
 import shlex
 
-from . import amounts, calldata, cast_forms
-from .approval_calls import EVM_ADDRESS, Approval
+from . import calldata, cast_forms, permits, script_forms
+from .approval_calls import Approval
 
 __all__ = ["Approval", "approvals_in"]
 
 _CONTINUATION = re.compile(r"\\\r?\n")
-_SCRIPT_APPROVE = re.compile(rf"\.approve\(\s*['\"]?({EVM_ADDRESS.pattern})['\"]?\s*,\s*([^)]+)\)")
-_SCRIPT_APPROVE_ALL = re.compile(rf"setApprovalForAll\(\s*['\"]?({EVM_ADDRESS.pattern})['\"]?\s*,\s*(true|True|1)\s*\)")
 
 
 def _shell_words(text: str) -> list[str]:
@@ -43,9 +42,6 @@ def approvals_in(text: str) -> list[Approval]:
     """Every token approval *text* would send (see the module doc), each once."""
     if not text:
         return []
-    found = cast_forms.from_words(_shell_words(text)) + calldata.from_text(text)
-    for spender, amount in _SCRIPT_APPROVE.findall(text):
-        found.append(Approval(spender.lower(), amounts.is_unlimited(amount), "approve"))
-    for operator, _flag in _SCRIPT_APPROVE_ALL.findall(text):
-        found.append(Approval(operator.lower(), True, "approve-all"))
+    found = (cast_forms.from_words(_shell_words(text)) + calldata.from_text(text)
+             + script_forms.from_text(text) + permits.from_text(text))
     return list(dict.fromkeys(found))

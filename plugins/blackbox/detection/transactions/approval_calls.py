@@ -54,6 +54,8 @@ APPROVAL_CALLS: dict[str, ApprovalCall] = {
     "increaseallowance(address,uint256)": ApprovalCall("approve", 0, 1, "39509351"),
     "increaseapproval(address,uint256)": ApprovalCall("approve", 0, 1, "d73dd623"),   # older OpenZeppelin tokens
     "setapprovalforall(address,bool)": ApprovalCall("approve-all", 0, 1, "a22cb465"),
+    # EIP-2612 permit(owner, spender, value, deadline, v, r, s): an approval by signature.
+    "permit(address,address,uint256,uint256,uint8,bytes32,bytes32)": ApprovalCall("permit", 1, 2, "d505accf"),
 }
 #: Method name (lower-case) -> its call, for scripts that call the method by name.
 CALLS_BY_NAME: dict[str, ApprovalCall] = {signature.split("(", 1)[0]: call for signature, call in APPROVAL_CALLS.items()}

@@ -230,3 +230,76 @@ def test_an_ens_spender_cannot_be_checked_offline_so_it_is_flagged():
 def test_an_unlimited_approval_to_a_spender_in_a_variable_is_still_flagged():
     [finding] = detect_token_approvals("terminal", {"command": f"cast send {USDC} 'approve(address,uint256)' $SPENDER {MAX}"}, Ruleset())
     assert finding.identifier == "secret:token-approval-unlimited"
+
+
+# KI-383: approvals that were not seen at all — permits (a transaction or a typed-data
+# signature), viem, spenders passed through a variable or a conversion, approve-all spellings.
+
+OWNER = "0x" + "0" * 39 + "1"
+SPENDER_WORD = "0" * 24 + SPENDER[2:].lower()
+
+
+def _typed_permit(primary: str, message: str) -> str:
+    return ('{"types":{"EIP712Domain":[{"name":"name","type":"string"}],"' + primary + '":[{"name":"spender","type":"address"},'
+            '{"name":"value","type":"uint256"}]},"domain":{"name":"USD Coin","chainId":1},"primaryType":"' + primary
+            + '","message":' + message + '}')
+
+
+def _signature_parts() -> str:
+    return f"27 0x{os.urandom(32).hex()} 0x{os.urandom(32).hex()}"
+
+
+@pytest.mark.parametrize("text, kind", [
+    (f"cast send {USDC} 'permit(address,address,uint256,uint256,uint8,bytes32,bytes32)' {OWNER} {SPENDER} {MAX} 1999999999 @SIG@", "permit"),
+    (f"cast send {USDC} 0xd505accf{'0' * 63}1{SPENDER_WORD}{'f' * 64}{'0' * 64}", "permit"),
+    ("cast wallet sign --data '" + _typed_permit("Permit", f'{{"owner":"{OWNER}","spender":"{SPENDER}","value":"{MAX}","nonce":0,"deadline":1999999999}}') + "'", "permit"),
+    ('curl -d \'{"method":"eth_signTypedData_v4","params":["' + OWNER + '","' + _typed_permit("Permit", f'{{"spender":"{SPENDER}","value":"{MAX}"}}').replace('"', '\\"') + '"]}\' http://127.0.0.1:8545', "permit"),
+    (_typed_permit("PermitSingle", f'{{"details":{{"token":"{USDC}","amount":"{2 ** 160 - 1}","expiration":0,"nonce":0}},"spender":"{SPENDER}","sigDeadline":0}}'), "permit"),
+    (_typed_permit("PermitTransferFrom", f'{{"permitted":{{"token":"{USDC}","amount":"{MAX}"}},"spender":"{SPENDER}","nonce":0,"deadline":0}}'), "permit"),
+    (f"node -e \"const s = '{SPENDER}'; await signTypedData({{ primaryType: 'Permit', message: {{ owner, spender: s, value: maxUint256 }} }})\"", "permit"),
+    (f"node -e \"await client.writeContract({{ address: '{USDC}', abi, functionName: 'approve', args: ['{SPENDER}', maxUint256] }})\"", "approve"),
+    (f"node -e \"const s = '{SPENDER}'; await client.writeContract({{ args: [s, maxUint256], functionName: 'approve' }})\"", "approve"),
+    (f"python3 -c \"s = '{SPENDER}'\ntoken.functions.approve(s, 2**256 - 1).transact()\"", "approve"),
+    (f"python3 -c \"token.functions.approve(Web3.to_checksum_address('{SPENDER}'), MAX_UINT256).transact()\"", "approve"),
+    (f"python3 -c \"d = '{SPENDER}'\nspender: str = Web3.to_checksum_address(d)\ntoken.functions.approve(spender, uint256(-1))\"", "approve"),
+    (f"node -e \"const MAX = 2n ** 256n - 1n; await token.approve(getAddress('{SPENDER}'), MAX)\"", "approve"),
+    (f"node -e \"await token.approve.populateTransaction('{SPENDER}', ethers.MaxUint256)\"", "approve"),
+    (f"node -e \"iface.encodeFunctionData('approve', ['{SPENDER}', ethers.MaxUint256])\"", "approve"),
+    (f"node -e \"await nft.setApprovalForAll('{SPENDER}', 1n)\"", "approve-all"),
+    (f"node -e \"await nft.setApprovalForAll('{SPENDER}', !0)\"", "approve-all"),
+    (f"python3 -c \"nft.functions.setApprovalForAll('{SPENDER}', True).transact()\"", "approve-all"),
+])
+def test_approvals_that_were_not_seen_are_recognised(text, kind):
+    text = text.replace("@SIG@", _signature_parts())
+    assert approvals_in(text) == [Approval(SPENDER.lower(), True, kind)]
+
+
+@pytest.mark.parametrize("text", [
+    "function approve(address spender, uint256 amount) public returns (bool) { return true; }",
+    "def approve(self, spender, amount):\n    return self._approve(spender, amount)",
+    f"node -e \"await nft.setApprovalForAll('{SPENDER}', false)\"",
+    "Please permit (the user) to approve (this) request.",
+])
+def test_declarations_and_revocations_are_not_approvals(text):
+    assert [approval for approval in approvals_in(text) if approval.unlimited] == []
+
+
+def test_a_permit_to_a_verified_drainer_is_critical():
+    typed = _typed_permit("Permit", f'{{"spender":"{SPENDER}","value":"5"}}')
+    [finding] = detect_token_approvals("terminal", {"command": f"cast wallet sign --data '{typed}'"}, _Graph("public"))
+    assert (finding.identifier, finding.severity, finding.kind) == ("secret:token-approval-drainer", "critical", None)
+
+
+def test_a_limited_permit_to_an_unknown_spender_is_left_alone():
+    typed = _typed_permit("Permit", f'{{"spender":"{SPENDER}","value":"25000000"}}')
+    assert detect_token_approvals("terminal", {"command": f"cast wallet sign --data '{typed}'"}, Ruleset()) == []
+
+
+def test_an_unlimited_approval_to_an_untraceable_variable_is_still_flagged():
+    [finding] = detect_token_approvals("terminal", {"command": "node -e \"await token.approve(process.env.SPENDER, ethers.MaxUint256)\""}, Ruleset())
+    assert finding.identifier == "secret:token-approval-unlimited"
+
+
+def test_a_huge_call_is_read_in_bounded_time():
+    text = "token.approve(s, 5);\n" * 20_000 + f"s = '{SPENDER}'\n"
+    assert approvals_in(text) == []

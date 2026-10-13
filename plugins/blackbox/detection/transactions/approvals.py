@@ -9,7 +9,8 @@ What is recognised — Foundry ``cast`` and ``spl-token`` command lines, raw cal
 however its hex is written, and ethers / web3 / viem script code, in every spelling of
 the signature and of "unlimited" — is listed in :mod:`.approval_forms`.
 
-What it does with one:
+What it does with one (a permit — an approval by signature — and a Solana token
+delegate are treated exactly like an approval):
 
 * the spender or operator is a wallet or contract the VERIFIED threat graph lists
   (looked up like any indicator) → critical, blocks in block mode; listed only by
