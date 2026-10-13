@@ -5571,7 +5571,7 @@
     var id = String(f.identifier || "");
     if (/:crypto-wallet$/.test(id)) return "vault";
     if (id === "secret:seed-phrase") return "seed";
-    if (id === "secret:wallet-private-key" || id === "secret:solana-private-key") return "key";
+    if (id === "secret:wallet-private-key" || id === "secret:solana-private-key" || id === "secret:bitcoin-private-key") return "key";
     if (id === "secret:exchange-api-key") return "exchange";
     if (/:macos-keychain$/.test(id)) return "keychain";
     if (id === "secret:token-approval-drainer" || id === "secret:token-approval-unlimited") return "approval";
@@ -5592,6 +5592,8 @@
       "a different site (" + ((/\(([^)]+)\)/.exec(String(f.title || "")) || [])[1] || "an exchange") + ")"]);
     if (kind === "key") rows.push(["Reached for", String(f.identifier || "") === "secret:solana-private-key"
       ? "a Solana secret key (what Phantom's \"Export private key\" shows, or a Solana CLI key file)"
+      : String(f.identifier || "") === "secret:bitcoin-private-key"
+      ? "a Bitcoin private key (a WIF key, or an xprv / yprv / zprv extended key that opens the whole wallet)"
       : "a wallet private key, written next to a key label"]);
     rows.push(["Why it matters", WALLET_WHY[kind]]);
     var turns = (f.context && Array.isArray(f.context.turns)) ? f.context.turns : [];

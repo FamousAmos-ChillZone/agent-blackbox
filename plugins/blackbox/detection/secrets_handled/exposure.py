@@ -26,7 +26,7 @@ from ...kernel import crypto_secrets
 
 #: Wallet secrets (``secret:<type>``): no destination is ever right for these, so ANY way of
 #: sending them counts — a web address, or script code that makes a network call.
-_WALLET_SECRET_TYPES = frozenset({"seed-phrase", "wallet-private-key", "solana-private-key"})
+_WALLET_SECRET_TYPES = frozenset({"seed-phrase", "wallet-private-key", "solana-private-key", "bitcoin-private-key"})
 
 
 def _wallet_secrets_sent(text: str) -> set:
@@ -37,6 +37,31 @@ def _wallet_secrets_sent(text: str) -> set:
     if sending.looks_like_script_send(text):
         in_urls |= {hit["type"] for hit in content_scanners.scan_secret_values(text)}
     return in_urls & _WALLET_SECRET_TYPES
+
+
+def _secret_finding(tool_name: str, secret_type: str, severity: str, sent: bool, evidence: str = "") -> Finding:
+    """One local-only ``secret:<type>`` finding: the TYPE only, never the value."""
+    return Finding(
+        identifier=f"secret:{secret_type}",
+        category="secret",
+        severity=severity,
+        title=f"{'Secret exfiltration' if sent else 'Secret exposed'}: {secret_type}",
+        tool_name=tool_name or "",
+        matched=secret_type,
+        evidence=evidence or secret_type,
+        confirmed=False,
+        source="secret",
+    )
+
+
+def _unchecked_solana_keys_sent(tool_name: str, text: str, egress: bool) -> list[Finding]:
+    """A call that SENDS more Solana-key-shaped values than the check's budget, none of
+    which proved to be a key: flagged high — "could not tell" is never "no key" (KI-380,
+    LES-011). Kept on the machine, a list of signatures raises nothing."""
+    if not (egress or sending.looks_like_script_send(text)) or not crypto_secrets.scan_solana_keys(text).unchecked:
+        return []
+    return [_secret_finding(tool_name, "solana-private-key", "high", True,
+                            "solana-private-key (more key-shaped values sent than Blackbox checks in one call)")]
 
 
 def detect_secret_exposure(tool_name: str, args: Any) -> list[Finding]:
@@ -53,28 +78,15 @@ def detect_secret_exposure(tool_name: str, args: Any) -> list[Finding]:
     if not text:
         return []
     hits = content_scanners.scan_secret_values(text)
-    if not hits:
-        return []
     egress = sending.looks_like_egress(text)
-    wallet_sent = _wallet_secrets_sent(text)
+    wallet_sent = _wallet_secrets_sent(text) if hits else set()
     out: list[Finding] = []
     for hit in hits:
         sent = egress or hit["type"] in wallet_sent
         severity = "critical" if (sent and hit["severity"] != "critical") else hit["severity"]
-        prefix = "Secret exfiltration" if sent else "Secret exposed"
-        out.append(
-            Finding(
-                identifier=f"secret:{hit['type']}",
-                category="secret",
-                severity=severity,
-                title=f"{prefix}: {hit['type']}",
-                tool_name=tool_name or "",
-                matched=hit["type"],   # TYPE only — never the secret value
-                evidence=hit["type"],
-                confirmed=False,
-                source="secret",
-            )
-        )
+        out.append(_secret_finding(tool_name, hit["type"], severity, sent))
+    if not any(hit["type"] == "solana-private-key" for hit in hits):
+        out += _unchecked_solana_keys_sent(tool_name, text, egress)
     return out
 
 
@@ -98,7 +110,7 @@ def detect_exchange_key_misdirection(tool_name: str, args: Any) -> list[Finding]
 
 
 #: A 64-hex value: the only shape a raw Ethereum private key can take.
-_HEX64 = re.compile(r"(?<![0-9A-Za-z])(?:0x)?[0-9a-fA-F]{64}(?![0-9A-Za-z])")
+_HEX64 = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])")
 
 
 def detect_own_wallet_keys(tool_name: str, args: Any, own_addresses: Callable[[], Iterable[str]]) -> list[Finding]:

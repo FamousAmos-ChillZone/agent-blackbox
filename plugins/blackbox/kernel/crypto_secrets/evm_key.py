@@ -38,7 +38,9 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 #: secp256k1's group order: a private key is 1 ≤ k < N.
 _CURVE_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 #: A 64-hex value standing alone (with or without 0x) — a candidate raw key.
-_CANDIDATE = re.compile(r"(?<![0-9A-Za-z])(?:0x)?([0-9a-fA-F]{64})(?![0-9A-Za-z])")
+#: Bounded by non-hex only (KI-380): "0X…", a key followed by a letter, a key inside a
+#: word all count; a longer hex run (a hash list, a signature) does not.
+_CANDIDATE = re.compile(r"(?<![0-9a-fA-F])([0-9a-fA-F]{64})(?![0-9a-fA-F])")
 #: Most distinct 64-hex values derived per text (each ~2 ms): a text full of transaction
 #: hashes must not stall the hook (65 KB of them took 2 s before the cap, KI-382).
 MAX_CANDIDATES = 32

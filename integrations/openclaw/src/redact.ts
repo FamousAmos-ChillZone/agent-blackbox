@@ -16,6 +16,7 @@
 
 import { redactSeedPhrases } from "./seedPhrase.js";
 import { redactSolanaKeys } from "./solanaKey.js";
+import { redactBitcoinKeys } from "./bitcoinKey.js";
 
 /** Known secret shapes → typed markers. Mirrors `redaction.SECRET_VALUE_RULES`. */
 const SECRET_VALUE_RULES: ReadonlyArray<readonly [string, RegExp]> = [
@@ -32,9 +33,11 @@ const SECRET_VALUE_RULES: ReadonlyArray<readonly [string, RegExp]> = [
   ["stripe-key", /\b(?:sk|rk)_live_[0-9a-zA-Z]{20,}/g],
   ["gcp-service-account-key", /"type"\s*:\s*"service_account"/g],
   ["jwt", /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g],
-  // A raw wallet key only right after a key label (it is shaped like a tx hash).
+  // A raw wallet key only right after a key label or inside a key-taking call (it is shaped like a tx hash).
   // Names around the keyword are bounded (64 each side) so the rule runs in linear time (KI-382).
-  ["wallet-private-key", /\b(?:[A-Za-z0-9_]{0,64}?(?:private[ _-]?key|priv[_-]?key|secret[ _-]?key|signer[ _-]?key)[A-Za-z0-9_]{0,64}|pk)["']?[ \t]*(?:[:=]|\bis\b)[ \t]*["']?(?:0x)?[0-9a-fA-F]{64}\b/gi],
+  ["wallet-private-key", /(?:\b(?:[A-Za-z0-9_]{0,64}?(?:private[ _-]?key|priv[_-]?key|secret[ _-]?key|signer[ _-]?key|signing[ _-]?key|wallet[ _-]?key|eth[_-]?key|evm[_-]?key|account[_-]?key)[A-Za-z0-9_]{0,64}|pk|(?<!public )(?<!public_)(?<!public-)key)["']?[ \t]*(?:[:=]|\bis\b)[ \t]*["']?|\b(?:from_key|from_private_key|fromPrivateKey|privateKeyToAccount|Wallet|Account)[ \t]*\([ \t]*["'`]?)(?:0x)?[0-9a-f]{64}[0-9a-f]*/gi],
+  // A labelled Solana seed half (43-44 base58 characters, no self-check of its own).
+  ["wallet-private-key", /\b[A-Za-z0-9_]{0,32}?(?:sol(?:ana)?|phantom|keypair)[_ -]?(?:private|secret)?[_ -]?(?:key|seed)[A-Za-z0-9_]{0,32}["']?[ \t]*[:=][ \t]*["']?[1-9A-HJ-NP-Za-km-z]{43,44}(?![1-9A-HJ-NP-Za-km-z])/gi],
 ];
 
 /** Redaction-only shapes (too broad to be detection signals). Mirrors `_REDACTION_ONLY_RULES`. */
@@ -70,6 +73,7 @@ function marker(secretType: string): string {
 export function redactSecretValues(text: string): string {
   let out = redactSeedPhrases(String(text)); // wallet seed phrases first, as in Python
   out = redactSolanaKeys(out); // then verified Solana keys, as in Python
+  out = redactBitcoinKeys(out); // then Bitcoin WIF / xprv keys, as in Python
   for (const [secretType, pattern] of SECRET_VALUE_RULES) out = out.replace(pattern, marker(secretType));
   for (const [secretType, pattern] of REDACTION_ONLY_RULES) out = out.replace(pattern, marker(secretType));
   out = out.replace(BEARER_RE, "Bearer [REDACTED]");

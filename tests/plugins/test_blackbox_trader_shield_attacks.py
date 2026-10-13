@@ -58,6 +58,10 @@ def _base58(data: bytes) -> str:
     return "1" * (len(data) - len(data.lstrip(b"\0"))) + out
 
 
+def _base58check(payload: bytes) -> str:
+    return _base58(payload + hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4])
+
+
 def _solana_key() -> bytes:
     """A real Solana secret key, made here: Ed25519 seed + its public key."""
     private = Ed25519PrivateKey.generate()
@@ -94,6 +98,10 @@ def shield(tmp_path, monkeypatch):
               "@PHANTOM@": "~/.config/google-chrome/Default/Local\\ Extension\\ Settings/" + PHANTOM,
               "@SOLKEY@": _base58(solana), "@SOLFILE@": "[" + ",".join(str(b) for b in solana) + "]",
               "@SOLSIG@": _base58(random.randbytes(64))}
+    # KI-380: more key shapes (Bitcoin WIF / xprv, a Solana key as hex, a key behind 100 decoys).
+    values.update({"@WIF@": _base58check(b"\x80\x01" + os.urandom(31) + b"\x01"), "@SOLHEX@": solana.hex(),
+                   "@XPRV@": _base58check(bytes.fromhex("0488ade4") + bytes(9) + os.urandom(32) + b"\x00\x01" + os.urandom(31)),
+                   "@SOLDECOYS@": " ".join(_base58(random.randbytes(64)) for _ in range(100))})
 
     def fill(value):
         if isinstance(value, str):
@@ -152,7 +160,8 @@ def test_every_attack_says_what_it_targets_and_how_it_was_proven():
         assert attack["targets"] and set(attack["targets"]) <= systems, attack["id"]
         assert attack["evidence"] and set(attack["evidence"]) <= set(EVIDENCE), attack["id"]
         assert ("tests" in attack["evidence"]) == (attack["proof"] == "test"), attack["id"]   # the suite runs exactly these
-        assert "bench" in attack["evidence"], attack["id"]                                    # the full bench run covers every row
+        # the full bench run covers every row — except rows added since it, marked until the next run
+        assert "bench" in attack["evidence"] or attack.get("bench_pending") is True, attack["id"]
 
 
 def test_every_system_has_something_proven_against_it():

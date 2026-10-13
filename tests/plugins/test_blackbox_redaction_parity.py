@@ -9,7 +9,10 @@ byte of difference. The TypeScript half is `integrations/openclaw/test/redaction
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -62,6 +65,37 @@ def _solana_key() -> bytes:
     return private.private_bytes_raw() + private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
 
 
+def _base58check(payload: bytes) -> str:
+    return _base58(payload + hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4])
+
+
+def _wif(compressed: bool = True) -> str:
+    return _base58check(b"\x80" + os.urandom(31) + b"\x01" + (b"\x01" if compressed else b""))
+
+
+def _xprv() -> str:
+    return _base58check(bytes.fromhex("0488ade4") + b"\x00" * 9 + os.urandom(32) + b"\x00" + b"\x01" + os.urandom(31))
+
+
+def _key_material_cases() -> list[str]:
+    """KI-380: more key shapes and labels, and the Solana check's budget."""
+    solana = _solana_key()
+    decoys = " ".join(_base58(bytes((i + j) % 256 for j in range(64))) for i in range(300))
+    return [
+        "wif " + _wif() + " and old " + _wif(compressed=False) + " ok",
+        "xprv " + _xprv() + " ok",
+        "cut wif " + _wif()[:40],
+        "cut xprv " + _xprv()[:70],
+        "hex " + solana.hex() + " and b64 " + base64.b64encode(solana).decode() + " end",
+        "cut hex " + solana.hex()[:100],
+        "hidden " + _base58(solana) + " " + decoys,                      # a key behind 300 look-alikes
+        "wallet_key=0X" + _HEX + " eth_key: " + _HEX + "g key=" + _HEX,
+        "Account.from_key('0x" + _HEX + "') privateKeyToAccount(\"0x" + _HEX + "\")",
+        "public key: " + _HEX + " public_key=" + _HEX,                    # public keys stay
+        "SOLANA_PRIVATE_KEY=" + _base58(solana[:32]) + " and address " + _base58(solana[32:]),
+    ]
+
+
 def _cases() -> list[str]:
     private = "PRIVATE"
     phantom, keyfile = _base58(_solana_key()), "[" + ", ".join(str(b) for b in _solana_key()) + "]"
@@ -103,7 +137,7 @@ def _cases() -> list[str]:
         "",
         "MY_API_TOKEN_" + "X" * 47 + "=" + "q" * 6 + "7" * 6,            # a 60-character name: redacted
         "parity only: MY_API_TOKEN_" + "X" * 70 + "=" + "q" * 6 + "7" * 6,   # past the 64-character name bound (KI-373)
-    ]
+    ] + _key_material_cases()
 
 
 @pytest.mark.skipif(not TSX.exists() or shutil.which("node") is None, reason="tsx/node not installed")
@@ -118,6 +152,7 @@ def test_both_runtimes_redact_identically(tmp_path):
     assert from_typescript == from_python
     # And the pass did something: every secret-shaped input lost its material.
     stays = {cases[3], cases[4], "the password policy requires 12 characters", "token=abc"}
+    stays |= {text for text in cases if text.startswith("public key: ")}
     for text, out in zip(cases, from_python):
         assert _BODY not in out and "hunter2secret" not in out
         if text in stays:

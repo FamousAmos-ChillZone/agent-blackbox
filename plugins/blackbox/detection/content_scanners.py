@@ -120,6 +120,9 @@ def scan_secret_values(text: str) -> list[dict[str, str]]:
     # agent's own trading setup may hold one: handling it flags, sending it is critical.
     if crypto_secrets.find_solana_secret_keys(scan):
         out.append({"type": "solana-private-key", "severity": "high"})
+    # A Bitcoin WIF key or an extended private key (xprv…) proves itself by its checksum.
+    if crypto_secrets.find_bitcoin_private_keys(scan):
+        out.append({"type": "bitcoin-private-key", "severity": "high"})
     return out
 
 

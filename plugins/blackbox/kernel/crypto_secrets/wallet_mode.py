@@ -34,8 +34,9 @@ SUPPORTED_WALLETS: dict[str, str] = {"metamask": "MetaMask", "phantom": "Phantom
                                      "exodus": "Exodus", "electrum": "Electrum", "solana-cli": "Solana CLI"}
 #: Wallets on the way (key-store IDs verified, rules not written yet) — shown as "coming soon".
 PLANNED_WALLETS: tuple[str, ...] = ("Rabby", "Coinbase Wallet", "Trust Wallet", "OKX Wallet", "Keplr", "Solflare")
-#: Findings that belong to the mode: seed phrases, labelled private keys and Solana keys (any wallet)…
+#: Findings that belong to the mode: seed phrases, labelled private keys, Solana and Bitcoin keys (any wallet)…
 WALLET_SECRET_IDENTIFIERS = frozenset({"secret:seed-phrase", "secret:wallet-private-key", "secret:solana-private-key",
+                                       "secret:bitcoin-private-key",
                                        "secret:exchange-api-key",    # …an exchange key sent to a site not its own
                                        "secret:token-approval-drainer", "secret:token-approval-unlimited"})   # …token approvals
 #: …and key-store access, which names its wallet in ``fields["wallet"]``.
