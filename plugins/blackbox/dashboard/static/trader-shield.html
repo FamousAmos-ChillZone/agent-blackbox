@@ -501,7 +501,7 @@
     var byApp = blocked.filter(function (a) { return (a.evidence || []).indexOf("real-software") >= 0; }).length;
     document.getElementById("proven-total").innerHTML =
       "<span><b>" + blocked.length + "</b> attacks blocked</span><span><b>" + (t.systems || []).length + "</b> wallets and systems</span>" +
-      "<span><b>" + byApp + "</b> proven on the real software</span><span><b>" + byAgent + "</b> tried by a real AI agent</span>";
+      "<span><b>" + byApp + "</b> proven on the real software</span><span><b>" + byAgent + "</b> blocked with a real AI agent trying</span>";
     document.getElementById("systems").innerHTML = (t.systems || []).map(function (sys) {
       var mine = blocked.filter(function (a) { return (a.targets || []).indexOf(sys.id) >= 0; });
       if (!mine.length) return "";
