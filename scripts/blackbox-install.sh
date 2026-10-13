@@ -1102,6 +1102,20 @@ install_python_env() {
         if HERMES_EMBEDDED_INSTALL=1 bash "$REPO_DIR/setup-hermes.sh"; then
             ok "Base environment ready via setup-hermes.sh"
             use_hermes_selected_venv
+        elif [ -x "$REPO_DIR/scripts/run-in-hermes-env" ]; then
+            # Hermes 0.21.7+ (pm): the old minimal venv/ would be built for the wrong
+            # release, and every later step (attach, reviewer, sync) then fails. Its setup
+            # has failed transiently (launcher publication racing a restarting dashboard),
+            # so try once more, then stop with the reason rather than continue half-built.
+            warn "setup-hermes.sh did not complete cleanly — trying once more."
+            if HERMES_EMBEDDED_INSTALL=1 bash "$REPO_DIR/setup-hermes.sh"; then
+                ok "Base environment ready via setup-hermes.sh (second try)"
+                use_hermes_selected_venv
+            else
+                err "Hermes's own setup (setup-hermes.sh) failed twice; Blackbox was not installed."
+                step "Fix the error above, then re-run this installer."
+                exit 1
+            fi
         else
             warn "setup-hermes.sh did not complete cleanly — falling back to a minimal venv install."
             minimal_python_env
