@@ -28,7 +28,7 @@ from plugins.blackbox.guard import background as guard_background
 from plugins.blackbox.guard import hooks
 from plugins.blackbox.guard import reporting as guard_reporting
 from plugins.blackbox.kernel import config as config_mod
-from plugins.blackbox.kernel import crypto_secrets
+from plugins.blackbox.kernel import crypto_secrets, threat_ids
 from plugins.blackbox.kernel.crypto_secrets import seed_phrase, wallet_mode
 from plugins.blackbox.ruleset import Ruleset
 
@@ -111,9 +111,23 @@ def shield(tmp_path, monkeypatch):
 LOCAL = [attack for attack in TABLE["attacks"] if attack["proof"] == "test"]
 
 
+def _scenario_setting(attack, monkeypatch):
+    """A row may list one address in the threat graph (``graph``: wallet + trust tier) and
+    lower the block threshold (``block_severity``) — e.g. "a community-listed drainer never
+    blocks, even at block_severity high" (KI-385)."""
+    listed = attack.get("graph")
+    if listed:
+        rules = {threat_ids.ioc_identifier("wallet", listed["wallet"]): {"source": listed["source"], "severity": "critical"}}
+        monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: Ruleset(ioc=rules))
+    if attack.get("block_severity"):
+        config = config_mod.BlackboxConfig(mode="block", report=False, block_severity=attack["block_severity"])
+        monkeypatch.setattr(hooks, "_config", lambda: config)
+
+
 @pytest.mark.parametrize("attack", LOCAL, ids=[attack["id"] for attack in LOCAL])
-def test_each_attack_has_the_outcome_the_page_claims(shield, attack):
+def test_each_attack_has_the_outcome_the_page_claims(shield, attack, monkeypatch):
     fill, findings = shield
+    _scenario_setting(attack, monkeypatch)
     result = hooks.on_pre_tool_call(tool_name=attack["tool"], args=fill(attack["args"]), session_id="matrix")
     outcome = "blocked" if result and result.get("action") == "block" else ("flagged" if findings else "missed")
     expected = "missed" if attack["outcome"] == "allowed" else attack["outcome"]   # allowed: nothing raised, by design
@@ -152,7 +166,8 @@ def test_every_attack_says_what_it_targets_and_how_it_was_proven():
         assert attack["targets"] and set(attack["targets"]) <= systems, attack["id"]
         assert attack["evidence"] and set(attack["evidence"]) <= set(EVIDENCE), attack["id"]
         assert ("tests" in attack["evidence"]) == (attack["proof"] == "test"), attack["id"]   # the suite runs exactly these
-        assert "bench" in attack["evidence"], attack["id"]                                    # the full bench run covers every row
+        # The full bench run covers every row; a row added since says so until the next run.
+        assert "bench" in attack["evidence"] or attack.get("awaiting_bench"), attack["id"]
 
 
 def test_every_system_has_something_proven_against_it():

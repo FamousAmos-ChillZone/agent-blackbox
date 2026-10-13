@@ -28,6 +28,7 @@ from .action_parsing import (FETCH_TOOL_PREFIXES, HOST_FILE_AND_SKILL_TOOLS, SEN
 from .content_scanners import SKILL_DANGER_SHAPES
 from .osv import DEPENDENCY_ECOSYSTEMS, advisory_kind
 from .reviewer_setup import cmd_setup_llm
+from .finding import KIND_FLAG_ONLY
 from .detectors import (
     ANSWERED_BY_FALLBACK,
     Finding,
@@ -54,6 +55,7 @@ __all__ = [
                              "ESCALATION_SHAPES",
                              "FETCH_TOOL_PREFIXES",
                              "HOST_FILE_AND_SKILL_TOOLS",
+                             "KIND_FLAG_ONLY",
                              "SENSITIVE_PATH_CATEGORIES",
                              "SHELL_TOOLS",
                              "SKILL_DANGER_SHAPES",

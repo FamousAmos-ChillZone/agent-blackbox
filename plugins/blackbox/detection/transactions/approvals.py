@@ -19,17 +19,21 @@ What it does with one:
 
 * the spender or operator is a wallet or contract the VERIFIED threat graph lists
   (looked up like any indicator) → critical, blocks in block mode; listed only by
-  community reports → high, flagged (community findings never block);
+  community reports → high, flagged — community findings never block, at ANY
+  ``block_severity`` (the finding's kind is ``flag-only``, KI-385);
 * otherwise an UNLIMITED approval (2^256−1, ``MaxUint256``, ``type(uint256).max``,
   ``2**256-1``, ``cast max-uint``) or an approve-all → medium, flagged so the operator
-  sees it: DeFi bots approve routers this way every day, so it must not block;
+  sees it: DeFi bots approve routers this way every day, so it must not block
+  (``flag-only`` too, even with ``block_severity`` lowered to medium);
 * a limited approval to an unknown spender → nothing;
 * an approval to a well-known exchange router (Uniswap, SushiSwap, PancakeSwap, 1inch —
   ``kernel/crypto_secrets/known_contracts.json``) → nothing, whatever a feed says about it:
   that is ordinary trading (KI-370: the verified graph lists seven routers as drainers).
 
 Local-only (``source="secret"``): the finding names the kind of approval, never
-the operator's addresses.
+the operator's addresses. ``source="secret"`` alone would let the hook block any
+of them at the operator's threshold, so only the verified-drainer finding leaves
+``kind`` unset; the hook's blocking rule skips ``flag-only``.
 
 Usage::
 
@@ -45,7 +49,7 @@ from dataclasses import dataclass
 from typing import Any, List, Optional
 
 from .. import ioc_detection
-from ..finding import Finding, _rule_source
+from ..finding import KIND_FLAG_ONLY, Finding, _rule_source
 from ..injection_detection import injection_scan_text
 from ...kernel import crypto_secrets, threat_ids
 
@@ -138,22 +142,25 @@ def detect_token_approvals(tool_name: str, args: Any, ruleset: Any) -> list[Find
                            "Token approval to a known wallet drainer")
     elif listed:
         finding = _finding(tool_name, "token-approval-drainer", "high",
-                           "Token approval to an address community reports call a drainer")
+                           "Token approval to an address community reports call a drainer", KIND_FLAG_ONLY)
     elif unlimited:
         finding = _finding(tool_name, "token-approval-unlimited", "medium",
-                           "Unlimited token approval (the spender can move every token, any time)")
+                           "Unlimited token approval (the spender can move every token, any time)", KIND_FLAG_ONLY)
     return [finding] if finding else []
 
 
-def _finding(tool_name: str, kind: str, severity: str, title: str) -> Finding:
+def _finding(tool_name: str, rule: str, severity: str, title: str, kind: Optional[str] = None) -> Finding:
+    """The finding for *rule* (``token-approval-…``); *kind* ``flag-only`` keeps it from
+    ever blocking — only a verified-drainer finding is built without it."""
     return Finding(
-        identifier=f"secret:{kind}",
+        identifier=f"secret:{rule}",
         category="secret",
         severity=severity,
         title=title,
         tool_name=tool_name or "",
-        matched=kind,
-        evidence=kind,
+        matched=rule,
+        evidence=rule,
         confirmed=False,
-        source="secret",   # local-only; a verified-drainer match blocks in block mode
+        source="secret",   # local-only, never shared
+        kind=kind,
     )

@@ -101,3 +101,25 @@ def test_a_real_drainer_beside_a_router_is_still_caught():
     command = f"cast send {USDC} 'approve(address,uint256)' {SPENDER} 5 && cast send {USDC} 'approve(address,uint256)' 0x7a250d5630b4cf539739df2c5dacb4c659f2488d {MAX}"
     [finding] = detect_token_approvals("terminal", {"command": command}, _Graph("public"))
     assert finding.identifier == "secret:token-approval-drainer"
+
+
+# KI-385: approval findings are source="secret" (local-only), which the hook lets block at the
+# operator's threshold. Only a VERIFIED drainer may block; a community listing and an unlimited
+# approval must stay flags at every block_severity.
+
+from plugins.blackbox.guard import hooks
+from plugins.blackbox.kernel import constants
+from plugins.blackbox.kernel.config import BlackboxConfig
+
+
+@pytest.mark.parametrize("block_severity", constants.SEVERITY_ORDER)
+@pytest.mark.parametrize("listed_by, amount, may_block", [
+    ("public", "5", True),         # a verified drainer: critical, blocks at every threshold
+    ("community", MAX, False),     # community reports only: high, never blocks
+    (None, MAX, False),            # an unknown spender, unlimited: medium, never blocks
+])
+def test_only_a_verified_drainer_can_block_whatever_the_threshold(block_severity, listed_by, amount, may_block):
+    graph = _Graph(listed_by) if listed_by else Ruleset()
+    [finding] = detect_token_approvals("terminal", {"command": f"cast send {USDC} 'approve(address,uint256)' {SPENDER} {amount}"}, graph)
+    blocking = hooks._would_block(BlackboxConfig(mode="block", block_severity=block_severity), [finding])
+    assert bool(blocking) is may_block
