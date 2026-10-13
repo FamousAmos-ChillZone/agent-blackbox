@@ -43,6 +43,11 @@ _RECURSIVE_COMMANDS = frozenset({
 #: Commands that read whole folders only with a recursive flag.
 _RECURSIVE_WITH_FLAG = {"grep": ("-r", "-R", "--recursive"), "egrep": ("-r", "-R"), "fgrep": ("-r", "-R")}
 _SEPARATORS = frozenset({";", "&&", "||", "|", "&", ">", ">>", "<", "|&"})
+#: Copy and move commands whose LAST path argument is where things go, not what is read
+#: (unless ``-t``/``--target-directory`` names the destination up front).
+_COPY_COMMANDS = frozenset({"cp", "scp", "rsync", "mv", "ditto", "copy", "xcopy", "robocopy", "copy-item", "cpi", "move-item"})
+#: Archivers whose FIRST path argument is the archive being written (tar names it after ``f``).
+_ARCHIVE_FIRST = frozenset({"zip", "7z", "7za", "rar"})
 
 
 @dataclass(frozen=True)
@@ -54,6 +59,9 @@ class ShellFileArg:
     path: str
     command: str
     recursive: bool
+    #: True for where a copy or archive WRITES (``cp src DEST``, ``tar czf OUT.tgz``) —
+    #: nothing is read from it. Rules about what leaves a file skip these.
+    destination: bool = False
 
 
 #: A Windows path (``C:\\Users``, ``%APPDATA%\\``): backslash is a separator there,
@@ -83,7 +91,8 @@ def shell_file_args(command: str) -> List[ShellFileArg]:
 
     Flags (``-r``, ``-czf``) are skipped; an argument after a separator
     (``;``, ``&&``, ``|``, a redirect) belongs to the next command. Duplicates
-    are removed, first occurrence kept.
+    are removed, first occurrence kept. Where a copy or archive writes is marked
+    ``destination`` (:func:`_destinations`).
     """
     if not command:
         return []
@@ -106,10 +115,45 @@ def shell_file_args(command: str) -> List[ShellFileArg]:
         if flags:
             recursive = any(word in flags or (word.startswith("-") and not word.startswith("--")
                                               and ("r" in word or "R" in word)) for word in arguments)
-        for word in arguments:
-            if word.startswith("-") or not _looks_like_path(word) or word in seen:
+        paths = [word for word in arguments if not word.startswith("-") and _looks_like_path(word)]
+        written = _destinations(name, arguments, paths)
+        for word in paths:
+            if word in seen:
                 continue
             seen.add(word)
-            out.append(ShellFileArg(path=word, command=name, recursive=recursive))
+            out.append(ShellFileArg(path=word, command=name, recursive=recursive, destination=word in written))
         index = end
     return out
+
+
+def _destinations(name: str, arguments: List[str], paths: List[str]) -> set:
+    """The path arguments *name* writes to rather than reads: a copy's last path
+    (``-t DIR`` names it up front instead), tar's word after an ``f`` flag when it
+    creates (``c``/``r``/``u``; extracting or listing reads it), zip's
+    and 7z's first path, Compress-Archive's ``-DestinationPath``."""
+    if name in _COPY_COMMANDS:
+        for flag, value in zip(arguments, arguments[1:]):
+            if flag in ("-t", "--target-directory"):
+                return {value}
+        targets = [word for word in arguments if word.startswith("--target-directory=")]
+        if targets:
+            return {targets[0].split("=", 1)[1]}
+        return {paths[-1]} if len(paths) >= 2 else set()
+    if name == "tar":
+        # Short flags, plus tar's old-style first word without a dash (``tar xzf in.tgz``).
+        clusters = [word.lstrip("-") for position, word in enumerate(arguments)
+                    if (word.startswith("-") and not word.startswith("--")) or (position == 0 and word.isalpha())]
+        if any(set(cluster) & {"x", "t"} for cluster in clusters) or {"--extract", "--list", "--get"} & set(arguments):
+            return set()   # extracting or listing: the archive is READ
+        for flag, value in zip(arguments, arguments[1:]):
+            if not flag.startswith("--") and "f" in flag.lstrip("-") and flag.lstrip("-").isalpha():
+                return {value}
+        return set()
+    if name in _ARCHIVE_FIRST:
+        return {paths[0]} if paths else set()
+    if name == "compress-archive":
+        lowered = [word.lower() for word in arguments]
+        if "-destinationpath" in lowered:
+            position = lowered.index("-destinationpath")
+            return {arguments[position + 1]} if position + 1 < len(arguments) else set()
+    return set()
