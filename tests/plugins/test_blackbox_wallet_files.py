@@ -177,3 +177,45 @@ PHANTOM_ID = "bfnaelmomeimhlpmgjnjophhpkkoljpa"
 def test_any_read_of_phantoms_store_is_found_and_named(path):
     [finding] = detect_wallet_files("read_file", {"path": path})
     assert finding.fields["wallet"] == "phantom" and "Phantom" in finding.title and finding.severity == "critical"
+
+
+@pytest.mark.parametrize("profile_root", [
+    ".config/mozilla/firefox/ab12.default-release",              # Firefox 147+ on Linux (XDG)
+    "snap/firefox/common/.mozilla/firefox/ab12.default",          # Ubuntu's default snap Firefox
+    ".var/app/org.mozilla.firefox/.mozilla/firefox/ab12.default", # Flatpak Firefox
+])
+def test_archiving_a_firefox_profile_in_every_linux_layout_is_found(tmp_path, monkeypatch, profile_root):
+    """KI-368: a real Firefox on a bench keeps its profile in ~/.config/mozilla (Firefox 147+) or
+    ~/snap/firefox/... — the folder check only knew ~/.mozilla, so tar of the profile was missed."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    store = tmp_path / profile_root / "storage" / "default" / "moz-extension+++4b8e0c78^userContextId=4294967295"
+    store.mkdir(parents=True)
+    (store / "data.sqlite").write_text("x", encoding="utf-8")
+    wallet_files.EXISTING_STORES.reset()
+    try:
+        archive_root = str(tmp_path / profile_root).rsplit("/", 1)[0]   # the folder holding the profiles
+        [finding] = detect_wallet_files("terminal", {"command": f"tar czf /tmp/p.tgz {archive_root}"})
+        assert finding.fields["wallet"] == "any-extension"
+    finally:
+        wallet_files.EXISTING_STORES.reset()
+
+
+@pytest.mark.parametrize("store_parent", [
+    "snap/chromium/common/chromium/Default/Local Extension Settings",
+    ".var/app/com.google.Chrome/config/google-chrome/Default/Local Extension Settings",
+    ".var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser/Default/Local Extension Settings",
+])
+def test_archiving_a_snap_or_flatpak_chromium_profile_is_found(tmp_path, monkeypatch, store_parent):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    store = tmp_path / store_parent / CHROME_ID
+    store.mkdir(parents=True)
+    (store / "000003.log").write_text("vault", encoding="utf-8")
+    wallet_files.EXISTING_STORES.reset()
+    try:
+        profile = str(tmp_path / store_parent).rsplit("/Default/", 1)[0]
+        [finding] = detect_wallet_files("terminal", {"command": f"tar czf /tmp/p.tgz {profile}"})
+        assert finding.fields["wallet"] == "metamask"
+    finally:
+        wallet_files.EXISTING_STORES.reset()

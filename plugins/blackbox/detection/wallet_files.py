@@ -142,6 +142,17 @@ def _browser_roots() -> List[str]:
         os.path.join(config, "BraveSoftware", "Brave-Browser*"), os.path.join(config, "microsoft-edge*"),
         os.path.join(config, "vivaldi"), os.path.join(config, "opera"),
         os.path.join(home, ".mozilla", "firefox", "*"),
+        # Linux layouts found by installing the real browsers on a bench (2026-10-13), where the
+        # folder check above found nothing, so archiving a whole profile was not caught:
+        os.path.join(config, "mozilla", "firefox", "*"),                          # Firefox 147+ (XDG config dir)
+        os.path.join(home, "snap", "firefox", "common", ".mozilla", "firefox", "*"),   # Ubuntu's default Firefox (snap)
+        os.path.join(home, "snap", "chromium", "common", "chromium"),                  # Chromium (snap)
+        os.path.join(home, ".var", "app", "org.mozilla.firefox", ".mozilla", "firefox", "*"),           # Flatpak
+        os.path.join(home, ".var", "app", "org.mozilla.firefox", "config", "mozilla", "firefox", "*"),
+        os.path.join(home, ".var", "app", "com.google.Chrome", "config", "google-chrome*"),
+        os.path.join(home, ".var", "app", "com.brave.Browser", "config", "BraveSoftware", "Brave-Browser*"),
+        os.path.join(home, ".var", "app", "com.microsoft.Edge", "config", "microsoft-edge*"),
+        os.path.join(home, ".var", "app", "org.chromium.Chromium", "config", "chromium"),
         os.path.join(local, "Google", "Chrome*", "User Data"), os.path.join(local, "Chromium", "User Data"),
         os.path.join(local, "BraveSoftware", "Brave-Browser*", "User Data"),
         os.path.join(local, "Microsoft", "Edge*", "User Data"), os.path.join(local, "Vivaldi", "User Data"),
