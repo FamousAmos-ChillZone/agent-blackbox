@@ -177,13 +177,31 @@
   .note.ok { color: var(--ok); } .note.err { color: var(--signal); }
   footer { color: var(--muted); font-size: 13px; font-family: var(--mono); }
 
+  /* Tested, attack by attack (from /trader-shield/attacks.json) */
+  .tally { display: flex; flex-wrap: wrap; gap: 10px; }
+  .tally span { font-family: var(--mono); font-size: 12px; letter-spacing: .06em; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); }
+  .tally .blocked { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: var(--ok-soft); }
+  .tally .flagged { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-soft); }
+  .tally .missed { color: var(--muted); }
+  .agroup { display: grid; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+  .agroup > header { padding: 16px 18px 12px; border-bottom: 1px solid var(--border); }
+  .agroup > header b { font-size: 16px; } .agroup > header p { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
+  .arow { display: grid; grid-template-columns: 92px 1fr; gap: 6px 14px; padding: 12px 18px; border-bottom: 1px solid var(--border); align-items: start; }
+  .arow:last-child { border-bottom: 0; }
+  .arow .o { justify-self: start; font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
+  .arow .o.blocked { color: #fff; background: var(--ok); } .arow .o.flagged { color: #111; background: var(--warn); }
+  .arow .o.missed { color: var(--muted); border: 1px solid var(--border-strong); }
+  .arow .t { font-weight: 700; font-size: 14.5px; } .arow .h { font-size: 13.5px; color: var(--muted-strong); margin-top: 2px; }
+  .arow .n { font-size: 12.5px; color: var(--muted); margin-top: 4px; } .arow .n b { color: var(--text); }
+  .arow .proof { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-left: 6px; }
+  .attacks { display: grid; gap: 16px; }
   @media (max-width: 900px) {
     .hero { grid-template-columns: 1fr; } .stage { height: 360px; } .stack { width: min(360px, 58vw); }
     .flow { grid-template-columns: 1fr 1fr; } .fstep:not(:last-child)::after { display: none; }
     .grid3, .outcomes { grid-template-columns: 1fr; } .grid2 { grid-template-columns: 1fr; }
     .set { grid-template-columns: 1fr; gap: 8px; }
   }
-  @media (max-width: 480px) { .flow { grid-template-columns: 1fr; } .wrap { gap: 64px; } }
+  @media (max-width: 480px) { .flow { grid-template-columns: 1fr; } .wrap { gap: 64px; } .arow { grid-template-columns: 1fr; } }
   @media (prefers-reduced-motion: reduce) {
     .stack, .bolt, .p-shield::before, .beta i { animation: none !important; }
     .bolt { display: none; } .fstep { transition: none; }
@@ -269,6 +287,15 @@
     </div>
   </section>
 
+  <!-- Tested, attack by attack: the same table the test suite checks -->
+  <section id="tested" aria-label="Tested attack by attack">
+    <div class="eyebrow">Tested, attack by attack</div>
+    <h2>Every Web3 attack we tried, and what happened</h2>
+    <p class="muted">Each one was run through Blackbox's real checks with Trader Shield on and Blackbox in block mode. This list is the same file Blackbox's tests check, so it can't say more than the code does. <span class="mono" id="bench-run"></span></p>
+    <div class="tally" id="tally"></div>
+    <div class="attacks" id="attacks"><p class="muted">Loading the tested attacks…</p></div>
+  </section>
+
   <!-- Settings explained -->
   <section aria-label="The settings">
     <div class="eyebrow">The settings</div>
@@ -332,7 +359,7 @@
     can: [
       ["Keep your agent out of MetaMask's vault", "in Chrome, Brave, Edge, Opera, Vivaldi, Arc and Firefox; through file tools, the terminal, copies and archives"],
       ["Recognise real seed phrases", "12 to 24 words, checked with the phrase's own checksum, so ordinary text doesn't trigger it"],
-      ["Stop a seed phrase or wallet key leaving", "in an upload, a web request or a message, in block mode"],
+      ["Stop a seed phrase or wallet key leaving", "when the agent sends it from the terminal (curl, wget, nc) — to a website, a webhook or a chat bot, in block mode"],
       ["Spot a labelled private key", "PRIVATE_KEY=, pk:, \"privateKey\": and similar; flagged, because your own trading config may hold one"],
       ["Keep secrets out of Blackbox's logs", "phrases and keys are scrubbed before anything is recorded"],
       ["Explain every event", "what the agent reached for, why it matters, and what led to it"]
@@ -343,7 +370,8 @@
       ["Solana keys and desktop wallets", "Solana CLI keypairs, raw base58 keys, Electrum, Bitcoin Core"],
       ["Block reading .env through the terminal", "it's flagged and logged; file tools are already covered"],
       ["Stop malware outside your agent", "Trader Shield guards what your AI agent does, not other programs"],
-      ["Block links or addresses", "known scam sites and wallets are flagged, never blocked"]
+      ["Block links or addresses", "known scam sites and wallets are flagged, never blocked"],
+      ["Catch every way out", "a phrase hidden in a web address, or posted by a script, isn't stopped yet — see the tested list"]
     ],
     coming: ["Phantom", "Rabby", "Coinbase Wallet", "Exchange API keys", "Solana keys", "Electrum & Bitcoin Core", "Terminal reads of protected files"],
     // Set to {text: "...", who: "CrediBULL · …", link: "https://…"} once the article is out.
@@ -363,6 +391,28 @@
     who.textContent = SHIELD.testimonial.who;
     if (SHIELD.testimonial.link) who.innerHTML += ' · <a href="' + esc(SHIELD.testimonial.link) + '" target="_blank" rel="noopener">Read the article</a>';
   }
+
+  // ---- Tested, attack by attack (the file the test suite checks) ----
+  var OUTCOME_WORD = { blocked: "Blocked", flagged: "Flagged", missed: "Not yet" };
+  fetch("/trader-shield/attacks.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (t) {
+    var count = { blocked: 0, flagged: 0, missed: 0 };
+    t.attacks.forEach(function (a) { count[a.outcome] += 1; });
+    document.getElementById("tally").innerHTML = ["blocked", "flagged", "missed"].map(function (o) {
+      return '<span class="' + o + '">' + count[o] + " " + OUTCOME_WORD[o].toLowerCase() + "</span>";
+    }).join("");
+    document.getElementById("bench-run").textContent = t.bench_run ? "Last full run: " + t.bench_run + "." : "";
+    document.getElementById("attacks").innerHTML = t.groups.map(function (g) {
+      var rows = t.attacks.filter(function (a) { return a.group === g.id; });
+      if (!rows.length) return "";
+      return '<div class="agroup"><header><b>' + esc(g.title) + "</b><p>" + esc(g.intro) + "</p></header>" + rows.map(function (a) {
+        return '<div class="arow"><span class="o ' + esc(a.outcome) + '">' + esc(OUTCOME_WORD[a.outcome] || a.outcome) + "</span><div>" +
+          '<div class="t">' + esc(a.title) + '<span class="proof">' + (a.proof === "bench" ? "proven on a bench node" : "checked by the tests") + "</span></div>" +
+          '<div class="h">' + esc(a.how) + "</div>" + (a.next ? '<div class="n"><b>What would close it:</b> ' + esc(a.next) + "</div>" : "") + "</div></div>";
+      }).join("") + "</div>";
+    }).join("");
+  }).catch(function () {
+    document.getElementById("attacks").innerHTML = '<p class="muted">Open this page from your Blackbox dashboard to see the tested attacks.</p>';
+  });
 
   // ---- The "how it works" steps light up in turn ----
   (function () {

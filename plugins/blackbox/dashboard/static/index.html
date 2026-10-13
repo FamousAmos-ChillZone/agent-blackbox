@@ -855,6 +855,13 @@
   button.wp-ev:focus-visible, .wev-all:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
   .wev-all { background: none; border: 0; color: var(--signal); font: 600 11px var(--body-font); letter-spacing: 0; text-transform: none; cursor: pointer; padding: 0 0 0 6px; }
 
+  /* Wallet logos (Trader Shield): the wallet an event is about, at a glance */
+  .wl { display: inline-block; width: 20px; height: 20px; vertical-align: -5px; margin-right: 8px; flex: 0 0 auto; object-fit: contain; }
+  .wl-mark { color: var(--signal); } .wl-mark svg { width: 100%; height: 100%; display: block; }
+  .wl.big { width: 28px; height: 28px; margin: 0; vertical-align: middle; }
+  .wl.huge { width: 40px; height: 40px; margin: 0 0 6px; }
+  .wp-ev .wl { width: 18px; height: 18px; vertical-align: -4px; }
+
   /* ---------- Trader Shield: the full-screen wallet-events window (local only) ---------- */
   .wev-overlay { position: fixed; inset: 0; z-index: 1000;   /* the modals' layer: above the sticky header */
     background: var(--bg); display: flex; flex-direction: column; }
@@ -5199,7 +5206,7 @@
     }
     var guard = block ? "protected — blocked if the agent reaches for it" : "watched — flagged, not blocked (audit mode)";
     var found = (d.wallets || []).map(function (w) {
-      return wpRow(w.protected ? "✓" : "–", w.protected ? "ok" : "none", "<b>" + esc(w.wallet) + "</b> · " + esc(w.browser) +
+      return wpRow(w.protected ? "✓" : "–", w.protected ? "ok" : "none", walletLogoByName(w.wallet) + "<b>" + esc(w.wallet) + "</b> · " + esc(w.browser) +
         (w.profile ? " · profile “" + esc(w.profile) + "”" : "") + '<div class="wp-sub">' + esc((w.areas || []).join(", ")) + " — " +
         (w.protected ? guard : "not selected in Settings, so not protected") + "</div>");
     });
@@ -5224,7 +5231,7 @@
     var col2 = '<div class="wp-col"><div class="wp-h">Always watching</div>' + watch.join("") + "</div>";
     var events = (d.events || []).slice(0, 6).map(function (e) {
       return '<button type="button" class="wp-ev" data-wev-open="' + esc(e.identifier) + '" data-wev-ts="' + esc(String(e.ts || "")) +
-        '" title="Open the full report"><span class="o ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span><span>" + esc(e.title || e.identifier) +
+        '" title="Open the full report"><span class="o ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span><span>" + walletLogoHTML(e) + esc(e.title || e.identifier) +
         '</span><span class="wp-sub">' + esc(shortWhen(e.ts)) + "</span><span class=\"wp-sub\">" + esc(e.tool ? "via " + e.tool : "") + "</span></button>";
     });
     var col3 = '<div class="wp-col"><div class="wp-h">Recent wallet events ' +
@@ -5271,7 +5278,21 @@
     if (e.outcome === "blocked") outcome = " <b>Blackbox stopped it before it ran</b> — nothing was read, copied or sent, and the agent was told why.";
     else if (wpLast && wpLast.mode === "audit") outcome = " <b>Blackbox let it run and recorded it</b>, because it is set to watch only (audit mode).";
     else outcome = " <b>Blackbox flagged it and let it run</b>: handling a key on this machine is allowed (trading tools need it); sending it off the machine is what gets blocked.";
-    return asked + acted + outcome;
+    var warned = wevWarnings(e);
+    var before = warned.length ? " Just before, Blackbox had flagged <b>" + esc(warned.join("; ")) + "</b> in what the agent was given — " +
+      "a sign the agent was being steered there." : "";
+    return asked + acted + outcome + before;
+  }
+  // Threats met earlier in the same session (e.g. a prompt injection in a page the agent read):
+  // the warning signs that explain why the agent reached for the wallet.
+  function wevWarnings(e) {
+    var titles = [];
+    for (var i = 0; i < (e.timeline || []).length; i++) {
+      var step = e.timeline[i];
+      if (step.this) break;
+      (step.threat_titles || []).forEach(function (t) { if (t && titles.indexOf(t) < 0) titles.push(t); });
+    }
+    return titles.slice(0, 3);
   }
   function wevTodo(e) {
     var kind = walletKind(e), blocked = e.outcome === "blocked", out = [];
@@ -5295,6 +5316,8 @@
       rows.push(r);
     });
     if (!named && WEV_GOAL[walletKind(e)]) rows.splice(2, 0, ["What it's after", WEV_GOAL[walletKind(e)], false]);
+    var warned = wevWarnings(e);
+    if (warned.length) rows.splice(2, 0, ["Warning signs before it", warned.join("; "), false]);
     rows.push(["Rule", e.identifier, true]);
     var s = e.session || {};
     rows.push(["Session", [s.agent, s.model, s.status, (s.steps || 0) + " steps", s.id ? "#" + s.id : ""].filter(Boolean).join(" · "), false]);
@@ -5316,6 +5339,7 @@
       var flags = (step.threats || []).filter(function (t) { return t !== step.result; });
       flags = flags.length ? " · " + flags.join(", ") : "";
       var label = step.type === "tool" ? (step.tool ? esc(step.tool) + ": " : "") + "<code>" + esc(step.label || "") + "</code>" : esc(step.label || "");
+      if (step.type === "threat" && (step.threat_titles || []).length) label += ": <b>" + esc(step.threat_titles.join("; ")) + "</b>";
       return '<li class="wev-step' + (step.this ? " this" : "") + '"><span class="off">' + esc(wevOffset(step.ts, start)) + '</span><span class="what"><span class="kind">' +
         esc(WEV_KIND[step.type] || step.type) + "</span>" + label + esc(step.result ? " → " + step.result : "") + esc(flags) +
         (step.this ? '<span class="here">← this event</span>' : "") + "</span></li>";
@@ -5325,7 +5349,7 @@
     var e = wev.events[wev.selected], box = $("wev-detail");
     if (!box) return;
     if (!e) { box.innerHTML = '<div class="wev-empty">No wallet events yet — no agent has reached for a wallet, a seed phrase or a key.</div>'; return; }
-    box.innerHTML = '<span class="wev-chip ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span><h3>" + esc(e.title || e.identifier) + "</h3>" +
+    box.innerHTML = walletLogoHTML(e, "huge") + '<div><span class="wev-chip ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span></div><h3>" + esc(e.title || e.identifier) + "</h3>" +
       '<div class="wev-when">' + esc(wevWhen(e.ts)) + (e.tool ? " · via " + esc(e.tool) : "") + "</div>" +
       '<p class="wev-story">' + wevStory(e) + "</p>" +
       '<div class="wev-sec"><h4>What to do</h4><ul class="wev-todo">' + wevTodo(e).map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul></div>" +
@@ -5339,7 +5363,7 @@
     list.innerHTML = wev.events.map(function (e, i) {
       return '<button type="button" class="wev-item' + (e.isNew ? " fresh" : "") + '" data-wev-index="' + i + '"' + (i === wev.selected ? ' aria-current="true"' : "") + '>' +
         '<span class="wev-chip ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span>" + (e.isNew ? '<span class="wev-new">New</span>' : "") +
-        '<span class="t">' + esc(e.title || e.identifier) + "</span>" +
+        '<span class="t">' + walletLogoHTML(e) + esc(e.title || e.identifier) + "</span>" +
         '<span class="m">' + esc(shortWhen(e.ts)) + (e.session && e.session.model ? " · " + esc(e.session.model) : "") + "</span>" +
         (e.command ? "<code>" + esc(e.command) + "</code>" : "") + "</button>";
     }).join("");
@@ -5408,6 +5432,23 @@
     seed: "A seed phrase IS the wallet: anyone who has the words controls every account in it, on any device, forever.",
     key: "A private key signs transactions for its account. Whoever holds it can move the funds."
   };
+  // The wallet an event is about, recognisable at a glance: a vault event shows that wallet's
+  // logo (served from /wallets/<id>.svg, allowlisted); a seed phrase or key — which belongs to
+  // whichever wallet made it — shows a plain wallet mark.
+  var WALLET_LOGOS = { metamask: "MetaMask" };
+  var WALLET_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h14a2 2 0 0 1 2 2v3H17a2 2 0 0 0 0 4h4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5"/></svg>';
+  function walletLogoByName(name, cls) {
+    var id = String(name || "").toLowerCase().replace(/\s+/g, "");
+    return WALLET_LOGOS[id]
+      ? '<img class="wl ' + (cls || "") + '" src="/wallets/' + id + '.svg" alt="' + esc(WALLET_LOGOS[id]) + '" title="' + esc(WALLET_LOGOS[id]) + '" />'
+      : '<span class="wl wl-mark ' + (cls || "") + '" aria-hidden="true">' + WALLET_GLYPH + "</span>";
+  }
+  function walletLogoHTML(f, cls) {
+    var kind = walletKind(f);
+    if (!kind) return "";
+    return walletLogoByName(kind === "vault" ? (/\(([^)]+)\)/.exec(String(f.title || f.evidence || "")) || [])[1] : "", cls);
+  }
   function walletKind(f) {
     var id = String(f.identifier || "");
     if (/:crypto-wallet$/.test(id)) return "vault";
@@ -5895,7 +5936,7 @@
     var cat = catKey(f.category || f.type);
     var color = CATS[cat].color;
     overlay.style.setProperty("--accent", color);
-    $("tm-ico").innerHTML = catIconSVG(cat, color);
+    $("tm-ico").innerHTML = walletLogoHTML(f, "big") || catIconSVG(cat, color);
     $("tm-title").textContent = f.title || f.evidence || f.identifier || "Finding";
     $("tm-tags").innerHTML = findingTags(f);
     var id = f.identifier || "";
@@ -6623,7 +6664,8 @@
     var icon = document.createElement("div");
     icon.className = "threat-toast-icon";
     icon.setAttribute("aria-hidden", "true");
-    icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+    icon.innerHTML = walletLogoHTML(newest, "big") ||   // a wallet threat names its wallet at a glance
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
 
     var copy = document.createElement("div");
     copy.className = "threat-toast-copy";
@@ -6754,7 +6796,7 @@
       '<td class="col-time">' + fmtTime(f.time || f.ts || f.timestamp) + '</td>' +
       '<td>' + agentTag(f.framework) + '</td>' +
       '<td><span class="pill ' + sev + '">' + esc(sev) + '</span></td>' +
-      '<td>' + typeTag(f.category || f.type) + '</td>' +
+      '<td>' + walletLogoHTML(f) + typeTag(f.category || f.type) + '</td>' +
       '<td>' + reasonCell(f) + '</td>' +
     '</tr>';
   }

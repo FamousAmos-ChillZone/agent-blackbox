@@ -75,13 +75,18 @@ def wallet_protection_payload() -> Dict[str, Any]:
     }
 
 
-#: The Trader Shield explainer page (the dashboard's "Learn more").
-TRADER_SHIELD_PAGE = Path(__file__).resolve().parent.parent / "static" / "trader-shield.html"
+#: The Trader Shield explainer page (the dashboard's "Learn more"), the tested attack table it
+#: shows (one source for the page and its test), and the logos of the wallets it can protect.
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+TRADER_SHIELD_PAGE = STATIC_DIR / "trader-shield.html"
+ATTACK_TABLE = STATIC_DIR / "trader-shield-attacks.json"
+WALLET_LOGOS = STATIC_DIR / "wallets"
+NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
 
 
 def register_protection_routes(app: Any) -> None:
     """Add ``GET /api/wallet-protection``, its ``/events`` report and the ``/trader-shield`` page to *app*."""
-    from fastapi.responses import FileResponse, HTMLResponse
+    from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
     @app.get("/api/wallet-protection")
     def wallet_protection() -> Any:
@@ -91,8 +96,20 @@ def register_protection_routes(app: Any) -> None:
     def wallet_protection_events() -> Any:
         return wallet_event_report()
 
+    @app.get("/trader-shield/attacks.json")
+    def trader_shield_attacks() -> Any:
+        return FileResponse(str(ATTACK_TABLE), media_type="application/json", headers=NO_CACHE)
+
+    @app.get("/wallets/{wallet}.svg")
+    def wallet_logo(wallet: str) -> Any:
+        # Allowlisted by the supported-wallet table, so the name never becomes a free path.
+        if wallet not in crypto_secrets.wallet_mode.SUPPORTED_WALLETS:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return FileResponse(str(WALLET_LOGOS / f"{wallet}.svg"), media_type="image/svg+xml",
+                            headers={"Cache-Control": "public, max-age=86400"})
+
     @app.get("/trader-shield", response_class=HTMLResponse)
     def trader_shield_page() -> Any:
         if not TRADER_SHIELD_PAGE.exists():
             return HTMLResponse("<h1>Trader Shield</h1><p>page missing</p>", status_code=404)
-        return FileResponse(str(TRADER_SHIELD_PAGE), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+        return FileResponse(str(TRADER_SHIELD_PAGE), headers=NO_CACHE)

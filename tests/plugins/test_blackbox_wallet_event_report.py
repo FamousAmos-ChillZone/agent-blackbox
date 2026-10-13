@@ -131,3 +131,38 @@ def test_the_report_is_served_only_by_the_dashboard_route(shielded):
     protection.register_protection_routes(app)
     body = TestClient(app).get("/api/wallet-protection/events").json()
     assert body["private"] is True and body["events"][0]["outcome"] == "blocked"
+
+
+def test_a_threat_met_earlier_in_the_session_is_named_on_the_way_to_the_wallet(shielded, monkeypatch):
+    """The chain: something the agent read raised a threat first; the wallet event's timeline
+    names it, so the report can say the agent was being steered."""
+    from plugins.blackbox import audit
+
+    hooks.on_session_start(session_id=SESSION)
+    audit.record(event="pre_api_request",
+                 findings=[{"identifier": "injection:test", "category": "injection", "severity": "high",
+                            "title": "Instruction override — 'ignore previous instructions'", "source": "public"}],
+                 detail={"session_id": SESSION, "model": "gpt-4.1-mini", "decision": "flag"})
+    hooks.on_pre_tool_call(tool_name="terminal", args={"command": ARCHIVE_CHROME}, session_id=SESSION, tool_call_id="c1")
+    hooks.on_session_end(session_id=SESSION)
+
+    [event] = wallet_events.wallet_event_report()["events"]
+    earlier = [step for step in event["timeline"] if step["threat_titles"] and not step["this"]]
+
+    assert earlier and "ignore previous instructions" in earlier[0]["threat_titles"][0]
+    assert earlier[0]["label"] == "Threat found in what the agent was given"
+
+
+def test_the_wallet_logo_is_served_only_for_a_supported_wallet():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from plugins.blackbox.dashboard import protection
+
+    app = FastAPI()
+    protection.register_protection_routes(app)
+    client = TestClient(app)
+    logo = client.get("/wallets/metamask.svg")
+    assert logo.status_code == 200 and logo.headers["content-type"].startswith("image/svg+xml")
+    assert client.get("/wallets/..%2Fserver.svg").status_code == 404
+    assert client.get("/wallets/phantom.svg").status_code == 404

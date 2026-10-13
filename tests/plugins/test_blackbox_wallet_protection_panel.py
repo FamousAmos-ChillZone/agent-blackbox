@@ -163,3 +163,14 @@ def test_a_new_wallet_finding_refreshes_trader_shield_on_the_main_poll():
     notify = html[html.index("function processThreatNotifications(data)"):html.index("function setThreatAlertsEnabled(")]
     assert notify.index("onWalletEvent()") < notify.index("if (!threatAlertsEnabled || !fresh.length) return;")
     assert "var POLL_MS = 4000;" in html
+
+
+def test_wallet_threats_show_their_wallet_logo_everywhere_they_appear():
+    """At a glance: the panel, the events window, the threats table, the alert and the finding
+    detail all draw the wallet's logo for a wallet event."""
+    html = (protection.TRADER_SHIELD_PAGE.parent / "index.html").read_text(encoding="utf-8")
+    assert "'<td>' + walletLogoHTML(f) + typeTag(" in html                      # threats table
+    assert "icon.innerHTML = walletLogoHTML(newest, \"big\") ||" in html          # threat alert
+    assert '$("tm-ico").innerHTML = walletLogoHTML(f, "big") ||' in html          # finding detail
+    assert html.count("walletLogoHTML(e") >= 3                                   # panel row, window list + detail
+    assert "walletLogoByName(w.wallet)" in html                                  # found on this machine

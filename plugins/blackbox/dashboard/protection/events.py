@@ -10,7 +10,9 @@ labelled private key, told the way a person reads it:
 * ``profile`` — the closed-vocabulary threat profile the finding carries;
 * ``session`` — agent, model, start/end, how it ended;
 * ``timeline`` — that session's steps in order (model calls, tool calls, file reads,
-  installs), the step that triggered the event marked ``this: true``.
+  installs, threats met on the way — e.g. a prompt injection in what the agent read),
+  each naming the threats it raised (``threat_titles``), the step that triggered the
+  event marked ``this: true``.
 
 PRIVATE BY CONSTRUCTION: everything is read from this machine's own audit logs through
 the one session reconstruction the local graph also uses (:func:`audit.read_local_activity`)
@@ -70,12 +72,16 @@ def _step(event: Dict[str, Any], is_this: bool) -> Dict[str, Any]:
         label = "%s %s" % (event.get("mode") or "read", event.get("path") or "")
     elif kind == "dependency":
         label = "install %s:%s@%s" % (event.get("ecosystem"), event.get("name"), event.get("version"))
+    elif kind == "threat":   # met outside a tool call, e.g. an injection in a model request
+        label = "Threat found in what the agent was given"
     else:
         label = str(event.get("action") or "")   # redacted when it was logged (audit.record)
-    outcomes = sorted({"blocked" if t.get("decision") == "block" else "flagged" for t in event.get("threats") or []})
+    threats = event.get("threats") or []
+    outcomes = sorted({"blocked" if t.get("decision") == "block" else "flagged" for t in threats})
     return {"type": local_text(kind, 16), "ts": event.get("ts") or 0, "tool": local_text(event.get("tool"), 40),
             "label": local_text(label, 240), "result": local_text(event.get("resultStatus"), 16),
-            "threats": outcomes, "this": is_this}
+            "threats": outcomes, "threat_titles": [local_text(t.get("title"), 120) for t in threats][:4],
+            "this": is_this}
 
 
 def _timeline(events: List[Dict[str, Any]], index: int) -> List[Dict[str, Any]]:
