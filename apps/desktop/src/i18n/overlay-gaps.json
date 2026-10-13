@@ -2249,5 +2249,11 @@
   "zones.closeRunningTitle": ["ja","zh-hant"],
   "zones.newSessionTab": ["ar"],
   "zones.newTab": ["ar","ru"],
-  "zones.zoneMenuLabel": ["ja","zh-hant"]
+  "zones.zoneMenuLabel": ["ja","zh-hant"],
+  "starmap.detailControl": ["ar","de","es","fr","ja","ru","zh-hant"],
+  "starmap.detailHint": ["ar","de","es","fr","ja","ru","zh-hant"],
+  "starmap.detailOverview": ["ar","de","es","fr","ja","ru","zh-hant"],
+  "starmap.detailExplore": ["ar","de","es","fr","ja","ru","zh-hant"],
+  "starmap.detailAll": ["ar","de","es","fr","ja","ru","zh-hant"],
+  "starmap.graphCounts": ["ar","de","es","fr","ja","ru","zh-hant"]
 }
