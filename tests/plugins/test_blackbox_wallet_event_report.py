@@ -162,7 +162,8 @@ def test_the_wallet_logo_is_served_only_for_a_supported_wallet():
     app = FastAPI()
     protection.register_protection_routes(app)
     client = TestClient(app)
-    logo = client.get("/wallets/metamask.svg")
-    assert logo.status_code == 200 and logo.headers["content-type"].startswith("image/svg+xml")
+    for wallet in ("metamask", "phantom"):
+        logo = client.get(f"/wallets/{wallet}.svg")
+        assert logo.status_code == 200 and logo.headers["content-type"].startswith("image/svg+xml")
     assert client.get("/wallets/..%2Fserver.svg").status_code == 404
-    assert client.get("/wallets/phantom.svg").status_code == 404
+    assert client.get("/wallets/rabby.svg").status_code == 404   # planned, not supported: no logo route

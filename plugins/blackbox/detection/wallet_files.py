@@ -1,4 +1,4 @@
-"""Crypto wallet key stores an agent must never read — starting with MetaMask.
+"""Crypto wallet key stores an agent must never read — MetaMask and Phantom.
 
 A browser wallet keeps its encrypted vault (the seed and keys, locked by the
 user's password) in the browser profile. Copied off the machine, the vault can
@@ -9,7 +9,9 @@ protection rules", misc/research). No agent task needs those files.
 What is matched (facts re-checked against the sources named beside them):
 
 * The extension IDs — MetaMask on the Chrome Web Store (also what Brave, Opera,
-  Vivaldi and Arc install) and on Edge Add-ons, which issues its own ID.
+  Vivaldi and Arc install) and on Edge Add-ons, which issues its own ID; Phantom
+  on the Chrome Web Store (no Edge-native ID verified; Edge users install the
+  Chrome Web Store build, which keeps the same ID).
 * All three places a Chromium browser keeps an extension's data, in any
   profile under any browser folder (Chromium ``extensions/common/constants.h``):
   ``Local Extension Settings/<id>``, ``Sync Extension Settings/<id>`` and
@@ -71,6 +73,9 @@ WALLETS: Tuple[WalletStore, ...] = (
     WalletStore("MetaMask", (
         "nkbihfbeogaeaoehlefnkodbefgpgknn",   # Chrome Web Store (verified 2026-10-12)
         "ejbalbakoplchlghecdalmeeeajnimhm",   # Edge Add-ons (verified 2026-10-12)
+    )),
+    WalletStore("Phantom", (
+        "bfnaelmomeimhlpmgjnjophhpkkoljpa",   # Chrome Web Store (verified 2026-10-12)
     )),
 )
 

@@ -183,6 +183,7 @@
   .tally .blocked { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: var(--ok-soft); }
   .tally .flagged { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-soft); }
   .tally .missed { color: var(--muted); }
+  .tally .allowed { color: var(--muted-strong); border-style: dashed; }
   .agroup { display: grid; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
   .agroup > header { padding: 16px 18px 12px; border-bottom: 1px solid var(--border); }
   .agroup > header b { font-size: 16px; } .agroup > header p { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
@@ -191,6 +192,7 @@
   .arow .o { justify-self: start; font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
   .arow .o.blocked { color: #fff; background: var(--ok); } .arow .o.flagged { color: #111; background: var(--warn); }
   .arow .o.missed { color: var(--muted); border: 1px solid var(--border-strong); }
+  .arow .o.allowed { color: var(--muted-strong); border: 1px dashed var(--border-strong); }
   .arow .t { font-weight: 700; font-size: 14.5px; } .arow .h { font-size: 13.5px; color: var(--muted-strong); margin-top: 2px; }
   .arow .n { font-size: 12.5px; color: var(--muted); margin-top: 4px; } .arow .n b { color: var(--text); }
   .arow .proof { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-left: 6px; }
@@ -339,7 +341,7 @@
     <div class="start">
       <span class="beta"><i aria-hidden="true"></i>Beta</span>
       <h2>Get started with Trader Shield</h2>
-      <p class="muted">Turns Trader Shield on for MetaMask on this machine. You can change or switch it off any time in Settings.</p>
+      <p class="muted">Turns Trader Shield on for MetaMask and Phantom on this machine. You can change or switch it off any time in Settings.</p>
       <label class="opt"><input type="checkbox" id="opt-block" checked /> <span><b>Also switch Blackbox to block mode</b>, so wallet threats are stopped, not just flagged. Your agent's own trading tools keep working.</span></label>
       <div class="cta-row">
         <button class="btn primary" id="engage" type="button">Engage Trader Shield</button>
@@ -357,23 +359,24 @@
   var SHIELD = {
     version: "Beta · updated 2026-10-13",
     can: [
-      ["Keep your agent out of MetaMask's vault", "in Chrome, Brave, Edge, Opera, Vivaldi, Arc and Firefox; through file tools, the terminal, copies and archives"],
+      ["Keep your agent out of MetaMask's and Phantom's vaults", "in Chrome, Brave, Edge, Opera, Vivaldi, Arc and Firefox; through file tools, the terminal, copies and archives"],
+      ["Recognise a Solana secret key", "Phantom's exported key or a Solana CLI key file, proven by its own signature check, so transaction signatures never trigger it"],
       ["Recognise real seed phrases", "12 to 24 words, checked with the phrase's own checksum, so ordinary text doesn't trigger it"],
       ["Stop a seed phrase or wallet key leaving", "when the agent sends it from the terminal (curl, wget, nc) — to a website, a webhook or a chat bot, in block mode"],
-      ["Spot a labelled private key", "PRIVATE_KEY=, pk:, \"privateKey\": and similar; flagged, because your own trading config may hold one"],
+      ["Spot a labelled private key or a Solana key", "PRIVATE_KEY=, pk:, \"privateKey\": and similar, and any real Solana key; flagged, because your own trading config may hold one, and blocked when sent"],
       ["Keep secrets out of Blackbox's logs", "phrases and keys are scrubbed before anything is recorded"],
       ["Explain every event", "what the agent reached for, why it matters, and what led to it"]
     ],
     cannot: [
-      ["Other wallets yet", "Phantom, Rabby, Coinbase Wallet and others are coming"],
+      ["Other wallets yet", "Rabby, Coinbase Wallet, Solflare and others are coming"],
       ["Exchange API keys", "Binance, Coinbase, Bybit and OKX keys aren't recognised yet"],
-      ["Solana keys and desktop wallets", "Solana CLI keypairs, raw base58 keys, Electrum, Bitcoin Core"],
+      ["Solana CLI key file and desktop wallets", "reading ~/.config/solana/id.json, Electrum, Exodus, Bitcoin Core"],
       ["Block reading .env through the terminal", "it's flagged and logged; file tools are already covered"],
       ["Stop malware outside your agent", "Trader Shield guards what your AI agent does, not other programs"],
       ["Block links or addresses", "known scam sites and wallets are flagged, never blocked"],
       ["Catch every way out", "a phrase hidden in a web address, or posted by a script, isn't stopped yet — see the tested list"]
     ],
-    coming: ["Phantom", "Rabby", "Coinbase Wallet", "Exchange API keys", "Solana keys", "Electrum & Bitcoin Core", "Terminal reads of protected files"],
+    coming: ["Rabby", "Coinbase Wallet", "Solflare", "Exchange API keys", "Solana CLI key file", "Electrum & Bitcoin Core", "Terminal reads of protected files"],
     // Set to {text: "...", who: "CrediBULL · …", link: "https://…"} once the article is out.
     testimonial: null
   };
@@ -393,11 +396,11 @@
   }
 
   // ---- Tested, attack by attack (the file the test suite checks) ----
-  var OUTCOME_WORD = { blocked: "Blocked", flagged: "Flagged", missed: "Not yet" };
+  var OUTCOME_WORD = { blocked: "Blocked", flagged: "Flagged", missed: "Not yet", allowed: "Left alone" };
   fetch("/trader-shield/attacks.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (t) {
-    var count = { blocked: 0, flagged: 0, missed: 0 };
+    var count = { blocked: 0, flagged: 0, missed: 0, allowed: 0 };
     t.attacks.forEach(function (a) { count[a.outcome] += 1; });
-    document.getElementById("tally").innerHTML = ["blocked", "flagged", "missed"].map(function (o) {
+    document.getElementById("tally").innerHTML = ["blocked", "flagged", "missed", "allowed"].filter(function (o) { return count[o]; }).map(function (o) {
       return '<span class="' + o + '">' + count[o] + " " + OUTCOME_WORD[o].toLowerCase() + "</span>";
     }).join("");
     document.getElementById("bench-run").textContent = t.bench_run ? "Last full run: " + t.bench_run + "." : "";
@@ -451,7 +454,7 @@
   document.getElementById("engage").addEventListener("click", function () {
     var note = document.getElementById("engage-note"), btn = this;
     btn.disabled = true; note.className = "note"; note.textContent = "Engaging…";
-    var body = { wallet_protection: true, protected_wallets: ["metamask"] };
+    var body = { wallet_protection: true };   // a first engage protects every supported wallet
     if (document.getElementById("opt-block").checked) body.mode = "block";
     getJSON("/api/session").then(function (s) {
       return fetch("/api/settings", { method: "POST", cache: "no-store",

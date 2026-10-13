@@ -163,3 +163,17 @@ def test_archiving_a_folder_with_several_wallets_names_every_one(monkeypatch):
     only_second = wallet_mode.WalletProtection(enabled=True, wallets=("secondwallet",))
     kept = [f for f in findings if only_second.allows_finding({"identifier": f.identifier, "fields": f.fields})]
     assert [f.fields["wallet"] for f in kept] == ["secondwallet"]
+
+
+PHANTOM_ID = "bfnaelmomeimhlpmgjnjophhpkkoljpa"
+
+
+@pytest.mark.parametrize("path", [
+    f"{MAC_CHROME}/Default/Local Extension Settings/{PHANTOM_ID}/000003.log",
+    f"{MAC_CHROME}/Profile 1/Sync Extension Settings/{PHANTOM_ID}/LOG",
+    f"{MAC_CHROME}/Default/IndexedDB/chrome-extension_{PHANTOM_ID}_0.indexeddb.leveldb/000005.ldb",
+    f"~/.config/BraveSoftware/Brave-Browser/Default/Local Extension Settings/{PHANTOM_ID}",
+])
+def test_any_read_of_phantoms_store_is_found_and_named(path):
+    [finding] = detect_wallet_files("read_file", {"path": path})
+    assert finding.fields["wallet"] == "phantom" and "Phantom" in finding.title and finding.severity == "critical"

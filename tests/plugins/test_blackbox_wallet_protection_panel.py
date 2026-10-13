@@ -78,12 +78,22 @@ from plugins.blackbox.kernel.crypto_secrets import wallet_mode
 
 def test_the_mode_is_off_by_default_and_governs_only_wallet_findings():
     mode = wallet_mode.from_entry({})
-    assert mode.enabled is False and mode.wallets == ("metamask",)
+    assert mode.enabled is False and mode.wallets == ("metamask", "phantom")
     vault = {"identifier": "fileaccess:terminal:crypto-wallet", "fields": {"wallet": "metamask"}}
     assert not mode.allows_finding(vault) and not mode.allows_finding({"identifier": "secret:seed-phrase"})
     assert mode.allows_finding({"identifier": "dep:npm:evil@1.0.0"})   # not a wallet finding: untouched
-    chosen = wallet_mode.from_entry({"wallet_protection": True, "protected_wallets": ["MetaMask", "phantom"]})
+    chosen = wallet_mode.from_entry({"wallet_protection": True, "protected_wallets": ["MetaMask", "not-a-wallet"]})
     assert chosen.wallets == ("metamask",) and chosen.allows_finding(vault)   # unsupported names are dropped
+
+
+def test_engaging_protects_every_supported_wallet_unless_wallets_were_already_chosen():
+    """Engage sends only the switch: a first engage protects MetaMask and Phantom; an
+    earlier choice (e.g. MetaMask only) is kept, so engaging never widens it silently."""
+    updates, errors = wallet_mode.validate({"wallet_protection": True})
+    assert updates == {"wallet_protection": True} and errors == []
+    assert wallet_mode.from_entry(updates).wallets == ("metamask", "phantom")
+    earlier = {"wallet_protection": True, "protected_wallets": ["metamask"]}
+    assert wallet_mode.from_entry(earlier).wallets == ("metamask",)
 
 
 def test_settings_accept_the_mode_and_refuse_an_unknown_wallet():
@@ -124,7 +134,7 @@ def test_the_trader_shield_page_is_served_with_its_get_started_button():
     protection.register_protection_routes(app)
     page = TestClient(app).get("/trader-shield")
     assert page.status_code == 200 and "Engage Trader Shield" in page.text
-    assert "wallet_protection: true" in page.text and 'protected_wallets: ["metamask"]' in page.text
+    assert "var body = { wallet_protection: true };" in page.text and "protected_wallets" not in page.text
     assert "https://" not in page.text.split("<script>")[0].split("</style>")[0]   # no external fonts or styles: works offline
 
 

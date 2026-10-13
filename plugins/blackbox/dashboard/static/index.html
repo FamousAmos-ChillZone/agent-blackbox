@@ -5178,7 +5178,8 @@
     });
     if (engage) engage.addEventListener("click", function () {
       engage.disabled = true; engage.textContent = "Engaging…";
-      postJSON("/api/settings", { wallet_protection: true, protected_wallets: ["metamask"] }).then(function (res) {
+      // Only the switch: a first engage protects every supported wallet; an earlier choice of wallets is kept.
+      postJSON("/api/settings", { wallet_protection: true }).then(function (res) {
         var ok = res && res.ok && res.body && res.body.ok;
         engage.disabled = false;
         engage.textContent = ok ? "Engaged ✓" : "Engage Trader Shield";
@@ -5435,7 +5436,7 @@
   // The wallet an event is about, recognisable at a glance: a vault event shows that wallet's
   // logo (served from /wallets/<id>.svg, allowlisted); a seed phrase or key — which belongs to
   // whichever wallet made it — shows a plain wallet mark.
-  var WALLET_LOGOS = { metamask: "MetaMask" };
+  var WALLET_LOGOS = { metamask: "MetaMask", phantom: "Phantom" };
   var WALLET_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h14a2 2 0 0 1 2 2v3H17a2 2 0 0 0 0 4h4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5"/></svg>';
   function walletLogoByName(name, cls) {
@@ -7661,8 +7662,8 @@
       discover: true, osv_lookup: true,
       categories: cats, protected_paths: [],
       category_labels: {},
-      wallet_protection: false, protected_wallets: ["metamask"],
-      wallet_supported: [{ id: "metamask", name: "MetaMask" }], wallet_planned: []
+      wallet_protection: false, protected_wallets: ["metamask", "phantom"],
+      wallet_supported: [{ id: "metamask", name: "MetaMask" }, { id: "phantom", name: "Phantom" }], wallet_planned: []
     };
   }
 

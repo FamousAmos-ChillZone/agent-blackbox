@@ -13,10 +13,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import os
 import secrets
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from plugins.blackbox import ruleset as ruleset_mod
 from plugins.blackbox.dashboard import protection
@@ -30,7 +33,10 @@ from plugins.blackbox.ruleset import Ruleset
 
 TABLE = json.loads((protection.TRADER_SHIELD_PAGE.parent / "trader-shield-attacks.json").read_text(encoding="utf-8"))
 METAMASK = "nkbihfbeogaeaoehlefnkodbefgpgknn"
-OUTCOMES = {"blocked", "flagged", "missed"}
+PHANTOM = "bfnaelmomeimhlpmgjnjophhpkkoljpa"
+#: blocked / flagged / missed (a gap); allowed = a harmless look-alike that must raise nothing.
+OUTCOMES = {"blocked", "flagged", "missed", "allowed"}
+BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 WORDS = seed_phrase.WORDLIST_FILE.read_text(encoding="ascii").split()
 
 
@@ -43,15 +49,32 @@ def _phrase(entropy: bytes) -> str:
     return " ".join(WORDS[(value >> (11 * (count - 1 - i))) & 0x7FF] for i in range(count))
 
 
+def _base58(data: bytes) -> str:
+    number, out = int.from_bytes(data, "big"), ""
+    while number:
+        number, digit = divmod(number, 58)
+        out = BASE58[digit] + out
+    return "1" * (len(data) - len(data.lstrip(b"\0"))) + out
+
+
+def _solana_key() -> bytes:
+    """A real Solana secret key, made here: Ed25519 seed + its public key."""
+    private = Ed25519PrivateKey.generate()
+    return private.private_bytes_raw() + private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+
+
 @pytest.fixture
 def shield(tmp_path, monkeypatch):
-    """MetaMask installed in Chrome, Trader Shield on, block mode; returns a placeholder filler
-    and the list the hook's findings land in."""
+    """MetaMask and Phantom installed in Chrome, Trader Shield on for both, block mode; returns a
+    placeholder filler and the list the hook's findings land in."""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bb"))
     vault = tmp_path / ".config" / "google-chrome" / "Default" / "Local Extension Settings" / METAMASK
-    vault.mkdir(parents=True)
-    (vault / "000003.log").write_text("vault", encoding="utf-8")
+    phantom = vault.parent / PHANTOM
+    backup = tmp_path / ".config" / "google-chrome" / "Default" / "IndexedDB" / f"chrome-extension_{PHANTOM}_0.indexeddb.leveldb"
+    for folder in (vault, phantom, backup):
+        folder.mkdir(parents=True)
+        (folder / "000003.log").write_text("vault", encoding="utf-8")
     wallet_files.EXISTING_STORES.reset()
     monkeypatch.setattr(hooks, "_config", lambda: config_mod.BlackboxConfig(mode="block", report=False))
     monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: Ruleset())
@@ -60,9 +83,14 @@ def shield(tmp_path, monkeypatch):
     findings: list = []
     monkeypatch.setattr(guard_reporting, "_report_and_audit", lambda cfg, event, found, detail: findings.extend(found))
     seed12, seed24, key = _phrase(os.urandom(16)), _phrase(os.urandom(32)), "0x" + secrets.token_hex(32)
+    solana = _solana_key()
     values = {"@SEED12PLUS@": seed12.replace(" ", "+"), "@SEED12@": seed12, "@SEED24@": seed24, "@KEY@": key,
               "@HEX@": key[2:], "@VAULTFILE@": str(vault / "000003.log"),
-              "@VAULT@": "~/.config/google-chrome/Default/Local\\ Extension\\ Settings/" + METAMASK}
+              "@VAULT@": "~/.config/google-chrome/Default/Local\\ Extension\\ Settings/" + METAMASK,
+              "@PHANTOMFILE@": str(phantom / "000003.log"),
+              "@PHANTOM@": "~/.config/google-chrome/Default/Local\\ Extension\\ Settings/" + PHANTOM,
+              "@SOLKEY@": _base58(solana), "@SOLFILE@": "[" + ",".join(str(b) for b in solana) + "]",
+              "@SOLSIG@": _base58(random.randbytes(64))}
 
     def fill(value):
         if isinstance(value, str):
@@ -85,7 +113,8 @@ def test_each_attack_has_the_outcome_the_page_claims(shield, attack):
     fill, findings = shield
     result = hooks.on_pre_tool_call(tool_name=attack["tool"], args=fill(attack["args"]), session_id="matrix")
     outcome = "blocked" if result and result.get("action") == "block" else ("flagged" if findings else "missed")
-    assert outcome == attack["outcome"], [f.identifier for f in findings]
+    expected = "missed" if attack["outcome"] == "allowed" else attack["outcome"]   # allowed: nothing raised, by design
+    assert outcome == expected, [f.identifier for f in findings]
 
 
 def test_the_table_is_well_formed():
