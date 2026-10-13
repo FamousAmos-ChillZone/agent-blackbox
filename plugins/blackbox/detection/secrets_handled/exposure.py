@@ -104,23 +104,32 @@ _HEX64 = re.compile(r"(?<![0-9A-Za-z])(?:0x)?[0-9a-fA-F]{64}(?![0-9A-Za-z])")
 def detect_own_wallet_keys(tool_name: str, args: Any, own_addresses: Callable[[], Iterable[str]]) -> list[Finding]:
     """A raw 64-hex private key that opens one of the operator's OWN listed addresses
     (``own_addresses`` is called only when a 64-hex value is present — no config read for
-    ordinary calls). Handling it flags; sending it (command, web address, script) is critical."""
+    ordinary calls). Handling it flags; sending it (command, web address, script) is critical.
+
+    Only :data:`~kernel.crypto_secrets.evm_key.MAX_CANDIDATES` values are derived per call
+    (KI-382). A call that SENDS more key-shaped values than that, none of which proved to
+    be a key, is flagged high — "could not tell" is never read as "no key" (LES-011)."""
     text = injection_scan_text(args)
     if not text or not _HEX64.search(text):
         return []
     addresses = frozenset(own_addresses())
-    if not crypto_secrets.own_keys_in(text, addresses):
+    scan = crypto_secrets.scan_own_keys(text, addresses)
+    if not scan.spans and not scan.unchecked:
         return []
     sent = (sending.looks_like_egress(text) or sending.looks_like_script_send(text)
             or bool(crypto_secrets.own_keys_in(sending.url_payloads(text), addresses)))
+    if not scan.spans and not sent:
+        return []
+    evidence = ("wallet-private-key (a raw key that opens one of your listed addresses)" if scan.spans else
+                "wallet-private-key (more key-shaped values sent than Blackbox checks in one call)")
     return [Finding(
         identifier="secret:wallet-private-key",
         category="secret",
-        severity="critical" if sent else "high",
+        severity="critical" if (sent and scan.spans) else "high",
         title=("Secret exfiltration" if sent else "Secret exposed") + ": wallet-private-key",
         tool_name=tool_name or "",
         matched="wallet-private-key",   # the TYPE only — never the key or the address
-        evidence="wallet-private-key (a raw key that opens one of your listed addresses)",
+        evidence=evidence,
         confirmed=False,
         source="secret",
     )]

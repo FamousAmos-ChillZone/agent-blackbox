@@ -16,8 +16,8 @@ Public surface:
   Solana CLI ``id.json``), verified by their Ed25519 self-check;
 * :func:`misdirected_exchange_keys` — an exchange's API key header sent to a
   site that is not that exchange;
-* :func:`own_keys_in` / :func:`address_of` — raw Ethereum private keys that open
-  one of the operator's listed addresses;
+* :func:`scan_own_keys` / :class:`OwnKeyScan` / :func:`own_keys_in` / :func:`address_of`
+  — raw Ethereum private keys that open one of the operator's listed addresses;
 * :func:`protocol_contract` — well-known exchange routers (never a drainer, never flagged).
 """
 
@@ -26,7 +26,7 @@ from . import wallet_mode
 from .seed_phrase import SeedPhraseRun, find_seed_phrase_runs, redact_seed_phrases, wordlist_ready
 from .solana_key import MARKER as SOLANA_KEY_MARKER
 from .solana_key import find_solana_secret_keys, redact_solana_keys
-from .evm_key import address_of, own_keys_in
+from .evm_key import OwnKeyScan, address_of, own_keys_in, scan_own_keys
 from . import exchange_keys
 from .exchange_keys import misdirected_exchange_keys
 from .known_contracts import protocol_contract
@@ -34,6 +34,7 @@ from .known_contracts import protocol_contract
 __all__ = [
            "SEED_PHRASE_MARKER",
            "SOLANA_KEY_MARKER",
+           "OwnKeyScan",
            "SeedPhraseRun",
            "address_of",
            "exchange_keys",
@@ -44,6 +45,7 @@ __all__ = [
            "protocol_contract",
            "redact_seed_phrases",
            "redact_solana_keys",
+           "scan_own_keys",
            "wallet_mode",
            "wordlist_ready",
 ]

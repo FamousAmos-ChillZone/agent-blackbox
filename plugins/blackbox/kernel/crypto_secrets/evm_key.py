@@ -16,11 +16,20 @@ Usage::
 
     address_of(bytes.fromhex("00" * 31 + "01"))   # -> "0x7e5f4552091a69125d5dfcb7b8c2659029395bdf"
     own_keys_in("curl -d k=<64 hex> …", {"0x7e5f…"})   # -> 1 when the key opens a listed address
+    scan_own_keys(text, {"0x7e5f…"})   # -> OwnKeyScan(spans=((8, 72),), unchecked=0)
+
+Cost: a derivation is ~2 ms, so at most :data:`MAX_CANDIDATES` distinct values are
+derived per text — labelled ones first, values labelled as hashes last, later ones
+before earlier ones — and each answer is remembered by the value's SHA-256 (never the
+value), so a log full of the same transaction hashes is derived once (KI-382).
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
+import threading
+from dataclasses import dataclass
 from typing import AbstractSet, Optional
 
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -30,6 +39,13 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 _CURVE_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 #: A 64-hex value standing alone (with or without 0x) — a candidate raw key.
 _CANDIDATE = re.compile(r"(?<![0-9A-Za-z])(?:0x)?([0-9a-fA-F]{64})(?![0-9A-Za-z])")
+#: Most distinct 64-hex values derived per text (each ~2 ms): a text full of transaction
+#: hashes must not stall the hook (65 KB of them took 2 s before the cap, KI-382).
+MAX_CANDIDATES = 32
+#: Just before a value: a label that says "key" (checked first) or "hash" (checked last).
+_KEY_LABEL = re.compile(r"(?:key|pk|secret|priv|signer|wallet|account)[^0-9A-Za-z]{0,4}$", re.IGNORECASE)
+_HASH_LABEL = re.compile(r"(?:tx|hash|block|sha\d*|digest|commit|root|id)[^0-9A-Za-z]{0,4}$", re.IGNORECASE)
+_LABEL_REACH = 24
 #: Ethereum address as the operator lists it.
 ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 
@@ -92,13 +108,71 @@ def address_of(private_key: bytes) -> Optional[str]:
     return "0x" + keccak256(point)[-20:].hex()
 
 
-def own_keys_in(text: str, addresses: AbstractSet[str]) -> int:
-    """How many 64-hex values in *text* are private keys of the listed *addresses*
-    (lower-case ``0x…``). Zero when no address is listed — nothing is derived."""
+class _AddressCache:
+    """The address each checked value opens, remembered by the value's SHA-256 digest
+    (the key itself is never kept). Bounded: emptied when full. One lock."""
+
+    _LIMIT = 4096
+
+    def __init__(self) -> None:
+        self._known: dict[bytes, Optional[str]] = {}
+        self._lock = threading.Lock()
+
+    def address(self, candidate: str) -> Optional[str]:
+        digest = hashlib.sha256(candidate.encode("ascii")).digest()
+        with self._lock:
+            if digest in self._known:
+                return self._known[digest]
+        address = address_of(bytes.fromhex(candidate))
+        with self._lock:
+            if len(self._known) >= self._LIMIT:
+                self._known.clear()
+            self._known[digest] = address
+        return address
+
+
+_ADDRESSES = _AddressCache()
+
+
+@dataclass(frozen=True)
+class OwnKeyScan:
+    """``spans`` — ``(start, end)`` of every 64-hex value in the text that opens a listed
+    address; ``unchecked`` — distinct values left underived because the text held more
+    than :data:`MAX_CANDIDATES` (a caller that must not miss a key treats them as
+    "could not tell", never as "no key")."""
+
+    spans: tuple[tuple[int, int], ...] = ()
+    unchecked: int = 0
+
+
+def _check_order(text: str, matches: list[re.Match[str]]) -> list[str]:
+    """Distinct candidate values, most key-like first: labelled as a key, then unlabelled,
+    then labelled as a hash; later before earlier within each (a decoy padding the front
+    of a text cannot push the key out of the budget)."""
+    rank: dict[str, int] = {}
+    for match in reversed(matches):
+        value = match.group(1).lower()
+        if value in rank:
+            continue
+        before = text[max(0, match.start() - _LABEL_REACH):match.start()]
+        rank[value] = 0 if _KEY_LABEL.search(before) else (2 if _HASH_LABEL.search(before) else 1)
+    return sorted(rank, key=rank.__getitem__)   # stable: keeps last-first inside a rank
+
+
+def scan_own_keys(text: str, addresses: AbstractSet[str]) -> OwnKeyScan:
+    """Where *text* holds private keys of the listed *addresses* (lower-case ``0x…``).
+    Nothing is derived when no address is listed or no 64-hex value is present."""
     if not text or not addresses:
-        return 0
-    count = 0
-    for candidate in {match.group(1).lower() for match in _CANDIDATE.finditer(text)}:
-        if address_of(bytes.fromhex(candidate)) in addresses:
-            count += 1
-    return count
+        return OwnKeyScan()
+    matches = list(_CANDIDATE.finditer(text))
+    order = _check_order(text, matches)
+    own = {value for value in order[:MAX_CANDIDATES] if _ADDRESSES.address(value) in addresses}
+    spans = tuple(match.span() for match in matches if match.group(1).lower() in own)
+    return OwnKeyScan(spans=spans, unchecked=max(0, len(order) - MAX_CANDIDATES))
+
+
+def own_keys_in(text: str, addresses: AbstractSet[str]) -> int:
+    """How many distinct 64-hex values in *text* are private keys of the listed
+    *addresses* (lower-case ``0x…``). Zero when no address is listed — nothing is derived."""
+    scan = scan_own_keys(text, addresses)
+    return len({text[start:end].lower().removeprefix("0x") for start, end in scan.spans})

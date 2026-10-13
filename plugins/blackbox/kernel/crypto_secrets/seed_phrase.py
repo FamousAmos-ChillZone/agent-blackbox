@@ -178,8 +178,11 @@ def find_seed_phrase_runs(text: str) -> list[SeedPhraseRun]:
 
 def redact_seed_phrases(text: str) -> str:
     """*text* with every run of 12+ consecutive wordlist words replaced by
-    :data:`MARKER` — checksum or not: a mistyped phrase is still a secret."""
-    runs = find_seed_phrase_runs(text)
-    for run in reversed(runs):
-        text = text[:run.start] + MARKER + text[run.end:]
+    :data:`MARKER` — checksum or not: a mistyped phrase is still a secret. No checksum
+    is computed here: a log full of list words costs one pass, not five per word (KI-382)."""
+    words = _wordlist()
+    if not text or words is None:
+        return text
+    for run in reversed(_runs(text, words)):
+        text = text[:run[0][0]] + MARKER + text[run[-1][1]:]
     return text

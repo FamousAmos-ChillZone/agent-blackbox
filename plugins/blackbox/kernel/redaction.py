@@ -48,8 +48,11 @@ SECRET_VALUE_RULES = (
     # PRIVATE_KEY=, "privateKey": "…", private key: …, PK= (Polymarket's env
     # name). The label goes with the value when redacted. Handling one flags
     # (an agent's own trading config holds one); sending it out is critical.
+    # Linear time: the name around the keyword is at most 64 characters each side;
+    # the unbounded `[A-Za-z0-9_]*` before it backtracked quadratically ("privatekey"
+    # x 1000 took 0.2 s on every redaction, KI-382).
     ("wallet-private-key", "high", re.compile(
-        r"\b(?:[A-Za-z0-9_]*(?:private[ _-]?key|priv[_-]?key|secret[ _-]?key|signer[ _-]?key)[A-Za-z0-9_]*|pk)"
+        r"\b(?:[A-Za-z0-9_]{0,64}?(?:private[ _-]?key|priv[_-]?key|secret[ _-]?key|signer[ _-]?key)[A-Za-z0-9_]{0,64}|pk)"
         r"[\"']?[ \t]*(?:[:=]|\bis\b)[ \t]*[\"']?(?:0x)?[0-9a-fA-F]{64}\b",
         re.IGNORECASE)),
 )
