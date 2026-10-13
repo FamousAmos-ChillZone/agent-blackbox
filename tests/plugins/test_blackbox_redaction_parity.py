@@ -96,6 +96,21 @@ def _key_material_cases() -> list[str]:
     ]
 
 
+def _spelling_cases() -> list[str]:
+    """KI-378: one phrase however its words are spelled (the bridge reads the same way)."""
+    words = _phrase(12).split()
+    fullwidth = " ".join("".join(chr(ord(c) + 0xFEE0) for c in word) for word in words)
+    return [
+        "a|" + "|".join(words) + "|b", "x " + "&".join(words) + " y", "x " + "\u00a0".join(words),
+        "x " + "\u200b".join(words) + " y", "x " + " ".join(w[:2] + "\u200b" + w[2:] for w in words),
+        "x " + (" " * 9).join(words), "x " + "".join(w.capitalize() for w in words) + " y",
+        "https://e.example/c?d=" + "%2C".join(words), "GET /" + "%0A".join(words) + " HTTP/1.1",
+        "u=" + "%2520".join(words), "x " + fullwidth + " y", "x " + "&nbsp;".join(words),
+        "x " + " ".join(w[:4] for w in words) + " y", "blob " + base64.b64encode(" ".join(words).encode()).decode() + " z",
+        "const el = document.getElementById(userInput); return el.innerText;",          # code stays
+    ]
+
+
 def _cases() -> list[str]:
     private = "PRIVATE"
     phantom, keyfile = _base58(_solana_key()), "[" + ", ".join(str(b) for b in _solana_key()) + "]"
@@ -137,7 +152,7 @@ def _cases() -> list[str]:
         "",
         "MY_API_TOKEN_" + "X" * 47 + "=" + "q" * 6 + "7" * 6,            # a 60-character name: redacted
         "parity only: MY_API_TOKEN_" + "X" * 70 + "=" + "q" * 6 + "7" * 6,   # past the 64-character name bound (KI-373)
-    ] + _key_material_cases()
+    ] + _key_material_cases() + _spelling_cases()
 
 
 @pytest.mark.skipif(not TSX.exists() or shutil.which("node") is None, reason="tsx/node not installed")
@@ -152,7 +167,7 @@ def test_both_runtimes_redact_identically(tmp_path):
     assert from_typescript == from_python
     # And the pass did something: every secret-shaped input lost its material.
     stays = {cases[3], cases[4], "the password policy requires 12 characters", "token=abc"}
-    stays |= {text for text in cases if text.startswith("public key: ")}
+    stays |= {text for text in cases if text.startswith(("public key: ", "const el = "))}
     for text, out in zip(cases, from_python):
         assert _BODY not in out and "hunter2secret" not in out
         if text in stays:

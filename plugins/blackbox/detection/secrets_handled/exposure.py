@@ -25,17 +25,18 @@ from ...kernel import crypto_secrets
 
 
 #: Wallet secrets (``secret:<type>``): no destination is ever right for these, so ANY way of
-#: sending them counts — a web address, or script code that makes a network call.
+#: sending them counts — a web address, a network program, script code that makes a
+#: network call, a tool whose arguments leave the machine (``sending.reaches_network``).
 _WALLET_SECRET_TYPES = frozenset({"seed-phrase", "wallet-private-key", "solana-private-key", "bitcoin-private-key"})
 
 
-def _wallet_secrets_sent(text: str) -> set:
-    """Wallet secret types this call sends: those inside a web address it names, and every
-    one present when it runs network-calling script code. (API keys are left to the
+def _wallet_secrets_sent(tool_name: str, text: str, hits: list[dict[str, str]]) -> set:
+    """Wallet secret types this call sends: every one present when the call has any route
+    off the machine, else those inside a web address it names. (API keys are left to the
     command-shaped egress check — an agent legitimately sends an API key to its API.)"""
+    if sending.reaches_network(tool_name, text):
+        return {hit["type"] for hit in hits} & _WALLET_SECRET_TYPES
     in_urls = {hit["type"] for hit in content_scanners.scan_secret_values(sending.url_payloads(text))}
-    if sending.looks_like_script_send(text):
-        in_urls |= {hit["type"] for hit in content_scanners.scan_secret_values(text)}
     return in_urls & _WALLET_SECRET_TYPES
 
 
@@ -54,11 +55,11 @@ def _secret_finding(tool_name: str, secret_type: str, severity: str, sent: bool,
     )
 
 
-def _unchecked_solana_keys_sent(tool_name: str, text: str, egress: bool) -> list[Finding]:
+def _unchecked_solana_keys_sent(tool_name: str, text: str) -> list[Finding]:
     """A call that SENDS more Solana-key-shaped values than the check's budget, none of
     which proved to be a key: flagged high — "could not tell" is never "no key" (KI-380,
     LES-011). Kept on the machine, a list of signatures raises nothing."""
-    if not (egress or sending.looks_like_script_send(text)) or not crypto_secrets.scan_solana_keys(text).unchecked:
+    if not sending.reaches_network(tool_name, text) or not crypto_secrets.scan_solana_keys(text).unchecked:
         return []
     return [_secret_finding(tool_name, "solana-private-key", "high", True,
                             "solana-private-key (more key-shaped values sent than Blackbox checks in one call)")]
@@ -79,14 +80,14 @@ def detect_secret_exposure(tool_name: str, args: Any) -> list[Finding]:
         return []
     hits = content_scanners.scan_secret_values(text)
     egress = sending.looks_like_egress(text)
-    wallet_sent = _wallet_secrets_sent(text) if hits else set()
+    wallet_sent = _wallet_secrets_sent(tool_name, text, hits) if hits else set()
     out: list[Finding] = []
     for hit in hits:
         sent = egress or hit["type"] in wallet_sent
         severity = "critical" if (sent and hit["severity"] != "critical") else hit["severity"]
         out.append(_secret_finding(tool_name, hit["type"], severity, sent))
     if not any(hit["type"] == "solana-private-key" for hit in hits):
-        out += _unchecked_solana_keys_sent(tool_name, text, egress)
+        out += _unchecked_solana_keys_sent(tool_name, text)
     return out
 
 
@@ -128,7 +129,7 @@ def detect_own_wallet_keys(tool_name: str, args: Any, own_addresses: Callable[[]
     scan = crypto_secrets.scan_own_keys(text, addresses)
     if not scan.spans and not scan.unchecked:
         return []
-    sent = (sending.looks_like_egress(text) or sending.looks_like_script_send(text)
+    sent = (sending.reaches_network(tool_name, text)
             or bool(crypto_secrets.own_keys_in(sending.url_payloads(text), addresses)))
     if not scan.spans and not sent:
         return []

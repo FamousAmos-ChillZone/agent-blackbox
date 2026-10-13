@@ -9,9 +9,17 @@ How a phrase is recognised (BIP-39, github.com/bitcoin/bips bip-0039):
 * every word is on the 2048-word English list, which ships next to this file
   and is pinned by its SHA-256 (:data:`WORDLIST_SHA256`) — a changed or
   truncated list disables detection loudly instead of silently;
-* the words stand together: only spaces, commas, line breaks, list
-  numbering ("1.", "2)") or a web address's spaces ("+", "%20") between them. Ordinary English breaks such a run
-  within a few words ("the", "of", "is" are not on the list);
+* the words stand together: anything that is not a letter may stand between
+  them (spaces of any kind and length, commas, ``|``, ``&``, line breaks, list
+  numbering, a web address's ``+``). Ordinary English breaks such a run within a
+  few words ("the", "of", "is" are not on the list). The text is read through
+  :func:`.text_view.normalised` first, so percent-encoding (``%2C``, ``%61``),
+  invisible characters, fullwidth letters, HTML entities and CamelCase joins
+  (``AbandonAbility…``) do not hide a phrase (KI-378); a word may also be written
+  as its first four letters (BIP-39 makes them unique — the steel-backup form);
+* a phrase may also be base64-encoded: a base64 run that decodes to text holding a
+  phrase counts as that phrase. Other encodings (hex, rot13, reversed words) and an
+  all-lower-case join with no separator ("abandonability…") are a known gap;
 * the last word carries a checksum: of the n×11 bits the words encode, the
   final n/3 bits must equal the first bits of SHA-256 of the rest. A random
   run passes with probability 1/16 (12 words) down to 1/256 (24 words), so
@@ -32,13 +40,17 @@ Usage::
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import logging
 import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
+
+from .text_view import TextView, readings
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +64,9 @@ PHRASE_LENGTHS = (24, 21, 18, 15, 12)
 MARKER = "[REDACTED_SEED_PHRASE]"
 
 _WORD = re.compile(r"[A-Za-z]+")
-#: What may stand between two words of one phrase: spaces, commas, line
-#: breaks, list numbering, and the way a web address spells a space (``+``,
-#: ``%20``) or a path or name joins words (``/``, ``_``) — at most a few characters.
-#: ASCII only, spelled out — the OpenClaw bridge's copy (seedPhrase.ts) uses the
-#: same class, and Python's and JavaScript's \s / \d differ outside ASCII.
-_GAP = re.compile(r"[ \t\n\r\f\v,;.:)(\-\"'`0-9+%_/]{1,8}")
+#: A base64 run long enough to hold a 12-word phrase; at most _MAX_ENCODED of them per text are decoded.
+_BASE64 = re.compile(r"(?<![A-Za-z0-9+/=_-])[A-Za-z0-9+/_-]{64,4096}={0,2}(?![A-Za-z0-9+/=_-])")
+_MAX_ENCODED = 16
 _CUE = re.compile(r"\b(?:seed|mnemonic|recovery|phrase|secret|backup|srp|words?|wallet)\b", re.IGNORECASE)
 _CUE_WINDOW = 80
 
@@ -116,18 +125,30 @@ def checksum_entropy(indices: list[int]) -> Optional[bytes]:
     return entropy if (value & ((1 << checksum_bits) - 1)) == expected else None
 
 
+@lru_cache(maxsize=1)
+def _prefixes() -> dict[str, int]:
+    """``{first four letters: index}`` for every list word longer than four letters
+    (BIP-39 makes the first four letters unique, so a steel backup writes only those)."""
+    words = _wordlist() or {}
+    return {word[:4]: index for word, index in words.items() if len(word) > 4}
+
+
 def _runs(text: str, words: dict[str, int]) -> list[list[tuple[int, int, int]]]:
-    """Runs of consecutive list words as ``[(start, end, index), ...]``."""
+    """Runs of consecutive list words in *text* as ``[(start, end, index), ...]``. Every
+    non-letter between two words joins them; any other word ends the run."""
+    prefixes = _prefixes()
     runs: list[list[tuple[int, int, int]]] = []
     current: list[tuple[int, int, int]] = []
     for match in _WORD.finditer(text):
-        index = words.get(match.group(0).lower())
-        joined = current and _GAP.fullmatch(text[current[-1][1]:match.start()])
-        if index is None or (current and not joined):
+        token = match.group(0).lower()
+        index = words.get(token)
+        if index is None and len(token) == 4:
+            index = prefixes.get(token)
+        if index is None:
             if len(current) >= MIN_WORDS:
                 runs.append(current)
             current = []
-        if index is not None:
+        else:
             current.append((match.start(), match.end(), index))
     if len(current) >= MIN_WORDS:
         runs.append(current)
@@ -159,30 +180,85 @@ def _has_cue(text: str, span_start: int, span_end: int) -> bool:
     return bool(_CUE.search(nearby)) or numbered
 
 
-def find_seed_phrase_runs(text: str) -> list[SeedPhraseRun]:
-    """Every run of 12+ consecutive wordlist words in *text* (see module doc)."""
-    words = _wordlist()
-    if not text or words is None:
-        return []
+def _plain_runs(text: str, words: dict[str, int]) -> list[SeedPhraseRun]:
+    """The runs in *text*'s normalised readings, with their ORIGINAL offsets (a run found
+    in both readings is reported once)."""
     out: list[SeedPhraseRun] = []
-    for run in _runs(text, words):
+    for view in readings(text):
+        out += [run for run in _view_runs(view, words) if (run.start, run.end) not in {(r.start, r.end) for r in out}]
+    return out
+
+
+def _view_runs(view: TextView, words: dict[str, int]) -> list[SeedPhraseRun]:
+    out: list[SeedPhraseRun] = []
+    for run in _runs(view.text, words):
         valid_words, offsets, entropy = _longest_valid(run)
         windows = [run[offset:offset + valid_words] for offset in offsets] or [run]
+        start, end = view.original_span(run[0][0], run[-1][1])
         out.append(SeedPhraseRun(
-            start=run[0][0], end=run[-1][1], word_count=len(run), valid_words=valid_words,
-            has_cue=any(_has_cue(text, window[0][0], window[-1][1]) for window in windows),
+            start=start, end=end, word_count=len(run), valid_words=valid_words,
+            has_cue=any(_has_cue(view.text, window[0][0], window[-1][1]) for window in windows),
             test_phrase=entropy is not None and len(set(entropy)) == 1,
         ))
     return out
 
 
+def _decoded_text(blob: str) -> Optional[str]:
+    """*blob* base64-decoded, when that gives printable ASCII text; else None."""
+    core = blob.rstrip("=").replace("-", "+").replace("_", "/")
+    try:
+        raw = base64.b64decode(core + "=" * (-len(core) % 4), validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    printable = all(32 <= byte < 127 or byte in (9, 10, 13) for byte in raw)
+    return raw.decode("ascii") if printable else None
+
+
+def _encoded_runs(text: str, words: dict[str, int]) -> list[SeedPhraseRun]:
+    """Phrases hidden in base64: each decoded run is reported over the WHOLE blob."""
+    out: list[SeedPhraseRun] = []
+    for match in list(_BASE64.finditer(text))[:_MAX_ENCODED]:
+        decoded = _decoded_text(match.group(0))
+        for run in _plain_runs(decoded, words) if decoded else []:
+            out.append(SeedPhraseRun(
+                start=match.start(), end=match.end(), word_count=run.word_count, valid_words=run.valid_words,
+                has_cue=run.has_cue or _has_cue(text, match.start(), match.end()), test_phrase=run.test_phrase))
+    return out
+
+
+def find_seed_phrase_runs(text: str) -> list[SeedPhraseRun]:
+    """Every run of 12+ consecutive wordlist words in *text*, plain or base64-encoded
+    (see module doc), in order."""
+    words = _wordlist()
+    if not text or words is None:
+        return []
+    return sorted(_plain_runs(text, words) + _encoded_runs(text, words), key=lambda run: run.start)
+
+
+def _spans(text: str, words: dict[str, int]) -> list[tuple[int, int]]:
+    """Original spans of every run (plain or base64-encoded) — no checksums computed."""
+    spans = [view.original_span(run[0][0], run[-1][1]) for view in readings(text) for run in _runs(view.text, words)]
+    for match in list(_BASE64.finditer(text))[:_MAX_ENCODED]:
+        decoded = _decoded_text(match.group(0))
+        if decoded and any(_runs(view.text, words) for view in readings(decoded)):
+            spans.append(match.span())
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(spans):
+        if merged and start < merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    return merged
+
+
 def redact_seed_phrases(text: str) -> str:
-    """*text* with every run of 12+ consecutive wordlist words replaced by
-    :data:`MARKER` — checksum or not: a mistyped phrase is still a secret. No checksum
-    is computed here: a log full of list words costs one pass, not five per word (KI-382)."""
+    """*text* with every run of 12+ consecutive wordlist words (plain or base64-encoded)
+    replaced by :data:`MARKER` — checksum or not: a mistyped phrase is still a secret. No
+    checksum is computed here: a log full of list words costs one pass, not five per
+    word (KI-382)."""
     words = _wordlist()
     if not text or words is None:
         return text
-    for run in reversed(_runs(text, words)):
-        text = text[:run[0][0]] + MARKER + text[run[-1][1]:]
+    for start, end in reversed(_spans(text, words)):
+        text = text[:start] + MARKER + text[end:]
     return text

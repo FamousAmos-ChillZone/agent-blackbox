@@ -102,6 +102,8 @@ def shield(tmp_path, monkeypatch):
     values.update({"@WIF@": _base58check(b"\x80\x01" + os.urandom(31) + b"\x01"), "@SOLHEX@": solana.hex(),
                    "@XPRV@": _base58check(bytes.fromhex("0488ade4") + bytes(9) + os.urandom(32) + b"\x00\x01" + os.urandom(31)),
                    "@SOLDECOYS@": " ".join(_base58(random.randbytes(64)) for _ in range(100))})
+    # KI-378: the same 12 words spelled to slip past a word matcher.
+    values.update({"@SEED12ZW@": "\u200b|".join(seed12.split()), "@SEED12CAMEL@": "".join(w.capitalize() for w in seed12.split())})
 
     def fill(value):
         if isinstance(value, str):
