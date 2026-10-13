@@ -270,6 +270,21 @@ def discover_dependency_candidates(tool_name: str, args: Any, ruleset: Any, osv_
     return out
 
 
+#: Wallet secrets (``secret:<type>``): no destination is ever right for these, so ANY way of
+#: sending them counts — a web address, or script code that makes a network call.
+_WALLET_SECRET_TYPES = frozenset({"seed-phrase", "wallet-private-key", "solana-private-key"})
+
+
+def _wallet_secrets_sent(text: str) -> set:
+    """Wallet secret types this call sends: those inside a web address it names, and every
+    one present when it runs network-calling script code. (API keys are left to the
+    command-shaped egress check — an agent legitimately sends an API key to its API.)"""
+    in_urls = {hit["type"] for hit in content_scanners.scan_secret_values(content_scanners.url_payloads(text))}
+    if content_scanners.looks_like_script_send(text):
+        in_urls |= {hit["type"] for hit in content_scanners.scan_secret_values(text)}
+    return in_urls & _WALLET_SECRET_TYPES
+
+
 def detect_secret_exposure(tool_name: str, args: Any) -> List[Finding]:
     """Flag a real secret VALUE (API key, token, private key) in the tool args.
 
@@ -287,10 +302,12 @@ def detect_secret_exposure(tool_name: str, args: Any) -> List[Finding]:
     if not hits:
         return []
     egress = content_scanners.looks_like_egress(text)
+    wallet_sent = _wallet_secrets_sent(text)
     out: List[Finding] = []
     for hit in hits:
-        severity = "critical" if (egress and hit["severity"] != "critical") else hit["severity"]
-        prefix = "Secret exfiltration" if egress else "Secret exposed"
+        sent = egress or hit["type"] in wallet_sent
+        severity = "critical" if (sent and hit["severity"] != "critical") else hit["severity"]
+        prefix = "Secret exfiltration" if sent else "Secret exposed"
         out.append(
             Finding(
                 identifier=f"secret:{hit['type']}",
