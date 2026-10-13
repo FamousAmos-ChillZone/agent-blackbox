@@ -28,7 +28,7 @@ from .injection_detection import detect_injection, discover_injection, injection
 from .ioc_detection import detect_ioc, ioc_context
 from .skill_detection import detect_skill
 from .paths.protected import detect_custom_fileaccess  # noqa: F401 — re-exported for callers
-from .secrets_handled.exposure import detect_exchange_key_misdirection, detect_secret_exposure  # noqa: F401 — re-exported
+from .secrets_handled.exposure import detect_exchange_key_misdirection, detect_own_wallet_keys, detect_secret_exposure  # noqa: F401 — re-exported
 from .wallet_files import detect_wallet_files
 from ..kernel import threat_ids
 

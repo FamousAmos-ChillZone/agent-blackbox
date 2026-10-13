@@ -830,6 +830,11 @@
 
   /* ---------- Wallet protection panel + settings (trader rules) ---------- */
   .wallet-picks { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
+  .set-addresses { width: 100%; max-width: 520px; box-sizing: border-box; margin-top: 8px; font: 12px/1.5 var(--mono, ui-monospace, monospace);
+    background: var(--panel-2, transparent); color: inherit; border: 1px solid var(--line, #444); border-radius: 6px; padding: 6px 8px; resize: vertical; }
+  .set-addresses-note { font-size: 12px; margin-top: 4px; opacity: .8; }
+  .set-addresses-note.bad { color: var(--danger, #e5534b); opacity: 1; }
+  .set-optional { font-size: 11px; font-weight: 400; opacity: .65; margin-left: 4px; }
   .wallet-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
   .wallet-pick.soon { color: var(--muted); cursor: default; }
   .wallet-pick.soon span { font-size: 11px; }
@@ -7833,7 +7838,7 @@
       discover: true, osv_lookup: true,
       categories: cats, protected_paths: [],
       category_labels: {},
-      wallet_protection: false, protected_wallets: ["metamask", "phantom"],
+      wallet_protection: false, protected_wallets: ["metamask", "phantom"], wallet_addresses: [],
       wallet_supported: [{ id: "metamask", name: "MetaMask" }, { id: "phantom", name: "Phantom" }], wallet_planned: []
     };
   }
@@ -7851,6 +7856,7 @@
     var wp = (data.wallet_protection && typeof data.wallet_protection === "object") ? data.wallet_protection : {};
     out.wallet_protection = wp.enabled === true;
     if (Array.isArray(wp.wallets)) out.protected_wallets = wp.wallets.slice(0, 20);
+    if (Array.isArray(wp.addresses)) out.wallet_addresses = wp.addresses.slice(0, 50).map(String);   // optional field (LES-018)
     if (Array.isArray(wp.supported) && wp.supported.length) out.wallet_supported = wp.supported;
     if (Array.isArray(wp.planned)) out.wallet_planned = wp.planned;
     var cats = (data.categories && typeof data.categories === "object") ? data.categories : {};
@@ -8018,7 +8024,35 @@
       rows.push('<label class="wallet-pick soon"><input type="checkbox" disabled /> ' + esc(name) + ' <span>coming soon</span></label>');
     });
     $("set-wallets").innerHTML = rows.join("");
+    var box = $("set-wallet-addresses");
+    if (box && document.activeElement !== box) box.value = (setState.wallet_addresses || []).join("\n");
+    if (box) box.disabled = !setState.wallet_protection;
+    renderAddressNote();
     renderPathsUI();   // the Trader Shield rows under Protected files follow the switch
+  }
+  // The address box: one 0x address per line; anything else is shown, never sent.
+  var ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+  function walletAddressList() {
+    var box = $("set-wallet-addresses");
+    var lines = (box ? box.value : (setState.wallet_addresses || []).join("\n")).split(/[\s,]+/).filter(Boolean);
+    var valid = [], bad = [];
+    lines.forEach(function (line) {
+      if (ADDRESS_RE.test(line)) { if (valid.indexOf(line.toLowerCase()) < 0) valid.push(line.toLowerCase()); }
+      else bad.push(line);
+    });
+    return { valid: valid.slice(0, 50), bad: bad };
+  }
+  function renderAddressNote() {
+    var note = $("set-wallet-addresses-note");
+    if (!note) return;
+    var list = walletAddressList();
+    note.className = "set-addresses-note" + (list.bad.length ? " bad" : "");
+    var pastedKey = list.bad.some(function (b) { return /^(0x)?[0-9a-fA-F]{64}$/.test(b); });
+    note.textContent = pastedKey
+      ? "That looks like a PRIVATE KEY, not an address — it is not saved. Remove it, and only ever list public addresses."
+      : list.bad.length
+      ? "Not an address (left out): " + list.bad.slice(0, 3).map(function (b) { return b.slice(0, 14) + (b.length > 14 ? "…" : ""); }).join(", ")
+      : (list.valid.length ? list.valid.length + " address" + (list.valid.length === 1 ? "" : "es") + " — raw keys that open them are recognised." : "");
   }
 
   function setStatus(msg, kind) {
@@ -8050,7 +8084,8 @@
       categories: cats,
       protected_paths: setState.protected_paths.slice(0, 100),
       wallet_protection: !!setState.wallet_protection,
-      protected_wallets: (setState.protected_wallets || []).slice(0, 20)
+      protected_wallets: (setState.protected_wallets || []).slice(0, 20),
+      wallet_addresses: walletAddressList().valid
     };
   }
 
@@ -8235,6 +8270,9 @@
     });
     $("set-wallet").addEventListener("change", function () {
       if (!setState) return; setState.wallet_protection = this.checked; renderWalletUI(); markDirty();
+    });
+    if ($("set-wallet-addresses")) $("set-wallet-addresses").addEventListener("input", function () {
+      if (!setState) return; setState.wallet_addresses = walletAddressList().valid; renderAddressNote(); markDirty();
     });
     $("set-wallets").addEventListener("change", function (e) {
       var id = e.target && e.target.getAttribute("data-wallet");
@@ -8715,6 +8753,14 @@
             <div class="set-rt">Wallets to protect</div>
             <div class="set-rh">Choose the wallets installed on this machine.</div>
             <div class="wallet-picks" id="set-wallets"></div>
+          </div>
+        </div>
+        <div class="set-row">
+          <div class="set-rl">
+            <div class="set-rt">Your wallet addresses <span class="set-optional">optional</span></div>
+            <div class="set-rh">A raw private key is 64 characters that look exactly like a transaction hash. List your own public addresses (0x…, one per line) and Trader Shield recognises a raw key that opens one of them — and blocks it if your agent tries to send it out. Addresses stay on this machine; they are never logged, reported or shared.</div>
+            <textarea id="set-wallet-addresses" class="set-addresses" rows="3" spellcheck="false" autocomplete="off" placeholder="0x…"></textarea>
+            <div class="set-addresses-note" id="set-wallet-addresses-note"></div>
           </div>
         </div>
       </div>

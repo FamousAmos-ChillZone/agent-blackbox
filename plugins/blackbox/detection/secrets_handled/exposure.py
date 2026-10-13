@@ -5,6 +5,8 @@
   address or network-calling script code) raises it to critical.
 * :func:`detect_exchange_key_misdirection` — an exchange's API key header sent to a
   site that is not that exchange.
+* :func:`detect_own_wallet_keys` — a raw 64-hex private key that opens one of the
+  operator's own listed addresses (Trader Shield settings).
 
 Findings are ``source="secret"``: local-only (only the TYPE is recorded, never the
 value) and blockable.
@@ -12,7 +14,8 @@ value) and blockable.
 
 from __future__ import annotations
 
-from typing import Any, List
+import re
+from typing import Any, Callable, Iterable, List
 
 from .. import content_scanners
 from ..finding import Finding
@@ -91,3 +94,32 @@ def detect_exchange_key_misdirection(tool_name: str, args: Any) -> List[Finding]
             source="secret",
         )
     ] if exchanges else []
+
+
+#: A 64-hex value: the only shape a raw Ethereum private key can take.
+_HEX64 = re.compile(r"(?<![0-9A-Za-z])(?:0x)?[0-9a-fA-F]{64}(?![0-9A-Za-z])")
+
+
+def detect_own_wallet_keys(tool_name: str, args: Any, own_addresses: Callable[[], Iterable[str]]) -> List[Finding]:
+    """A raw 64-hex private key that opens one of the operator's OWN listed addresses
+    (``own_addresses`` is called only when a 64-hex value is present — no config read for
+    ordinary calls). Handling it flags; sending it (command, web address, script) is critical."""
+    text = injection_scan_text(args)
+    if not text or not _HEX64.search(text):
+        return []
+    addresses = frozenset(own_addresses())
+    if not crypto_secrets.own_keys_in(text, addresses):
+        return []
+    sent = (content_scanners.looks_like_egress(text) or content_scanners.looks_like_script_send(text)
+            or bool(crypto_secrets.own_keys_in(content_scanners.url_payloads(text), addresses)))
+    return [Finding(
+        identifier="secret:wallet-private-key",
+        category="secret",
+        severity="critical" if sent else "high",
+        title=("Secret exfiltration" if sent else "Secret exposed") + ": wallet-private-key",
+        tool_name=tool_name or "",
+        matched="wallet-private-key",   # the TYPE only — never the key or the address
+        evidence="wallet-private-key (a raw key that opens one of your listed addresses)",
+        confirmed=False,
+        source="secret",
+    )]

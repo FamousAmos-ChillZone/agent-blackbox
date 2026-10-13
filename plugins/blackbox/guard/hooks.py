@@ -13,7 +13,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple
 from .. import audit, detection, killlist, overrides, ruleset
-from ..kernel import config as config_mod, constants
+from ..kernel import config as config_mod, constants, crypto_secrets
 from ..kernel.config import BlackboxConfig
 from . import background
 from . import injection_sites
@@ -141,6 +141,15 @@ def _would_block(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List
     ]
 
 
+def _own_key_findings(raw: List[detection.Finding], tool_name: str, args: Any) -> List[detection.Finding]:
+    """Raw keys of the operator's own listed addresses (Trader Shield), unless the
+    labelled-key rule already raised the same finding at least as high."""
+    found = detection.detect_own_wallet_keys(tool_name, args, lambda: crypto_secrets.wallet_mode.current().addresses)
+    rank = constants.SEVERITY_RANK
+    have = max((rank.get(f.severity, -1) for f in raw if f.identifier == "secret:wallet-private-key"), default=-1)
+    return [f for f in found if rank.get(f.severity, -1) > have]
+
+
 def on_pre_tool_call(
     tool_name: str = "",
     args: Any = None,
@@ -159,7 +168,7 @@ def on_pre_tool_call(
         # Visibility: log every file-access tool call (best-effort).
         _record_activity(tool_name, args)
         raw = detection.detect_all(tool_name, args, rs, discover=cfg.discover)
-        raw += detection.detect_custom_fileaccess(tool_name, args, cfg.protected_paths)
+        raw += detection.detect_custom_fileaccess(tool_name, args, cfg.protected_paths) + _own_key_findings(raw, tool_name, args)
         raw += _kill_list_findings(rs, tool_name, args)   # R14: curator-signed DISABLE / WARN, last-good list
         findings = reporting._flag_worthy(cfg, raw)
         detail = {"tool_name": tool_name, "session_id": session_id, "task_id": task_id,

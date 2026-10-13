@@ -10,6 +10,8 @@ Config keys under ``plugins.entries.blackbox``::
 
     wallet_protection: true          # the mode (default false)
     protected_wallets: [metamask]    # which wallets (default: every supported one)
+    wallet_addresses: ["0x…"]        # the operator's OWN public addresses (optional, opt-in):
+                                     # a raw 64-hex key that opens one of them is recognised
 
 Pattern: Value Object (:class:`WalletProtection`) + a validate-then-persist step the
 settings writer calls (:func:`validate`).
@@ -23,6 +25,7 @@ Usage::
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Tuple
 
@@ -42,12 +45,21 @@ WALLET_FILE_SUFFIX = ":crypto-wallet"
 ANY_EXTENSION_WALLET = "any-extension"
 
 
+#: Most addresses an operator may list (each costs a key derivation only when a 64-hex
+#: value appears in a call, ~2 ms; the list is matched as a set).
+MAX_WALLET_ADDRESSES = 50
+_ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
+
+
 @dataclass(frozen=True)
 class WalletProtection:
-    """``enabled`` — the mode is on; ``wallets`` — supported wallet ids to guard."""
+    """``enabled`` — the mode is on; ``wallets`` — supported wallet ids to guard;
+    ``addresses`` — the operator's own public addresses, lower-case (kept on this
+    machine only; never put in a finding, a log line or a report)."""
 
     enabled: bool = False
     wallets: Tuple[str, ...] = tuple(SUPPORTED_WALLETS)
+    addresses: Tuple[str, ...] = ()
 
     def protects(self, wallet_id: str) -> bool:
         """Whether the wallet *wallet_id* is guarded under this mode — THE rule the gate
@@ -71,7 +83,7 @@ class WalletProtection:
 
     def as_json(self) -> Dict[str, Any]:
         """What the dashboard and the settings page show."""
-        return {"enabled": self.enabled, "wallets": list(self.wallets),
+        return {"enabled": self.enabled, "wallets": list(self.wallets), "addresses": list(self.addresses),
                 "supported": [{"id": key, "name": name} for key, name in SUPPORTED_WALLETS.items()],
                 "planned": list(PLANNED_WALLETS)}
 
@@ -86,11 +98,21 @@ def _wallet_list(raw: Any) -> Tuple[str, ...]:
     return tuple(out)
 
 
+def _address_list(raw: Any) -> Tuple[str, ...]:
+    """Valid addresses from *raw* (a list), lower-cased, deduplicated, at most the cap."""
+    out: List[str] = []
+    for item in raw if isinstance(raw, list) else []:
+        address = str(item or "").strip().lower()
+        if _ADDRESS.match(address) and address not in out:
+            out.append(address)
+    return tuple(out[:MAX_WALLET_ADDRESSES])
+
+
 def from_entry(entry: Mapping[str, Any]) -> WalletProtection:
     """The mode as the ``blackbox`` config entry states it (defaults when absent)."""
     enabled = entry.get("wallet_protection") is True
     wallets = _wallet_list(entry["protected_wallets"]) if "protected_wallets" in entry else tuple(SUPPORTED_WALLETS)
-    return WalletProtection(enabled=enabled, wallets=wallets)
+    return WalletProtection(enabled=enabled, wallets=wallets, addresses=_address_list(entry.get("wallet_addresses")))
 
 
 def current() -> WalletProtection:
@@ -117,4 +139,12 @@ def validate(payload: Mapping[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
             errors.append(f"protected_wallets must be a list of: {', '.join(SUPPORTED_WALLETS)}")
         else:
             updates["protected_wallets"] = list(_wallet_list(raw))
+    if "wallet_addresses" in payload:
+        raw = payload["wallet_addresses"]
+        items = raw if isinstance(raw, list) else None
+        bad = [a for a in items or [] if not _ADDRESS.match(str(a or "").strip())]
+        if items is None or bad or len(items) > MAX_WALLET_ADDRESSES:
+            errors.append(f"wallet_addresses must be a list of up to {MAX_WALLET_ADDRESSES} addresses like 0x followed by 40 hex characters")
+        else:
+            updates["wallet_addresses"] = list(_address_list(items))
     return updates, errors

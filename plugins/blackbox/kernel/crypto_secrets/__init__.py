@@ -15,7 +15,9 @@ Public surface:
   :data:`SOLANA_KEY_MARKER` — Solana secret keys (Phantom's exported key, the
   Solana CLI ``id.json``), verified by their Ed25519 self-check;
 * :func:`misdirected_exchange_keys` — an exchange's API key header sent to a
-  site that is not that exchange.
+  site that is not that exchange;
+* :func:`own_keys_in` / :func:`address_of` — raw Ethereum private keys that open
+  one of the operator's listed addresses.
 """
 
 from .seed_phrase import MARKER as SEED_PHRASE_MARKER
@@ -23,7 +25,8 @@ from . import wallet_mode
 from .seed_phrase import SeedPhraseRun, find_seed_phrase_runs, redact_seed_phrases, wordlist_ready
 from .solana_key import MARKER as SOLANA_KEY_MARKER
 from .solana_key import find_solana_secret_keys, redact_solana_keys
+from .evm_key import address_of, own_keys_in
 from .exchange_keys import misdirected_exchange_keys
 
-__all__ = ["SEED_PHRASE_MARKER", "SOLANA_KEY_MARKER", "SeedPhraseRun", "find_seed_phrase_runs", "find_solana_secret_keys",
+__all__ = ["address_of", "own_keys_in", "SEED_PHRASE_MARKER", "SOLANA_KEY_MARKER", "SeedPhraseRun", "find_seed_phrase_runs", "find_solana_secret_keys",
            "misdirected_exchange_keys", "redact_seed_phrases", "redact_solana_keys", "wallet_mode", "wordlist_ready"]
