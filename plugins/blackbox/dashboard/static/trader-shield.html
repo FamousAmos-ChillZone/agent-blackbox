@@ -447,7 +447,7 @@
       [n(g.drainer_phishing_domains), "Web3 phishing and wallet-drainer sites", "flagged when your agent goes there", "flag"],
       [n(g.crypto_packages_total), "malicious crypto packages", (pk.npm ? n(pk.npm.packages) + " npm · " : "") + (pk.pypi ? n(pk.pypi.packages) + " PyPI · " : "") + "blocked in block mode", "block"],
       [n(g.drainer_wallets), "drainer wallets", "an approval to one is blocked", "block"],
-      [n((g.stealer_families || []).length), "wallet-stealer families", n(g.stealer_indicators) + " indicators · Vidar, Lumma, Atomic, RedLine…", "flag"]
+      [n(g.stealer_indicators), "wallet-stealer malware indicators", "Vidar, Lumma, Atomic, RedLine and more · flagged", "flag"]
     ];
     document.getElementById("known-stats").innerHTML = stats.map(function (s) {
       var act = s[3] === "block" ? "<b>" + esc(s[2]) + "</b>" : "<i>" + esc(s[2]) + "</i>";
