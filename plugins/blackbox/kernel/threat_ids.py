@@ -256,15 +256,28 @@ def _canonical_ip(raw: str) -> str:
         candidate = candidate[1:].split("]", 1)[0]
     candidate = candidate.split("%", 1)[0]
     try:
-        return ipaddress.IPv6Address(candidate).compressed
+        return _ipv6_text(ipaddress.IPv6Address(candidate))
     except ValueError:
         return raw
 
 
+def _ipv6_text(address: ipaddress.IPv6Address) -> str:
+    """The one spelling of an IPv6 address on every Python (KI-339).
+
+    RFC 5952 compressed lower-case, except an IPv4-mapped address, which is spelt
+    ``::ffff:a.b.c.d`` here (RFC 5952 §5) instead of trusting ``compressed``: CPython
+    3.11.7 prints ``::ffff:c000:280`` and 3.11.15 / 3.13+ ``::ffff:192.0.2.128``, so
+    two nodes on different patch levels minted different identifiers for one address
+    (LES-043). The TS mirror (integrations/openclaw/src/quads.ts canonicalIp) matches.
+    """
+    mapped = address.ipv4_mapped
+    return f"::ffff:{mapped}" if mapped is not None else address.compressed
+
+
 def _is_canonical_ipv6(value: str) -> bool:
-    """True only for the exact compressed lower-case spelling ipaddress emits."""
+    """True only for the exact spelling :func:`_ipv6_text` gives."""
     try:
-        return ipaddress.IPv6Address(value).compressed == value
+        return _ipv6_text(ipaddress.IPv6Address(value)) == value
     except ValueError:
         return False
 

@@ -239,6 +239,10 @@ export function canonicalIp(raw: string): string {
   const headGroups = halves.length === 2 ? head : groups;
   const full = halves.length === 2 ? [...headGroups, ...Array(missing).fill("0"), ...tail.map((g) => g)] : groups;
   const words = full.map((g) => parseInt(g, 16));
+  // IPv4-mapped (::ffff:a.b.c.d) is spelt dotted, RFC 5952 §5 — Python's _ipv6_text does the same (KI-339)
+  if (words.slice(0, 5).every((w) => w === 0) && words[5] === 0xffff) {
+    return `::ffff:${words[6] >> 8}.${words[6] & 0xff}.${words[7] >> 8}.${words[7] & 0xff}`;
+  }
   // RFC 5952: shorten the longest run of zero words (length ≥ 2), leftmost on ties
   let bestStart = -1, bestLen = 0;
   for (let i = 0; i < words.length; ) {
