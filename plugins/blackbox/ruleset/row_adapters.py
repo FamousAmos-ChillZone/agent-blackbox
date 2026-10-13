@@ -136,27 +136,7 @@ def _row_to_rule(row: Dict[str, Any], source: str = "public") -> Optional[tuple]
             "argShape": arg_shape,
         })
     if identifier.startswith("dep:"):
-        eco = extract_binding(row.get("packageEcosystem")).lower()
-        pkg = extract_binding(row.get("packageName")).lower()
-        ver = extract_binding(row.get("packageVersion"))
-        if not (eco and pkg and ver):
-            # Fall back to parsing the identifier: dep:{eco}:{name}@{version}
-            try:
-                _, rest = identifier.split(":", 1)
-                eco2, tail = rest.split(":", 1)
-                pkg2, ver2 = tail.rsplit("@", 1)
-                eco, pkg, ver = eco2.lower(), pkg2.lower(), ver2
-            except ValueError:
-                return None
-        key = threat_ids.dependency_key(eco, pkg, ver)
-        return ("dependency", key, {
-            **common,
-            "ecosystem": eco,
-            "packageName": pkg,
-            "packageVersion": ver,
-            "advisoryId": extract_binding(row.get("advisoryId")),
-            "kind": extract_binding(row.get("kind")) or None,
-        })
+        return _dependency_rule(row, identifier, common)
     if identifier.startswith("fileaccess:"):
         tool_name = extract_binding(row.get("toolName"))
         category = extract_binding(row.get("category"))
@@ -208,6 +188,46 @@ def _row_to_rule(row: Dict[str, Any], source: str = "public") -> Optional[tuple]
             rule["sourceId"] = source_id
         return ("ioc", identifier, rule)
     return None
+
+
+#: The source and tier a verified rule is served under when it may not block —
+#: the one non-blocking tier the detectors know. They mirror
+#: ``live.scope.FLAG_ONLY_SOURCE`` / ``AssetTier.FLAG`` (``live`` imports this
+#: module, so the values are restated here; a test pins them equal).
+FLAG_ONLY_SOURCE = "community"
+FLAG_TIER = "flag"
+
+
+def _dependency_rule(row: Dict[str, Any], identifier: str, common: Dict[str, Any]) -> Optional[tuple]:
+    """``("dependency", key, rule)`` for a ``dep:{eco}:{name}@{version}`` row, or None.
+
+    A verified rule without a ``kind`` is served flag-only (trust-and-threat-lab
+    R4, §03.4): the block gate stops every kind but ``vulnerability``, so an
+    absent kind would block a package that may only be vulnerable. Promoted
+    rows always carry ``kind`` (``row_builders`` refuses one without it)."""
+    eco = extract_binding(row.get("packageEcosystem")).lower()
+    pkg = extract_binding(row.get("packageName")).lower()
+    ver = extract_binding(row.get("packageVersion"))
+    if not (eco and pkg and ver):
+        # Fall back to parsing the identifier: dep:{eco}:{name}@{version}
+        try:
+            _, rest = identifier.split(":", 1)
+            eco2, tail = rest.split(":", 1)
+            pkg2, ver2 = tail.rsplit("@", 1)
+            eco, pkg, ver = eco2.lower(), pkg2.lower(), ver2
+        except ValueError:
+            return None
+    rule = {
+        **common,
+        "ecosystem": eco,
+        "packageName": pkg,
+        "packageVersion": ver,
+        "advisoryId": extract_binding(row.get("advisoryId")),
+        "kind": extract_binding(row.get("kind")) or None,
+    }
+    if rule["kind"] is None and rule["source"] == "public":
+        rule.update(source=FLAG_ONLY_SOURCE, asset_tier=FLAG_TIER)
+    return ("dependency", threat_ids.dependency_key(eco, pkg, ver), rule)
 
 
 _QUOTED_SKILL_NAME_RE = re.compile(r"^[\"'`]([^\"'`]+)[\"'`]")

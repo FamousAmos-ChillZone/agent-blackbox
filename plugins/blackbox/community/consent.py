@@ -1,21 +1,27 @@
-"""The sharing consent record (Refine R13, plan §13 data protection).
+"""Whether this machine may share with the community graph — the ONE gate
+every send path asks (Refine R13, revised 2026-10-12).
 
-Nothing leaves this machine for the community graph until its operator has
-read the reporter terms and recorded consent — opt-IN, default OFF, bound to
-the CONTENT of the terms (their sha256): when the terms change, the old
-consent no longer counts and sharing stops until the operator consents
-again. Withdrawal is as easy as granting (`blackbox report --withdraw-consent`)
-and it actually stops processing: the share gate refuses on the next call.
+Community sharing is ON BY DEFAULT with an easy opt-out (founder decision
+2026-10-12: "stop it from being opt-in, make it on by default"; it was
+opt-in, default off). Nothing sent is ever a prompt, command, path or file
+(see ``docs/REPORTER_TERMS.md``); the installer and the dashboard tell the
+operator that sharing is on and how to turn it off. Turning it off is one
+action (`blackbox report --withdraw-consent`, `--disable-sharing`, or the
+dashboard toggle) and it actually stops processing: the share gate refuses
+on the next call. Turning it back on records a fresh acceptance.
 
-The record is local, owner-readable, atomic (``$BLACKBOX_HOME/sharing_consent.json``),
-and is erased with the identity (`--erase-identity`).
+The record is local, owner-readable, atomic (``$BLACKBOX_HOME/sharing_consent.json``)
+and is erased with the identity (`--erase-identity`). No record means the
+default: sharing allowed. A record with ``withdrawn_at`` means the operator
+opted out, whatever terms version it names.
 
 Usage::
 
-    consent.in_force()                      # the gate's question
-    consent.record()                        # after the operator read the terms (CLI)
-    consent.withdraw()                      # stops sharing
-    consent.terms_text()                    # the terms the operator is asked to read
+    consent.in_force()                      # the gate's question: False only after an opt-out
+    consent.record()                        # opt back in (CLI `--consent`)
+    consent.for_settings(payload)           # a settings write that turns sharing on opts back in
+    consent.withdraw()                      # opt out: stops sharing
+    consent.terms_text()                    # the terms shown to the operator
 """
 
 from __future__ import annotations
@@ -28,7 +34,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 from ..kernel import constants
 
@@ -49,9 +55,6 @@ class SharingConsentRecord:
     terms_version: str
     accepted_at: str
     withdrawn_at: str = ""
-
-    def in_force_for(self, current_hash: str) -> bool:
-        return not self.withdrawn_at and self.terms_hash == current_hash
 
 
 def terms_text() -> str:
@@ -80,17 +83,17 @@ def _record_path() -> Path:
 def current() -> Optional[SharingConsentRecord]:
     try:
         data = json.loads(_record_path().read_text(encoding="utf-8"))
-        return SharingConsentRecord(terms_hash=str(data["terms_hash"]), terms_version=str(data.get("terms_version", "")),
+        return SharingConsentRecord(terms_hash=str(data.get("terms_hash", "")), terms_version=str(data.get("terms_version", "")),
                                     accepted_at=str(data.get("accepted_at", "")), withdrawn_at=str(data.get("withdrawn_at", "")))
-    except (OSError, ValueError, KeyError, TypeError):
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):   # a non-object JSON reads as no record
         return None
 
 
 def in_force() -> bool:
-    """True only with a record bound to the CURRENT terms and not withdrawn."""
+    """True unless the operator opted out (a withdrawn record). No record is the
+    default — sharing on. An unreadable record file reads as no record."""
     record = current()
-    text = terms_text()
-    return bool(text) and record is not None and record.in_force_for(terms_hash(text))
+    return record is None or not record.withdrawn_at
 
 
 def why_not() -> str:
@@ -102,18 +105,9 @@ def why_not() -> str:
     with :func:`in_force`: when that says yes, this says nothing."""
     if in_force():
         return ""
-    text = terms_text()
-    if not text:
-        return "the reporter terms are missing from this installation, so nothing can be consented to"
     entry = current()
-    if entry is None:
-        return "no sharing consent is recorded (`blackbox report --consent`)"
-    if entry.withdrawn_at:
-        return f"sharing consent was withdrawn on {entry.withdrawn_at[:10]} (`blackbox report --consent` to give it again)"
-    if entry.terms_hash != terms_hash(text):
-        return (f"the reporter terms changed since you consented to version {entry.terms_version} on {entry.accepted_at[:10]} "
-                f"(now version {terms_version(text)}); sharing stopped until you read and accept them (`blackbox report --consent`)")
-    return ""
+    day = entry.withdrawn_at[:10] if entry is not None else ""
+    return f"community sharing was turned off on {day} (`blackbox report --enable-sharing` or the dashboard toggle turns it back on)"
 
 
 def changes_section(text: Optional[str] = None) -> str:
@@ -128,36 +122,56 @@ def changes_section(text: Optional[str] = None) -> str:
 
 
 def record() -> Optional[SharingConsentRecord]:
-    """Record consent to the terms as they are now (None when there are no terms to consent to)."""
+    """Record acceptance of the terms as they are now — the opt-back-in after an
+    opt-out. Works without the terms file too (the record then names no version):
+    turning sharing back on must never depend on it. None when it could not be saved."""
     text = terms_text()
-    if not text:
-        return None
-    entry = SharingConsentRecord(terms_hash=terms_hash(text), terms_version=terms_version(text),
+    entry = SharingConsentRecord(terms_hash=terms_hash(text) if text else "", terms_version=terms_version(text) if text else "",
                                  accepted_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat())
-    _save(entry)
-    return entry
+    return entry if _save(entry) else None
+
+
+def for_settings(payload: Mapping[str, Any]) -> bool:
+    """The ``sharing_consent`` a settings write passes on: turning sharing ON
+    (``report: true`` in *payload*) is the operator's opt-back-in, so a
+    standing opt-out is replaced by a fresh acceptance first. The dashboard
+    toggle and `blackbox report --enable-sharing` both call this — one rule.
+
+        settings.write_settings(payload, sharing_consent=consent.for_settings(payload))
+    """
+    if payload.get("report") is True and not in_force():
+        record()
+    return in_force()
 
 
 def withdraw() -> bool:
-    """Mark the consent withdrawn (kept as the record that it existed); True when there was one in force."""
+    """Opt out: record the withdrawal (keeping any earlier acceptance as history).
+    True when sharing was allowed and the opt-out is now SAVED; False when it was
+    already off or the record could not be written (callers must say so: sharing
+    would otherwise continue). An opt-out on the default writes its own record."""
     entry = current()
-    if entry is None or entry.withdrawn_at:
+    if entry is not None and entry.withdrawn_at:
         return False
-    _save(SharingConsentRecord(entry.terms_hash, entry.terms_version, entry.accepted_at,
-                               withdrawn_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat()))
-    return True
+    text = terms_text()
+    base = entry or SharingConsentRecord(terms_hash=terms_hash(text) if text else "", terms_version=terms_version(text) if text else "",
+                                         accepted_at="")
+    return _save(SharingConsentRecord(base.terms_hash, base.terms_version, base.accepted_at,
+                                      withdrawn_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat()))
 
 
 def erase() -> bool:
-    """Delete the record outright (identity erasure)."""
-    try:
-        _record_path().unlink()
-        return True
-    except FileNotFoundError:
-        return False
+    """Identity erasure: drop the acceptance history and leave sharing OFF. An
+    erased identity must never restart sharing on its own (with no record the
+    default is ON), so the history is replaced by a bare opt-out; the operator
+    turns sharing back on deliberately. True when a record existed before."""
+    existed = _record_path().exists()
+    _save(SharingConsentRecord(terms_hash="", terms_version="", accepted_at="",
+                               withdrawn_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat()))
+    return existed
 
 
-def _save(entry: SharingConsentRecord) -> None:
+def _save(entry: SharingConsentRecord) -> bool:
+    """Write *entry* atomically (mode 600); True when it is on disk."""
     path = _record_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -165,5 +179,7 @@ def _save(entry: SharingConsentRecord) -> None:
         tmp.write_text(json.dumps(entry.__dict__), encoding="utf-8")
         os.chmod(tmp, 0o600)
         os.replace(tmp, path)
-    except OSError as exc:   # a consent that could not be written is no consent: the gate stays closed
-        logger.warning("blackbox: could not save the sharing consent record (%s)", exc)
+        return True
+    except OSError as exc:   # an opt-out that could not be written must be loud: sharing would continue
+        logger.warning("blackbox: could not save the community sharing choice (%s)", exc)
+        return False

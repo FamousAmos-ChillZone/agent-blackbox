@@ -27,6 +27,7 @@ from plugins.blackbox.curate import intake, verbs
 from plugins.blackbox.kernel import health, signing
 from plugins.blackbox.kernel.signing import key_manifest as km
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind
+from plugins.blackbox.kernel.signing.trust_anchors import RootPins
 from plugins.blackbox.ruleset import compiler
 from test_blackbox_curate import FakeNode, _ctx, curators  # noqa: F401 - fixture
 from test_blackbox_curator_view import _curator_row
@@ -73,8 +74,7 @@ def test_every_new_operator_state_has_its_class_and_a_what_to_do(over, klass, ne
 def test_quiet_curators_and_an_older_floor_are_not_alarms():
     assert health.operator_health(_inputs(curators_last_day="2026-09-25")) == []       # 7 days: fine
     assert health.operator_health(_inputs(min_reader_version="1.0.9")) == []            # my 1.1.0 is newer
-    assert health.operator_health(_inputs(curator_trusted=False, curators_last_day="2020-01-01")) != []   # untrusted: its own INFO only
-    assert not [i for i in health.operator_health(_inputs(curator_trusted=False, curators_last_day="2020-01-01")) if "published" in i.message]
+    assert health.operator_health(_inputs(curator_trusted=False, curators_last_day="2020-01-01")) == []   # untrusted: nothing to say
 
 
 # ------------------------------------------------------------------ the curator set
@@ -142,8 +142,8 @@ def test_min_reader_version_is_optional_and_leaves_old_payloads_unchanged(curato
     assert newer.to_payload()["minReaderVersion"] == "1.2.0" and newer.content_hash() != manifest.content_hash()
     root = Ed25519PrivateKey.generate()
     parsed = km.verify_manifest(km.sign_manifest(newer, root), environment=manifest.environment, graph=manifest.graph,
-                                root_keys={signing.public_key_hex(root)})
-    assert parsed is not None and parsed.min_reader_version == "1.2.0"
+                                roots=RootPins.unbound([signing.public_key_hex(root)]))
+    assert parsed is not None and parsed.manifest.min_reader_version == "1.2.0"
 
 
 def test_gather_fills_the_new_inputs_from_the_read_and_the_ruleset(curators):

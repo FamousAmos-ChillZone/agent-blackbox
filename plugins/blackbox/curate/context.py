@@ -13,36 +13,134 @@ verified graph; the COMMUNITY one publishes everything in the community graph
 and may only ever cause FLAG. Which one is decided once, in
 :func:`acting_authority`, and every verb routes by it.
 
-Pattern: a Facade over the kernel + community pieces the verbs use.
+It is also the SIGNING CHOKE POINT: :meth:`CurateContext.sign` and
+:meth:`CurateContext.cosign` are the only places code under ``curate/`` makes a
+signature, and each signature appends one row to the node's
+:class:`.watch.SigningLog` (what the signature reconciler compares published
+statements against). ``tests/plugins/test_blackbox_curate_signing_path.py``
+fails on any other signing call under ``curate/``.
+
+Pattern: a Facade over the kernel + community pieces the verbs use; the
+signing choke point takes a Command-style draft (:data:`Draft`) naming what to sign.
 
 Usage::
 
     ctx = build_context(compiled_ruleset, authority="community", interest=["author:<key>"])
     ctx.manifest                      # the acting authority's key manifest (None: publish one first)
     ctx.graph_for(CuratorStatement.COUNTED_AUTHORS)   # where this authority publishes that kind
+    envelope = ctx.sign(PromotionDraft(payload, sequence=3), curator_key)   # first signature, logged
+    envelope = ctx.cosign(envelope, my_key)                                  # one more, logged
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Callable, Iterable, Optional
+from dataclasses import dataclass, field
+from typing import Any, Callable, Iterable, Mapping, Optional, Union
 
-from .. import community
-from ..kernel import constants
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from .. import community, killlist
+from ..kernel import constants, signing
 from ..kernel.config import BlackboxConfig, load_blackbox_config
 from ..kernel.dkg_client import DkgClient
-from ..kernel.signing import trust_anchors
+from ..kernel.signing import key_manifest, trust_anchors
 from ..kernel.signing.authority import VERIFIED_GRAPH, Authority, home_graph
 from ..kernel.signing.key_manifest import KeyManifest
 from ..kernel.signing.statement_order import CuratorStatement
 from . import keys
+from .watch import SigningLog
 
 #: cfg -> the compiled Ruleset (injected by cli.py).
 CompiledRuleset = Callable[[Any], Any]
 
 
+# -- what the choke point may sign (one draft per statement family) -----------
+
+
+@dataclass(frozen=True)
+class PromotionDraft:
+    """A promotion payload (``promotion.payload_for``), bound to the acting
+    authority's manifest graph at *sequence*."""
+
+    payload: Mapping[str, str]
+    sequence: int
+
+
+@dataclass(frozen=True)
+class CorrectionDraft:
+    """A correction payload (``publishing.row_builders.correction_payload``) at
+    *sequence*, bound like a promotion to the acting authority's manifest graph
+    (the reader checks it with ``has_quorum`` against that manifest)."""
+
+    payload: Mapping[str, str]
+    sequence: int
+
+
+@dataclass(frozen=True)
+class StatementDraft:
+    """A curator statement (verdict, notice, counted author, pause …) for *graph*."""
+
+    kind: CuratorStatement
+    identifier: str
+    fields: Mapping[str, str]
+    sequence: int
+    graph: str
+
+
+@dataclass(frozen=True)
+class KillListDraft:
+    """A kill list (its version is the sequence) for *graph*."""
+
+    kill_list: killlist.KillList
+    graph: str
+
+
+@dataclass(frozen=True)
+class ManifestDraft:
+    """A key manifest — signed by a ROOT key, so it needs no trusted manifest yet."""
+
+    manifest: KeyManifest
+
+
+#: The statement type of a signed lab-evidence envelope (proposal §03.5, F-024).
+LAB_EVIDENCE_STATEMENT = "lab-evidence"
+
+
+@dataclass(frozen=True)
+class EvidenceDraft:
+    """Lab evidence (``lab.controller.evidence_payload``) — signed by the LAB
+    CONTROLLER's own key, never a curator key, so it needs no trusted manifest.
+    The envelope is bound to this node's environment and to no graph: lab
+    evidence is kept on the curator node, never published."""
+
+    payload: Mapping[str, str]
+
+
+#: The statement type of a signed dispute queue item (proposal §03.3, SVC3) —
+#: distinct from a reporting node's community ``blackbox.dispute``.
+DISPUTE_INTAKE_STATEMENT = "blackbox.dispute-intake"
+
+
+@dataclass(frozen=True)
+class DisputeDraft:
+    """A dispute a listed party filed on the public page (``intake.DisputeIntake``),
+    signed by this node's CURATOR key so the other curator can tell the queue
+    item came from a curator's intake. Bound to this node's environment and to
+    no graph: a dispute item travels between curators, it is never published."""
+
+    payload: Mapping[str, str]
+
+
+Draft = Union[PromotionDraft, CorrectionDraft, StatementDraft, KillListDraft, ManifestDraft, EvidenceDraft, DisputeDraft]
+#: The statement type of a signed correction (trust-and-threat-lab P5; a reduction, K2).
+CORRECTION_STATEMENT = "blackbox.correction"
+
+
 @dataclass(frozen=True)
 class CurateContext:
+    """*signing_log* — where :meth:`sign` / :meth:`cosign` record; None = the
+    node's own ``<curate home>/signing_log.jsonl``, resolved at signing time."""
+
     cfg: BlackboxConfig
     client: DkgClient
     environment: str
@@ -50,6 +148,7 @@ class CurateContext:
     sandbox: bool
     compiled: Optional[Any]
     authority: Authority = Authority.VERIFIED
+    signing_log: Optional[SigningLog] = field(default=None, compare=False)
 
     @property
     def manifest(self) -> Optional[KeyManifest]:
@@ -85,6 +184,53 @@ class CurateContext:
         if home is None:
             return None
         return self.verified_graph if home == VERIFIED_GRAPH else self.community_graph
+
+    def sign(self, draft: Draft, key: Ed25519PrivateKey) -> signing.SignedEnvelope:
+        """The FIRST signature on *draft* by *key*, recorded in the signing log.
+
+        Promotions, corrections, statements and kill lists are bound to the acting
+        authority's manifest (environment, chain, root epoch); manifests
+        (root-signed), lab evidence (lab-controller-signed) and dispute queue
+        items (kept between curators, never published) need none. Raises
+        ``ValueError`` when there is no such manifest, or when the draft is
+        not a valid statement of its kind (the domain module's own checks).
+        """
+        if isinstance(draft, ManifestDraft):
+            envelope = key_manifest.sign_manifest(draft.manifest, key)
+        elif isinstance(draft, EvidenceDraft):
+            envelope = signing.sign(key, statement_type=LAB_EVIDENCE_STATEMENT, environment=self.environment,
+                                    graph="", payload=dict(draft.payload))
+        elif isinstance(draft, DisputeDraft):
+            envelope = signing.sign(key, statement_type=DISPUTE_INTAKE_STATEMENT, environment=self.environment,
+                                    graph="", payload=dict(draft.payload))
+        elif self.manifest is None:
+            raise ValueError(f"the {self.authority.value} authority has no trusted key manifest yet; publish one first")
+        elif isinstance(draft, (PromotionDraft, CorrectionDraft)):
+            manifest = self.manifest
+            statement_type = CuratorStatement.PROMOTION.value if isinstance(draft, PromotionDraft) else CORRECTION_STATEMENT
+            envelope = signing.sign(key, statement_type=statement_type,
+                                    environment=manifest.environment, graph=manifest.graph,
+                                    payload=dict(draft.payload), chain=manifest.chain,
+                                    root_epoch=manifest.root_epoch, sequence=draft.sequence)
+        elif isinstance(draft, StatementDraft):
+            envelope = community.sign_curator_statement(draft.kind, draft.identifier, sequence=draft.sequence,
+                                                         fields=draft.fields, key=key, manifest=self.manifest,
+                                                         graph=draft.graph)
+        else:
+            envelope = killlist.sign_kill_list(draft.kill_list, key, self.manifest, draft.graph)
+        self._signing_log().record(envelope, key, action="sign")
+        return envelope
+
+    def cosign(self, envelope: signing.SignedEnvelope, key: Ed25519PrivateKey) -> signing.SignedEnvelope:
+        """*envelope* with *key*'s signature added, recorded in the signing log.
+        Raises ``ValueError`` as ``signing.cosign`` does (already signed, too
+        many signatures, envelope too large) — nothing is logged then."""
+        cosigned = signing.cosign(envelope, key)
+        self._signing_log().record(cosigned, key, action="cosign")
+        return cosigned
+
+    def _signing_log(self) -> SigningLog:
+        return self.signing_log if self.signing_log is not None else SigningLog()
 
 
 def acting_authority(cfg: BlackboxConfig, environment: str, view: community.CuratorView,
@@ -128,8 +274,15 @@ def build_context(compiled_ruleset: Optional[CompiledRuleset], *, authority: Opt
                          sandbox=is_sandbox(acting, cfg, environment), compiled=compiled, authority=acting)
 
 
-def verified_identifiers(compiled: Any) -> set:
-    """Identifiers the verified tier already lists (the delta view's "already verified")."""
+def verified_identifiers(compiled: Any, among: Iterable[str]) -> set:
+    """Which of *among* the verified tier already lists (the delta view's "already
+    verified"). Asked for a known set — the community store's identifiers, a
+    read's reports — because the verified tier is looked up live, never listed."""
     if compiled is None:
         return set()
-    return {str(rule.get("identifier") or "") for _category, rule in compiled.iter_rules() if rule.get("source") == "public"}
+    subset = getattr(compiled, "verified_subset", None)
+    if callable(subset):
+        return set(subset(among))
+    wanted = {str(identifier) for identifier in among}   # a plain compiled object: scan its public rules
+    return {str(rule.get("identifier") or "") for _category, rule in compiled.iter_rules()
+            if rule.get("source") == "public" and str(rule.get("identifier") or "") in wanted}

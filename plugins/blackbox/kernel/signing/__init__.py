@@ -11,7 +11,13 @@ and ``signing.sign(...)`` / ``signing.verify(...)``:
   :func:`canonical_text` / :func:`is_canonical` (the one text a statement is written as).
 * :mod:`.key_manifest` — the curator key manifest (Refine R7a): which keys may
   sign for an environment, the threshold, the pinned promotion author, the
-  legacy-corpus pin. Imported as ``signing.key_manifest``.
+  legacy-corpus pin. Imported as ``signing.key_manifest``; its verdict
+  :class:`ManifestVerdict` (``freeze_only``: a pinned root at another epoch).
+* :mod:`.graph_migration` — the root-signed graph migration (the authority
+  names a successor graph): imported as ``signing.graph_migration``; its
+  verdict :class:`MigrationVerdict` (``freeze_only`` as for a manifest).
+* :mod:`.trust_anchors` — which roots are trusted: :class:`RootPins`
+  (root epoch -> root keys per network; the sandbox override when unpinned).
 * :mod:`.statement_order` — curator statement types and which statement about
   a threat is current (per-threat sequence; terminal statements dominate).
 """
@@ -33,12 +39,18 @@ from .envelope import (
     verify,
 )
 
-from . import authority, key_manifest, statement_order, trust_anchors
+from . import authority, graph_migration, key_manifest, statement_order, trust_anchors
+from .graph_migration import MigrationVerdict
+from .key_manifest import ManifestVerdict
+from .trust_anchors import RootPins
 
 __all__ = [
     "ENVELOPE_VERSION",
     "MAX_ENVELOPE_CHARS",
     "MAX_SIGNATURES",
+    "ManifestVerdict",
+    "MigrationVerdict",
+    "RootPins",
     "Signature",
     "SignedEnvelope",
     "authority",
@@ -46,6 +58,7 @@ __all__ = [
     "content_id",
     "cosign",
     "is_canonical",
+    "graph_migration",
     "key_manifest",
     "statement_order",
     "trust_anchors",

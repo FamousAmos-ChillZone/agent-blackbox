@@ -30,7 +30,7 @@ def fixture():
     node = SemanticNode()
     # Description-only evidence deliberately has no regex: semantic recall must not depend on compilation.
     node.add(SUBJECT, 'urn:defender:InjectionSignal', {SCHEMA + 'description': DESCRIPTION})
-    cfg = config.BlackboxConfig(context_graph_id=CG, detection_backend='dkg', auto_attach=False, discover=False,
+    cfg = config.BlackboxConfig(context_graph_id=CG, community_graph_id='', report=False, detection_backend='dkg', auto_attach=False, discover=False,
         semantic=settings.SemanticConfig(enabled=True, index_id=INDEX, model='local-test'))
     return cfg, node
 
@@ -148,7 +148,7 @@ def test_worker_inherits_profile_a_b_a_and_advisory_cannot_block_or_share(tmp_pa
 def test_hook_schedules_semantic_even_without_deterministic_findings(monkeypatch):
     cfg,_=fixture(); hooks=load_blackbox('guard.hooks'); captured=[]
     monkeypatch.setattr(hooks,'_config',lambda:cfg)
-    monkeypatch.setattr(hooks,'_detection_rules',lambda *_: (load_blackbox('ruleset').Ruleset(), {}))
+    monkeypatch.setattr(hooks.graph_rules,'detection_rules',lambda *_: (load_blackbox('ruleset').Ruleset(), {}))
     monkeypatch.setattr(hooks.reporting,'_report_and_audit',lambda *_:None)
     monkeypatch.setattr(worker,'schedule',lambda c,s,d:captured.extend(s))
     hooks.on_pre_api_request(user_message='Summarize this document', request_messages=[

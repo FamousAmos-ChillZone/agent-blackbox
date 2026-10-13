@@ -49,7 +49,7 @@ def read_live_pool(ctx: CurateContext) -> LivePool:
     if own is None or own.manifest is None:
         return LivePool(unavailable="no community authority is trusted on this node for this graph")
     confirmed = [identifier for identifier, record in own.verdicts.items() if record.kind is CuratorStatement.CONFIRMATION]
-    already = verified_identifiers(ctx.compiled)
+    already = verified_identifiers(ctx.compiled, confirmed)
     standing = {identifier for identifier in confirmed
                 if read.curator.verdict(identifier) is CuratorStatement.CONFIRMATION and identifier not in already}
     reports = [report for report in read.reports if report.identifier in standing]

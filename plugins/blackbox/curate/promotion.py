@@ -12,8 +12,8 @@ the checklist's scope reason allows ``*``.
 Usage::
 
     payload = promotion.payload_for(identifier, severity="critical", advisory="MAL-2026-1", report_subjects=[...], provenance=ProvenanceMap())
-    envelope = promotion.sign(payload, key, manifest)        # first key; signing.cosign adds the second
-    quads = promotion.verified_rule_quads(payload, envelope)  # -> node_routes.publish_to_verified_memory
+    envelope = ctx.sign(PromotionDraft(payload, sequence=n), key)   # first key (curate.context); ctx.cosign adds the second
+    quads = publishing.verified_rule_quads(payload, envelope)  # -> node_routes.publish_to_verified_memory
 """
 
 from __future__ import annotations
@@ -25,11 +25,7 @@ import threading
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
-from ..kernel import constants, rdf_terms, signing, threat_ids
-from ..kernel.signing.key_manifest import KeyManifest
-from ..kernel.signing.statement_order import CuratorStatement
+from ..kernel import constants, threat_ids
 from . import keys
 
 _PROVENANCE_FILE = "provenance.jsonl"
@@ -105,35 +101,6 @@ def validate_payload(payload: Mapping[str, str]) -> None:
 def whole_package(payload: Mapping[str, str]) -> bool:
     """A name-level promotion (``@*`` — every version): the consent summary says so in words."""
     return payload.get("packageVersion") == "*"
-
-
-def sign(payload: Mapping[str, str], key: Ed25519PrivateKey, manifest: KeyManifest, *, sequence: int) -> signing.SignedEnvelope:
-    """The first curator signature on a promotion (co-sign with signing.cosign)."""
-    return signing.sign(key, statement_type=CuratorStatement.PROMOTION.value, environment=manifest.environment,
-                        graph=manifest.graph, payload=dict(payload), chain=manifest.chain,
-                        root_epoch=manifest.root_epoch, sequence=sequence)
-
-
-def verified_rule_quads(payload: Mapping[str, str], envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
-    """The verified-graph quads the existing reader compiles into a BLOCKING rule."""
-    subject = threat_ids.threat_uri(payload["identifier"])
-    literals = (
-        (constants.IDENTIFIER_PRED, payload["identifier"]),
-        (constants.SEVERITY_PRED, payload["severity"]),
-        (constants.KIND_PRED, payload["kind"]),
-        (constants.PACKAGE_ECOSYSTEM_PRED, payload["ecosystem"]),
-        (constants.PACKAGE_NAME_PRED, payload["packageName"]),
-        (constants.PACKAGE_VERSION_PRED, payload["packageVersion"]),
-        (constants.SCHEMA_NAME_PRED, payload["name"]),
-        (constants.CURATED_PRED, "true"),
-        (constants.SOURCE_OBSERVATION_PROVENANCE_JSON_PRED, json.dumps(payload["provenance"].split(",") if payload["provenance"] else [])),
-        (constants.SIGNED_STATEMENT_PRED, envelope.to_text()),
-    )
-    quads = [rdf_terms.make_quad(subject, constants.RDF_TYPE, rdf_terms.iri(constants.DEFENDER_DEPENDENCY_TYPE_IRI))]
-    quads += [rdf_terms.make_quad(subject, predicate, rdf_terms.literal(value)) for predicate, value in literals if value]
-    if payload.get("advisoryId"):
-        quads.append(rdf_terms.make_quad(subject, constants.SCHEMA_IDENTIFIER_PRED, rdf_terms.literal(payload["advisoryId"])))
-    return quads
 
 
 def asset_name(identifier: str) -> str:

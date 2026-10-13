@@ -1,7 +1,8 @@
 """The private working-memory audit record kept in the local DKG node.
 
 Redacted-but-local evidence stays in the node's PRIVATE working memory — never
-shared to SWM. Best-effort; failures are swallowed.
+shared to SWM — in a graph this node owns (:mod:`.local_graph`). Best-effort; a
+failed write is logged as a warning, never swallowed silently.
 """
 
 from __future__ import annotations
@@ -56,5 +57,5 @@ def write_private_audit_ka(client: Any, cg_id: str, event: str, finding: Dict[st
         ]
         # Private: create+write+seal in WM, do NOT share to SWM.
         client.write_private_knowledge_asset(cg_id, subj.rsplit(":", 1)[-1], q)
-    except Exception as exc:  # pragma: no cover - fail open
-        logger.debug("blackbox: private audit KA write failed: %s", exc)
+    except Exception as exc:  # pragma: no cover - fail open, but never silently (the Local tab depends on it)
+        logger.warning("blackbox: private audit record not written to %s: %s", cg_id, exc)

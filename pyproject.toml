@@ -620,7 +620,12 @@ gateway = ["assets/**/*"]
 # wheel contains adapters but discovery finds zero bundled plugins.
 # Blackbox vendors the Public Suffix List (R9 allowlist keys); without this a sealed wheel
 # ships the parser with no data and registrable-domain matching silently widens.
-plugins = ["**/plugin.yaml", "**/plugin.yml", "blackbox/kernel/public_suffix/*.dat"]
+# It also ships the legacy asset list (ruleset/legacy_assets.txt); without it every install
+# with a trusted manifest refuses the list and raises a SECURITY alarm.
+# And the curator's never-promote CDN/cloud ranges (curate/service/never_promote_ranges.json);
+# without it the rule cannot answer and no bare IP is ever promoted.
+plugins = ["**/plugin.yaml", "**/plugin.yml", "blackbox/kernel/public_suffix/*.dat", "blackbox/ruleset/legacy_assets.txt",
+           "blackbox/curate/service/never_promote_ranges.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

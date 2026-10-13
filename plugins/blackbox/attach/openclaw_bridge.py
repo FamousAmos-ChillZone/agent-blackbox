@@ -179,8 +179,8 @@ def _desired_entry(cfg: Dict[str, Any]) -> Dict[str, Any]:
             # (consent is read from blackboxHome, so one consent record covers both runtimes).
             "communityGraphId": cfg.get("community_graph_id", ""),
             "communityGraphPeerId": cfg.get("community_graph_peer_id", ""),
-            "report": bool(cfg.get("report", False)),
-            "dailyReportLimit": int(cfg.get("daily_report_limit") or 20),
+            "report": bool(cfg.get("report", True)),   # on by default (2026-10-12); the opt-out record still gates sends
+            "dailyReportLimit": int(cfg.get("daily_report_limit") or constants.DEFAULT_DAILY_REPORT_LIMIT),
             "reportMinSeverity": cfg.get("report_min_severity", "high"),
         },
         "hooks": {"allowConversationAccess": True},
@@ -331,7 +331,7 @@ def load_blackbox_config_snapshot() -> Dict[str, Any]:
             "blackbox_home": str(constants.blackbox_home()),
             "community_graph_id": constants.DEFAULT_COMMUNITY_GRAPH_ID,
             "community_graph_peer_id": constants.DEFAULT_COMMUNITY_GRAPH_PEER_ID,
-            "report": False,
+            "report": False,   # the config could not be read: send nothing rather than guess
             "daily_report_limit": constants.DEFAULT_DAILY_REPORT_LIMIT,
             "report_min_severity": "high",
         }

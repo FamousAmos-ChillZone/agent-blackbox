@@ -20,7 +20,7 @@ from .. import community
 from ..kernel import threat_ids
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient
-from . import compiler
+from . import compiler, row_adapters
 
 logger = logging.getLogger(__name__)
 
@@ -189,11 +189,18 @@ def reapply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: Blackbo
     the ruleset itself as the first-seen history and last-good fallback.
     """
     for table in (rs.dependency, rs.ioc):
-        for key in [k for k, rule in table.items() if rule.get("source") == "community"]:
+        for key in [k for k, rule in table.items() if _is_community_entry(rule)]:
             del table[key]
     rs.skill = [rule for rule in rs.skill if rule.get("source") != "community"]
     apply_community_tier(rs, client, cfg, rs)
     rs._graph_entries_cache.clear()
+
+
+def _is_community_entry(rule: Dict[str, Any]) -> bool:
+    """True for a rule the community tier materialized — NOT a verified rule
+    served flag-only (R4: it shares the ``community`` source but carries
+    ``asset_tier: flag``, and only the next full refresh may drop it)."""
+    return rule.get("source") == "community" and rule.get("asset_tier") != row_adapters.FLAG_TIER
 
 
 def _stage_fields(rule: community.CommunityRule, read: community.CommunityRead) -> Dict[str, str]:
@@ -288,3 +295,38 @@ def _materialize_skill(rs: compiler.Ruleset, identifier: str, rule: Dict[str, An
     name, _, version = identifier[len("skill:"):].rpartition("@")
     if name and version:
         rs.skill.append({**rule, "skillName": name, "skillVersion": version})
+
+
+# ---------------------------------------------------------------------------
+# The community beat the refresh cycle runs after the tier is applied (moved
+# from refresh_cycle, which sat at the file-size alarm): digests, keep-alive,
+# shadow metrics. Each is fail-open on its own.
+# ---------------------------------------------------------------------------
+
+
+def record_shadow_metrics(rs: compiler.Ruleset, config: BlackboxConfig) -> None:
+    """R15: in the shadow phase every refresh logs the §12 numbers it computed. Fail-open."""
+    if not getattr(config, "community_shadow", False):
+        return
+    try:
+        community.shadow.write_snapshot(community.shadow.build_snapshot(rs, time.time()))
+    except Exception as exc:  # pragma: no cover - never degrade the refresh
+        logger.debug("blackbox: shadow metrics skipped this refresh: %s", exc)
+
+
+def keep_reports_alive(client: DkgClient, config: BlackboxConfig) -> None:
+    """R5: the refresh cycle is the publish step for keep-alive — this node's
+    own live reports get this epoch's copy here (when sharing is on). Fail-open."""
+    try:
+        community.publish_due_copies(client, config)
+    except Exception as exc:  # pragma: no cover - never degrade the refresh
+        logger.warning("blackbox: keep-alive copies not published this refresh: %s", exc)
+
+
+def publish_digests(client: DkgClient, config: BlackboxConfig) -> None:
+    """R2b: the refresh cycle is the one periodic beat, so a completed week's
+    sighting digest leaves here (when sharing is on). Fail-open."""
+    try:
+        community.publish_due_digests(client, config)
+    except Exception as exc:  # pragma: no cover - never degrade the refresh
+        logger.warning("blackbox: sighting digest not published this refresh: %s", exc)

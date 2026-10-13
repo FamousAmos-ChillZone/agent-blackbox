@@ -1,0 +1,14 @@
+# The clean root filesystem every level-4 microVM boots a fresh copy of (Firecracker, KVM host).
+# Never run as a container: build-rootfs.sh exports it into an ext4 image and prints the pinned
+# --image. Pin the base image by digest when deploying (FROM debian:bookworm-slim@sha256:…).
+# It carries only the guest modules: no plugin code, no keys, no credentials — the only secrets
+# inside a microVM are the inert bait the guest plants at boot (threat_lab/bait.py).
+FROM debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends nodejs npm python3 python3-pip strace ca-certificates util-linux \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --uid 1000 --create-home --home-dir /home/lab --shell /bin/sh lab \
+ && printf '[global]\nbreak-system-packages = true\n' > /etc/pip.conf
+COPY threat_lab/__init__.py threat_lab/identifiers.py threat_lab/bait.py threat_lab/guest.py /opt/threat-lab/threat_lab/
+COPY microvm/init.sh /opt/threat-lab/init.sh
+RUN chmod 0755 /opt/threat-lab/init.sh

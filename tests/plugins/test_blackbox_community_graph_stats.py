@@ -58,7 +58,8 @@ def test_most_reported_ranks_by_distinct_signers_and_keeps_max_severity():
     reports = [_report("ioc:a", "k1", severity="low"), _report("ioc:a", "k2", severity="critical"),
                _report("ioc:b", "k1"), _report("ioc:b", "k1")]
     board = graph_stats.most_reported_threats(reports, limit=5)
-    assert board[0] == {"identifier": "ioc:a", "reporters": 2, "severity": "critical"}
+    assert board[0] == {"identifier": "ioc:a", "reporters": 2, "severity": "critical",
+                        "matched_by": [], "blackbox_versions": []}   # pre-§03.6 reports state neither
     assert board[1]["reporters"] == 1
 
 

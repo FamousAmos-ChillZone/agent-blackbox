@@ -141,9 +141,10 @@ def test_the_reader_holds_back_a_flood_after_the_baseline():
     flooder = Reporter("0x9489f322ab5d949bca01102253e8597795d2be9e")
     base = signed_row("ioc:domain:base.example", flooder)
     read_verified_reports(_Graph([base]), CFG)                        # baseline read
-    flood = [signed_row(f"ioc:domain:f{i}.example", flooder) for i in range(60)]
+    from plugins.blackbox.community.statements.author_budget import MAX_STATEMENTS_PER_AUTHOR_PER_DAY as budget
+    flood = [signed_row(f"ioc:domain:f{i}.example", flooder) for i in range(budget + 10)]
     read = read_verified_reports(_Graph([base, *flood]), CFG)
-    assert read.held_back == 10 and len(read.reports) == 51
+    assert read.held_back == 10 and len(read.reports) == budget + 1
 
 
 # ------------------------------------------------------------------ pending tombstones

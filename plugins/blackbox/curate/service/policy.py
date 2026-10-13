@@ -156,7 +156,7 @@ _RULES: Dict[Action, Callable[[str, Facts], Tuple[bool, str]]] = {
     Action.STRIKE: _never("a strike is an accusation of bad faith"),
     Action.GRANT_PARTNER: _never("a partner grant is a relationship, not a computation"),
     Action.PAUSE: _never("the pause is an emergency brake"),
-    Action.ROOT: _never("the root key is offline and a person's"),
+    Action.ROOT: _never("the root key is a person's, unlocked only in the key console"),
     Action.OTHER: _never("not a routine action"),
 }
 
@@ -206,7 +206,7 @@ POLICY_ROWS: Tuple[Tuple[str, str, str], ...] = (
     ("Reject a threat; record a strike", "A PERSON", "an accusation of bad faith"),
     ("Grant PARTNER to an organisation; collapse several keys into one cluster", "A PERSON", "a relationship or a judgement, not a computation"),
     ("Pause intake", "A PERSON", "an emergency brake"),
-    ("Anything involving the root key", "A PERSON, offline", "it is the root"),
+    ("Anything involving the root key", "A PERSON, in the key console with the passphrase and second factor", "it is the root"),
 )
 
 

@@ -71,8 +71,15 @@ def graph_tier_item(item: Mapping[str, Any], *, community: bool) -> Dict[str, An
             "disputed": safe_text(item.get("disputed"), 4),
             # R5: "no" = the network copies expired and this node keeps the threat locally for a while.
             "networkLive": safe_text(item.get("networkLive") or "yes", 3),
+            # threat profiles: what the reports say the threat goes after and what happened (closed words).
+            "profile": {key: safe_text(item.get(key), 64) for key in _PROFILE_KEYS if item.get(key)},
         })
     return out
+
+
+#: The threat-profile fields a community rule carries (community.sighting.vocab), shown as-is.
+_PROFILE_KEYS = ("threatGoal", "resourceAtRisk", "attackTechnique", "outcome", "agentAction", "agentTool",
+                 "verifiedSubject")
 
 
 def sanitized_ledger(limit: int = 50) -> List[Dict[str, Any]]:

@@ -1,11 +1,9 @@
 """Turning community sharing on and off from the command line (KI-299).
 
-Consent and the sharing switch are separate on purpose (unbundled consent):
-`blackbox report --consent` records the opt-in; sharing then runs only with
-`report: true`. Before this, the second step had no command — only the
-dashboard toggle or a hand edit of config.yaml — and the consent message
-("(`report: true` in the config)") read like a statement, not an instruction
-(fresh installs D/E, bench swm21, 2026-10-07).
+Sharing is ON by default (2026-10-12). `--disable-sharing` sets `report: false`;
+`--enable-sharing` turns it back on and, after an opt-out
+(`--withdraw-consent`), is itself the opt-back-in. `--consent` records an
+acceptance and says plainly whether the `report` switch is on.
 """
 
 from __future__ import annotations
@@ -32,12 +30,13 @@ def test_enable_sharing_turns_report_on_when_consent_is_in_force(real_consent, c
     assert "sharing is on" in capsys.readouterr().out.lower()
 
 
-def test_enable_sharing_without_consent_is_refused_and_says_how(real_consent, capsys):
+def test_enable_sharing_after_an_opt_out_opts_back_in(real_consent, capsys):
+    real_consent.withdraw()
+
     code = report_command.cmd_report(_parse("--enable-sharing"))
 
-    out = capsys.readouterr().out
-    assert code == 1 and load_blackbox_config().report is False
-    assert "blackbox report --consent" in out
+    assert code == 0 and load_blackbox_config().report is True and real_consent.in_force()
+    assert "sharing is on" in capsys.readouterr().out.lower()
 
 
 def test_disable_sharing_turns_report_off(real_consent):
@@ -50,6 +49,9 @@ def test_disable_sharing_turns_report_off(real_consent):
 
 
 def test_consent_says_plainly_that_sharing_is_still_off_and_how_to_turn_it_on(real_consent, capsys):
+    report_command.cmd_report(_parse("--disable-sharing"))
+    capsys.readouterr()
+
     code = report_rights.record_consent()
 
     out = capsys.readouterr().out
