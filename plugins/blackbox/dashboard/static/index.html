@@ -4579,6 +4579,9 @@
   // layout: a per-session timeline chain sprawled into long tails once an agent
   // ran many calls (2026-10-12).
   var LOCAL_LEAVES_PER_TYPE = 40;
+  // A threat seen more than once branches into one bubble per sighting (type → threat → each
+  // time it happened), each opening that exact event. Capped so a noisy threat stays readable.
+  var LOCAL_SIGHTINGS_PER_THREAT = 12;
   function buildLocalGraphData(data) {
     var nodes = [], links = [];
     var sessions = (data && data.sessions) || [];
@@ -4593,8 +4596,9 @@
           // only in the title, so MetaMask and Phantom must not fold into one bubble.
           var key = t.identifier ? t.identifier + "|" + (t.title || "") : ((t.title || "threat") + ":" + (t.ts || 0));
           var item = byId[key];
-          if (!item) { item = byId[key] = { t: t, s: s, ev: ev, count: 0, first: t.ts || 0 }; order.push(key); }
+          if (!item) { item = byId[key] = { t: t, s: s, ev: ev, count: 0, first: t.ts || 0, all: [] }; order.push(key); }
           item.count += 1;
+          item.all.push({ t: t, s: s, ev: ev });   // each time it was seen: its own bubble
           if (t.ts && (!item.first || t.ts < item.first)) item.first = t.ts;
           if ((t.ts || 0) >= (item.t.ts || 0)) { item.t = t; item.s = s; item.ev = ev; }   // keep the newest sighting
         });
@@ -4641,6 +4645,7 @@
           sightings: it.count, profile: t.profile || {}, finding: finding, val: 5
         });
         links.push({ source: hubId + ":" + i, target: hubId, kind: "leaf" });
+        if (it.count > 1) addSightingBubbles(nodes, links, hubId + ":" + i, it, ck, meta);
       });
       if (items.length > LOCAL_LEAVES_PER_TYPE) {
         nodes.push({ id: hubId + ":more", kind: "more", label: "+" + (items.length - LOCAL_LEAVES_PER_TYPE) + " more",
@@ -4649,6 +4654,27 @@
       }
     });
     return { nodes: nodes, links: links };
+  }
+
+  function addSightingBubbles(nodes, links, threatId, it, ck, meta) {
+    var all = it.all.slice().sort(function (a, b) { return (b.t.ts || 0) - (a.t.ts || 0); });
+    all.slice(0, LOCAL_SIGHTINGS_PER_THREAT).forEach(function (one, j) {
+      var finding = localFinding(one.t, one.s);
+      finding.sightings = 1;
+      nodes.push({
+        id: threatId + ":s" + j, kind: "lsight", cat: ck, color: meta.color,
+        ring: SEV_COLOR[sevClass(one.t.severity)] || SEV_COLOR.info,
+        name: one.t.title || one.t.identifier || "Threat", ts: one.t.ts || one.ev.ts || 0,
+        outcome: one.t.decision === "block" ? "blocked" : "flagged",
+        session: (one.s && (one.s.shortId || one.s.id)) || "", finding: finding, val: 2.6
+      });
+      links.push({ source: threatId + ":s" + j, target: threatId, kind: "leaf" });
+    });
+    if (all.length > LOCAL_SIGHTINGS_PER_THREAT) {
+      nodes.push({ id: threatId + ":smore", kind: "more", label: "+" + (all.length - LOCAL_SIGHTINGS_PER_THREAT) + " more",
+                   color: LABEL_MUTED, val: 3 });
+      links.push({ source: threatId + ":smore", target: threatId, kind: "leaf" });
+    }
   }
 
   // Stable signature of the local activity — skip rebuilds when nothing changed.
@@ -4803,7 +4829,7 @@
       var isHub = kind === "hub";
       var isCall = kind === "call";
       var isMore = kind === "more" || kind === "gmore";
-      var isThreat = kind === "leaf" || kind === "lthreat";
+      var isThreat = kind === "leaf" || kind === "lthreat" || kind === "lsight";
       var r = Math.sqrt(Math.max(node.val || 1, 1)) * 1.9;
       ctx.save();
       if (node.dimmed) ctx.globalAlpha = 0.38;
@@ -4951,6 +4977,11 @@
 	        return '<div class="graph-tip"><div class="t-name">' + esc(node.label) + '</div>' +
 	          '<div class="t-cat">' + hc + '</div></div>';
       }
+    if (node.kind === "lsight") {
+      return '<div class="graph-tip"><div class="t-name">' + esc(node.name) + '</div>' +
+        '<div class="t-cat">' + esc(node.outcome) + ' · ' + esc(fmtDateFull(node.ts)) + '</div>' +
+        '<div class="t-id">' + (node.session ? 'session ' + esc(node.session) + ' · ' : '') + 'click for this event</div></div>';
+    }
     if (node.kind === "session") {
       var line = (node.status || "session") + (node.threatCount ? ' · ' + node.threatCount + ' threat' + (node.threatCount === 1 ? '' : 's') + (node.maxSeverity ? ' · ' + node.maxSeverity : '') : ' · clean');
       var sub = [];
@@ -5215,6 +5246,21 @@
   })();
 
   var wpLast = null;   // the latest panel payload (the events window reads its mode)
+  // The wallets found on this machine, one entry per wallet: {id, wallet, browsers, areas,
+  // profiles, protected} — the panel and Settings both show wallets, not browser profiles.
+  function walletGroups(found) {
+    var groups = [], byId = {};
+    (found || []).forEach(function (w) {
+      var id = w.id || String(w.wallet || "").toLowerCase();
+      var g = byId[id];
+      if (!g) { g = byId[id] = { id: id, wallet: w.wallet, browsers: [], areas: [], profiles: 0, protected: false }; groups.push(g); }
+      if (g.browsers.indexOf(w.browser) < 0) g.browsers.push(w.browser);
+      (w.areas || []).forEach(function (a) { if (g.areas.indexOf(a) < 0) g.areas.push(a); });
+      g.profiles += 1;
+      g.protected = g.protected || !!w.protected;
+    });
+    return groups;
+  }
   function renderWalletProtection(d) {
     wpLast = d;
     updateTraderShieldBanner(d);
@@ -5230,10 +5276,16 @@
                          : "Wallet threats are recorded and shown, but not stopped. Turn on Block in Settings to stop them.";
     }
     var guard = block ? "protected — blocked if the agent reaches for it" : "watched — flagged, not blocked (audit mode)";
-    var found = (d.wallets || []).map(function (w) {
-      return wpRow(w.protected ? "✓" : "–", w.protected ? "ok" : "none", walletLogoByName(w.wallet) + "<b>" + esc(w.wallet) + "</b> · " + esc(w.browser) +
-        (w.profile ? " · profile “" + esc(w.profile) + "”" : "") + '<div class="wp-sub">' + esc((w.areas || []).join(", ")) + " — " +
-        (w.protected ? guard : "not selected in Settings, so not protected") + "</div>");
+    // One row per WALLET (protected in every browser it is in), listing the browsers — not one
+    // row per browser profile.
+    var found = walletGroups(d.wallets).map(function (g) {
+      var name = g.id === "any-extension" ? "Firefox wallets" : g.wallet;
+      var where = g.id === "any-extension"
+        ? "every extension's storage in " + g.profiles + " Firefox profile" + (g.profiles === 1 ? "" : "s")
+        : g.areas.join(", ");
+      return wpRow(g.protected ? "✓" : "–", g.protected ? "ok" : "none", walletLogoByName(g.wallet) + "<b>" + esc(name) + "</b> · " +
+        esc(g.browsers.join(", ")) + '<div class="wp-sub">' + esc(where) + " — " +
+        (g.protected ? guard : "not selected in Settings, so not protected") + "</div>");
     });
     if (!found.length) found.push(wpRow("–", "none", "No browser wallet found on this machine." +
       '<div class="wp-sub">Blackbox checks the usual browser folders by name every few minutes; it never opens a vault.</div>'));
@@ -6169,7 +6221,7 @@
     if (node.kind === "more") return;
     // Every local node opens a real detail panel; catalog leaves use the threat
     // modal; the machine root just reframes the whole graph.
-    if (node.kind === "lthreat") { if (node.finding) openFindingModal(node.finding); return; }
+    if (node.kind === "lthreat" || node.kind === "lsight") { if (node.finding) openFindingModal(node.finding); return; }
     if (node.kind === "leaf") { openThreatModal(node); return; }
     if (node.kind === "gmore") { loadMoreGraph(node.focus || null); return; }
     if (node.kind === "hub" && activeTier === "local" && node.localItems) { openLocalCategoryModal(node); return; }
@@ -6196,7 +6248,7 @@
   function graphClickableNode(node) {
     return node && (
       node.kind === "hub" || node.kind === "gmore" || node.kind === "leaf" ||
-      node.kind === "lthreat" || node.kind === "session" || node.kind === "call"
+      node.kind === "lthreat" || node.kind === "lsight" || node.kind === "session" || node.kind === "call"
     );
   }
   function graphPriorityClickNode(node) {
@@ -6211,6 +6263,7 @@
     if (node.kind === "hub") return Math.max(base, 18);
     if (node.kind === "gmore") return Math.max(base, 15);
     if (node.kind === "leaf" || node.kind === "lthreat") return Math.max(base, 11);
+    if (node.kind === "lsight") return Math.max(base, 8);
     return Math.max(base, 13);
   }
 
@@ -6311,7 +6364,7 @@
       .onNodeClick(onNodeClick)
         .onNodeHover(function (node) {
           var c = $("graph-canvas");
-          if (c) c.style.cursor = (node && (node.kind === "leaf" || node.kind === "lthreat" || node.kind === "hub" || node.kind === "gmore")) ? "pointer" : "default";
+          if (c) c.style.cursor = (node && (node.kind === "leaf" || node.kind === "lthreat" || node.kind === "lsight" || node.kind === "hub" || node.kind === "gmore")) ? "pointer" : "default";
         })
       .onEngineStop(function () {
         // frame the whole network once it first settles
@@ -7941,8 +7994,8 @@
     var rows = [];
     (setState.protected_wallets || []).forEach(function (id) {
       var name = names[id] || id;
-      var here = found.filter(function (w) { return String(w.wallet || "").toLowerCase() === id; });
-      var where = here.length ? here.map(function (w) { return w.browser + (w.profile ? " · " + w.profile : ""); }).join(", ") : "any browser profile";
+      var group = walletGroups(found).filter(function (g) { return g.id === id; })[0];
+      var where = group ? group.browsers.join(", ") + " · every profile" : "any browser profile";
       rows.push('<div class="path-row shield" title="Protected by Trader Shield. Untick this wallet or turn Trader Shield off to stop.">' +
         "<code>" + esc(name + " vault · " + where) + '</code><span class="path-shield">Trader Shield</span></div>');
     });

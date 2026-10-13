@@ -183,7 +183,7 @@ def test_wallet_threats_show_their_wallet_logo_everywhere_they_appear():
     assert "icon.innerHTML = walletLogoHTML(newest, \"big\") ||" in html          # threat alert
     assert '$("tm-ico").innerHTML = walletLogoHTML(f, "big") ||' in html          # finding detail
     assert html.count("walletLogoHTML(e") >= 3                                   # panel row, window list + detail
-    assert "walletLogoByName(w.wallet)" in html                                  # found on this machine
+    assert "walletLogoByName(g.wallet)" in html and "walletGroups(d.wallets)" in html   # found: one row per wallet
 
 
 def test_the_panel_calls_a_store_protected_exactly_when_the_gate_would_count_it(home, monkeypatch):
