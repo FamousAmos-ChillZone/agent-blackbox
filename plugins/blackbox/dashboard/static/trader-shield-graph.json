@@ -1,5 +1,5 @@
 {
- "as_of": "2026-10-13 10:11 UTC",
+ "as_of": "2026-10-13 10:42 UTC",
  "counted_on": "a test node holding a full copy of the verified threat graph",
  "script": "scripts/blackbox-trader-graph-counts.py",
  "indicators_total": 207005,
@@ -12,7 +12,20 @@
  },
  "crypto_indicators": 80159,
  "drainer_phishing_domains": 79762,
- "drainer_wallets": 68,
+ "drainer_wallets": 61,
+ "drainer_wallets_listed": 68,
+ "exchange_routers_listed_as_wallets": [
+  "1inch Aggregation Router v5",
+  "PancakeSwap V2 Router",
+  "PancakeSwap V3 Smart Router",
+  "SushiSwap Router",
+  "Uniswap Universal Router (v4)",
+  "Uniswap V2 Router 02",
+  "Uniswap V3 SwapRouter"
+ ],
+ "drainer_wallet_networks": [
+  "EVM"
+ ],
  "brand_sites_total": 3821,
  "brand_sites": [
   {

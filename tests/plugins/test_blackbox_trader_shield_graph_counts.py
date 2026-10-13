@@ -36,7 +36,10 @@ def test_the_counts_add_up():
     assert COUNTS["crypto_packages_total"] == sum(item["packages"] for item in COUNTS["crypto_packages"].values())
     assert COUNTS["stealer_indicators"] == sum(item["indicators"] for item in COUNTS["stealer_families"])
     assert COUNTS["brand_sites_total"] <= sum(item["sites"] for item in COUNTS["brand_sites"])
-    assert COUNTS["drainer_wallets"] == COUNTS["indicators_by_type"].get("wallet", 0)
+    # Exchange routers the feed lists as wallets are not counted as drainers (KI-370).
+    assert COUNTS["drainer_wallets"] + len(COUNTS["exchange_routers_listed_as_wallets"]) == COUNTS["drainer_wallets_listed"]
+    assert COUNTS["drainer_wallets_listed"] == COUNTS["indicators_by_type"].get("wallet", 0)
+    assert COUNTS["drainer_wallet_networks"] == ["EVM"]
 
 
 def test_every_query_only_reads_the_verified_graph():

@@ -76,6 +76,8 @@ QUERIES: Dict[str, str] = {
     "stealer_families": f"""SELECT ?tag (COUNT(DISTINCT ?t) AS ?n) WHERE {{
         GRAPH ?g {{ ?t a defender:IocSignal ; dp:tag ?tag }} {IN_VERIFIED}
         FILTER(REGEX(?tag, "{STEALER_TAGS}", "i")) }} GROUP BY ?tag""",
+    "wallet_values": f"""SELECT DISTINCT ?v WHERE {{
+        GRAPH ?g {{ ?t a defender:IocSignal ; dp:iocType "wallet" ; dp:value ?v }} {IN_VERIFIED} }}""",
     "coin_miners": f"""SELECT (COUNT(DISTINCT ?t) AS ?n) WHERE {{
         GRAPH ?g {{ ?t a defender:IocSignal ; dp:tag "CoinMiner" }} {IN_VERIFIED} }}""",
     "crypto_skills": f"""SELECT ?name WHERE {{
@@ -92,6 +94,14 @@ def _ask(store: str, query: str, timeout: float) -> List[Dict[str, str]]:
     return [{key: cell["value"] for key, cell in row.items()} for row in rows]
 
 
+def _known_routers() -> Dict[str, str]:
+    """The well-known exchange routers (plugins/blackbox/kernel/crypto_secrets/known_contracts.json)."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "plugins", "blackbox", "kernel",
+                        "crypto_secrets", "known_contracts.json")
+    with open(path, encoding="utf-8") as handle:
+        return {address.lower(): entry["name"] for address, entry in json.load(handle)["contracts"].items()}
+
+
 def _count(rows: List[Dict[str, str]], key: str = "n") -> int:
     return sum(int(row.get(key, 0)) for row in rows)
 
@@ -106,6 +116,9 @@ def collect(store: str, timeout: float) -> Dict[str, object]:
                     key=lambda item: -item["sites"])
     lures = {r["brand"]: int(r["n"]) for r in got["brand_sites"] if r["brand"] in LURES}
     packages = {r["ecosystem"]: {"packages": int(r["n"]), "versions": int(r["versions"])} for r in got["crypto_packages"]}
+    routers = _known_routers()
+    wallets = {row["v"].lower() for row in got["wallet_values"]}
+    listed_routers = sorted(routers[address] for address in wallets if address in routers)
     stealers = sorted(({"family": r["tag"], "indicators": int(r["n"])} for r in got["stealer_families"]),
                       key=lambda item: -item["indicators"])
     return {
@@ -113,7 +126,11 @@ def collect(store: str, timeout: float) -> Dict[str, object]:
         "indicators_by_type": by_type,
         "crypto_indicators": _count(crypto),
         "drainer_phishing_domains": drainer_domains,
-        "drainer_wallets": sum(int(r["n"]) for r in crypto if r["type"] == "wallet"),
+        # Exchange routers the feed wrongly lists as wallets (KI-370) are not drainers: left out.
+        "drainer_wallets": len(wallets) - len(listed_routers),
+        "drainer_wallets_listed": len(wallets),
+        "exchange_routers_listed_as_wallets": listed_routers,
+        "drainer_wallet_networks": sorted({"EVM" if value.startswith("0x") else "other" for value in wallets}),
         "brand_sites_total": _count(got["brand_sites_any"]),
         "brand_sites": brands,
         "lure_sites": lures,
