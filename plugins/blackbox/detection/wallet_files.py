@@ -52,7 +52,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..kernel import threat_ids
 from ..kernel.crypto_secrets import wallet_mode
-from . import action_parsing, firefox_extensions, shell_files, shell_shapes
+from . import action_parsing, firefox_extensions, shell_shapes
+from .paths import shell_files
 from .finding import Finding
 
 

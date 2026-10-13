@@ -8,7 +8,7 @@ arguments are taken as whole folders.
 from __future__ import annotations
 
 from plugins.blackbox.detection import action_parsing
-from plugins.blackbox.detection.shell_files import shell_file_args
+from plugins.blackbox.detection.paths.shell_files import shell_file_args
 
 
 def _paths(command):

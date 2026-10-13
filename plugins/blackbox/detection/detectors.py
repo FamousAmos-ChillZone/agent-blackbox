@@ -17,9 +17,7 @@ are caught per rule and oversized inputs are capped.
 
 from __future__ import annotations
 
-import fnmatch
 import logging
-import os
 from typing import Any, Dict, Iterable, List
 
 from . import action_parsing
@@ -30,6 +28,7 @@ from .finding import ANSWERED_BY_FALLBACK, FALLBACK_REASON, Finding, _rule_sourc
 from .injection_detection import detect_injection, discover_injection, injection_scan_text
 from .ioc_detection import detect_ioc, ioc_context
 from .skill_detection import detect_skill
+from .paths.protected import detect_custom_fileaccess  # noqa: F401 — re-exported for callers
 from .wallet_files import detect_wallet_files
 from ..kernel import threat_ids
 
@@ -269,69 +268,6 @@ def discover_dependency_candidates(tool_name: str, args: Any, ruleset: Any, osv_
             )
         )
     return out
-
-
-def _protected_path_match(path: str, pattern: str) -> bool:
-    """True when *path* matches a user's protected-path *pattern*.
-
-    Patterns are matched three ways so plain paths, directories, and globs all
-    behave intuitively: exact/glob match on the full expanded path, glob match
-    on the basename (``*.pem``), and prefix match when the pattern names a
-    directory (``~/secrets`` protects everything under it).
-    """
-    try:
-        norm_path = os.path.normpath(os.path.expanduser(str(path or "")))
-        norm_pat = os.path.normpath(os.path.expanduser(str(pattern or "")))
-        if not norm_path or not norm_pat:
-            return False
-        if fnmatch.fnmatch(norm_path, norm_pat):
-            return True
-        if fnmatch.fnmatch(os.path.basename(norm_path), norm_pat):
-            return True
-        # Directory-prefix semantics for glob-free patterns.
-        if not any(ch in norm_pat for ch in "*?[") and (
-            norm_path == norm_pat or norm_path.startswith(norm_pat.rstrip(os.sep) + os.sep)
-        ):
-            return True
-    except Exception:  # pragma: no cover - fail open
-        return False
-    return False
-
-
-def detect_custom_fileaccess(
-    tool_name: str, args: Any, protected_paths: Iterable[str]
-) -> List[Finding]:
-    """Match file-access tool calls against the USER'S protected-path list.
-
-    These are personal, locally-configured rules (``source="custom"``): they
-    always flag, they block in block mode (the user wrote the rule), and they
-    are NEVER reported to the community graph — the matched pattern is the
-    user's own configuration, not shared threat intel.
-    """
-    patterns = [p for p in (protected_paths or []) if str(p or "").strip()]
-    if not patterns:
-        return []
-    access = action_parsing.file_access_arg(tool_name, args)
-    if not access:
-        return []
-    for pattern in patterns:
-        if _protected_path_match(access["path"], pattern):
-            tool = access["tool"]
-            return [
-                Finding(
-                    identifier=threat_ids.fileaccess_identifier(tool, "user-protected"),
-                    category="fileaccess",
-                    severity="critical",
-                    title="Access to a user-protected path",
-                    tool_name=tool,
-                    matched="user-protected",
-                    evidence=f"{access['mode']} path matching protected pattern {str(pattern)[:120]}",
-                    confirmed=False,
-                    source="custom",
-                    fields={},
-                )
-            ]
-    return []
 
 
 def detect_secret_exposure(tool_name: str, args: Any) -> List[Finding]:
