@@ -860,6 +860,8 @@
     font-size: 12px; color: var(--muted); }
   .wp-legend > span { display: inline-flex; align-items: center; gap: 6px; }
   .wp-sub { color: var(--muted); font-size: 12px; }
+  /* The event list scrolls inside its column instead of growing the panel down the page. */
+  .wp-evlist { max-height: min(340px, 55vh); overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; display: grid; align-content: start; }
   .wp-ev { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 12.5px; padding: 6px 0; border-bottom: 1px solid var(--border); }
   .wp-ev:last-child { border-bottom: 0; }
   .wp-ev .o { font-weight: 700; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
@@ -5336,7 +5338,7 @@
         wpHelp("This Blackbox version checks protected files only for file tools. Update Blackbox to cover the terminal too.")) : ""
     ];
     var col2 = '<div class="wp-col"><div class="wp-h">Always watching</div>' + watch.join("") + "</div>";
-    var events = (d.events || []).slice(0, 6).map(function (e) {
+    var events = (d.events || []).slice(0, 20).map(function (e) {
       return '<button type="button" class="wp-ev" data-wev-open="' + esc(e.identifier) + '" data-wev-ts="' + esc(String(e.ts || "")) +
         '" title="Open the full report"><span class="o ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span><span>" + walletLogoHTML(e) + esc(e.title || e.identifier) +
         '</span><span class="wp-sub">' + esc(shortWhen(e.ts)) + "</span><span class=\"wp-sub\">" + esc(e.tool ? "via " + e.tool : "") + "</span></button>";
@@ -5344,7 +5346,8 @@
     var col3 = '<div class="wp-col"><div class="wp-h">Recent wallet events ' +
       wpHelp("The latest times your agent reached for a wallet, a seed phrase or a private key, and what Blackbox did. Click one for the full story.") +
       (events.length ? '<button type="button" class="wev-all" data-wev-open="">View all →</button>' : "") + "</div>" +
-      (events.length ? events.join("") : '<div class="wp-sub">Nothing yet — no agent has reached for a wallet or key.</div>') + "</div>";
+      (events.length ? '<div class="wp-evlist" tabindex="0" aria-label="Recent wallet events (scrolls)">' + events.join("") + "</div>"
+                     : '<div class="wp-sub">Nothing yet — no agent has reached for a wallet or key.</div>') + "</div>";
     var legend = '<div class="wp-legend" aria-label="What the marks mean">' +
       '<span><span class="wp-ic ok">✓</span>secured — blocked</span>' +
       '<span><span class="wp-ic watch">~</span>watched — flagged only (audit mode)</span>' +

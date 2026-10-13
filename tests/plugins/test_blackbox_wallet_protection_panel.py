@@ -234,3 +234,9 @@ def test_each_protection_state_has_its_own_mark():
     assert 'var on = block ? ["✓", "ok"] : ["~", "watch"];' in page
     assert "--secure:" in page and ".wp-ic.ok { color: var(--secure)" in page
     assert all(word in page for word in ("secured — blocked", "watched — flagged only", "not protected", "needs attention"))
+
+
+def test_the_event_list_scrolls_inside_its_column():
+    page = (protection.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert ".wp-evlist { max-height:" in page and "overflow-y: auto" in page.split(".wp-evlist {", 1)[1].split("}", 1)[0]
+    assert '<div class="wp-evlist" tabindex="0"' in page
