@@ -11,6 +11,35 @@ sync_state = load_blackbox("sync.state")
 detection = load_blackbox("detection")
 
 
+def _classes_that_override_hidden(html):
+    """Classes on markup-hidden elements whose CSS sets ``display`` with no ``[hidden]`` rule.
+
+    A class rule such as ``display: flex`` outranks the browser's ``[hidden]`` default, so
+    ``el.hidden = true`` silently does nothing (the Trader Shield banner stayed on screen
+    after Trader Shield was engaged, 2026-10-12)."""
+    css = "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", html, re.S))
+    offenders = []
+    for tag in re.findall(r"<[a-z]+\b[^>]*\shidden(?=[\s>/])[^>]*>", html):
+        classes = re.search(r'class="([^"]+)"', tag)
+        for cls in classes.group(1).split() if classes else []:
+            sets_display = re.search(r"\." + re.escape(cls) + r"\s*\{[^}]*\bdisplay\s*:\s*(?!none)", css)
+            if sets_display and not re.search(r"\." + re.escape(cls) + r"\[hidden\]", css):
+                offenders.append(cls)
+    return offenders
+
+
+def test_every_element_hidden_in_markup_can_actually_be_hidden():
+    html = (Path(server.__file__).with_name("static") / "index.html").read_text(encoding="utf-8")
+    assert _classes_that_override_hidden(html) == []
+
+
+def test_the_hidden_check_catches_a_display_rule_without_a_hidden_rule():
+    broken = '<style>.banner { display: flex; }</style><div class="banner" hidden></div>'
+    fixed = broken.replace("</style>", " .banner[hidden] { display: none; }</style>")
+    assert _classes_that_override_hidden(broken) == ["banner"]
+    assert _classes_that_override_hidden(fixed) == []
+
+
 def test_dashboard_theme_setting_is_persistent_and_applied_before_paint():
     html = (Path(server.__file__).with_name("static") / "index.html").read_text(
         encoding="utf-8"

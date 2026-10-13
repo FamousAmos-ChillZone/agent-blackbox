@@ -87,7 +87,7 @@ def credit_verdicts(ctx: CurateContext, *, osv_lookup: Optional[novelty_facts.Os
     own = view.community if ctx.authority is Authority.COMMUNITY else view
     if own is None or view.unavailable:
         return CreditReport(available=False)
-    verified = verified_identifiers(ctx.compiled)
+    verified = verified_identifiers(ctx.compiled, by_threat)
     credited = novel = 0
     for identifier, record in own.verdicts.items():
         if record.kind not in _CREDITING:

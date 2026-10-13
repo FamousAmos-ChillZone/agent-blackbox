@@ -5,7 +5,7 @@ Everything here writes to or reads from ``$BLACKBOX_HOME`` (default
 private working-memory record in the local node. Callers use this surface:
 
 * Writing: :func:`record`, :func:`record_file_access`, :func:`record_dependency`,
-  :func:`write_private_audit_ka`; redaction: :func:`sanitize_text`, :func:`redact`.
+  :func:`write_private_audit_ka` (into :func:`local_audit_graph`, this node's own private graph); redaction: :func:`sanitize_text`, :func:`redact`.
 * Reading: :func:`read_findings`, :func:`count_findings`, :func:`read_audit`,
   :func:`count_audit`, :func:`read_local_activity`, :func:`read_file_access`,
   :func:`local_frameworks`, :func:`local_active_frameworks`.
@@ -34,6 +34,7 @@ from .findings import (
     record_file_access,
 )
 from .private_ka import node_is_local, write_private_audit_ka
+from .local_graph import local_audit_graph
 from .redaction import redact, sanitize_text
 from .share_ledger import (
     allow_report,
@@ -68,5 +69,6 @@ __all__ = [
     "redact",
     "sanitize_text",
     "write_private_audit_ka",
+    "local_audit_graph",
     "node_is_local",
 ]

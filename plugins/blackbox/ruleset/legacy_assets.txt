@@ -1,0 +1,6 @@
+# Legacy verified assets (proposal trust-and-threat-lab §03.4, decision D24): the UAL of
+# every asset confirmed in the verified graph on the day curator manifest v1 was signed,
+# one per line. Readers tier these BLOCK without a curator envelope, and only after the
+# sha256 of this list (ruleset.anchors.legacy_list_hash) equals the trusted manifest's
+# legacy_assets_hash. Lines starting with '#' and blank lines are not part of the list.
+# Ships EMPTY until the bootstrap release (build item OPS3) fills it — never edit by hand.

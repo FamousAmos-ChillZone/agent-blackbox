@@ -80,6 +80,12 @@ class CommunityRule:
         return rule
 
 
+#: Sighting fields that describe one reporter's encounter, not the threat
+#: (threat-profiles §03.2): a rule shows every value its reporters stated
+#: ("blocked, flagged"), never just the first reporter's.
+PER_SIGHTING_VARS = frozenset({"outcome", "agentAction", "agentTool"})
+
+
 def _cap_per_author(reports: Iterable[VerifiedReport], prior_first_seen: Dict[str, float]) -> List[VerifiedReport]:
     """At most MAX_REPORTS_PER_AUTHOR threats per verified signer, keeping
     each signer's oldest-known threats (this node's first-seen history;
@@ -94,6 +100,20 @@ def _cap_per_author(reports: Iterable[VerifiedReport], prior_first_seen: Dict[st
     if len(kept) < sum(len(v) for v in by_author.values()):
         logger.warning("blackbox: community reports capped at %d per signer", MAX_REPORTS_PER_AUTHOR)
     return kept
+
+
+def _fold(slot: Dict[str, Any], report: VerifiedReport) -> None:
+    """Add one verified report to its identifier's slot: its signer, the max
+    severity, the first value of each threat field, every value of each
+    per-sighting field."""
+    slot["authors"].add(report.author)
+    if constants.SEVERITY_RANK.get(report.severity, 0) > constants.SEVERITY_RANK.get(slot["severity"], 0):
+        slot["severity"] = report.severity
+    for var, value in report.fields:
+        if var in PER_SIGHTING_VARS:   # differs per reporter: keep every value seen
+            slot["seen"].setdefault(var, set()).add(value)
+        else:
+            slot["fields"].setdefault(var, value)
 
 
 def aggregate_community_reports(
@@ -113,13 +133,9 @@ def aggregate_community_reports(
     for report in _cap_per_author(reports, prior_first_seen):
         slot = grouped.setdefault(
             report.identifier,
-            {"authors": set(), "severity": "info", "fields": {}},
+            {"authors": set(), "severity": "info", "fields": {}, "seen": {}},
         )
-        slot["authors"].add(report.author)
-        if constants.SEVERITY_RANK.get(report.severity, 0) > constants.SEVERITY_RANK.get(slot["severity"], 0):
-            slot["severity"] = report.severity
-        for var, value in report.fields:
-            slot["fields"].setdefault(var, value)
+        _fold(slot, report)
     rules = [
         CommunityRule(
             identifier=identifier,
@@ -128,7 +144,8 @@ def aggregate_community_reports(
             reporter_count=len(slot["authors"]),
             first_seen=float(prior_first_seen.get(identifier, now)),
             last_seen=now,
-            fields=tuple(sorted(slot["fields"].items())),
+            fields=tuple(sorted({**slot["fields"], **{var: ", ".join(sorted(values))
+                                                        for var, values in slot["seen"].items()}}.items())),
             authors=tuple(sorted(slot["authors"])),
         )
         for identifier, slot in grouped.items()

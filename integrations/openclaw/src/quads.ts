@@ -285,7 +285,8 @@ const IOC_VALUE_SHAPES: Record<string, RegExp> = {
   domain: new RegExp(`^${HOST_SHAPE}$`),
   url: new RegExp(`^https?://(?:${HOST_SHAPE}|${IPV4_SHAPE})(?::\\d{1,5})?(?:[/?#][^\\s<>"'\`\\\\^{}|\\[\\]]*)?$`),
   ip: new RegExp(`^${IPV4_SHAPE}$`),
-  hash: /^[a-f0-9]{32,128}$/,
+  // bare hex, or algorithm-prefixed at that algorithm's length (KI-354, mirrors Python).
+  hash: /^(?:md5:[a-f0-9]{32}|sha1:[a-f0-9]{40}|sha256:[a-f0-9]{64}|sha512:[a-f0-9]{128}|[a-f0-9]{32,128})$/,
   wallet: /^[A-Za-z0-9]{20,128}$/,
   contract: /^[A-Za-z0-9]{20,128}$/,
 };

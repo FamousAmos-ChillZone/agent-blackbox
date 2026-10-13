@@ -47,11 +47,19 @@ class CommunityAgent(TypedDict):
 
 
 class ReportedThreat(TypedDict):
-    """One threat identifier and how many distinct signers reported it."""
+    """One threat identifier and how many distinct signers reported it.
+
+    ``matched_by`` — how the reporters' nodes matched it (``verified`` /
+    ``built-in`` / ``advisory``), sorted, distinct; ``blackbox_versions`` —
+    the releases that built those reports, sorted, distinct. A report signed
+    before these fields existed adds nothing to either list (§03.6).
+    """
 
     identifier: str
     reporters: int
     severity: str   # the highest severity any verified report gave it
+    matched_by: List[str]
+    blackbox_versions: List[str]
 
 
 def contributing_agent_count(reports: Iterable[VerifiedReport]) -> int:
@@ -98,14 +106,21 @@ def most_reported_threats(reports: Sequence[VerifiedReport], limit: int) -> List
     """The *limit* threats with the most distinct verified signers."""
     authors: Dict[str, Set[str]] = {}
     severity: Dict[str, str] = {}
+    matched_by: Dict[str, Set[str]] = {}
+    versions: Dict[str, Set[str]] = {}
     for report in reports:
         authors.setdefault(report.identifier, set()).add(report.author)
+        fields = dict(report.fields)
+        matched_by.setdefault(report.identifier, set()).update(filter(None, [fields.get("matchedBy")]))
+        versions.setdefault(report.identifier, set()).update(filter(None, [fields.get("blackboxVersion")]))
         current = severity.get(report.identifier, "info")
         if constants.SEVERITY_RANK.get(report.severity, 0) > constants.SEVERITY_RANK.get(current, 0):
             current = report.severity
         severity[report.identifier] = current
     ranked = sorted(authors, key=lambda ident: (-len(authors[ident]), ident))[: max(0, int(limit))]
-    return [{"identifier": ident, "reporters": len(authors[ident]), "severity": severity[ident]} for ident in ranked]
+    return [{"identifier": ident, "reporters": len(authors[ident]), "severity": severity[ident],
+             "matched_by": sorted(matched_by[ident]), "blackbox_versions": sorted(versions[ident])}
+            for ident in ranked]
 
 
 def reports_signed_by(reports: Iterable[VerifiedReport], author: str) -> int:

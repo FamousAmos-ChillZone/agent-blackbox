@@ -69,6 +69,36 @@ plugins:
       mode: block
 ```
 
+## Trader quick start (Trader Shield)
+
+Trader Shield keeps an AI agent away from your crypto wallets and keys. It is opt-in.
+
+1. **Install Blackbox:** `curl -fsSL blackbox.umanitek.ai | bash`, then run `blackbox dashboard`.
+2. **Engage Trader Shield:** in the dashboard, open Settings → Trader Shield and switch it on, or use
+   the Engage button on the Trader Shield page (`http://127.0.0.1:9700/trader-shield`). Set the
+   mode to `block` so wallet threats are stopped, not just flagged.
+3. **Choose your wallets** (MetaMask, Phantom, Exodus, Electrum, the Solana CLI) and, optionally,
+   list your own public wallet addresses so a raw private key is recognised too. Addresses stay on
+   this machine.
+4. **Restart your agent** so it picks up the rules.
+5. **Try it safely:** in an empty folder run `echo DEMO_KEY=not-a-real-key > .env`, then ask your
+   agent to `cat .env`. It is blocked, and the block shows on the dashboard.
+
+The same settings in `config.yaml`:
+
+```yaml
+plugins:
+  entries:
+    blackbox:
+      mode: block
+      wallet_protection: true
+      protected_wallets: [metamask, phantom, exodus, electrum, solana-cli]
+      wallet_addresses: []        # your own public addresses (optional)
+```
+
+The Trader Shield page lists every attack it was tested against, and what the verified threat
+graph already knows about crypto (counted with `scripts/blackbox-trader-graph-counts.py`).
+
 ## Community graph (sharing is opt-in)
 
 Nothing leaves your machine until you read the reporter terms and consent;
@@ -143,7 +173,7 @@ to change them is through the dashboard settings page.
 | `protected_paths` | `[]` | Local file globs that always block and are never shared |
 | `context_graph_id` | `0x37b1Fdfd…/agent-blackbox-vm` | Public verified threat graph |
 | `community_graph_id` | *(empty until launch)* | Community graph address; empty keeps sharing dormant |
-| `daily_report_limit` | `20` | Daily cap on outbound community reports (cannot be switched off; 0 means the default) |
+| `daily_report_limit` | `100` | Daily cap on outbound community reports (cannot be switched off; 0 means the default) |
 | `graph_peer_id` | bundled publisher peer | Authoritative threat-data sync source |
 
 Categories are `injection`, `escalation`, `dependency`, `fileaccess`, and

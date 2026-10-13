@@ -19,14 +19,18 @@ Usage::
 
     delay = sync_timing.initial_sync_delay(cfg, ruleset.peek(cfg), min_s, empty_retry_s)
     wait = sync_timing.next_sync_delay(cfg, ruleset.peek(cfg), elapsed_s, min_s)
+    stop = sync_timing.wait_or_wake(wait, stopped, wake=lambda: watch.check() and ruleset.request_refresh_now(cfg))
 """
 
 from __future__ import annotations
 
+import logging
 import time
 import math
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 
 def initial_sync_delay(cfg: Any, cached: Any, min_retry_s: float, empty_retry_s: float) -> float:
@@ -79,3 +83,22 @@ def catchup_supersedes_failure(catchup: Any, transfer: Any) -> bool:
     started = timestamp(catchup.get("startedAt"))
     failed = timestamp(transfer.get("updated_at"))
     return failed > 0 and started > failed
+
+
+def wait_or_wake(seconds: float, stopped: Callable[[], bool], wake: Callable[[], bool], tick_s: float = 0.1) -> bool:
+    """Sleep up to *seconds* in *tick_s* steps, ending early when *wake* says a
+    refresh should start now (new verified assets on the node,
+    :class:`..ruleset.GrowthWatch`). Returns True when *stopped* asked the loop
+    to end, False when the wait is over (elapsed or woken). *wake* is offered
+    every tick and must be cheap (GrowthWatch rate-limits itself); an
+    exception from it is logged and the wait simply continues (fail-open)."""
+    for _ in range(int(seconds / tick_s)):
+        if stopped():
+            return True
+        try:
+            if wake():
+                return False
+        except Exception as exc:   # a broken probe must never stop the sync loop
+            logger.warning("blackbox: verified growth check failed: %s", exc)
+        time.sleep(tick_s)
+    return stopped()

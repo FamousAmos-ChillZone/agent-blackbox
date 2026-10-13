@@ -40,13 +40,15 @@ CURATOR_STATEMENT_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}CuratorStatement"
 #: A root-signed curator key manifest (Refine R7a/R2), in the verified graph.
 KEY_MANIFEST_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}KeyManifest"
 
-#: The curator ROOT keys each DKG network trusts (network id -> Ed25519 public
-#: keys, hex). Readers trust only key manifests signed by these. Empty until
-#: the pilot gate names the root custodians (Refine R7b/R13): with no root,
-#: no curator statement counts anywhere. A network listed here can NOT be
-#: overridden at runtime; only unlisted (sandbox) networks accept roots from
-#: the BLACKBOX_CURATOR_ROOT_KEYS environment variable.
-CURATOR_ROOT_KEYS: Mapping[str, Tuple[str, ...]] = {}
+#: The curator ROOT keys each DKG network trusts, bound to the root epoch each
+#: may sign: ``{network id: {root_epoch: (Ed25519 public keys, hex)}}`` — e.g.
+#: ``{mainnet: {1: (root_a,), 2: (root_b,)}}``. Readers trust only key
+#: manifests signed by these; a pinned root signing another epoch can only
+#: freeze readers (``trust_anchors.RootPins``). Empty until the root ceremony
+#: (Refine R7b/R13): with no root, no curator statement counts anywhere. A
+#: network listed here can NOT be overridden at runtime; only unlisted (sandbox)
+#: networks accept roots from the BLACKBOX_CURATOR_ROOT_KEYS environment variable.
+CURATOR_ROOT_KEYS: Mapping[str, Mapping[int, Tuple[str, ...]]] = {}
 #: A reporter withdrawing its own report (Refine R1, lifecycle RETRACT).
 RETRACTION_TYPE_IRI = f"{BLACKBOX_ONTOLOGY}Retraction"
 #: One reporter's weekly sighting digest (Refine R2b): verified threats met
@@ -86,6 +88,10 @@ SKILL_ARTIFACT_HASH_PRED = f"{BLACKBOX_ONTOLOGY}skillArtifactHash"
 IOC_CONTEXT_PRED = f"{BLACKBOX_ONTOLOGY}iocContext"
 REPORT_REASON_PRED = f"{BLACKBOX_ONTOLOGY}reportReason"
 SKILL_REGISTRY_PRED = f"{BLACKBOX_ONTOLOGY}skillRegistry"
+#: Trust-and-threat-lab §03.6 (REP1): how the reporter's node matched the threat
+#: (``report_schema.MATCHED_BY``) and which Blackbox release built the report.
+MATCHED_BY_PRED = f"{BLACKBOX_ONTOLOGY}matchedBy"
+BLACKBOX_VERSION_PRED = f"{BLACKBOX_ONTOLOGY}blackboxVersion"
 
 # threat kind: distinguishes active malware from a mere vulnerability. Only
 # ``malware`` blocks (at/above block_severity); ``vulnerability`` always flags
@@ -263,13 +269,21 @@ VIEW_VERIFIABLE_MEMORY = "verifiable-memory"
 # this constant only records that the capability ships in this build.
 COMMUNITY_GRAPH_ENABLED = True
 
-#: Default community context graph id. SHIPS EMPTY until Umanitek mints the
-#: production community graph — an empty id keeps every community path dormant
-#: (community_enabled is False without a graph address), so a release can never
-#: point the fleet at a development graph by accident. Dev machines opt in via
-#: the BLACKBOX_COMMUNITY_GRAPH_ID env override or the config entry. The
-#: production id lands here in the launch PR and the flip is one line.
-DEFAULT_COMMUNITY_GRAPH_ID = ""
+#: Default community context graph id: the PRODUCTION community graph, created
+#: 2026-10-12 on Umanitek's node and owned by its wallet (an open, unregistered
+#: shared-memory graph; creating it cost nothing). Every install joins it unless
+#: the BLACKBOX_COMMUNITY_GRAPH_ID env override or the config entry names
+#: another graph. Reading community flags needs only this address; SENDING
+#: reports still needs the operator's consent (``report``, the single gate
+#: ``BlackboxConfig.community_enabled``). Never a development or test graph here.
+DEFAULT_COMMUNITY_GRAPH_ID = "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-community"
+
+#: The named subgraph every community statement is written to and read from
+#: (2026-10-12). DKG 10.0.23 reserves a catalog-mode graph's ROOT for its RFC-64
+#: catalog sync and refuses members' direct shares there ("legacy SWM apply is
+#: not authoritative for root scope"); a named subgraph keeps the member lane,
+#: so a share reaches every subscribed member at once (measured: same second).
+COMMUNITY_SUB_GRAPH = "reports"
 
 #: Peer id of the node that OWNS the community graph (its read authority). An
 #: unregistered public graph has no on-chain pointer, so a fresh node cannot
@@ -280,14 +294,14 @@ DEFAULT_COMMUNITY_GRAPH_ID = ""
 #: it, filled in the same launch PR. It is a TRUST ANCHOR: whoever names this
 #: peer decides whose graph the node reads, so it comes only from the shipped
 #: default, the installer, or the operator's own config — never from the network.
-DEFAULT_COMMUNITY_GRAPH_PEER_ID = ""
+DEFAULT_COMMUNITY_GRAPH_PEER_ID = "12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyKndHXjZM"   # Umanitek's node
 
 #: Default daily cap on outbound community reports per node. Bounds a runaway
 #: or compromised agent's graph footprint even before the per-threat 6-hour
-#: cooldown is considered. Refine R1 (plan §07): 20/day, client-side hygiene
+#: cooldown is considered. Refine R1 (plan §07): 100/day (20 until 2026-10-12), client-side hygiene
 #: only — readers enforce the real per-author budget — and it can no longer be
 #: switched off: a limit of 0 or below means this default, never "no cap".
-DEFAULT_DAILY_REPORT_LIMIT = 20
+DEFAULT_DAILY_REPORT_LIMIT = 100
 
 
 def effective_daily_report_limit(configured: int) -> int:

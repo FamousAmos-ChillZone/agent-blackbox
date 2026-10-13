@@ -1,6 +1,8 @@
 """Detection — the CHECK hot path: is this tool call / model request a threat?
 
-Pure matchers over the compiled ruleset plus the two advisory look-asides.
+Pure matchers over the ruleset — public dependency / IOC rules are asked of the
+ruleset object (a live lookup against the node's local store, DKG-lookup B4),
+the small tiers are scanned from its compiled lists — plus two advisory look-asides.
 Callers use this package's surface only:
 
 * ``Finding`` and the ``detect_*`` / ``discover_*`` functions (from
@@ -21,15 +23,17 @@ Usage::
 from __future__ import annotations
 
 from . import osv, reviewer
-from .action_parsing import (FETCH_TOOL_PREFIXES, SENSITIVE_PATH_CATEGORIES, file_access_arg, parse_dependency_installs,
+from .action_parsing import (FETCH_TOOL_PREFIXES, HOST_FILE_AND_SKILL_TOOLS, SENSITIVE_PATH_CATEGORIES, file_access_arg, parse_dependency_installs,
                              parse_downloads, parse_shell_reads, skill_install_arg)
 from .content_scanners import SKILL_DANGER_SHAPES
 from .osv import DEPENDENCY_ECOSYSTEMS, advisory_kind
 from .reviewer_setup import cmd_setup_llm
 from .detectors import (
+    ANSWERED_BY_FALLBACK,
     Finding,
     detect_all,
     detect_custom_fileaccess,
+    detect_own_wallet_keys,
     detect_dependency,
     detect_escalation,
     detect_fileaccess,
@@ -42,6 +46,7 @@ from .detectors import (
     injection_scan_text,
 )
 from .shell_shapes import ESCALATION_SHAPES, SHELL_TOOLS, command_from_args
+from .wallet_files import found_wallets
 
 from .content_scanners import iter_ioc_candidates
 from .injection_detection import injection_scan_text
@@ -53,15 +58,19 @@ __all__ = [
     "advisory_kind",
     "ESCALATION_SHAPES",
     "FETCH_TOOL_PREFIXES",
+    "HOST_FILE_AND_SKILL_TOOLS",
+    "found_wallets",
     "SENSITIVE_PATH_CATEGORIES",
     "SHELL_TOOLS",
     "SKILL_DANGER_SHAPES",
+    "ANSWERED_BY_FALLBACK",
     "Finding",
     "skill_install_arg",
     "cmd_setup_llm",
     "command_from_args",
     "detect_all",
     "detect_custom_fileaccess",
+    "detect_own_wallet_keys",
     "detect_dependency",
     "detect_escalation",
     "detect_fileaccess",

@@ -33,15 +33,20 @@ pytestmark = pytest.mark.skipif(shutil.which("node") is None or not PLAYWRIGHT.e
                                 reason="node + node_modules/playwright are needed for the browser smoke")
 
 
+#: The real home, read at import: the fixture below moves HOME into the test's temp folder,
+#: but Playwright's browser cache lives under the real one.
+_REAL_HOME = Path.home()
+
+
 def _chromium() -> str | None:
     """A Chromium binary Playwright can drive: the env override, else any build
     in Playwright's cache (its own default may demand a newer build than the
     one installed), else None (= let Playwright pick, which may fail)."""
     if os.environ.get("PW_EXEC"):
         return os.environ["PW_EXEC"]
-    cache = Path.home() / "Library" / "Caches" / "ms-playwright"
+    cache = _REAL_HOME / "Library" / "Caches" / "ms-playwright"
     if not cache.exists():
-        cache = Path.home() / ".cache" / "ms-playwright"
+        cache = _REAL_HOME / ".cache" / "ms-playwright"
     candidates = sorted(cache.glob("chromium*/**/Google Chrome for Testing"), reverse=True)
     candidates += sorted(cache.glob("chromium*/**/chrome-headless-shell"), reverse=True)
     candidates += sorted(cache.glob("chromium*/**/chrome"), reverse=True)
@@ -71,13 +76,20 @@ def fixture_app(monkeypatch, tmp_path):
     from plugins.blackbox.ruleset import community_tier, compiler
 
     monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
+    # The served app's background loop discovers every Hermes home on the machine and attaches
+    # Blackbox to it; with the real HOME it installed the test checkout into the developer's own
+    # ~/.hermes on every run (seen 2026-10-13). Discovery must only ever see the test's folder.
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home" / ".hermes"))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     monkeypatch.setenv("BLACKBOX_COMMUNITY_GRAPH_ID", GRAPH)
     root = Ed25519PrivateKey.generate()
     curators = [Ed25519PrivateKey.generate() for _ in range(3)]
     monkeypatch.setenv("BLACKBOX_CURATOR_ROOT_KEYS", signing.public_key_hex(root))
     keys = {"root": root, "curators": curators}
     manifest = km.KeyManifest(environment=NETWORK, graph=adv.VM_GRAPH, chain="", root_epoch=1, version=2,
-                              curator_keys=tuple(sorted(signing.public_key_hex(k) for k in curators)), threshold=2,
+                              curator_keys=tuple(sorted(signing.public_key_hex(k) for k in curators)),
+                              curator_operators=("operator-a", "operator-b", "operator-c"), threshold=2,
                               promotion_author="0x" + "1" * 40, legacy_assets_hash=km.legacy_assets_hash([]))
     cfg = BlackboxConfig(report=True, community_graph_id=GRAPH, context_graph_id=adv.VM_GRAPH, sync_interval=900)
     alice, bob, carol, newcomer = (adv._reporter(n) for n in ("alice", "bob", "carol", "newcomer"))
@@ -197,16 +209,28 @@ def test_the_dashboard_renders_clean_at_desktop_and_phone_widths(served, tmp_pat
             assert not check["horizontalOverflow"], (width, check)
         sections = view["sections"]
         assert "REVOKED" in sections["health-strip"] and "BACKLOG" in sections["health-strip"], (width, sections["health-strip"])
-        assert "dispute" in sections["community-statements-body"] and "retraction" in sections["community-statements-body"]
-        assert "accepted" in sections["my-reports-body"] and "reported" in sections["my-reports-body"], (width, sections["my-reports-body"])
+        # The Community graph section was removed (Amos, 2026-10-10); the tier tab and tiles remain.
+        assert sections["community-panel-present"] is False, width
         assert sections["tab-community"] and sections["tab-community"].split()[-1].isdigit()
         # The summary tiles are filled from /api/community-stats (they sat on "—" before).
         assert sections["stat-community-count"].replace(",", "").isdigit(), (width, sections["stat-community-count"])
         assert sections["stat-sharing-state"] in {"on", "off", "paused"}, (width, sections["stat-sharing-state"])
-        assert "threats" in sections["cg-summary"] and "sharing" in sections["cg-summary"], (width, sections["cg-summary"])
+        assert sections["vs-lookups"], (width, sections["vs-lookups"])   # where verified answers come from
         assert view["spillingCells"] == [], (width, view["spillingCells"])
         # The verified-sync meter is measured against the graph's real size (564 assets).
         assert sections["vs-pct"] == "22.0%", (width, sections["vs-pct"])
         assert sections["vs-chip"].lower() == "syncing", (width, sections["vs-chip"])
         assert "137 / 564" in sections["vs-val-downloaded"], (width, sections["vs-val-downloaded"])
         assert "427 more verified assets" in sections["vs-note"], (width, sections["vs-note"])
+
+
+def test_the_served_app_never_touches_the_real_hermes_home(served):
+    """Guard for the fixture above: the app's auto-attach loop ran while the browser tests
+    were up and installed the checkout into the developer's real ~/.hermes. With HOME moved,
+    discovery sees only the test folder — and the real home is left alone."""
+    real = _REAL_HOME / ".hermes" / "plugins" / "blackbox" / ".blackbox-install-stamp"
+    before = real.stat().st_mtime if real.exists() else None
+    import time as _time
+    _time.sleep(6)   # the rescan loop runs every few seconds
+    assert (real.stat().st_mtime if real.exists() else None) == before
+    assert str(Path.home()) != str(_REAL_HOME)

@@ -23,6 +23,7 @@ community pulse beats while the dashboard runs even with no browser open (KI-283
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
@@ -70,11 +71,14 @@ def community_stats_payload(verified_reports: VerifiedReportsRead) -> Any:
     """The launch instruments: contributing agents, corroboration, health."""
     from .. import community, ruleset
     from ..kernel.config import load_blackbox_config
+    from ..kernel.dkg_client import DkgClient
 
     cfg = load_blackbox_config()
     rs = ruleset.peek(cfg)
     community_rules = getattr(rs, "community", {}) or {}
     now = time.time()
+    graph = str(getattr(cfg, "community_graph_id", "") or "")
+    join = community.read_join_state(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home), graph) if graph else None
     corroborated = sum(1 for r in community_rules.values() if int(r.get("reporterCount") or 0) >= 2)
     # Reports-today from OUR ingest observations (KI-012), not
     # reporter-supplied timestamps.
@@ -95,6 +99,12 @@ def community_stats_payload(verified_reports: VerifiedReportsRead) -> Any:
         "last_share": ledger[0] if ledger else None,
         # distinct VERIFIED signers (R0d); None when no community graph is configured
         "contributing_agents": community.contributing_agent_count(verified_reports(cfg)) if cfg.community_graph_id else None,
+        # which graph this node joined and whether it is connected yet (2026-10-12: a new
+        # install saw "some community graph" and a "not authorized" log line with no explanation)
+        "graph": safe_text(graph.rsplit("/", 1)[-1], 80) if graph else None,
+        "graph_id": safe_text(graph, 200) if graph else None,
+        "join_state": join.value if join else None,
+        "join_text": community.JOIN_STATE_TEXT[join] if join else None,
     }
 
     return stats
@@ -197,10 +207,84 @@ def health_payload(community_read: CommunityReadSource, node_reachable: Callable
     retries = community.share_retry_stats()
     inputs = health.gather(cfg, rs, node_reachable(cfg), read, audit.blocked_counts_by_identifier(), time.time(),
                            pending_shares=retries.pending, shares_given_up=retries.given_up,
-                           sharing_consent_problem=community.consent.why_not())
+                           sharing_consent_problem=community.consent.why_not(),
+                           verified_lookup_problem=ruleset.live.HEALTH.read().problem())
     items = health.operator_health(inputs)
     return {"items": [{**item.as_dict(), "red": health.red(item)} for item in items],
             "ruleset_age": health.ruleset_age_text(inputs.ruleset_age_s), "community_paused": inputs.community_paused}
+
+
+def _envelope_proof(signed_text: str) -> Dict[str, Any]:
+    """What a signed statement proves, read from the statement itself: the signer's
+    key, the record fingerprint (sha256 of exactly the signed bytes — anyone can
+    recompute it), the network and graph the signature is bound to, the signed day.
+    Empty when *signed_text* is not a readable envelope."""
+    from ..kernel import signing
+
+    envelope = signing.from_text(signed_text or "")
+    if envelope is None or not envelope.signatures:
+        return {}
+    return {"signer": "ed25519:" + safe_text(envelope.signatures[0].signer, 80),
+            "fingerprint": "sha256:" + signing.content_id(envelope),
+            "network": safe_text(envelope.environment, 80), "graph": safe_text(envelope.graph, 200),
+            "day": safe_text(envelope.payload.get("day"), 16), "schema": int(envelope.schema_version)}
+
+
+def _node_network(cfg: Any) -> Dict[str, str]:
+    """This node's DKG network: its id and readable name ("DKG V10 Base Mainnet"), so a
+    proof can say "this node's network" instead of a hash. Empty when the node is down."""
+    from ..kernel.dkg_client import DkgClient
+
+    try:
+        status = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home).status(timeout=2.0)
+    except Exception:   # fail open: the proof still shows the raw network id
+        return {}
+    return {"id": str(status.get("networkId") or ""),
+            "name": safe_text(status.get("networkName") or status.get("networkConfig"), 80)}
+
+
+def _named(proof: Dict[str, Any], network: Dict[str, str]) -> Dict[str, Any]:
+    """*proof* with ``network_name`` set when it is bound to this node's network."""
+    if proof and network.get("id") and proof.get("network") == network["id"]:
+        return {**proof, "network_name": network.get("name") or "", "this_network": True}
+    return {**proof, "this_network": False} if proof else proof
+
+
+def threat_proof_payload(identifier: str, tier: str, verified_reports: VerifiedReportsRead) -> Dict[str, Any]:
+    """The proof behind one threat (threat profiles, 2026-10-12).
+
+    ``community``: every VERIFIED report of *identifier* this node holds — each
+    one's signer key, reporter address, record fingerprint, network/graph binding
+    and signed day (a forged or altered report never gets here: the reader drops
+    it before counting) — plus whether the reports count toward confirmation.
+    ``local``: whether this node shared the threat, when and with what outcome
+    (the share ledger), and the proof of the report it signed (its keep-alive copy).
+    """
+    from .. import audit, community, ruleset
+    from ..kernel import reporter_key
+    from ..kernel.config import load_blackbox_config
+
+    cfg = load_blackbox_config()
+    network = _node_network(cfg)
+    out: Dict[str, Any] = {"identifier": safe_identifier(identifier), "tier": tier}
+    if tier == "community":
+        reports = [r for r in verified_reports(cfg) if r.identifier == identifier]
+        out["reports"] = [{**_named(_envelope_proof(r.signed), network), "reporter": safe_text(r.reporter, 64),
+                           "verified": True} for r in reports]
+        rule = (getattr(ruleset.peek(cfg), "community", {}) or {}).get(identifier) or {}
+        out["counted"] = safe_text(rule.get("counted"), 8)
+        out["unlisted"] = safe_text(rule.get("unlistedReporters"), 8)
+        out["disputed"] = safe_text(rule.get("disputed"), 8)
+        return out
+    shares = [row for row in audit.read_share_ledger(limit=500) if row.get("identifier") == identifier]
+    out["shares"] = [{"ts": safe_text(row.get("ts"), 32), "outcome": safe_text(row.get("outcome") or
+                      ("accepted" if row.get("ok") else "failed"), 32)} for row in shares[:5]]
+    live = next((report for report in community.keep_alive.LiveReportStore().all() if report.identifier == identifier), None)
+    signed = next((q.get("object", "") for q in (live.quads if live else ()) if q.get("predicate", "").endswith("signedStatement")), "")
+    out["report"] = _named(_envelope_proof(json.loads(signed) if signed.startswith('"') else signed) if signed else {}, network)
+    store = reporter_key.ReporterKeyStore()
+    out["own_key"] = ("ed25519:" + store.public_key_hex()) if store.path.exists() else ""
+    return out
 
 
 def register_community_routes(app: Any, *, community_read: CommunityReadSource,
@@ -228,6 +312,10 @@ def register_community_routes(app: Any, *, community_read: CommunityReadSource,
     @app.get("/api/reports")
     def reports(limit: int = Query(50, ge=1, le=200)) -> Any:
         return reports_payload(verified_reports, limit)
+
+    @app.get("/api/threat-proof")
+    def threat_proof(identifier: str = Query(..., min_length=1), tier: str = Query("community")) -> Any:
+        return threat_proof_payload(identifier, "community" if tier == "community" else "local", verified_reports)
 
     @app.get("/api/community-statements")
     def community_statements() -> Any:

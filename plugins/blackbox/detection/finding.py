@@ -32,7 +32,9 @@ class Finding:
     confirmed findings can block. ``fields`` carries the privacy-safe threat
     attributes (pattern/toolName/category/skillName/...) that the auto-submit
     path forwards to ``build_report_quads``. It NEVER contains raw prompts,
-    paths, or file/skill source.
+    paths, or file/skill source. ``rule_subject`` is the subject of the graph
+    rule that matched (``""`` for a built-in finding): a report links it so a
+    reader finds the threat's name and description in its OWN verified copy.
     """
 
     identifier: str
@@ -47,6 +49,7 @@ class Finding:
     # malware | vulnerability | historical; vulnerability/historical never block
     kind: Optional[str] = None
     fields: Dict[str, Any] = field(default_factory=dict)
+    rule_subject: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -62,7 +65,13 @@ class Finding:
             "source": self.source,
             "kind": self.kind,
             "fields": dict(self.fields),
+            "rule_subject": self.rule_subject,
         }
+
+
+def rule_subject(rule: Optional[Dict[str, Any]]) -> str:
+    """The matched graph rule's subject IRI (``""`` when there is no rule)."""
+    return str((rule or {}).get("subject") or "")
 
 
 def _rule_source(rule: Dict[str, Any]) -> str:
@@ -71,3 +80,18 @@ def _rule_source(rule: Dict[str, Any]) -> str:
     always treated as verified."""
     src = str(rule.get("source") or "public").lower()
     return src if src in ("public", "community") else "public"
+
+
+#: What a lookup answer says about itself when the graph store could not answer and
+#: the operator's opt-in local index did (the finding then carries ``answered_by``).
+FALLBACK_REASON = "fallback index"
+ANSWERED_BY_FALLBACK = "local index (graph store down)"
+
+
+def mark_answered_by(answer: Any) -> Dict[str, Dict[str, Any]]:
+    """The answer's rules; when the graph store was down and the local index answered,
+    each rule is copied with ``answered_by`` set so the finding and the audit row say so."""
+    rules = getattr(answer, "rules", {}) or {}
+    if getattr(answer, "reason", "") != FALLBACK_REASON:
+        return rules
+    return {key: {**rule, "answered_by": ANSWERED_BY_FALLBACK} for key, rule in rules.items()}

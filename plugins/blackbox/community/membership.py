@@ -41,8 +41,10 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from enum import Enum
 from typing import Callable, Dict, Optional, Set, Tuple
 
+from ..kernel import constants
 from ..kernel.dkg_client import DkgClient
 
 logger = logging.getLogger(__name__)
@@ -73,6 +75,29 @@ class CommunityMembership:
         self._confirmed: Dict[str, float] = {}
         self._last_owner_dial: Dict[str, float] = {}
         self._own_peer = ""   # this node's peer id, once known (never dial ourselves)
+        #: graphs whose ``constants.COMMUNITY_SUB_GRAPH`` is registered on this node
+        self._lane_ready: Set[str] = set()
+
+    def ensure_report_lane(self, client: DkgClient, graph: str) -> bool:
+        """Register the community subgraph on this node before its first write
+        (a node writes into a named subgraph only once that subgraph is
+        registered locally; receiving nodes register it from the first share).
+        Once per process per graph; "already exists" counts as ready. Returns
+        whether the lane is ready; a failure is logged and the write proceeds,
+        so the node's own error names what went wrong (fail-open)."""
+        with self._lock:
+            if graph in self._lane_ready:
+                return True
+        try:
+            client.request("POST", "/api/sub-graph/create",
+                           {"contextGraphId": graph, "subGraphName": constants.COMMUNITY_SUB_GRAPH})
+        except Exception as exc:
+            if "already exists" not in str(exc):
+                logger.warning("blackbox: could not register the community subgraph on this node: %s", exc)
+                return False
+        with self._lock:
+            self._lane_ready.add(graph)
+        return True
 
     def ensure(self, client: DkgClient, cfg: object) -> Tuple[bool, str]:
         """Make sure this node is subscribed to (and has asked to join) the
@@ -235,7 +260,60 @@ def _connect_owner(client: DkgClient, owner_peer: str) -> None:
 MEMBERSHIP = CommunityMembership()
 
 
+def ensure_report_lane(client: DkgClient, graph: str) -> bool:
+    """Before writing a community statement: register the community subgraph
+    on this node (:meth:`CommunityMembership.ensure_report_lane`)."""
+    return MEMBERSHIP.ensure_report_lane(client, graph)
+
+
 def ensure_community_subscription(client: DkgClient, cfg: object) -> Tuple[bool, str]:
     """Subscribe/join this node to the community graph — at most once, never
     to itself, only when the node says it is not subscribed (KI-064/114)."""
     return MEMBERSHIP.ensure(client, cfg)
+
+
+class JoinState(Enum):
+    """Where this node stands with the community graph, as its own listing says.
+
+    JOINED — subscribed with the graph's definition in (it can read and post);
+    AWAITING_DEFINITION — subscribed, the definition still on its way from the
+    owner (the node logs "not authorized" meanwhile; about a minute, KI-295);
+    JOINING — not subscribed yet (dialling the owner, subscribe pending);
+    UNKNOWN — the node could not be asked (never read as "not joined", LES-011).
+    """
+
+    JOINED = "joined"
+    AWAITING_DEFINITION = "awaiting-definition"
+    JOINING = "joining"
+    UNKNOWN = "unknown"
+
+
+#: One plain line per state, for the dashboard (no jargon, no ids).
+JOIN_STATE_TEXT: Dict[JoinState, str] = {
+    JoinState.JOINED: "connected",
+    JoinState.AWAITING_DEFINITION: "connecting — fetching the graph from its owner (about a minute)",
+    JoinState.JOINING: "connecting — reaching the graph's owner",
+    JoinState.UNKNOWN: "could not check the connection (local node not answering)",
+}
+
+
+def join_state_of(entry: Optional[Dict[str, object]], *, listing_read: bool) -> JoinState:
+    """Pure: the :class:`JoinState` of the node's listing row *entry* for the
+    graph (None when the graph is not listed). *listing_read* False means the
+    listing itself could not be read."""
+    if not listing_read:
+        return JoinState.UNKNOWN
+    if entry is None or not entry.get("subscribed"):
+        return JoinState.JOINING
+    return JoinState.JOINED if _has_definition(entry) else JoinState.AWAITING_DEFINITION
+
+
+def read_join_state(client: DkgClient, graph: str) -> JoinState:
+    """Ask the node once (its context-graph listing) where it stands with *graph*."""
+    try:
+        entries = client.context_graphs()
+    except Exception as exc:   # could not tell (LES-011)
+        logger.debug("blackbox: community join state unreadable: %s", exc)
+        return JoinState.UNKNOWN
+    entry = next((row for row in entries if str(row.get("id") or "") == graph), None)
+    return join_state_of(entry, listing_read=True)
