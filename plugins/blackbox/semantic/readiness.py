@@ -1,4 +1,5 @@
 """Explicit preparation and point-in-time residency, without a stale profile cache."""
+import logging
 import json
 import threading
 import time
@@ -80,5 +81,6 @@ def prepare(cfg):
             _graph(cfg, deadline, warmup=True)
             result = check(cfg, deadline)
     except Exception as exc:
+        logging.getLogger(__name__).exception("blackbox: semantic operation unavailable")
         result = {"state": "unavailable", "code": getattr(exc, "code", "SEMANTIC_PREPARATION_FAILED")}
     return {**result, "preparation_seconds": time.monotonic() - start}

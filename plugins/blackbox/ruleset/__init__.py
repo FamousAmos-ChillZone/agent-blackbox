@@ -50,10 +50,11 @@ from .direct.semantic import semantic_candidates, INDEX_SPEC as semantic_index_s
 from .direct.client import local_url as local_graph_url
 
 __all__ = [
-    "semantic_candidates", "semantic_index_spec", "local_graph_url", "LocalGraphClient", "DetectionRead",
+    "DetectionRead",
     "DownloadTotals",
     "GraphReadUnavailable",
     "GrowthWatch",
+    "LocalGraphClient",
     "Ruleset",
     "RulesetRefreshIncomplete",
     "RulesetRefreshLockUnavailable",
@@ -65,12 +66,15 @@ __all__ = [
     "graph_lookup",
     "graph_page",
     "live",
+    "local_graph_url",
     "peek",
     "pulse",
     "read_for_action",
     "ready_sample",
     "refresh",
     "request_refresh_now",
+    "semantic_candidates",
+    "semantic_index_spec",
     "validate_config",
     "verified_download_totals",
     "verified_identifiers",
