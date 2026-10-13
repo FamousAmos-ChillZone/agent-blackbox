@@ -88,6 +88,8 @@ def wallet_protection_payload() -> Dict[str, Any]:
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 TRADER_SHIELD_PAGE = STATIC_DIR / "trader-shield.html"
 ATTACK_TABLE = STATIC_DIR / "trader-shield-attacks.json"
+#: What the verified graph knows about crypto, counted by scripts/blackbox-trader-graph-counts.py.
+GRAPH_COUNTS = STATIC_DIR / "trader-shield-graph.json"
 WALLET_LOGOS = STATIC_DIR / "wallets"
 NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
 
@@ -107,6 +109,10 @@ def register_protection_routes(app: Any) -> None:
     @app.get("/trader-shield/attacks.json")
     def trader_shield_attacks() -> Any:
         return FileResponse(str(ATTACK_TABLE), media_type="application/json", headers=NO_CACHE)
+
+    @app.get("/trader-shield/graph.json")
+    def trader_shield_graph() -> Any:
+        return FileResponse(str(GRAPH_COUNTS), media_type="application/json", headers=NO_CACHE)
 
     @app.get("/wallets/{wallet}.svg")
     def wallet_logo(wallet: str) -> Any:

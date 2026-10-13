@@ -1,0 +1,247 @@
+{
+ "as_of": "2026-10-13 10:11 UTC",
+ "counted_on": "a test node holding a full copy of the verified threat graph",
+ "script": "scripts/blackbox-trader-graph-counts.py",
+ "indicators_total": 207005,
+ "indicators_by_type": {
+  "domain": 124195,
+  "hash": 9116,
+  "url": 50933,
+  "ip": 22693,
+  "wallet": 68
+ },
+ "crypto_indicators": 80159,
+ "drainer_phishing_domains": 79762,
+ "drainer_wallets": 68,
+ "brand_sites_total": 3821,
+ "brand_sites": [
+  {
+   "brand": "opensea",
+   "sites": 920
+  },
+  {
+   "brand": "solana",
+   "sites": 438
+  },
+  {
+   "brand": "ledger",
+   "sites": 279
+  },
+  {
+   "brand": "uniswap",
+   "sites": 225
+  },
+  {
+   "brand": "hyperliquid",
+   "sites": 219
+  },
+  {
+   "brand": "coinbase",
+   "sites": 194
+  },
+  {
+   "brand": "trustwallet",
+   "sites": 191
+  },
+  {
+   "brand": "arbitrum",
+   "sites": 161
+  },
+  {
+   "brand": "okx",
+   "sites": 154
+  },
+  {
+   "brand": "walletconnect",
+   "sites": 140
+  },
+  {
+   "brand": "trezor",
+   "sites": 122
+  },
+  {
+   "brand": "binance",
+   "sites": 109
+  },
+  {
+   "brand": "raydium",
+   "sites": 97
+  },
+  {
+   "brand": "pancakeswap",
+   "sites": 83
+  },
+  {
+   "brand": "phantom",
+   "sites": 83
+  },
+  {
+   "brand": "metamask",
+   "sites": 70
+  },
+  {
+   "brand": "rabby",
+   "sites": 61
+  },
+  {
+   "brand": "bybit",
+   "sites": 57
+  },
+  {
+   "brand": "magiceden",
+   "sites": 43
+  },
+  {
+   "brand": "exodus",
+   "sites": 42
+  },
+  {
+   "brand": "polymarket",
+   "sites": 39
+  },
+  {
+   "brand": "kraken",
+   "sites": 32
+  },
+  {
+   "brand": "layerzero",
+   "sites": 28
+  },
+  {
+   "brand": "zksync",
+   "sites": 26
+  },
+  {
+   "brand": "etherscan",
+   "sites": 20
+  }
+ ],
+ "lure_sites": {
+  "claim": 7881,
+  "airdrop": 2311
+ },
+ "crypto_packages": {
+  "pypi": {
+   "packages": 200,
+   "versions": 337
+  },
+  "npm": {
+   "packages": 992,
+   "versions": 1865
+  }
+ },
+ "crypto_packages_total": 1192,
+ "stealer_families": [
+  {
+   "family": "Vidar",
+   "indicators": 68
+  },
+  {
+   "family": "ArkeiStealer",
+   "indicators": 21
+  },
+  {
+   "family": "PureLogsStealer",
+   "indicators": 17
+  },
+  {
+   "family": "RemusStealer",
+   "indicators": 6
+  },
+  {
+   "family": "Rhadamanthys",
+   "indicators": 5
+  },
+  {
+   "family": "LummaStealer",
+   "indicators": 4
+  },
+  {
+   "family": "Stealc",
+   "indicators": 4
+  },
+  {
+   "family": "PhantomStealer",
+   "indicators": 4
+  },
+  {
+   "family": "stealer",
+   "indicators": 4
+  },
+  {
+   "family": "AmosStealer",
+   "indicators": 3
+  },
+  {
+   "family": "KoiStealer",
+   "indicators": 3
+  },
+  {
+   "family": "stealers",
+   "indicators": 3
+  },
+  {
+   "family": "ACRStealer",
+   "indicators": 3
+  },
+  {
+   "family": "MaskGramStealer",
+   "indicators": 3
+  },
+  {
+   "family": "dropped-by-Stealc",
+   "indicators": 3
+  },
+  {
+   "family": "RedLineStealer",
+   "indicators": 2
+  },
+  {
+   "family": "ZigClipper",
+   "indicators": 2
+  },
+  {
+   "family": "DeerStealer",
+   "indicators": 2
+  },
+  {
+   "family": "rustystealer",
+   "indicators": 2
+  },
+  {
+   "family": "RapidStealer",
+   "indicators": 1
+  },
+  {
+   "family": "PythonStealer",
+   "indicators": 1
+  },
+  {
+   "family": "Lumma",
+   "indicators": 1
+  },
+  {
+   "family": "DestinyStealer",
+   "indicators": 1
+  },
+  {
+   "family": "StealeriumStealer",
+   "indicators": 1
+  }
+ ],
+ "stealer_indicators": 164,
+ "coin_miner_indicators": 3704,
+ "crypto_skills": [
+  "Fake Solidity-audit skill (crypto-stealer)",
+  "Wallet-key exfiltration skill"
+ ],
+ "sources": [
+  "OpenPhish community feed",
+  "PhishTank",
+  "SafeDep Threat Intelligence Data Hub",
+  "ScamSniffer scam-database",
+  "abuse.ch MalwareBazaar",
+  "abuse.ch ThreatFox",
+  "abuse.ch URLhaus"
+ ]
+}
