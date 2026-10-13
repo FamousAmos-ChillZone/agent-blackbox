@@ -11,7 +11,7 @@ from test_blackbox_direct_graph import GraphNode, CG, PART, G, DP, queries, comp
 def test_review_legacy_package_alias_keeps_blocking_parity():
     node = GraphNode()
     node.add('urn:legacy:package', 'urn:legacy', {G+'identifier': 'dep:pypi:Foo_Bar@1.0', G+'kind': 'malware', G+'severity': 'critical'})
-    cfg = config.BlackboxConfig(detection_backend='dkg', context_graph_id=CG, auto_attach=False, osv_lookup=False)
+    cfg = config.BlackboxConfig(detection_backend='dkg', context_graph_id=CG, community_graph_id='', report=False, auto_attach=False, osv_lookup=False)
     args = {'command': 'pip install foo-bar==1.0'}
     triples = [(str(s), str(p), str(o)) for s,p,o in node.store.graph(URIRef(PART))]
     oracle = compiler.build_from_rows(rows_module.rows_from_triples(PART, triples))
@@ -30,7 +30,7 @@ def test_review_ready_sample_advances_past_suppressed_prefix():
         node.add(subject, 'urn:defender:IocSignal', {DP+'iocType':'domain',DP+'value':f'{n}.evil.example'})
         if n < 64:
             node.add(f'urn:defender:correction:{n}', 'urn:defender:CorrectionSignal', {DP+'targetSubject':subject,DP+'action':'suppress'})
-    cfg = config.BlackboxConfig(detection_backend='dkg', context_graph_id=CG)
+    cfg = config.BlackboxConfig(detection_backend='dkg', context_graph_id=CG, community_graph_id='', report=False)
     assert load_blackbox('ruleset.direct.view').lookup(cfg,'ioc:domain:64.evil.example', client=node)
     assert load_blackbox('ruleset.direct.view').ready_sample(cfg, client=node) > 0
 
