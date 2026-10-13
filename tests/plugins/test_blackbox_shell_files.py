@@ -7,6 +7,8 @@ arguments are taken as whole folders.
 
 from __future__ import annotations
 
+import pytest
+
 from plugins.blackbox.detection import action_parsing
 from plugins.blackbox.detection.paths.shell_files import shell_file_args
 
@@ -71,3 +73,70 @@ def test_commands_that_touch_no_file_yield_nothing():
 
 def test_parse_shell_reads_keeps_its_contract():
     assert action_parsing.parse_shell_reads("cat ~/.ssh/id_rsa && head -5 package.json") == ["~/.ssh/id_rsa", "package.json"]
+
+
+# -- find: what it finds is read only when it feeds a reader --------------------
+
+FIND_END = " {} " + chr(92) + ";"   # the shell's "{} \;" ending, spelled without escape puzzles
+
+
+@pytest.mark.parametrize("command", [
+    "find ~/.config/google-chrome -name '*.log' -exec cat" + FIND_END,
+    "find ~/.config/google-chrome -type f -exec base64 {} +",
+    "find ~/.config/google-chrome -execdir cp {} /var/tmp/x" + FIND_END[3:],
+    "find ~/.config/google-chrome -type f -print0 | xargs -0 cat",
+    "find ~/.config/google-chrome -name '*.ldb' | xargs -I {} tar czf out.tgz {}",
+])
+def test_a_find_that_feeds_a_reader_hands_its_folder_over_whole(command):
+    assert ("~/.config/google-chrome", "find", True) in _paths(command)
+
+
+@pytest.mark.parametrize("command", [
+    "find ~/.config -name '*.json'",                 # lists names only
+    "find . -name '*.pyc' -delete",
+    "find ~/.ssh -exec ls -la {} +",                 # ls reads no contents
+    "find . -type f | wc -l",
+])
+def test_a_find_that_only_lists_or_deletes_reads_nothing(command):
+    assert [arg for arg in _paths(command) if arg[1] == "find"] == []
+
+
+def test_commands_after_a_find_exec_are_still_parsed():
+    assert _paths("find ~/x -exec base64" + FIND_END + " && cat b.txt") == [("~/x", "find", True), ("b.txt", "cat", False)]
+
+
+# -- one-line scripts: the quoted paths in the code are read ----------------------
+
+@pytest.mark.parametrize("command, path", [
+    ("""python3 -c "print(open('/home/u/.ssh/id_rsa').read())" """, "/home/u/.ssh/id_rsa"),
+    ("""node -e "require('fs').readFileSync('/home/u/.config/solana/id.json')" """, "/home/u/.config/solana/id.json"),
+    ("""ruby -e "puts File.read('~/.electrum/wallets/default_wallet')" """, "~/.electrum/wallets/default_wallet"),
+    ("""perl -e 'open(F, "/home/u/.aws/credentials"); print <F>'""", "/home/u/.aws/credentials"),
+    ("""php -r "echo file_get_contents('/home/u/.env');" """, "/home/u/.env"),
+])
+def test_a_one_line_script_reads_the_paths_it_quotes(command, path):
+    assert path in [arg.path for arg in shell_file_args(command)]
+
+
+def test_a_relative_path_joined_onto_the_home_folder_is_taken_from_home():
+    command = """node -e "fs.readFileSync(path.join(os.homedir(), '.config/solana/id.json'))" """
+    assert "~/.config/solana/id.json" in [arg.path for arg in shell_file_args(command)]
+
+
+def test_a_script_that_packs_folders_hands_them_over_whole():
+    command = """python3 -c "import shutil; shutil.make_archive('out', 'zip', '/home/u/.config')" """
+    assert ("/home/u/.config", "python3", True) in _paths(command)
+
+
+def test_a_heredoc_script_is_read_like_a_one_liner():
+    command = "python3 - <<'EOF'\nimport shutil\nshutil.copytree('/home/u/.config/Exodus', 'loot')\nEOF"
+    assert ("/home/u/.config/Exodus", "python3", True) in _paths(command)
+
+
+@pytest.mark.parametrize("command", [
+    """python3 -c "print(1 + 1)" """,
+    """python3 -c "import requests; print(requests.get('https://example.com/a/b').status_code)" """,   # a URL
+    """node -e "console.log('hello world')" """,
+])
+def test_scripts_without_file_paths_yield_nothing(command):
+    assert _paths(command) == []
