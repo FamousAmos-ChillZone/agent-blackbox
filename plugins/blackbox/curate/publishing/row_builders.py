@@ -310,7 +310,7 @@ class InjectionRowBuilder:
 
 
 class FileAccessRowBuilder:
-    """``fileaccess:<tool>:<category>`` → a legacy ``g:identifier`` rule (the
+    """``fileaccess:{tool}:{category}`` → a legacy ``g:identifier`` rule (the
     corpus has no typed signal for it)."""
 
     category = "fileaccess"

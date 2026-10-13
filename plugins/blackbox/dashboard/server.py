@@ -188,7 +188,7 @@ def _network_sync_once(
     try:
         completed = subprocess.run(
             _network_sync_argv(timeout),
-            capture_output=True,
+            stdin=subprocess.DEVNULL, capture_output=True,
             text=True,
             timeout=max(30, int(timeout) + 30),
             check=False,
@@ -1288,7 +1288,7 @@ def create_app(*, manage_blackbox: bool = False):
                 argv,
                 cwd=str(attach.repo_root()),
                 text=True,
-                capture_output=True,
+                stdin=subprocess.DEVNULL, capture_output=True,
                 timeout=120, check=False
             )
         except subprocess.TimeoutExpired:

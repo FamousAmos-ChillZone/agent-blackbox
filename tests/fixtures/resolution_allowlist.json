@@ -439,6 +439,11 @@
     "kind": "bare_which"
   },
   {
+    "path": "integrations/threat-lab/tests/test_threat_lab_egress.py",
+    "symbol": "test_the_ruleset_parses_with_nft",
+    "kind": "bare_which"
+  },
+  {
     "path": "pm/libatomic.py",
     "symbol": "_command_plan",
     "kind": "bare_which"

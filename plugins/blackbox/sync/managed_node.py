@@ -179,7 +179,7 @@ def _node_runtime_matches_dkg(executable: Path, cfg: BlackboxConfig) -> bool:
     try:
         result = subprocess.run(
             [str(executable), "-e", probe, str(native_package)],
-            capture_output=True,
+            stdin=subprocess.DEVNULL, capture_output=True,
             text=True,
             timeout=10,
             check=False,
@@ -251,7 +251,7 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
         try:
             restarted = subprocess.run(
                 ["systemctl", "restart", unit],
-                capture_output=True,
+                stdin=subprocess.DEVNULL, capture_output=True,
                 text=True,
                 timeout=120,
                 check=False,
@@ -269,7 +269,7 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
         subprocess.run(
             [command, "stop"],
             env=env,
-            capture_output=True,
+            stdin=subprocess.DEVNULL, capture_output=True,
             text=True,
             timeout=60,
             check=False,
@@ -300,7 +300,7 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
         started = subprocess.run(
             [command, "start"],
             env=env,
-            capture_output=True,
+            stdin=subprocess.DEVNULL, capture_output=True,
             text=True,
             timeout=60,
             check=False,
