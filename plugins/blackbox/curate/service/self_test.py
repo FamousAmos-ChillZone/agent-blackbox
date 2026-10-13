@@ -60,7 +60,7 @@ class Fixture:
     tier: Optional[Tier] = None
 
 
-def _lab_run(seen: Tuple[Check, ...] = (), notes: Tuple[NoteCode, ...] = ()) -> Evidence:
+def _lab_run(seen: tuple[Check, ...] = (), notes: tuple[NoteCode, ...] = ()) -> Evidence:
     """One validated lab run where *seen* happened and every other check was answered "not seen"."""
     image = "e" * 64
     return validate_evidence({
@@ -76,7 +76,7 @@ NEVER_FLAG: AbstractSet[str] = frozenset({"ioc:domain:never-flag.self-test.inval
                                           "ioc:url:https://never-flag.self-test.invalid/login"})
 
 
-def fixtures() -> Tuple[Fixture, ...]:
+def fixtures() -> tuple[Fixture, ...]:
     """The fixed set: 10 known threats, 10 known-clean, 2 could-not-tell (22 in all)."""
     def listed(reference: str) -> VerdictFacts:
         return VerdictFacts(citable_listing=reference)
@@ -124,17 +124,17 @@ class SelfTestResult:
     day: str
     matched: int
     total: int
-    failures: Tuple[str, ...] = ()
+    failures: tuple[str, ...] = ()
 
     @property
     def passed(self) -> bool:
         return self.total > 0 and self.matched == self.total and not self.failures
 
-    def as_dict(self) -> Dict[str, object]:
+    def as_dict(self) -> dict[str, object]:
         return {"day": self.day, "matched": self.matched, "total": self.total, "failures": list(self.failures)}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, object]) -> "SelfTestResult":
+    def from_dict(cls, data: dict[str, object]) -> SelfTestResult:
         return cls(day=str(data["day"]), matched=int(data["matched"]), total=int(data["total"]),   # type: ignore[arg-type]
                    failures=tuple(str(line) for line in data.get("failures") or ()))         # type: ignore[union-attr]
 
@@ -143,7 +143,7 @@ def run_self_test(day: str, decide: VerdictRule = decide_verdict) -> SelfTestRes
     """Judge every fixture with *decide*. A rule that raises on a fixture fails
     that fixture: an error is never read as a pass."""
     cases = fixtures()
-    failures: List[str] = []
+    failures: list[str] = []
     for case in cases:
         try:
             decision = decide(case.identifier, case.facts, NEVER_FLAG)
@@ -216,7 +216,7 @@ def _failure_text(result: SelfTestResult) -> str:
     return f"its self-test failed {result.total - result.matched} of {result.total} on {result.day} (first: {first})"
 
 
-def health_items(result: Optional[SelfTestResult]) -> List[HealthItem]:
+def health_items(result: Optional[SelfTestResult]) -> list[HealthItem]:
     """The health item for a suspended curator; nothing when the last run passed or none ever ran."""
     if result is None or result.passed:
         return []

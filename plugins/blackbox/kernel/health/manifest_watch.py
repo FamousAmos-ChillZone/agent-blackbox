@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 from pathlib import Path
 from typing import Iterable, List, Mapping, Optional, Tuple
 
@@ -48,7 +48,7 @@ from ..yaml_files import atomic_write
 from .community_authority import Alarm
 
 #: A key manifest's order: (root epoch, version).
-Order = Tuple[int, int]
+Order = tuple[int, int]
 
 #: The file under the caller's state folder (the curate home on curator nodes) holding the recorded order.
 SEEN_ORDER_FILE = "manifest_seen_order.json"
@@ -74,7 +74,7 @@ def _order_text(order: Order) -> str:
 
 
 def _time_text(epoch_seconds: float) -> str:
-    return datetime.fromtimestamp(epoch_seconds, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return datetime.fromtimestamp(epoch_seconds, UTC).strftime("%Y-%m-%d %H:%M UTC")
 
 
 @dataclass(frozen=True)
@@ -94,7 +94,7 @@ class ManifestWatchInputs:
     root signed it ("" = undated, no reminders); ``now`` — epoch seconds.
     """
 
-    seen_orders: Tuple[Order, ...] = ()
+    seen_orders: tuple[Order, ...] = ()
     recorded_order: Optional[Order] = None
     record_unreadable: bool = False
     heartbeats: Mapping[str, float] = field(default_factory=dict)
@@ -166,12 +166,12 @@ def watch_inputs(record: SeenOrderRecord, seen_orders: Iterable[Order], *, heart
                                manifest_order=manifest_order, issued_day=issued_day, now=now)
 
 
-def alarms(inputs: ManifestWatchInputs) -> List[Alarm]:
+def alarms(inputs: ManifestWatchInputs) -> list[Alarm]:
     """The watcher's alarms for *inputs*, as (class, message, what to do)."""
     return _new_lists(inputs) + _heartbeat_gaps(inputs) + _renewal(inputs)
 
 
-def _new_lists(inputs: ManifestWatchInputs) -> List[Alarm]:
+def _new_lists(inputs: ManifestWatchInputs) -> list[Alarm]:
     if inputs.record_unreadable:
         return [("security", "this node's record of root-signed curator key lists is unreadable",
                  "check every root-signed list on the graph was signed in the key console, then acknowledge the newest")]
@@ -185,8 +185,8 @@ def _new_lists(inputs: ManifestWatchInputs) -> List[Alarm]:
              "confirm the key console signed it (its signing log); if it did not, freeze it with the other root and replace the key now")]
 
 
-def _heartbeat_gaps(inputs: ManifestWatchInputs) -> List[Alarm]:
-    out: List[Alarm] = []
+def _heartbeat_gaps(inputs: ManifestWatchInputs) -> list[Alarm]:
+    out: list[Alarm] = []
     for key, last in sorted(inputs.heartbeats.items()):
         silence = inputs.now - last
         since = _time_text(last)
@@ -200,10 +200,10 @@ def _heartbeat_gaps(inputs: ManifestWatchInputs) -> List[Alarm]:
     return out
 
 
-def _renewal(inputs: ManifestWatchInputs) -> List[Alarm]:
+def _renewal(inputs: ManifestWatchInputs) -> list[Alarm]:
     if not inputs.issued_day or inputs.manifest_order is None:
         return []
-    today = datetime.fromtimestamp(inputs.now, timezone.utc).date()
+    today = datetime.fromtimestamp(inputs.now, UTC).date()
     try:
         issued = date.fromisoformat(inputs.issued_day)
     except ValueError:

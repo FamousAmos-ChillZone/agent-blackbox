@@ -17,14 +17,14 @@ import subprocess
 
 import pytest
 
-from test_blackbox_dashboard_browser import REPO, _chromium, fixture_app, served  # noqa: F401  (pytest fixtures)
+from test_blackbox_dashboard_browser import REPO, _chromium, fixture_app, served
 
 SCRIPT = REPO / "tests" / "plugins" / "dashboard_graph_clicks.mjs"
 pytestmark = pytest.mark.skipif(not (REPO / "node_modules" / "playwright").exists(),
                                 reason="node_modules/playwright is needed for the browser pass")
 
 
-def test_every_type_and_threat_bubble_opens_a_window(served, tmp_path):  # noqa: F811
+def test_every_type_and_threat_bubble_opens_a_window(served, tmp_path):
     chromium = _chromium()
     if chromium is None:
         pytest.skip("no Chromium build in Playwright's cache (npx playwright install chromium)")

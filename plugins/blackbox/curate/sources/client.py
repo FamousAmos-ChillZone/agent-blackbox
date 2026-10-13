@@ -39,7 +39,7 @@ USER_AGENT = "blackbox-curator/1 (+https://blackboxcommand.com)"
 
 JsonObject = Mapping[str, Any]
 #: What :meth:`HttpClient.get` may return: a JSON object or a JSON list.
-JsonValue = Union[JsonObject, List[Any]]
+JsonValue = Union[JsonObject, list[Any]]
 
 
 class HttpClient(Protocol):
@@ -55,7 +55,7 @@ class HttpClient(Protocol):
 
 
 class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args: Any, **kwargs: Any) -> None:  # noqa: D102 — a 3xx surfaces as HTTPError
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
         return None
 
 

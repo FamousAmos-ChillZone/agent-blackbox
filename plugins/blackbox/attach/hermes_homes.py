@@ -22,7 +22,7 @@ _BLACKBOX_CHAT_PROFILE = "blackbox"
 _BLACKBOX_CHAT_SOUL_MARKER = "<!-- managed-by: hermes-blackbox-chat -->"
 
 
-def discover_hermes_homes() -> List[Path]:
+def discover_hermes_homes() -> list[Path]:
     """Return every local Hermes home directory to protect.
 
     Includes the resolved default home, ``~/.hermes``, every existing
@@ -30,7 +30,7 @@ def discover_hermes_homes() -> List[Path]:
     The canonical default is always included even if not yet created; results are
     de-duplicated preserving order.
     """
-    homes: List[Path] = []
+    homes: list[Path] = []
 
     def _add(path: Optional[Path]) -> None:
         if path is None:
@@ -88,7 +88,7 @@ def is_managed_blackbox_chat_profile(path: Path) -> bool:
         return False
 
 
-def enabled_list_has(data: Dict[str, Any], name: str) -> bool:
+def enabled_list_has(data: dict[str, Any], name: str) -> bool:
     plugins = data.get("plugins")
     if not isinstance(plugins, dict):
         return False
@@ -101,7 +101,7 @@ def enabled_list_has(data: Dict[str, Any], name: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def attach_hermes(home: Path, *, dry_run: bool = False) -> Dict[str, Any]:
+def attach_hermes(home: Path, *, dry_run: bool = False) -> dict[str, Any]:
     """Enable Blackbox in a single Hermes *home*.
 
     Copies the plugin into ``<home>/plugins/blackbox/`` (only when missing or a
@@ -110,7 +110,7 @@ def attach_hermes(home: Path, *, dry_run: bool = False) -> Dict[str, Any]:
     per-target report dict; fails open (``ok=False`` + ``error`` on failure).
     """
     home = home.expanduser()
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "target": str(home),
         "kind": "hermes",
         "ok": False,
@@ -161,14 +161,14 @@ def attach_hermes(home: Path, *, dry_run: bool = False) -> Dict[str, Any]:
     return report
 
 
-def detach_hermes(home: Path, *, remove_files: bool = False, dry_run: bool = False) -> Dict[str, Any]:
+def detach_hermes(home: Path, *, remove_files: bool = False, dry_run: bool = False) -> dict[str, Any]:
     """Disable Blackbox in a single Hermes *home*.
 
     Removes ``blackbox`` from ``plugins.enabled`` (idempotent) and, when
     *remove_files* is set, deletes ``<home>/plugins/blackbox/``. Fails open.
     """
     home = home.expanduser()
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "target": str(home),
         "kind": "hermes",
         "ok": False,

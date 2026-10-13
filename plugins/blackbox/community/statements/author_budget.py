@@ -58,9 +58,9 @@ class BudgetResult:
     many statements were ``held_back``, and every subject's ``first_seen``
     epoch (reader-observed)."""
 
-    admitted: FrozenSet[str]
+    admitted: frozenset[str]
     held_back: int
-    first_seen: Dict[str, float]
+    first_seen: dict[str, float]
 
 
 @dataclass(frozen=True)
@@ -85,13 +85,13 @@ class FirstSeenStore:
         self._clock = clock
         self._lock = threading.Lock()
 
-    def snapshot(self) -> Tuple[Dict[str, float], Optional[float]]:
+    def snapshot(self) -> tuple[dict[str, float], Optional[float]]:
         """Read-only: ({subject-hash: first-seen epoch}, baseline) — never writes
         (``observe`` keeps only the subjects it is given, so it must not be used to peek)."""
         with self._lock:
             return self._load()
 
-    def observe(self, subjects: Iterable[str]) -> Tuple[Dict[str, float], float]:
+    def observe(self, subjects: Iterable[str]) -> tuple[dict[str, float], float]:
         """({subject: first-seen epoch}, baseline_until) for *subjects*.
 
         New subjects are dated now. Only the subjects passed are kept (the
@@ -107,7 +107,7 @@ class FirstSeenStore:
             self._save(kept, baseline_until)
             return {subject: kept.get(key, now) for subject, key in keys.items()}, baseline_until
 
-    def _load(self) -> Tuple[Dict[str, float], Optional[float]]:
+    def _load(self) -> tuple[dict[str, float], Optional[float]]:
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
             seen = {str(k): float(v) for k, v in dict(data["seen"]).items()}
@@ -115,7 +115,7 @@ class FirstSeenStore:
         except (OSError, ValueError, KeyError, TypeError):
             return {}, None   # missing or unreadable: a fresh baseline
 
-    def _save(self, seen: Dict[str, float], baseline_until: float) -> None:
+    def _save(self, seen: dict[str, float], baseline_until: float) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
@@ -137,7 +137,7 @@ class AuthorBudget:
         admits an author's earliest-seen ``per_day`` statements."""
         statements = list(statements)
         first_seen, baseline_until = self._store.observe(s.subject for s in statements)
-        by_author_day: Dict[Tuple[str, int], List[Tuple[float, str]]] = {}
+        by_author_day: dict[tuple[str, int], list[tuple[float, str]]] = {}
         admitted = set()
         for statement in statements:
             seen_at = first_seen[statement.subject]

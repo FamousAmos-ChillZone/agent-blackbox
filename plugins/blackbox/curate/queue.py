@@ -69,9 +69,9 @@ class DeltaView:
     Without this rule 5,000 fresh single-author reports would fill every
     lane and fire the intake webhook 5,000 times (KI-194)."""
 
-    new: Tuple[QueueItem, ...]
-    already_verified: Tuple[str, ...]
-    unlisted_only: Tuple[str, ...] = ()
+    new: tuple[QueueItem, ...]
+    already_verified: tuple[str, ...]
+    unlisted_only: tuple[str, ...] = ()
 
 
 def admitted(rule: Mapping[str, Any]) -> bool:

@@ -190,7 +190,7 @@ def test_dashboard_sync_never_subscribes_or_requests_private_join(monkeypatch):
         def refresh(_cfg, _client):
             return ruleset.Ruleset()
 
-    monkeypatch.setattr(server.sync_state, "read", lambda: {})
+    monkeypatch.setattr(server.sync_state, "read", dict)
     result = server._sync_ruleset_once(lambda: Cfg(), Client, Rules)
 
     assert result == {"total": 0, "public": 0, "community": 0}
@@ -224,7 +224,7 @@ def test_dashboard_does_not_query_rules_while_durable_catchup_runs(monkeypatch):
         def refresh(_cfg, _client):
             raise AssertionError("VM must not be queried during durable catch-up")
 
-    monkeypatch.setattr(server.sync_state, "read", lambda: {})
+    monkeypatch.setattr(server.sync_state, "read", dict)
 
     assert server._sync_ruleset_once(lambda: Cfg(), Client, Rules) == {
         "total": 0,
@@ -305,7 +305,7 @@ def test_dashboard_never_subscribes_when_status_is_unavailable(monkeypatch):
         def refresh(_cfg, _client):
             return ruleset.Ruleset()
 
-    monkeypatch.setattr(server.sync_state, "read", lambda: {})
+    monkeypatch.setattr(server.sync_state, "read", dict)
 
     server._sync_ruleset_once(lambda: Cfg(), Client, Rules)
     server._sync_ruleset_once(lambda: Cfg(), Client, Rules)
@@ -355,7 +355,7 @@ def test_dashboard_does_not_resubscribe_terminal_catchup_without_job_id(monkeypa
         def refresh(_cfg, _client):
             raise AssertionError("fresh terminal cache must not be refreshed")
 
-    monkeypatch.setattr(server.sync_state, "read", lambda: {})
+    monkeypatch.setattr(server.sync_state, "read", dict)
 
     assert server._sync_ruleset_once(lambda: Cfg(), Client, Rules)["public"] == 1
 
@@ -402,7 +402,7 @@ def test_dashboard_reuses_fresh_large_ruleset_without_querying_blazegraph(monkey
         def refresh(_cfg, _client):
             raise AssertionError("fresh cache must not trigger a full VM scan")
 
-    monkeypatch.setattr(server.sync_state, "read", lambda: {})
+    monkeypatch.setattr(server.sync_state, "read", dict)
 
     assert server._sync_ruleset_once(lambda: Cfg(), Client, Rules) == {
         "total": 1,

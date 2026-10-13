@@ -58,7 +58,7 @@ class InboxCursor:
         self._path = path or (keys.curate_home() / _CURSOR_FILE)
         self._lock = threading.Lock()
 
-    def read(self) -> Dict[str, int]:
+    def read(self) -> dict[str, int]:
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
             return {"since": int(data.get("since", 0)), "since_id": int(data.get("since_id", 0))}
@@ -73,7 +73,7 @@ class InboxCursor:
             os.replace(tmp, self._path)
 
 
-def send_proposal(client: DkgClient, peer: str, proposal: Proposal) -> Dict[str, Any]:
+def send_proposal(client: DkgClient, peer: str, proposal: Proposal) -> dict[str, Any]:
     """Send *proposal* to the other curator; returns the node's delivery result."""
     return node_routes.send_message(client, peer, PROPOSAL_PREFIX + proposal.to_json())
 
@@ -91,11 +91,11 @@ def parse_message(text: str) -> Optional[Proposal]:
     return proposal if proposal.state is ProposalState.PROPOSED else None
 
 
-def receive_proposals(client: DkgClient, cursor: InboxCursor) -> List[Proposal]:
+def receive_proposals(client: DkgClient, cursor: InboxCursor) -> list[Proposal]:
     """Every proposal in the inbox since the cursor, advancing it past each
     message read (proposal or not)."""
     position = cursor.read()
-    found: List[Proposal] = []
+    found: list[Proposal] = []
     for message in node_routes.inbox(client, since=position["since"], since_id=position["since_id"]):
         proposal = parse_message(message.text)
         if proposal is not None:
@@ -134,7 +134,7 @@ class DeliveryLedger:
     def __init__(self, path: Optional[Path] = None) -> None:
         self._path = path or (keys.curate_home() / _DELIVERY_FILE)
 
-    def _read(self) -> Dict[str, Dict[str, float]]:
+    def _read(self) -> dict[str, dict[str, float]]:
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -157,7 +157,7 @@ class DeliveryLedger:
             if entries.pop(proposal_id, None) is not None:
                 yaml_files.atomic_write(self._path, json.dumps(entries))
 
-    def alarms(self, now: float) -> List[Undelivered]:
+    def alarms(self, now: float) -> list[Undelivered]:
         """The proposals alarmed and still being retried, oldest-tried first."""
         found = []
         for proposal_id, entry in self._read().items():
@@ -170,7 +170,7 @@ class DeliveryLedger:
         return sorted(found, key=lambda item: item.last_tried)
 
 
-def delivery_health_items(now: float, ledger: Optional[DeliveryLedger] = None) -> List[HealthItem]:
+def delivery_health_items(now: float, ledger: Optional[DeliveryLedger] = None) -> list[HealthItem]:
     """One ACTION item per alarmed proposal (none on a node that is not a curator)."""
     return [HealthItem("operator", HealthClass.ACTION,
                        f"curator quorum HALTED: proposal {item.proposal_id} reached no other curator for {item.beats} beats",

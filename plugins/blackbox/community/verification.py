@@ -26,7 +26,7 @@ Usage::
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 
 import logging
 from dataclasses import dataclass
@@ -87,7 +87,7 @@ class VerifiedReport:
     author: str
     reporter: str
     severity: str
-    fields: Tuple[Tuple[str, str], ...] = ()
+    fields: tuple[tuple[str, str], ...] = ()
     framework: str = ""      # the signed framework label (display only)
     day: str = ""
     signed: str = ""
@@ -106,7 +106,7 @@ class ReportVerifier:
         #: R10b: why rows were dropped — "env_mismatch" (signed for another network / graph:
         #: a config mistake), "future_dated" (a modified client), "other" (unsigned / forged).
         #: "schema" — signed and well attributed, but a value the closed report schema refuses today.
-        self.drops: Dict[str, int] = {"env_mismatch": 0, "future_dated": 0, "schema": 0, "other": 0}
+        self.drops: dict[str, int] = {"env_mismatch": 0, "future_dated": 0, "schema": 0, "other": 0}
 
     def verify(self, row: Mapping[str, Any]) -> Optional[VerifiedReport]:
         """The verified report for *row*, or None when it must be dropped."""
@@ -159,7 +159,7 @@ class ReportVerifier:
 
 
 def _utc_today() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(UTC).date().isoformat()
 
 
 def _tomorrow(today: str) -> str:
@@ -193,11 +193,11 @@ def _meets_the_schema(identifier: str, severity: str, payload: Mapping[str, str]
     return True
 
 
-def _agreed_evidence(row: Mapping[str, Any], payload: Mapping[str, str]) -> Optional[Tuple[Tuple[str, str], ...]]:
+def _agreed_evidence(row: Mapping[str, Any], payload: Mapping[str, str]) -> Optional[tuple[tuple[str, str], ...]]:
     """Evidence taken from the SIGNED payload; None when the row shows a
     value the signature does not (a tampered or forged row). A field the row
     omits is fine — the signed value is used."""
-    fields: List[Tuple[str, str]] = []
+    fields: list[tuple[str, str]] = []
     for var, key in EVIDENCE_PAYLOAD_KEYS.items():
         signed = payload.get(key, "")
         shown = extract_binding(row.get(var))
@@ -208,7 +208,7 @@ def _agreed_evidence(row: Mapping[str, Any], payload: Mapping[str, str]) -> Opti
     return tuple(sorted(fields))
 
 
-def unique_by_subject(found: List[Any]) -> List[Any]:
+def unique_by_subject(found: list[Any]) -> list[Any]:
     """One statement per subject, first seen kept (KI-207).
 
     An epoch copy — the same statement re-shared under a NEW asset name to
@@ -230,10 +230,10 @@ def unique_by_subject(found: List[Any]) -> List[Any]:
     return unique
 
 
-def verify_report_rows(rows: Iterable[Mapping[str, Any]], verifier: ReportVerifier) -> Tuple[List[VerifiedReport], int]:
+def verify_report_rows(rows: Iterable[Mapping[str, Any]], verifier: ReportVerifier) -> tuple[list[VerifiedReport], int]:
     """(verified reports, number of rows dropped). Logs the drop count —
     a sudden jump is the visible sign of forged or unsigned traffic."""
-    reports: List[VerifiedReport] = []
+    reports: list[VerifiedReport] = []
     dropped = 0
     for row in rows:
         report = verifier.verify(row)

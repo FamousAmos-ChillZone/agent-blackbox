@@ -84,7 +84,7 @@ def check_image(config: LabConfig) -> None:
         raise LabConfigError("the microVM kernel + rootfs do not hash to the pinned --image digest")
 
 
-def boot_config(settings: MicroVMSettings, guest: str, gateway: str, prefix: int, tap: str) -> Dict[str, Any]:
+def boot_config(settings: MicroVMSettings, guest: str, gateway: str, prefix: int, tap: str) -> dict[str, Any]:
     """The Firecracker config for one boot, with in-jail paths. The guest's
     address comes from the kernel's own ``ip=`` set-up; ``init`` runs the job."""
     netmask = str(ipaddress.IPv4Network(f"0.0.0.0/{prefix}").netmask)
@@ -104,7 +104,7 @@ def boot_config(settings: MicroVMSettings, guest: str, gateway: str, prefix: int
     }
 
 
-def assert_image_only(config: Dict[str, Any], argv: List[str]) -> None:
+def assert_image_only(config: dict[str, Any], argv: list[str]) -> None:
     """Refuse a boot that could resume state: an API socket, or any config
     section beyond :data:`BOOT_SECTIONS`, or the word snapshot anywhere."""
     if "--no-api" not in argv or any("api-sock" in arg or "snapshot" in arg for arg in argv):
@@ -126,11 +126,11 @@ class FirecrackerSandbox:
         self._kvm_check = kvm_check
         self._network = ipaddress.IPv4Network(self._settings.bridge_network)
         self._bridge = lab_bridge()
-        self._slots: "queue.Queue[int]" = queue.Queue()
+        self._slots: queue.Queue[int] = queue.Queue()
         for slot in range(self._settings.slots):
             self._slots.put(slot)
 
-    def command(self, vm_id: str, jail_base: Path) -> List[str]:
+    def command(self, vm_id: str, jail_base: Path) -> list[str]:
         """The exact jailer argv for one boot (tests read it)."""
         settings = self._settings
         memory_cap = (settings.memory_mb + _VMM_OVERHEAD_MB) * 1024 * 1024
@@ -168,8 +168,8 @@ class FirecrackerSandbox:
         if not self._prepare_jail(root, config, spec.probe_args[1]):
             return SandboxResult(exit_code=None, report=b"")
         pcap = spec.work_dir / f"{vm_id}.pcap"
-        recorder: Optional["subprocess.Popen[bytes]"] = None
-        watched: List[str] = []
+        recorder: Optional[subprocess.Popen[bytes]] = None
+        watched: list[str] = []
         try:
             try:
                 self._add_tap(tap)
@@ -179,7 +179,7 @@ class FirecrackerSandbox:
             recorder = self._record(tap, pcap)
             process = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                        stdin=subprocess.DEVNULL)
-            cut: Dict[str, bool] = {}
+            cut: dict[str, bool] = {}
             try:
                 if self._egress is not None:
                     watch(process, timeout_seconds, self._egress, lambda: guest, watched)
@@ -203,7 +203,7 @@ class FirecrackerSandbox:
             return SandboxResult(exit_code=None, report=b"", recordings=(recording,), **cut)
         return self._result(process.returncode, root / "report.img", recording, guest)
 
-    def _prepare_jail(self, root: Path, config: Dict[str, Any], identifier: str) -> bool:
+    def _prepare_jail(self, root: Path, config: dict[str, Any], identifier: str) -> bool:
         """Kernel, a fresh rootfs copy (hash-checked), job + report drives, config."""
         root.mkdir(parents=True)
         shutil.copyfile(self._settings.kernel, root / "vmlinux")
@@ -229,7 +229,7 @@ class FirecrackerSandbox:
         self._helper(ip, "link", "set", tap, "master", self._bridge, required=True)
         self._helper(ip, "link", "set", tap, "up", required=True)
 
-    def _record(self, tap: str, pcap: Path) -> "subprocess.Popen[bytes]":
+    def _record(self, tap: str, pcap: Path) -> subprocess.Popen[bytes]:
         recorder = subprocess.Popen([self._settings.tcpdump, "-i", tap, "-n", "-U", "-s", "512",
                                      "-Z", "root", "-w", str(pcap)],
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
@@ -264,7 +264,7 @@ class FirecrackerSandbox:
         return SandboxResult(exit_code=exit_code, report=json.dumps(joined).encode("utf-8"), recordings=(recording,))
 
 
-def with_traffic(guest_report: Dict[str, Any], recording: bytes, guest: str) -> Dict[str, Any]:
+def with_traffic(guest_report: dict[str, Any], recording: bytes, guest: str) -> dict[str, Any]:
     """The guest's report plus ``traffic`` — what the HOST recorded on its TAP.
     No readable recording, no ``traffic``: the run then answers nothing about the network."""
     if not is_recording(recording):
@@ -309,14 +309,14 @@ def _mac(address: str) -> str:
     return "06:00:" + ":".join(f"{octet:02x}" for octet in ipaddress.IPv4Address(address).packed)
 
 
-def _kill(process: "subprocess.Popen[bytes]") -> None:
+def _kill(process: subprocess.Popen[bytes]) -> None:
     # The jailer exec'd Firecracker in place (no --daemonize, no new pid namespace):
     # this pid IS the VMM, and killing it ends the microVM.
     process.kill()
     process.communicate()
 
 
-def _stop(recorder: Optional["subprocess.Popen[bytes]"]) -> None:
+def _stop(recorder: Optional[subprocess.Popen[bytes]]) -> None:
     if recorder is None:
         return
     recorder.terminate()

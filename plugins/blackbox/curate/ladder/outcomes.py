@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from typing import Any, Dict, Iterable, List, Optional
 
 from ... import community
@@ -59,7 +59,7 @@ class CreditReport:
 
 
 def _today() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(UTC).date().isoformat()
 
 
 def credit_verdicts(ctx: CurateContext, *, osv_lookup: Optional[novelty_facts.OsvLookup] = None,
@@ -76,8 +76,8 @@ def credit_verdicts(ctx: CurateContext, *, osv_lookup: Optional[novelty_facts.Os
     if rows is None:
         return CreditReport(available=False)
     reports, _ = community.verify_report_rows(rows, community.ReportVerifier(ctx.environment, ctx.community_graph))
-    by_threat: Dict[str, List[Any]] = {}
-    first_day: Dict[str, str] = {}
+    by_threat: dict[str, list[Any]] = {}
+    first_day: dict[str, str] = {}
     for report in reports:
         by_threat.setdefault(report.identifier, []).append(report)
         first_day[report.author] = min(first_day.get(report.author, report.day), report.day)
@@ -130,7 +130,7 @@ def sync_bands(own_view: Any, ledger: reputation.ReputationLedger, today: str) -
     return changed
 
 
-def overlap_rings(ctx: CurateContext) -> List[frozenset]:
+def overlap_rings(ctx: CurateContext) -> list[frozenset]:
     """Groups of reporter keys whose reports overlap almost entirely — likely
     one operator behind several keys (``community.reputation.rings``). A
     DETECTOR for the curator's eyes: nothing is collapsed until a curator
@@ -139,7 +139,7 @@ def overlap_rings(ctx: CurateContext) -> List[frozenset]:
     if rows is None:
         return []
     reports, _ = community.verify_report_rows(rows, community.ReportVerifier(ctx.environment, ctx.community_graph))
-    by_key: Dict[str, set] = {}
+    by_key: dict[str, set] = {}
     for report in reports:
         by_key.setdefault(report.author, set()).add(report.identifier)
     return reputation.rings(by_key)

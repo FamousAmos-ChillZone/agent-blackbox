@@ -82,19 +82,19 @@ class PendingShare:
     category: str
     severity: str
     subject: str
-    quads: Tuple[Dict[str, str], ...]
+    quads: tuple[dict[str, str], ...]
     attempts: int
     first_failed: float
     next_due: float
     last_error: str = ""
 
-    def as_json(self) -> Dict[str, Any]:
+    def as_json(self) -> dict[str, Any]:
         return {"name": self.name, "graph": self.graph, "identifier": self.identifier, "category": self.category,
                 "severity": self.severity, "subject": self.subject, "quads": list(self.quads), "attempts": self.attempts,
                 "first_failed": self.first_failed, "next_due": self.next_due, "last_error": self.last_error}
 
     @classmethod
-    def from_json(cls, data: Dict[str, Any]) -> "PendingShare":
+    def from_json(cls, data: dict[str, Any]) -> PendingShare:
         return cls(name=str(data["name"]), graph=str(data["graph"]), identifier=str(data.get("identifier", "")),
                    category=str(data.get("category", "")), severity=str(data.get("severity", "")),
                    subject=str(data.get("subject", "")), quads=tuple(dict(q) for q in data.get("quads", [])),
@@ -135,11 +135,11 @@ class ShareRetryQueue:
 
     # -- reads ---------------------------------------------------------------
 
-    def pending(self) -> List[PendingShare]:
+    def pending(self) -> list[PendingShare]:
         with self._lock:
             return self._load()[0]
 
-    def due(self) -> List[PendingShare]:
+    def due(self) -> list[PendingShare]:
         """Shares whose backoff has elapsed, oldest first."""
         now = self._clock()
         return sorted((s for s in self.pending() if s.next_due <= now), key=lambda s: s.first_failed)
@@ -190,7 +190,7 @@ class ShareRetryQueue:
 
     # -- storage -------------------------------------------------------------
 
-    def _load(self) -> Tuple[List[PendingShare], List[Dict[str, Any]]]:
+    def _load(self) -> tuple[list[PendingShare], list[dict[str, Any]]]:
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
             pending = [PendingShare.from_json(item) for item in data.get("pending", [])]
@@ -199,7 +199,7 @@ class ShareRetryQueue:
         except (OSError, ValueError, KeyError, TypeError):
             return [], []   # missing or unreadable: an empty queue
 
-    def _save(self, pending: List[PendingShare], given_up: List[Dict[str, Any]]) -> None:
+    def _save(self, pending: list[PendingShare], given_up: list[dict[str, Any]]) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
@@ -215,7 +215,7 @@ def default_queue() -> ShareRetryQueue:
 
 
 def queue_failed_share(*, graph: str, name: str, identifier: str, category: str, severity: str, subject: str,
-                       quads: List[Dict[str, str]], error: str, queue: Optional[ShareRetryQueue] = None,
+                       quads: list[dict[str, str]], error: str, queue: Optional[ShareRetryQueue] = None,
                        now: Optional[float] = None) -> PendingShare:
     """Queue a share whose first send FAILED and ledger it as ``retrying``.
     The first retry is due after :data:`RETRY_BASE_SECONDS`."""

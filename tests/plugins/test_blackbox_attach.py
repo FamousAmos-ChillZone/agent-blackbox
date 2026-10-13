@@ -499,7 +499,7 @@ def test_auto_attach_due_runs_immediately_when_target_set_changes(tmp_path, monk
     monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "ghome"))
     targets = [tmp_path / ".hermes"]
     monkeypatch.setattr(attach, "discover_hermes_homes", lambda: list(targets))
-    monkeypatch.setattr(attach, "discover_openclaw_workspaces", lambda: [])
+    monkeypatch.setattr(attach, "discover_openclaw_workspaces", list)
 
     assert guard_background._auto_attach_due() is True
     assert guard_background._auto_attach_due() is False

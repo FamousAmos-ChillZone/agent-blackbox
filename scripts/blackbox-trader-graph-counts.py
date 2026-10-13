@@ -54,7 +54,7 @@ def _values(words) -> str:
     return " ".join(f'"{word}"' for word in words)
 
 
-QUERIES: Dict[str, str] = {
+QUERIES: dict[str, str] = {
     "indicators_by_type": f"""SELECT ?type (COUNT(DISTINCT ?t) AS ?n) WHERE {{
         GRAPH ?g {{ ?t a defender:IocSignal ; dp:iocType ?type }} {IN_VERIFIED} }} GROUP BY ?type""",
     "crypto_by_source": f"""SELECT ?type ?source (COUNT(DISTINCT ?t) AS ?n) WHERE {{
@@ -86,15 +86,15 @@ QUERIES: Dict[str, str] = {
 }
 
 
-def _ask(store: str, query: str, timeout: float) -> List[Dict[str, str]]:
+def _ask(store: str, query: str, timeout: float) -> list[dict[str, str]]:
     body = urllib.parse.urlencode({"query": PREFIXES + query}).encode("ascii")
     request = urllib.request.Request(store, data=body, headers={"Accept": "application/sparql-results+json"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:   # noqa: S310 — the operator names the store
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         rows = json.load(response)["results"]["bindings"]
     return [{key: cell["value"] for key, cell in row.items()} for row in rows]
 
 
-def _known_routers() -> Dict[str, str]:
+def _known_routers() -> dict[str, str]:
     """The well-known exchange routers (plugins/blackbox/kernel/crypto_secrets/known_contracts.json)."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "plugins", "blackbox", "kernel",
                         "crypto_secrets", "known_contracts.json")
@@ -102,11 +102,11 @@ def _known_routers() -> Dict[str, str]:
         return {address.lower(): entry["name"] for address, entry in json.load(handle)["contracts"].items()}
 
 
-def _count(rows: List[Dict[str, str]], key: str = "n") -> int:
+def _count(rows: list[dict[str, str]], key: str = "n") -> int:
     return sum(int(row.get(key, 0)) for row in rows)
 
 
-def collect(store: str, timeout: float) -> Dict[str, object]:
+def collect(store: str, timeout: float) -> dict[str, object]:
     """Every figure the page shows, from one run of :data:`QUERIES`."""
     got = {name: _ask(store, query, timeout) for name, query in QUERIES.items()}
     by_type = {row["type"]: int(row["n"]) for row in got["indicators_by_type"]}
@@ -153,7 +153,7 @@ def main(argv=None) -> int:
     parser.add_argument("--timeout", type=float, default=300.0)
     args = parser.parse_args(argv)
     figures = collect(args.store, args.timeout)
-    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    stamp = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M UTC")
     document = {"as_of": stamp, "counted_on": args.node, "script": "scripts/blackbox-trader-graph-counts.py", **figures}
     with open(args.out, "w", encoding="utf-8") as handle:
         json.dump(document, handle, indent=1)

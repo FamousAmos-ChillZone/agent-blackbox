@@ -130,7 +130,7 @@ def evidence_digest(evidence: Evidence) -> str:
     return hashlib.sha256(evidence_schema.to_json(evidence).encode("utf-8")).hexdigest()
 
 
-def evidence_payload(evidence: Evidence, signed_at: int) -> Dict[str, str]:
+def evidence_payload(evidence: Evidence, signed_at: int) -> dict[str, str]:
     """What the lab controller signs: the job id, the image hash, the run's
     timestamps, the signing time, and the digest binding every other field."""
     return {"job_key": evidence.job_key, "image_sha256": evidence.image_sha256,
@@ -170,7 +170,7 @@ class LabController:
         self._lab_dir = lab_dir or (keys.curate_home() / "lab")
         self._store = LabJobStore(self._lab_dir / "jobs.jsonl", clock=clock)
         self._lock = threading.Lock()
-        self._attempts: Dict[str, int] = self._load_attempts()
+        self._attempts: dict[str, int] = self._load_attempts()
 
     @property
     def store(self) -> LabJobStore:
@@ -296,7 +296,7 @@ class LabController:
         self._lab_dir.mkdir(parents=True, exist_ok=True)
         _write_atomic(self._lab_dir / _ATTEMPTS_FILE, json.dumps(self._attempts, sort_keys=True))
 
-    def _load_attempts(self) -> Dict[str, int]:
+    def _load_attempts(self) -> dict[str, int]:
         try:
             raw = json.loads((self._lab_dir / _ATTEMPTS_FILE).read_text(encoding="utf-8"))
             if not isinstance(raw, dict):

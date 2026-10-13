@@ -40,7 +40,7 @@ def _spawn_osv_discovery(cfg: BlackboxConfig, rs: Any, tool_name: str, args: Any
         pass
 
 
-def _spawn_llm_review(cfg: BlackboxConfig, text: str, detail: Dict[str, Any]) -> None:
+def _spawn_llm_review(cfg: BlackboxConfig, text: str, detail: dict[str, Any]) -> None:
     """Ask the configured LLM for an injection second opinion on a daemon thread.
 
     A positive verdict becomes a local ``source="llm"`` finding: audited and

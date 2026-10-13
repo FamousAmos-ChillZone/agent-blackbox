@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 #: Seed allowlist: registrable domains of brands commonly impersonated, and
 #: hosts under shared-hosting suffixes that are themselves first-party.
-SEED_DOMAINS: FrozenSet[str] = frozenset({
+SEED_DOMAINS: frozenset[str] = frozenset({
     "google.com", "youtube.com", "gmail.com", "apple.com", "icloud.com", "microsoft.com", "live.com",
     "office.com", "outlook.com", "amazon.com", "aws.amazon.com", "paypal.com", "facebook.com", "instagram.com",
     "whatsapp.com", "x.com", "twitter.com", "linkedin.com", "github.com", "gitlab.com", "npmjs.com", "pypi.org",
@@ -48,7 +48,7 @@ SEED_DOMAINS: FrozenSet[str] = frozenset({
 })
 #: Seed warninglist: ``ecosystem:name`` of packages so widely used that a
 #: name-level or vulnerability report against them is noise.
-SEED_PACKAGES: FrozenSet[str] = frozenset({
+SEED_PACKAGES: frozenset[str] = frozenset({
     "npm:lodash", "npm:react", "npm:react-dom", "npm:express", "npm:axios", "npm:chalk", "npm:debug",
     "npm:typescript", "npm:next", "npm:vue", "npm:webpack", "npm:eslint", "npm:prettier", "npm:jest",
     "npm:moment", "npm:commander", "npm:minimist", "npm:uuid", "npm:semver", "npm:dotenv",
@@ -65,8 +65,8 @@ class AllowTables:
     """``domains`` — registrable domains (or full shared-hosting hosts);
     ``packages`` — ``ecosystem:name`` keys. Both lower-case."""
 
-    domains: FrozenSet[str]
-    packages: FrozenSet[str]
+    domains: frozenset[str]
+    packages: frozenset[str]
 
     def is_allowlisted_domain(self, host: str) -> bool:
         """Byte-exact on the comparison key: the full host under shared
@@ -87,7 +87,7 @@ def allowlist_key(host: str) -> str:
     return public_suffix.registrable_domain(host) or host
 
 
-def _lower(items: Iterable[object]) -> FrozenSet[str]:
+def _lower(items: Iterable[object]) -> frozenset[str]:
     return frozenset(str(item).lower().strip() for item in items if str(item).strip())
 
 

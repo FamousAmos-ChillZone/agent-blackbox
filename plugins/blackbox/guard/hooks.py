@@ -27,7 +27,7 @@ def _config() -> BlackboxConfig:
     return config_mod.load_blackbox_config()
 
 
-def blackbox_block_message(findings: List[detection.Finding]) -> str:
+def blackbox_block_message(findings: list[detection.Finding]) -> str:
     """Human-readable block message summarizing the blocking findings."""
     lines = [
         "Blackbox blocked this tool call — it matched "
@@ -42,11 +42,11 @@ def blackbox_block_message(findings: List[detection.Finding]) -> str:
         "switch Blackbox to audit mode and report the identifier to Umanitek."
     )
     return "\n".join(lines)
-_seen_api_findings: Dict[tuple, float] = {}
+_seen_api_findings: dict[tuple, float] = {}
 _API_FINDING_DEDUPE_TTL_SECS = 10 * 60
 
 
-def _dedupe_api_findings(findings: List[detection.Finding], detail: Dict[str, Any]) -> List[detection.Finding]:
+def _dedupe_api_findings(findings: list[detection.Finding], detail: dict[str, Any]) -> list[detection.Finding]:
     """Drop repeated pre-api findings from additional model calls in one turn."""
     turn_key = str(detail.get("turn_id") or detail.get("task_id") or detail.get("session_id") or "")
     if not turn_key:
@@ -55,7 +55,7 @@ def _dedupe_api_findings(findings: List[detection.Finding], detail: Dict[str, An
     for key, seen_at in list(_seen_api_findings.items()):
         if now - seen_at > _API_FINDING_DEDUPE_TTL_SECS:
             _seen_api_findings.pop(key, None)
-    out: List[detection.Finding] = []
+    out: list[detection.Finding] = []
     for finding in findings:
         key = (turn_key, finding.identifier, finding.evidence or finding.matched or finding.title)
         if key in _seen_api_findings:
@@ -70,7 +70,7 @@ def _dedupe_api_findings(findings: List[detection.Finding], detail: Dict[str, An
 # ---------------------------------------------------------------------------
 
 
-def _kill_list_findings(rs: Any, tool_name: str, args: Any) -> List[detection.Finding]:
+def _kill_list_findings(rs: Any, tool_name: str, args: Any) -> list[detection.Finding]:
     """R14: the kill-list finding for this call, if any (fail-open: a bad cached list kills nothing)."""
     try:
         found = killlist.finding_for(killlist.KillList.from_cache(getattr(rs, "kill_list", None)), tool_name, args)
@@ -80,7 +80,7 @@ def _kill_list_findings(rs: Any, tool_name: str, args: Any) -> List[detection.Fi
     return [found] if found is not None else []
 
 
-def _decision(cfg: BlackboxConfig, findings: List[detection.Finding], blocking: List[detection.Finding]) -> str:
+def _decision(cfg: BlackboxConfig, findings: list[detection.Finding], blocking: list[detection.Finding]) -> str:
     """What the hook DID, for the audit row: "block", "flag", or "flag (local override)"
     when a verified rule would have blocked but the operator unblocked it here (R7b)."""
     if blocking:
@@ -88,17 +88,17 @@ def _decision(cfg: BlackboxConfig, findings: List[detection.Finding], blocking: 
     return "flag (local override)" if _overridden(cfg, findings) else "flag"
 
 
-def _decision_detail(cfg: BlackboxConfig, findings: List[detection.Finding],
-                     blocking: List[detection.Finding]) -> Dict[str, Any]:
+def _decision_detail(cfg: BlackboxConfig, findings: list[detection.Finding],
+                     blocking: list[detection.Finding]) -> dict[str, Any]:
     """The audit row's ``decision`` and, when something blocked, ``blocked`` —
     which findings did, so each report can say blocked or flagged (threat-profiles D3)."""
-    out: Dict[str, Any] = {"decision": _decision(cfg, findings, blocking)}
+    out: dict[str, Any] = {"decision": _decision(cfg, findings, blocking)}
     if blocking:
         out["blocked"] = [f.identifier for f in blocking]
     return out
 
 
-def _overridden(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List[detection.Finding]:
+def _overridden(cfg: BlackboxConfig, findings: list[detection.Finding]) -> list[detection.Finding]:
     """Findings a local override keeps from blocking (empty unless block mode is on)."""
     try:
         unblocked = overrides.OverrideStore().unblocked()
@@ -107,7 +107,7 @@ def _overridden(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List[
     return overrides.demote_blocking(_would_block(cfg, findings), unblocked)[1] if unblocked else []
 
 
-def _blocking(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List[detection.Finding]:
+def _blocking(cfg: BlackboxConfig, findings: list[detection.Finding]) -> list[detection.Finding]:
     """The findings that block this call: :func:`_would_block` minus the
     operator's local overrides (R7b — a reduction every operator keeps)."""
     would = _would_block(cfg, findings)
@@ -120,7 +120,7 @@ def _blocking(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List[de
     return overrides.demote_blocking(would, unblocked)[0]
 
 
-def _would_block(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List[detection.Finding]:
+def _would_block(cfg: BlackboxConfig, findings: list[detection.Finding]) -> list[detection.Finding]:
     """The findings that block this call (empty unless block mode is on).
 
     Confirmed findings and custom rules block; community/heuristic ones only
@@ -141,7 +141,7 @@ def _would_block(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List
     ]
 
 
-def _own_key_findings(raw: List[detection.Finding], tool_name: str, args: Any) -> List[detection.Finding]:
+def _own_key_findings(raw: list[detection.Finding], tool_name: str, args: Any) -> list[detection.Finding]:
     """Raw keys of the operator's own listed addresses (Trader Shield), unless the
     labelled-key rule already raised the same finding at least as high."""
     found = detection.detect_own_wallet_keys(tool_name, args, lambda: crypto_secrets.wallet_mode.current().addresses)
@@ -157,7 +157,7 @@ def on_pre_tool_call(
     session_id: str = "",
     tool_call_id: str = "",
     **_: Any,
-) -> Optional[Dict[str, str]]:
+) -> Optional[dict[str, str]]:
     """Detect threats; audit + report; block in block mode for ≥ block_severity.
 
     Only CONFIRMED graph findings can block; discovery candidates only alert.
@@ -251,7 +251,7 @@ def on_post_tool_call(
         logger.debug("blackbox: post_tool_call failed: %s", exc)
 
 
-def _untrusted_request_sources(user_message: Any, request_messages: Any) -> List[Tuple[str, str]]:
+def _untrusted_request_sources(user_message: Any, request_messages: Any) -> list[tuple[str, str]]:
     """Return the current turn's untrusted text as ``(context, text)`` pairs.
 
     The API request also contains Hermes' system/developer instructions and
@@ -273,7 +273,7 @@ def _untrusted_request_sources(user_message: Any, request_messages: Any) -> List
             start = idx
             break
     tool_names = _tool_names_by_call_id(messages)
-    sources: List[Tuple[str, str]] = []
+    sources: list[tuple[str, str]] = []
     seen: set[str] = set()
 
     def add(context: str, text: str) -> None:
@@ -299,7 +299,7 @@ def _untrusted_request_sources(user_message: Any, request_messages: Any) -> List
     return sources
 
 
-def _tool_result(msg: Any) -> Optional[Tuple[str, Any, str]]:
+def _tool_result(msg: Any) -> Optional[tuple[str, Any, str]]:
     """``(call id, content, tool name or "")`` when *msg* is a tool's result, else None.
 
     Two wire shapes reach ``pre_api_request``: Chat Completions sends
@@ -316,10 +316,10 @@ def _tool_result(msg: Any) -> Optional[Tuple[str, Any, str]]:
     return None
 
 
-def _tool_names_by_call_id(messages: List[Any]) -> Dict[str, str]:
+def _tool_names_by_call_id(messages: list[Any]) -> dict[str, str]:
     """``tool_call_id`` -> tool name, from the assistant turns' ``tool_calls`` (Chat
     Completions) and from ``function_call`` items (Responses API)."""
-    names: Dict[str, str] = {}
+    names: dict[str, str] = {}
     for msg in messages:
         if isinstance(msg, dict) and msg.get("type") == "function_call" and msg.get("call_id"):
             names[str(msg["call_id"])] = str(msg.get("name") or "")
@@ -331,11 +331,11 @@ def _tool_names_by_call_id(messages: List[Any]) -> Dict[str, str]:
     return names
 
 
-def _injection_by_source(sources: List[Tuple[str, str]], rs: Any, discover: bool) -> List[Any]:
+def _injection_by_source(sources: list[tuple[str, str]], rs: Any, discover: bool) -> list[Any]:
     """Injection findings (graph matches, plus heuristic candidates when
     *discover*) scanned per source so each carries its context; a pattern seen
     in several sources is reported once, with the first source's context."""
-    found: Dict[str, Any] = {}
+    found: dict[str, Any] = {}
     for context, text in sources:
         findings = detection.detect_injection(text, rs, context)
         if discover:

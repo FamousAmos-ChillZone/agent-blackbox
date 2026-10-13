@@ -359,7 +359,7 @@ def _metrics(args: argparse.Namespace) -> int:
     return 0
 
 
-_VERBS: Dict[str, Callable[[argparse.Namespace], int]] = {
+_VERBS: dict[str, Callable[[argparse.Namespace], int]] = {
     "keys": _keys, "manifest": _manifest, "queue": _queue, "show": _show, "propose": _propose, "inbox": _inbox,
     "approve": _approve, "publish": _publish, "reject": _reject, "list": _list, "watch": _watch, "views": _views,
     "heartbeat": _heartbeat, "upkeep": _upkeep, "pool": _pool, "export": _export, "verify-bundle": _verify_bundle,

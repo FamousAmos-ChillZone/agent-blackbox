@@ -26,7 +26,7 @@ _CONTEXT_TURN_CHARS = 3000
 _CONTEXT_FIELD_CHARS = 6000
 
 
-def _bounded_context(ctx: Any) -> Optional[Dict[str, Any]]:
+def _bounded_context(ctx: Any) -> Optional[dict[str, Any]]:
     """Normalize, redact, and bound a finding's local conversation ``context``.
 
     Shape ``{turns: [{role, text}], input, result, truncated}``, every field
@@ -36,10 +36,10 @@ def _bounded_context(ctx: Any) -> Optional[Dict[str, Any]]:
     """
     if not isinstance(ctx, dict):
         return None
-    out: Dict[str, Any] = {}
+    out: dict[str, Any] = {}
     raw_turns = ctx.get("turns")
     if isinstance(raw_turns, list) and raw_turns:
-        turns: List[Dict[str, str]] = []
+        turns: list[dict[str, str]] = []
         for turn in raw_turns[-_CONTEXT_MAX_TURNS:]:
             if not isinstance(turn, dict):
                 continue
@@ -63,7 +63,7 @@ def _bounded_context(ctx: Any) -> Optional[Dict[str, Any]]:
     return out
 
 
-def _flatten_finding_row(rec: Dict[str, Any], default_fw: str) -> Dict[str, Any]:
+def _flatten_finding_row(rec: dict[str, Any], default_fw: str) -> dict[str, Any]:
     # Lift the per-line ``finding`` fields up to a dashboard-friendly row.
     finding = rec.get("finding") or (rec.get("findings") or [{}])[0] or {}
     detail = rec.get("detail") or {}
@@ -92,10 +92,10 @@ def _flatten_finding_row(rec: Dict[str, Any], default_fw: str) -> Dict[str, Any]
     }
 
 
-def _dedupe_finding_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _dedupe_finding_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collapse repeated findings emitted by multiple API calls in one turn."""
-    deduped: Dict[tuple, Dict[str, Any]] = {}
-    order: List[tuple] = []
+    deduped: dict[tuple, dict[str, Any]] = {}
+    order: list[tuple] = []
     for row in rows:
         scope = row.get("turn_id") or row.get("task_id") or row.get("session_id") or row.get("time")
         key = (
@@ -116,13 +116,13 @@ def _dedupe_finding_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [deduped[key] for key in order]
 
 
-def read_findings(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+def read_findings(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
     """Return findings newest-first, paged, merged across every agent's log.
 
     Reads ``findings.jsonl`` plus any ``findings.<framework>.jsonl`` siblings.
     Empty on any error.
     """
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     for path, default_fw in log_store._findings_files():
         if not path.exists():
             continue
@@ -149,12 +149,12 @@ def read_findings(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
 _FIRED_SCAN_LIMIT = 5_000
 
 
-def blocked_counts_by_identifier(limit: int = _FIRED_SCAN_LIMIT) -> Dict[str, int]:
+def blocked_counts_by_identifier(limit: int = _FIRED_SCAN_LIMIT) -> dict[str, int]:
     """How many actions each threat identifier BLOCKED on this machine (newest
     *limit* findings whose hook decision was ``block``, KI-189). R10 uses it
     for "a revoked threat blocked N actions here"; a flag-only firing is not
     an action the operator lost."""
-    counts: Dict[str, int] = {}
+    counts: dict[str, int] = {}
     for row in read_findings(limit=limit):
         identifier = str(row.get("identifier") or "")
         if identifier and row.get("decision") == "block":
@@ -166,17 +166,17 @@ def count_findings() -> int:
     return len(read_findings(limit=1_000_000))
 
 
-def local_frameworks() -> List[str]:
+def local_frameworks() -> list[str]:
     """Frameworks that have written findings into this shared home (for the
     dashboard's agent list). Always includes ``hermes`` when its log exists."""
-    out: List[str] = []
+    out: list[str] = []
     for path, default_fw in log_store._findings_files():
         if path.exists() and default_fw not in out:
             out.append(default_fw)
     return out
 
 
-def local_active_frameworks() -> List[str]:
+def local_active_frameworks() -> list[str]:
     """Frameworks with observed local Blackbox activity.
 
     Findings identify their framework explicitly through ``findings*.jsonl``;
@@ -205,8 +205,8 @@ def local_active_frameworks() -> List[str]:
 def record(
     *,
     event: str,
-    findings: Optional[List[Dict[str, Any]]] = None,
-    detail: Optional[Dict[str, Any]] = None,
+    findings: Optional[list[dict[str, Any]]] = None,
+    detail: Optional[dict[str, Any]] = None,
 ) -> None:
     """Append an audit record; on findings also append to findings.jsonl.
 
@@ -244,7 +244,7 @@ def record(
         logger.debug("blackbox: audit record failed: %s", exc)
 
 
-def _finding_summary(finding: Dict[str, Any]) -> Dict[str, Any]:
+def _finding_summary(finding: dict[str, Any]) -> dict[str, Any]:
     return {
         "identifier": finding.get("identifier"),
         "category": finding.get("category"),
@@ -264,7 +264,7 @@ def _finding_summary(finding: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _found_in(finding: Dict[str, Any]) -> str:
+def _found_in(finding: dict[str, Any]) -> str:
     """The closed context an injection finding was met in ("in-tool-output", …), or ""."""
     fields = finding.get("fields")
     context = fields.get("context") if isinstance(fields, dict) else None
@@ -320,7 +320,7 @@ def record_dependency(ecosystem: str, name: str, version: str, tool: str = "") -
         logger.debug("blackbox: dependency record failed: %s", exc)
 
 
-def read_file_access(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+def read_file_access(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
     """Return file-access visibility records newest-first, paged."""
     path = log_store._home() / "file_access.jsonl"
     if not path.exists():
@@ -329,7 +329,7 @@ def read_file_access(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
         lines = path.read_text(encoding="utf-8").splitlines()
     except Exception:
         return []
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for line in reversed(lines):
         line = line.strip()
         if not line:

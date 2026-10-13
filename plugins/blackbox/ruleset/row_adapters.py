@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _source_observation_provenance(row: Dict[str, Any]) -> Dict[str, Any]:
+def _source_observation_provenance(row: dict[str, Any]) -> dict[str, Any]:
     raw = extract_binding(row.get("provenanceJson"))
     if not raw:
         return {}
@@ -34,14 +34,14 @@ def _source_observation_provenance(row: Dict[str, Any]) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _row_severity(row: Dict[str, Any]) -> str:
+def _row_severity(row: dict[str, Any]) -> str:
     severity = extract_binding(row.get("severity"))
     if not severity and extract_binding(row.get("rdfType")) == constants.SOURCE_OBSERVATION_TYPE_IRI:
         severity = _source_observation_provenance(row).get("severity")
     return constants.normalize_severity(severity, "high")
 
 
-def _row_identity(row: Dict[str, Any]) -> tuple:
+def _row_identity(row: dict[str, Any]) -> tuple:
     subject = extract_binding(row.get("threat"))
     rdf_type = extract_binding(row.get("rdfType"))
     identifier = extract_binding(row.get("identifier"))
@@ -70,7 +70,7 @@ def _row_identity(row: Dict[str, Any]) -> tuple:
     return subject, rdf_type, identifier
 
 
-def _row_to_graph_entry(row: Dict[str, Any], source: str) -> Optional[Dict[str, Any]]:
+def _row_to_graph_entry(row: dict[str, Any], source: str) -> Optional[dict[str, Any]]:
     subject, _rdf_type, identifier = _row_identity(row)
     if not identifier:
         return None
@@ -88,7 +88,7 @@ def _row_to_graph_entry(row: Dict[str, Any], source: str) -> Optional[Dict[str, 
     }
 
 
-def _row_to_rule(row: Dict[str, Any], source: str = "public") -> Optional[tuple]:
+def _row_to_rule(row: dict[str, Any], source: str = "public") -> Optional[tuple]:
     """Map one SPARQL binding row to ``(category, key, rule)`` or ``None``.
 
     *source* tags the rule's trust tier: ``"public"`` (verifiable-memory, the
@@ -198,7 +198,7 @@ FLAG_ONLY_SOURCE = "community"
 FLAG_TIER = "flag"
 
 
-def _dependency_rule(row: Dict[str, Any], identifier: str, common: Dict[str, Any]) -> Optional[tuple]:
+def _dependency_rule(row: dict[str, Any], identifier: str, common: dict[str, Any]) -> Optional[tuple]:
     """``("dependency", key, rule)`` for a ``dep:{eco}:{name}@{version}`` row, or None.
 
     A verified rule without a ``kind`` is served flag-only (trust-and-threat-lab

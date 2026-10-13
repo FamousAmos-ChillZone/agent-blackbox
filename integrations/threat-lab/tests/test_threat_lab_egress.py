@@ -67,7 +67,7 @@ def _chain(name: str) -> str:
     return matched.group(1)
 
 
-def _rules(name: str) -> List[str]:
+def _rules(name: str) -> list[str]:
     """The chain's rules: not its hook header, blank lines or comments."""
     lines = (line.strip() for line in _chain(name).splitlines())
     return [line for line in lines if line and not line.startswith(("#", "type "))]
@@ -216,8 +216,8 @@ class FakeGuard:
 
     def __init__(self, answer: Optional[bool] = True, yes_after: int = 2) -> None:
         self.answer, self.yes_after = answer, yes_after
-        self.asked: List[str] = []
-        self.forgotten: List[str] = []
+        self.asked: list[str] = []
+        self.forgotten: list[str] = []
 
     def offended(self, address: str) -> Optional[bool]:
         self.asked.append(address)

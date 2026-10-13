@@ -30,7 +30,7 @@ from . import policy
 _FILE = "service_budget.json"
 
 
-def _limits() -> Dict[str, int]:
+def _limits() -> dict[str, int]:
     return {"confirm": policy.SERVICE_CONFIRMATIONS_PER_DAY, "list": policy.SERVICE_LISTINGS_PER_DAY}
 
 
@@ -42,7 +42,7 @@ class ServiceBudget:
     def __init__(self, path: Optional[Path] = None) -> None:
         self._path = path or (keys.curate_home() / _FILE)
 
-    def _counts(self, today: str) -> Dict[str, int]:
+    def _counts(self, today: str) -> dict[str, int]:
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
             if data.get("day") == today:

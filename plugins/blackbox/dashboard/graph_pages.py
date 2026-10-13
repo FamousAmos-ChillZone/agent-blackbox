@@ -20,7 +20,7 @@ from ..kernel import threat_ids
 from .safe_payloads import graph_tier_item
 
 
-def _graph_entries(rs: Any, source: str) -> List[Dict[str, Any]]:
+def _graph_entries(rs: Any, source: str) -> list[dict[str, Any]]:
     getter = getattr(rs, "graph_entries", None)
     if callable(getter):
         entries = getter(source) or []
@@ -40,20 +40,20 @@ def _graph_entries(rs: Any, source: str) -> List[Dict[str, Any]]:
 
 
 def _balanced_graph_entries(
-    entries: List[Dict[str, Any]], minimum_per_category: int = 24
-) -> List[Dict[str, Any]]:
+    entries: list[dict[str, Any]], minimum_per_category: int = 24
+) -> list[dict[str, Any]]:
     """Front-load a small sample of every populated threat category."""
     category_order = (
         "dependency", "injection", "escalation", "fileaccess",
         "skill", "secret", "ioc", "other",
     )
-    buckets: Dict[str, List[Dict[str, Any]]] = {key: [] for key in category_order}
+    buckets: dict[str, list[dict[str, Any]]] = {key: [] for key in category_order}
     for entry in entries:
         key = str(entry.get("category") or "other").lower()
         buckets.setdefault(key, []).append(entry)
 
-    front: List[Dict[str, Any]] = []
-    skipped: Dict[str, int] = {}
+    front: list[dict[str, Any]] = []
+    skipped: dict[str, int] = {}
     ordered_keys = category_order + tuple(k for k in buckets if k not in category_order)
     for key in ordered_keys:
         skipped[key] = min(len(buckets.get(key, [])), minimum_per_category)
@@ -63,8 +63,8 @@ def _balanced_graph_entries(
             if index < len(bucket):
                 front.append(bucket[index])
 
-    rest: List[Dict[str, Any]] = []
-    consumed: Dict[str, int] = {}
+    rest: list[dict[str, Any]] = []
+    consumed: dict[str, int] = {}
     for entry in entries:
         key = str(entry.get("category") or "other").lower()
         used = consumed.get(key, 0)
@@ -75,15 +75,15 @@ def _balanced_graph_entries(
     return front + rest
 
 
-def tier_response(tier: str, all_threats: List[Dict[str, Any]], offset: int, limit: int) -> Dict[str, Any]:
+def tier_response(tier: str, all_threats: list[dict[str, Any]], offset: int, limit: int) -> dict[str, Any]:
     """One page of *all_threats* (already filtered) with totals for the WHOLE result.
 
     Counts describe the complete filtered result, never the rendered page, so the
     dashboard can show the real threat magnitude on category / ecosystem hubs
     while progressively loading leaves.
     """
-    category_totals: Dict[str, int] = {}
-    ecosystem_totals: Dict[str, int] = {}
+    category_totals: dict[str, int] = {}
+    ecosystem_totals: dict[str, int] = {}
     for item in all_threats:
         item_category = str(item.get("category") or "other").lower()
         category_totals[item_category] = category_totals.get(item_category, 0) + 1
@@ -103,7 +103,7 @@ def tier_response(tier: str, all_threats: List[Dict[str, Any]], offset: int, lim
     }
 
 
-def compiled_rule(rs: Any, tier: str, identifier: str) -> Dict[str, Any]:
+def compiled_rule(rs: Any, tier: str, identifier: str) -> dict[str, Any]:
     """The compiled rule of *tier* with this *identifier*, else its graph entry, else {}."""
     try:
         for _cat, rule in rs.iter_rules():
@@ -117,8 +117,8 @@ def compiled_rule(rs: Any, tier: str, identifier: str) -> Dict[str, Any]:
         return {}
 
 
-def public_tier_response(rs: Any, compiled: List[Dict[str, Any]], *, needle: str, category: str, ecosystem: str,
-                         offset: int, limit: int) -> Dict[str, Any]:
+def public_tier_response(rs: Any, compiled: list[dict[str, Any]], *, needle: str, category: str, ecosystem: str,
+                         offset: int, limit: int) -> dict[str, Any]:
     """The public page: *compiled* entries (small tiers, already filtered and
     shaped) occupy the first positions, the live tiers follow — one window from
     the store for the part of ``[offset, offset+limit)`` past the compiled ones.
@@ -146,7 +146,7 @@ def public_tier_response(rs: Any, compiled: List[Dict[str, Any]], *, needle: str
     return response
 
 
-def rule_for(rs: Any, tier: str, identifier: str) -> Dict[str, Any]:
+def rule_for(rs: Any, tier: str, identifier: str) -> dict[str, Any]:
     """:func:`compiled_rule`, then — for a public ``dep:`` / ``ioc:`` identifier —
     the live lookup, which carries the rule's subject for the detail read."""
     found = compiled_rule(rs, tier, identifier)
@@ -155,7 +155,7 @@ def rule_for(rs: Any, tier: str, identifier: str) -> Dict[str, Any]:
     return _live_rule(rs, identifier) or {}
 
 
-def verified_profile(rs: Any, identifier: str) -> Dict[str, Any]:
+def verified_profile(rs: Any, identifier: str) -> dict[str, Any]:
     """What this node's OWN verified copy says a community threat is (threat profiles):
     its name, description, kind and — for an injection — the pattern text. A community
     report only names the threat; the reader supplies the rest from data it already
@@ -176,7 +176,7 @@ def verified_profile(rs: Any, identifier: str) -> Dict[str, Any]:
     return out
 
 
-def _live_rule(rs: Any, identifier: str) -> Optional[Dict[str, Any]]:
+def _live_rule(rs: Any, identifier: str) -> Optional[dict[str, Any]]:
     parsed = threat_ids.parse_dependency_identifier(identifier)
     if parsed is not None and callable(getattr(rs, "dependency_rules", None)):
         return next((rule for rule in rs.dependency_rules([parsed]).rules.values()
@@ -186,8 +186,8 @@ def _live_rule(rs: Any, identifier: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def page_response(rs: Any, tier: str, threats: List[Dict[str, Any]], *, needle: str, category: str, ecosystem: str,
-                  offset: int, limit: int) -> Dict[str, Any]:
+def page_response(rs: Any, tier: str, threats: list[dict[str, Any]], *, needle: str, category: str, ecosystem: str,
+                  offset: int, limit: int) -> dict[str, Any]:
     """The page for *tier*: the public tier gets the live dependency / IOC tiers
     after its compiled entries; the community tier is its filtered list alone."""
     if tier == "public":

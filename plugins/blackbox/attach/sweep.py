@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def attach_all(*, hermes: bool = True, openclaw: bool = True, dry_run: bool = False) -> Dict[str, Any]:
+def attach_all(*, hermes: bool = True, openclaw: bool = True, dry_run: bool = False) -> dict[str, Any]:
     """Attach Blackbox to every discovered target. Returns a combined report."""
-    report: Dict[str, Any] = {"hermes": [], "openclaw": [], "dry_run": dry_run}
+    report: dict[str, Any] = {"hermes": [], "openclaw": [], "dry_run": dry_run}
     if hermes:
         for home in hermes_homes.discover_hermes_homes():
             report["hermes"].append(hermes_homes.attach_hermes(home, dry_run=dry_run))
@@ -35,9 +35,9 @@ def attach_all(*, hermes: bool = True, openclaw: bool = True, dry_run: bool = Fa
 
 def detach_all(
     *, hermes: bool = True, openclaw: bool = True, remove_files: bool = False, dry_run: bool = False
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Detach Blackbox from every discovered target. Returns a combined report."""
-    report: Dict[str, Any] = {"hermes": [], "openclaw": [], "dry_run": dry_run}
+    report: dict[str, Any] = {"hermes": [], "openclaw": [], "dry_run": dry_run}
     if hermes:
         for home in hermes_homes.discover_hermes_homes():
             report["hermes"].append(hermes_homes.detach_hermes(home, remove_files=remove_files, dry_run=dry_run))
@@ -47,7 +47,7 @@ def detach_all(
     return report
 
 
-def _protected_count(report: Dict[str, Any]) -> int:
+def _protected_count(report: dict[str, Any]) -> int:
     """Number of targets Blackbox is (now) protecting in an attach report."""
     total = 0
     for row in report.get("hermes", []):

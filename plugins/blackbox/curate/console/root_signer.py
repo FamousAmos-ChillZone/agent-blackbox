@@ -125,7 +125,7 @@ class TotpSecondFactor:
             finally:
                 os.close(fd)        # closing the descriptor releases the flock
 
-    def _read(self) -> Optional[Tuple[bytes, int]]:
+    def _read(self) -> Optional[tuple[bytes, int]]:
         """(secret bytes, last step), or None when not enrolled or damaged (fail closed)."""
         try:
             state = json.loads(self._path.read_text(encoding="utf-8"))
@@ -177,7 +177,7 @@ class RootSigner:
         failure: Optional[str] = None
         try:
             envelope = self._ctx.sign(ManifestDraft(prepared_manifest), key)
-        except Exception as exc:  # noqa: BLE001 - any failure, not only the documented ValueError refusal
+        except Exception as exc:
             # Keep only the message: a live traceback would hold the frames that hold the key
             # (an OSError from the signing log included). Nothing escapes unlogged either way.
             failure = f"{type(exc).__name__}: {exc}"

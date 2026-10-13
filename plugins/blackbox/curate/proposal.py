@@ -50,7 +50,7 @@ class ProposalState(Enum):
 
 
 #: The only moves the lifecycle allows (State pattern, as a table).
-_TRANSITIONS: Dict[ProposalState, FrozenSet[ProposalState]] = {
+_TRANSITIONS: dict[ProposalState, frozenset[ProposalState]] = {
     ProposalState.DRAFT: frozenset({ProposalState.PROPOSED, ProposalState.REJECTED}),
     ProposalState.PROPOSED: frozenset({ProposalState.APPROVED, ProposalState.EXPIRED, ProposalState.REJECTED}),
     ProposalState.APPROVED: frozenset({ProposalState.PUBLISHED, ProposalState.REJECTED}),
@@ -91,7 +91,7 @@ class Proposal:
 
     @classmethod
     def new(cls, kind: str, identifier: str, envelope: signing.SignedEnvelope, graph: str, *,
-            checks: Mapping[str, str], now: Optional[float] = None) -> "Proposal":
+            checks: Mapping[str, str], now: Optional[float] = None) -> Proposal:
         text = envelope.to_text()
         when = now if now is not None else time.time()
         return cls(id=threat_ids.stable_hash(text, 16), kind=kind, identifier=identifier, graph=graph,
@@ -100,12 +100,12 @@ class Proposal:
     def parsed(self) -> Optional[signing.SignedEnvelope]:
         return signing.from_text(self.envelope)
 
-    def transition(self, to: ProposalState, *, now: Optional[float] = None, note: str = "") -> "Proposal":
+    def transition(self, to: ProposalState, *, now: Optional[float] = None, note: str = "") -> Proposal:
         if to not in _TRANSITIONS[self.state]:
             raise ProposalError(f"a {self.state.value} proposal cannot become {to.value}")
         return replace(self, state=to, updated=now if now is not None else time.time(), note=note or self.note)
 
-    def with_envelope(self, envelope: signing.SignedEnvelope, checks: Mapping[str, str]) -> "Proposal":
+    def with_envelope(self, envelope: signing.SignedEnvelope, checks: Mapping[str, str]) -> Proposal:
         """The proposal after another signature (and that key's check)."""
         return replace(self, envelope=envelope.to_text(), checks={**self.checks, **checks})
 
@@ -118,7 +118,7 @@ class Proposal:
         return json.dumps(data, sort_keys=True)
 
     @classmethod
-    def from_json(cls, text: str) -> "Proposal":
+    def from_json(cls, text: str) -> Proposal:
         try:
             data = json.loads(text)
             data["state"] = ProposalState(data["state"])
@@ -149,7 +149,7 @@ class ProposalStore:
             return None
         return Proposal.from_json(path.read_text(encoding="utf-8"))
 
-    def all(self) -> List[Proposal]:
+    def all(self) -> list[Proposal]:
         if not self._dir.is_dir():
             return []
         proposals = []
@@ -160,7 +160,7 @@ class ProposalStore:
                 continue
         return proposals
 
-    def open(self, now: Optional[float] = None) -> List[Proposal]:
+    def open(self, now: Optional[float] = None) -> list[Proposal]:
         """Proposals still in play (DRAFT, PROPOSED, APPROVED), expiring stale ones first."""
         when = now if now is not None else time.time()
         out = []
@@ -172,6 +172,6 @@ class ProposalStore:
                 out.append(proposal)
         return out
 
-    def for_identifier(self, identifier: str) -> List[Proposal]:
+    def for_identifier(self, identifier: str) -> list[Proposal]:
         """Prior decisions about one threat (the dossier shows them)."""
         return [p for p in self.all() if p.identifier == identifier]

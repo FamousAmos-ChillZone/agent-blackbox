@@ -13,8 +13,8 @@ from __future__ import annotations
 import itertools
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-Row = Dict[str, str]
-Triple = Tuple[str, str, str]
+Row = dict[str, str]
+Triple = tuple[str, str, str]
 
 _RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 _DP = "urn:defender:p:"
@@ -33,7 +33,7 @@ THREAT_TYPES = frozenset({
 #: tried them. Two OPTIONALs binding one variable do not union: the second only
 #: matches values equal to the first, so a column takes the FIRST predicate's
 #: values when it has any, otherwise the next one's.
-COLUMN_PREDICATES: Dict[str, Tuple[str, ...]] = {
+COLUMN_PREDICATES: dict[str, tuple[str, ...]] = {
     "kind": (f"{_DP}kind", f"{_G}kind"),
     "severity": (f"{_DP}severity", f"{_G}severity"),
     "name": (f"{_SCHEMA}name",),
@@ -62,7 +62,7 @@ COLUMN_PREDICATES: Dict[str, Tuple[str, ...]] = {
 }
 
 
-def rows_from_triples(source_graph: str, triples: Iterable[Triple]) -> List[Row]:
+def rows_from_triples(source_graph: str, triples: Iterable[Triple]) -> list[Row]:
     """Rebuild the joined query's rows for one partition from its triples.
 
     Branch 1 — a threat typed as one of :data:`THREAT_TYPES` — yields rows with
@@ -71,12 +71,12 @@ def rows_from_triples(source_graph: str, triples: Iterable[Triple]) -> List[Row]
     (or none). Each other column multiplies rows by its values (the SPARQL
     product); rows are de-duplicated (DISTINCT) and ordered by threat.
     """
-    facts: Dict[str, Dict[str, List[str]]] = {}
+    facts: dict[str, dict[str, list[str]]] = {}
     for threat, predicate, value in triples:
         values = facts.setdefault(threat, {}).setdefault(predicate, [])
         if value not in values:
             values.append(value)
-    rows: List[Row] = []
+    rows: list[Row] = []
     seen = set()
     for threat in sorted(facts):
         for row in _threat_rows(source_graph, threat, facts[threat]):
@@ -87,9 +87,9 @@ def rows_from_triples(source_graph: str, triples: Iterable[Triple]) -> List[Row]
     return rows
 
 
-def _threat_rows(source_graph: str, threat: str, facts: Dict[str, List[str]]) -> List[Row]:
+def _threat_rows(source_graph: str, threat: str, facts: dict[str, list[str]]) -> list[Row]:
     types = sorted(facts.get(_RDF_TYPE, []))
-    bases: List[Dict[str, Optional[str]]] = [
+    bases: list[dict[str, Optional[str]]] = [
         {"rdfType": rdf_type, "identifier": None} for rdf_type in types if rdf_type in THREAT_TYPES
     ]
     for identifier in sorted(facts.get(_IDENTIFIER, [])):
@@ -97,16 +97,16 @@ def _threat_rows(source_graph: str, threat: str, facts: Dict[str, List[str]]) ->
     if not bases:
         return []
     columns = [(column, _column_values(facts, predicates)) for column, predicates in COLUMN_PREDICATES.items()]
-    rows: List[Row] = []
+    rows: list[Row] = []
     for base in bases:
         for combination in itertools.product(*(values for _column, values in columns)):
-            row: Dict[str, Optional[str]] = {"sourceGraph": source_graph, "threat": threat, **base}
+            row: dict[str, Optional[str]] = {"sourceGraph": source_graph, "threat": threat, **base}
             row.update({column: value for (column, _values), value in zip(columns, combination)})
             rows.append({key: value for key, value in row.items() if value is not None})
     return rows
 
 
-def _column_values(facts: Dict[str, List[str]], predicates: Sequence[str]) -> List[Optional[str]]:
+def _column_values(facts: dict[str, list[str]], predicates: Sequence[str]) -> list[Optional[str]]:
     for predicate in predicates:
         values = facts.get(predicate)
         if values:

@@ -26,13 +26,13 @@ _EVENT_SEVERITY = {
 }
 
 
-def _finding_event_rows() -> List[Dict[str, Any]]:
+def _finding_event_rows() -> list[dict[str, Any]]:
     """Findings from every framework, shaped for the merged activity feed.
 
     Each row carries an explicit ``framework`` and lifts finding severity to the
     top level so the severity filter works uniformly across event types.
     """
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for path, default_fw in log_store._findings_files():
         if not path.exists():
             continue
@@ -62,10 +62,10 @@ def _finding_event_rows() -> List[Dict[str, Any]]:
     return out
 
 
-def _tag_events(rows: List[Dict[str, Any]], default_event: str, framework: str = "hermes") -> List[Dict[str, Any]]:
+def _tag_events(rows: list[dict[str, Any]], default_event: str, framework: str = "hermes") -> list[dict[str, Any]]:
     """Stamp every row with a ``framework`` + default ``event``/``severity`` so
     later merging can treat every source the same."""
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for r in rows:
         r.setdefault("event", default_event)
         r.setdefault("framework", framework)
@@ -74,7 +74,7 @@ def _tag_events(rows: List[Dict[str, Any]], default_event: str, framework: str =
     return out
 
 
-def read_audit(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+def read_audit(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
     """Return the unified agent-activity feed, newest first, paged.
 
     Merges local sources into one timestamped, severity-tagged, framework-
@@ -89,7 +89,7 @@ def read_audit(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
     Sorted by ``ts`` descending. Fail-open per source.
     """
     home = log_store._home()
-    merged: List[Dict[str, Any]] = []
+    merged: list[dict[str, Any]] = []
     for path, framework in log_store._audit_files():
         merged.extend(_tag_events(log_store._load_jsonl(path, "event"), "event", framework))
     merged.extend(_tag_events(log_store._load_jsonl(home / "file_access.jsonl", "file_access"), "file_access"))
@@ -166,7 +166,7 @@ def _result_status(result: Any) -> Optional[str]:
     return "ok"
 
 
-def _max_severity(sevs: List[str]) -> Optional[str]:
+def _max_severity(sevs: list[str]) -> Optional[str]:
     """Highest severity in *sevs* by :data:`constants.SEVERITY_ORDER`."""
     order = list(getattr(constants, "SEVERITY_ORDER", ["info", "low", "medium", "high", "critical"]))
     best = None
@@ -179,7 +179,7 @@ def _max_severity(sevs: List[str]) -> Optional[str]:
     return best
 
 
-def _threat_row(row: Dict[str, Any], finding: Dict[str, Any], detail: Dict[str, Any]) -> Dict[str, Any]:
+def _threat_row(row: dict[str, Any], finding: dict[str, Any], detail: dict[str, Any]) -> dict[str, Any]:
     """One local threat as the dashboard's Local view shows it (from a findings.jsonl row)."""
     return {
         "identifier": finding.get("identifier"),
@@ -199,7 +199,7 @@ def _threat_row(row: Dict[str, Any], finding: Dict[str, Any], detail: Dict[str, 
     }
 
 
-def read_local_activity(max_sessions: int = 60) -> Dict[str, Any]:
+def read_local_activity(max_sessions: int = 60) -> dict[str, Any]:
     """Reconstruct the user's LOCAL threat activity as sessions → events → threats.
 
     The local graph's data source, built entirely from this machine's own logs
@@ -208,20 +208,20 @@ def read_local_activity(max_sessions: int = 60) -> Dict[str, Any]:
     carries the threats it triggered (matched by ``tool_call_id``). Newest first.
     """
     home = log_store._home()
-    raw: List[Dict[str, Any]] = []
+    raw: list[dict[str, Any]] = []
     for path, framework in log_store._audit_files():
         raw.extend(_tag_events(log_store._load_jsonl(path, "event"), "event", framework))
     raw.extend(_tag_events(log_store._load_jsonl(home / "file_access.jsonl", "file_access"), "file_access"))
     raw.extend(_tag_events(log_store._load_jsonl(home / "dependencies.jsonl", "dependency_install"), "dependency_install"))
     findings = _finding_event_rows()
 
-    def _sid(entry: Dict[str, Any]) -> str:
+    def _sid(entry: dict[str, Any]) -> str:
         det = entry.get("detail") or {}
         return det.get("session_id") or entry.get("session_id") or "unattributed"
 
     # Index threats so each can hang off the exact tool call that triggered it.
-    threats_by_call: Dict[tuple, List[Dict[str, Any]]] = {}
-    threats_loose: Dict[str, List[Dict[str, Any]]] = {}
+    threats_by_call: dict[tuple, list[dict[str, Any]]] = {}
+    threats_loose: dict[str, list[dict[str, Any]]] = {}
     for f in findings:
         fd = f.get("finding") or {}
         det = f.get("detail") or {}
@@ -233,9 +233,9 @@ def read_local_activity(max_sessions: int = 60) -> Dict[str, Any]:
         else:
             threats_loose.setdefault(sid, []).append(threat)
 
-    sessions: Dict[str, Dict[str, Any]] = {}
+    sessions: dict[str, dict[str, Any]] = {}
 
-    def _sess(sid: str) -> Dict[str, Any]:
+    def _sess(sid: str) -> dict[str, Any]:
         return sessions.setdefault(sid, {
             "id": sid, "start": None, "end": None, "agent": "hermes",
             "model": None, "status": "active", "ended": False,
@@ -311,7 +311,7 @@ def read_local_activity(max_sessions: int = 60) -> Dict[str, Any]:
                 "threats": [],
             })
 
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for sid, s in sessions.items():
         for threat in threats_loose.get(sid, []):
             s["events"].append({"type": "threat", "ts": threat["ts"], "tool": threat.get("tool"), "threats": [threat]})

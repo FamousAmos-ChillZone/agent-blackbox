@@ -41,7 +41,7 @@ class CommunityAgent(TypedDict):
 
     author: str
     address: str
-    frameworks: List[str]
+    frameworks: list[str]
     reports: int
     is_self: bool
 
@@ -58,8 +58,8 @@ class ReportedThreat(TypedDict):
     identifier: str
     reporters: int
     severity: str   # the highest severity any verified report gave it
-    matched_by: List[str]
-    blackbox_versions: List[str]
+    matched_by: list[str]
+    blackbox_versions: list[str]
 
 
 def contributing_agent_count(reports: Iterable[VerifiedReport]) -> int:
@@ -71,25 +71,25 @@ def contributing_agent_count(reports: Iterable[VerifiedReport]) -> int:
 class _SignerTally:
     """What one signer contributed, accumulated while folding reports."""
 
-    addresses: "Counter[str]" = field(default_factory=Counter)
-    frameworks: Set[str] = field(default_factory=set)
-    subjects: Set[str] = field(default_factory=set)
+    addresses: Counter[str] = field(default_factory=Counter)
+    frameworks: set[str] = field(default_factory=set)
+    subjects: set[str] = field(default_factory=set)
 
 
-def community_agents(reports: Iterable[VerifiedReport], own_author: str = "") -> List[CommunityAgent]:
+def community_agents(reports: Iterable[VerifiedReport], own_author: str = "") -> list[CommunityAgent]:
     """One entry per verified signer.
 
     Ordered: this node first, then most reports, then signer key — stable
     across refreshes so the section does not reshuffle on every poll.
     """
-    tallies: Dict[str, _SignerTally] = {}
+    tallies: dict[str, _SignerTally] = {}
     for report in reports:
         tally = tallies.setdefault(report.author, _SignerTally())
         tally.addresses[report.reporter] += 1
         if report.framework:
             tally.frameworks.add(report.framework.lower())
         tally.subjects.add(report.subject)
-    agents: List[CommunityAgent] = [
+    agents: list[CommunityAgent] = [
         {
             "author": author,
             "address": tally.addresses.most_common(1)[0][0],
@@ -102,12 +102,12 @@ def community_agents(reports: Iterable[VerifiedReport], own_author: str = "") ->
     return sorted(agents, key=lambda a: (not a["is_self"], -a["reports"], a["author"]))
 
 
-def most_reported_threats(reports: Sequence[VerifiedReport], limit: int) -> List[ReportedThreat]:
+def most_reported_threats(reports: Sequence[VerifiedReport], limit: int) -> list[ReportedThreat]:
     """The *limit* threats with the most distinct verified signers."""
-    authors: Dict[str, Set[str]] = {}
-    severity: Dict[str, str] = {}
-    matched_by: Dict[str, Set[str]] = {}
-    versions: Dict[str, Set[str]] = {}
+    authors: dict[str, set[str]] = {}
+    severity: dict[str, str] = {}
+    matched_by: dict[str, set[str]] = {}
+    versions: dict[str, set[str]] = {}
     for report in reports:
         authors.setdefault(report.identifier, set()).add(report.author)
         fields = dict(report.fields)

@@ -49,7 +49,7 @@ ACTION_FIELD = "action"
 PUBLIC_SOURCE = "public"
 
 #: One compiled row with its tier tag, as the refresh cycle hands it to the compiler.
-TaggedRow = Tuple[Mapping[str, Any], str]
+TaggedRow = tuple[Mapping[str, Any], str]
 
 
 class CorrectionPin(NamedTuple):
@@ -60,7 +60,7 @@ class CorrectionPin(NamedTuple):
     :func:`signed_suppressions`: ``signed_suppressions(rows, *pin)``."""
 
     manifests: Mapping[str, key_manifest.KeyManifest]
-    legacy: Optional[FrozenSet[str]]
+    legacy: Optional[frozenset[str]]
 
 
 #: Before the legacy pin: every correction is honoured as it always was.
@@ -68,7 +68,7 @@ NO_PIN = CorrectionPin(manifests={}, legacy=None)
 
 
 def signed_suppressions(rows: Iterable[TaggedRow], manifests: Mapping[str, key_manifest.KeyManifest],
-                        legacy: Optional[FrozenSet[str]]) -> FrozenSet[str]:
+                        legacy: Optional[frozenset[str]]) -> frozenset[str]:
     """The threat subjects the PUBLIC suppress corrections in *rows* withdraw.
 
     *rows* — ``(row, source)`` binding rows; a correction row carries ``rdfType``,
@@ -89,7 +89,7 @@ def signed_suppressions(rows: Iterable[TaggedRow], manifests: Mapping[str, key_m
 
 
 def honoured_target(row: Mapping[str, Any], manifests: Mapping[str, key_manifest.KeyManifest],
-                    legacy: Optional[FrozenSet[str]]) -> str:
+                    legacy: Optional[frozenset[str]]) -> str:
     """The subject *row* suppresses, or "" when it is not a suppress correction
     this reader honours (see :func:`signed_suppressions` for the arguments)."""
     if extract_binding(row.get("rdfType")) != constants.DEFENDER_CORRECTION_TYPE_IRI:
@@ -107,7 +107,7 @@ def honoured_target(row: Mapping[str, Any], manifests: Mapping[str, key_manifest
     return target if target in _signed_targets(extract_binding(row.get("signedStatement")), manifest) else ""
 
 
-def _signed_targets(text: str, manifest: key_manifest.KeyManifest) -> FrozenSet[str]:
+def _signed_targets(text: str, manifest: key_manifest.KeyManifest) -> frozenset[str]:
     """The subjects a quorum-signed suppress correction names; empty for an
     envelope that is missing, malformed, of another type or short of quorum."""
     envelope = signing.from_text(text) if text else None

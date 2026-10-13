@@ -81,7 +81,7 @@ class ConfirmedEntry:
     identifier: str
     severity: str
     kind: str
-    provenance: Tuple[str, ...] = ()
+    provenance: tuple[str, ...] = ()
     evidence: str = ""
     name: str = ""
     advisory_id: str = ""
@@ -103,7 +103,7 @@ class ConfirmedEntry:
         return self.identifier.split(":", 1)[0].lower() if ":" in self.identifier else ""
 
 
-def promotion_payload(entry: ConfirmedEntry) -> Dict[str, str]:
+def promotion_payload(entry: ConfirmedEntry) -> dict[str, str]:
     """The flat str→str payload the curators sign for *entry* — the same keys
     for every category (``promotion.payload_for`` writes them for a
     dependency); fields that do not apply to a category are empty."""
@@ -121,7 +121,7 @@ def promotion_payload(entry: ConfirmedEntry) -> Dict[str, str]:
     }
 
 
-def _package_fields(identifier: str) -> Tuple[str, str, str]:
+def _package_fields(identifier: str) -> tuple[str, str, str]:
     """``(ecosystem, package name, version)`` named by a dependency or a
     versioned skill identifier; empty strings for every other type."""
     dependency = threat_ids.parse_dependency_identifier(identifier)
@@ -140,7 +140,7 @@ class RowBuilder(Protocol):
 
     category: str
 
-    def quads(self, entry: ConfirmedEntry, envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
+    def quads(self, entry: ConfirmedEntry, envelope: signing.SignedEnvelope) -> list[rdf_terms.Quad]:
         ...
 
 
@@ -172,7 +172,7 @@ def _capped_evidence(evidence: str) -> str:
 
 
 def _signed_row(subject: str, rdf_type: Optional[str], payload: Mapping[str, str], envelope: signing.SignedEnvelope,
-                literals: Sequence[Tuple[str, str]], evidence: str = "") -> List[rdf_terms.Quad]:
+                literals: Sequence[tuple[str, str]], evidence: str = "") -> list[rdf_terms.Quad]:
     """One threat subject: its type, the signed rule fields, the type's own
     *literals*, the capped *evidence* and — always last — the envelope under
     ``SIGNED_STATEMENT_PRED``, checked against the store's literal cap. Empty
@@ -203,7 +203,7 @@ def _provenance_json(payload: Mapping[str, str]) -> str:
 # ---------------------------------------------------------------- dependency
 
 
-def _dependency_literals(payload: Mapping[str, str]) -> Tuple[Tuple[str, str], ...]:
+def _dependency_literals(payload: Mapping[str, str]) -> tuple[tuple[str, str], ...]:
     """The package fields, in the guardian vocabulary and as the ``dp:``
     triples the live lookup locates a ``DependencySignal`` by
     (``ruleset/live/lookup._dependency_sparql``)."""
@@ -217,7 +217,7 @@ def _dependency_literals(payload: Mapping[str, str]) -> Tuple[Tuple[str, str], .
     )
 
 
-def verified_rule_quads(payload: Mapping[str, str], envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
+def verified_rule_quads(payload: Mapping[str, str], envelope: signing.SignedEnvelope) -> list[rdf_terms.Quad]:
     """The verified-graph quads the existing reader compiles into a BLOCKING
     dependency rule (the manual one-threat path, ``publishing.publish``)."""
     return _signed_row(threat_ids.threat_uri(payload["identifier"]), constants.DEFENDER_DEPENDENCY_TYPE_IRI,
@@ -229,7 +229,7 @@ class DependencyRowBuilder:
 
     category = "dep"
 
-    def quads(self, entry: ConfirmedEntry, envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
+    def quads(self, entry: ConfirmedEntry, envelope: signing.SignedEnvelope) -> list[rdf_terms.Quad]:
         payload = _checked_payload(entry, envelope, self.category)
         return _signed_row(threat_ids.threat_uri(entry.identifier), constants.DEFENDER_DEPENDENCY_TYPE_IRI,
                            payload, envelope, _dependency_literals(payload), entry.evidence)
@@ -243,7 +243,7 @@ class IocRowBuilder:
 
     category = "ioc"
 
-    def quads(self, entry: ConfirmedEntry, envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
+    def quads(self, entry: ConfirmedEntry, envelope: signing.SignedEnvelope) -> list[rdf_terms.Quad]:
         payload = _checked_payload(entry, envelope, self.category)
         parts = entry.identifier.split(":", 2)
         ioc_type, value = (parts[1], parts[2]) if len(parts) == 3 else ("", "")
@@ -284,7 +284,7 @@ class SkillRowBuilder:
 
     category = "skill"
 
-    def quads(self, entry: ConfirmedEntry, envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
+    def quads(self, entry: ConfirmedEntry, envelope: signing.SignedEnvelope) -> list[rdf_terms.Quad]:
         payload = _checked_payload(entry, envelope, self.category)
         skill = _parse_skill(entry.identifier)
         if skill is None:
@@ -299,7 +299,7 @@ class InjectionRowBuilder:
 
     category = "injection"
 
-    def quads(self, entry: ConfirmedEntry, envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
+    def quads(self, entry: ConfirmedEntry, envelope: signing.SignedEnvelope) -> list[rdf_terms.Quad]:
         payload = _checked_payload(entry, envelope, self.category)
         if not entry.pattern or threat_ids.injection_identifier(entry.pattern) != entry.identifier:
             raise RowBuildError(f"{entry.identifier!r} needs the pattern its hash names")
@@ -315,7 +315,7 @@ class FileAccessRowBuilder:
 
     category = "fileaccess"
 
-    def quads(self, entry: ConfirmedEntry, envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
+    def quads(self, entry: ConfirmedEntry, envelope: signing.SignedEnvelope) -> list[rdf_terms.Quad]:
         payload = _checked_payload(entry, envelope, self.category)
         parts = entry.identifier.split(":", 2)
         if len(parts) != 3 or threat_ids.fileaccess_identifier(parts[1], parts[2]) != entry.identifier:
@@ -330,7 +330,7 @@ ROW_BUILDERS: Mapping[str, RowBuilder] = MappingProxyType({
     builder.category: builder
     for builder in (DependencyRowBuilder(), IocRowBuilder(), SkillRowBuilder(), InjectionRowBuilder(), FileAccessRowBuilder())
 })
-PROMOTABLE_CATEGORIES: Tuple[str, ...] = tuple(ROW_BUILDERS)
+PROMOTABLE_CATEGORIES: tuple[str, ...] = tuple(ROW_BUILDERS)
 
 
 # ---------------------------------------------------------------- corrections and the advisory twin (P5)
@@ -340,7 +340,7 @@ MAX_CORRECTION_TARGETS, _CORRECTION_TEXT_MAX = 20, 200
 _IRI_UNSAFE = frozenset('<>"{}|^`\\ \r\n\t')
 
 
-def correction_payload(identifier: str, subjects: Sequence[str], *, reason: str, source: str) -> Dict[str, str]:
+def correction_payload(identifier: str, subjects: Sequence[str], *, reason: str, source: str) -> dict[str, str]:
     """The flat payload the curators sign to suppress *subjects* — the subjects
     the verified graph holds for *identifier*, read first (F-031: a legacy row
     does not live at ``threat_uri(identifier)``). The reader honours only the
@@ -357,7 +357,7 @@ def correction_payload(identifier: str, subjects: Sequence[str], *, reason: str,
             "identifier": identifier, "reason": reason.strip(), "source": source.strip()}
 
 
-def correction_quads(envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
+def correction_quads(envelope: signing.SignedEnvelope) -> list[rdf_terms.Quad]:
     """One ``CorrectionSignal`` suppress row per signed target, each carrying the
     envelope — the shape the R3 reader honours. No ``g:identifier`` on purpose:
     the legacy identifier lane would compile such a row into a rule."""

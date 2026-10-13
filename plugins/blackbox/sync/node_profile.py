@@ -62,7 +62,7 @@ _DKG_CONFIG_SYNC_SETTINGS = {
 _INTEGER_CONFIG_KEYS = frozenset({"syncGlobalMaxInflight", "syncGlobalQueueLimit"})
 
 
-def node_sync_settings(cfg: BlackboxConfig) -> Dict[str, str]:
+def node_sync_settings(cfg: BlackboxConfig) -> dict[str, str]:
     """The node settings this configuration needs, keyed by DKG env-var name.
 
     Umanitek's default graph gets the native profile plus the recovery
@@ -83,7 +83,7 @@ def node_sync_settings(cfg: BlackboxConfig) -> Dict[str, str]:
     return settings
 
 
-def _persisted_dkg_sync_settings(cfg: BlackboxConfig) -> Dict[str, str]:
+def _persisted_dkg_sync_settings(cfg: BlackboxConfig) -> dict[str, str]:
     """Return the node's persisted sync settings, keyed by DKG env-var name.
 
     Values come from ``<dkg_home>/config.json`` (normalized to the env string
@@ -97,7 +97,7 @@ def _persisted_dkg_sync_settings(cfg: BlackboxConfig) -> Dict[str, str]:
         )
     except (OSError, ValueError, TypeError):
         return {}
-    settings: Dict[str, str] = {}
+    settings: dict[str, str] = {}
     if isinstance(persisted, dict):
         for env_name, config_name in _DKG_CONFIG_SYNC_SETTINGS.items():
             value = persisted.get(config_name)
@@ -110,7 +110,7 @@ def _persisted_dkg_sync_settings(cfg: BlackboxConfig) -> Dict[str, str]:
 
 def _managed_dkg_sync_mode_matches(
     cfg: BlackboxConfig,
-    expected: Dict[str, str],
+    expected: dict[str, str],
 ) -> bool:
     """Return whether the live worker's EFFECTIVE sync settings equal *expected*.
 

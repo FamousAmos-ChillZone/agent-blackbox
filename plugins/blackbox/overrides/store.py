@@ -25,7 +25,7 @@ import os
 import secrets
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Tuple
 
@@ -45,7 +45,7 @@ class LocalOverride:
     reason: str
     day: str
 
-    def as_json(self) -> Dict[str, str]:
+    def as_json(self) -> dict[str, str]:
         return {"identifier": self.identifier, "reason": self.reason, "day": self.day}
 
 
@@ -54,11 +54,11 @@ class OverrideStore:
         self._path = path or (constants.blackbox_home() / _STORE_FILE)
         self._lock = threading.Lock()
 
-    def current(self) -> Dict[str, LocalOverride]:
+    def current(self) -> dict[str, LocalOverride]:
         with self._lock:
             return self._load()
 
-    def unblocked(self) -> FrozenSet[str]:
+    def unblocked(self) -> frozenset[str]:
         return frozenset(self.current())
 
     def is_unblocked(self, identifier: str) -> bool:
@@ -67,7 +67,7 @@ class OverrideStore:
     def unblock(self, identifier: str, reason: str) -> LocalOverride:
         """Demote *identifier* to FLAG here (idempotent; the newest reason wins)."""
         override = LocalOverride(identifier=identifier.strip(), reason=str(reason or "")[:_MAX_REASON],
-                                 day=datetime.now(timezone.utc).date().isoformat())
+                                 day=datetime.now(UTC).date().isoformat())
         with self._lock:
             current = self._load()
             current[override.identifier] = override
@@ -87,7 +87,7 @@ class OverrideStore:
         logger.warning("blackbox: local override removed — %s blocks again", identifier)
         return True
 
-    def _load(self) -> Dict[str, LocalOverride]:
+    def _load(self) -> dict[str, LocalOverride]:
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
             return {str(item["identifier"]): LocalOverride(str(item["identifier"]), str(item.get("reason", "")),
@@ -96,7 +96,7 @@ class OverrideStore:
         except (OSError, ValueError, TypeError, KeyError):
             return {}
 
-    def _save(self, current: Dict[str, LocalOverride]) -> None:
+    def _save(self, current: dict[str, LocalOverride]) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
@@ -106,7 +106,7 @@ class OverrideStore:
             logger.warning("blackbox: could not save local overrides (%s)", exc)
 
 
-def demote_blocking(findings: Iterable[Any], unblocked: FrozenSet[str]) -> Tuple[List[Any], List[Any]]:
+def demote_blocking(findings: Iterable[Any], unblocked: frozenset[str]) -> tuple[list[Any], list[Any]]:
     """Split would-block *findings* into (still blocking, demoted by a local override)."""
     blocking, demoted = [], []
     for finding in findings:

@@ -29,7 +29,7 @@ def _path() -> Path:
     return constants.blackbox_home() / "authoritative-sync.json"
 
 
-def write(status: str, **details: Any) -> Dict[str, Any]:
+def write(status: str, **details: Any) -> dict[str, Any]:
     """Atomically publish transfer state for the dashboard."""
     path = _path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -57,7 +57,7 @@ def write(status: str, **details: Any) -> Dict[str, Any]:
     return state
 
 
-def read() -> Dict[str, Any]:
+def read() -> dict[str, Any]:
     """Read current transfer state, rejecting abandoned running markers."""
     try:
         state = json.loads(_path().read_text(encoding="utf-8"))
@@ -74,7 +74,7 @@ def read() -> Dict[str, Any]:
     return state
 
 
-def read_for_graph(context_graph_id: str) -> Dict[str, Any]:
+def read_for_graph(context_graph_id: str) -> dict[str, Any]:
     """Read transfer state only when it belongs to ``context_graph_id``."""
     state = read()
     if str(state.get("context_graph_id") or "") != str(context_graph_id or ""):

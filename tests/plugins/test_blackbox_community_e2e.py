@@ -62,7 +62,7 @@ def _signer(client: DkgClient, key_file) -> ReportSigner:
                         environment=network_environment(client.status()), graph=CG)
 
 
-def _visible_identifiers(client: DkgClient) -> "set[tuple[str, str]]":
+def _visible_identifiers(client: DkgClient) -> set[tuple[str, str]]:
     """(identifier, signer) for every report that VERIFIES on *client* —
     the one reader every product surface uses (R0c/R0d), never the
     self-described reporter field (KI-110)."""

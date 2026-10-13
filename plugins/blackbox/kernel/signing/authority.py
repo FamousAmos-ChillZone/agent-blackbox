@@ -89,20 +89,20 @@ _ALLOWED = {
 
 #: Where each authority publishes each root statement; a missing pair may not be signed.
 #: A successor graph acts on the verified tier, so the community authority never names one.
-_ROOT_HOMES: Mapping[Tuple[Authority, RootStatement], str] = {
+_ROOT_HOMES: Mapping[tuple[Authority, RootStatement], str] = {
     (Authority.VERIFIED, RootStatement.KEY_MANIFEST): VERIFIED_GRAPH,
     (Authority.VERIFIED, RootStatement.GRAPH_MIGRATION): VERIFIED_GRAPH,
     (Authority.COMMUNITY, RootStatement.KEY_MANIFEST): COMMUNITY_GRAPH,
 }
 
 
-def allowed_kinds(authority: Authority, *, in_verified_graph: bool) -> FrozenSet[CuratorStatement]:
+def allowed_kinds(authority: Authority, *, in_verified_graph: bool) -> frozenset[CuratorStatement]:
     """The CURATOR statement kinds a reader accepts from *authority* in that
     graph (root statements: :func:`home_graph`)."""
     return _ALLOWED[(authority, in_verified_graph)]
 
 
-def home_graph(authority: Authority, kind: Union[CuratorStatement, RootStatement]) -> Optional[str]:
+def home_graph(authority: Authority, kind: CuratorStatement | RootStatement) -> Optional[str]:
     """Where *authority* publishes a *kind* statement (curator- or root-signed):
     ``"verified"``, ``"community"``, or None when it may not sign that kind at all."""
     if isinstance(kind, RootStatement):

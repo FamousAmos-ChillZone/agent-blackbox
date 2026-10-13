@@ -10,9 +10,9 @@ from __future__ import annotations
 import pytest
 
 fastapi = pytest.importorskip("fastapi")
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-from plugins.blackbox.kernel.browser_boundary import BrowserBoundary  # noqa: E402
+from plugins.blackbox.kernel.browser_boundary import BrowserBoundary
 
 LOOPBACK = {"127.0.0.1", "localhost", "[::1]"}
 MAGIC_DNS = "curator-a.tail1234.ts.net"
@@ -131,7 +131,7 @@ def test_allowlist_entries_match_case_insensitively():
 
 
 def test_token_is_compared_in_constant_time(loopback_client, monkeypatch):
-    import plugins.blackbox.kernel.browser_boundary as browser_boundary
+    from plugins.blackbox.kernel import browser_boundary
 
     calls = []
     real = browser_boundary.secrets.compare_digest

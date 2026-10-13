@@ -65,7 +65,7 @@ class LabAnswer:
     else None; ``reason`` — why, when not ``OK`` (``"timeout"``, ``"http 404"`` …)."""
 
     outcome: LabOutcome
-    body: Optional[Dict[str, Any]] = None
+    body: Optional[dict[str, Any]] = None
     reason: str = ""
 
 
@@ -106,7 +106,7 @@ class LabTransport:
         """The raw output of a finished run of *key*."""
         return self._call("GET", f"/jobs/{_quoted(key)}/output")
 
-    def _call(self, method: str, path: str, body: Optional[Dict[str, Any]] = None) -> LabAnswer:
+    def _call(self, method: str, path: str, body: Optional[dict[str, Any]] = None) -> LabAnswer:
         """One request. Never raises: every failure is an answer."""
         deadline = time.monotonic() + self._timeout
         connection = self._connection_class(self._host, self._port, timeout=self._timeout)

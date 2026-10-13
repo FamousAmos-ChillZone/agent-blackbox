@@ -56,7 +56,7 @@ class ProviderRanges:
     source: str
     list_version: str
     fetched: str
-    intervals: Dict[int, Tuple[Tuple[int, int], ...]]
+    intervals: dict[int, tuple[tuple[int, int], ...]]
 
     def contains(self, address: IPAddress) -> bool:
         """Whether *address* falls inside one of this provider's ranges."""
@@ -78,7 +78,7 @@ def _provider(entry: dict) -> ProviderRanges:
 
 
 @functools.lru_cache(maxsize=1)
-def providers() -> Tuple[ProviderRanges, ...]:
+def providers() -> tuple[ProviderRanges, ...]:
     """Every provider's held ranges (read once). Raises :class:`RangesUnavailable`
     when the file is missing or malformed — never an empty answer."""
     try:

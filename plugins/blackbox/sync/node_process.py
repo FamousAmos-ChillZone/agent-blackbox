@@ -37,7 +37,7 @@ def _recorded_pid(cfg: BlackboxConfig) -> Optional[int]:
         return None
 
 
-def _role(cfg: BlackboxConfig, command: List[str]) -> Optional[str]:
+def _role(cfg: BlackboxConfig, command: list[str]) -> Optional[str]:
     """The daemon role in *command* if it runs THIS installation's DKG CLI, else None."""
     dkg_cli = str(Path(cfg.dkg_bin).expanduser().resolve())
     if dkg_cli not in command:

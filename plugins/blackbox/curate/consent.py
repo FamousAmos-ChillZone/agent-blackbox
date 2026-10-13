@@ -58,7 +58,7 @@ class ConsentLedger:
         self._append({"event": "shown", "code": code, "summary": summary[:400]})
         return code
 
-    def consent(self, content: str, *, typed: Optional[str], sandbox: bool, yes: bool) -> Tuple[bool, str]:
+    def consent(self, content: str, *, typed: Optional[str], sandbox: bool, yes: bool) -> tuple[bool, str]:
         """Whether the write may proceed, and why not.
 
         * ``yes`` without typing: sandbox only; refused on a network with a
@@ -76,7 +76,7 @@ class ConsentLedger:
         self._append({"event": "consent" if verdict[0] else "refused", "code": code, "why": verdict[1]})
         return verdict
 
-    def standing(self, content: str, why: str) -> Tuple[bool, str]:
+    def standing(self, content: str, why: str) -> tuple[bool, str]:
         """Record a write made under the operator's STANDING consent to the
         automation policy (the curator service; plan §07) — no code is typed.
         The caller has checked the policy and its acceptance; *why* is the
@@ -90,7 +90,7 @@ class ConsentLedger:
         given back, so the operator can consent to the same content again."""
         self._append({"event": "released", "code": confirmation_code(content), "why": why[:200]})
 
-    def _fresh_and_unused(self, code: str) -> Tuple[bool, str]:
+    def _fresh_and_unused(self, code: str) -> tuple[bool, str]:
         shown_at: Optional[float] = None
         spent = False
         for entry in self._entries():

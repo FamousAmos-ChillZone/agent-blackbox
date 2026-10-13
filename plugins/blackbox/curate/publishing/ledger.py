@@ -66,7 +66,7 @@ TracAmount = Union[Decimal, str, int]
 #: One lock per ledger FILE, shared by every PublishLedger in the process: two
 #: instances on one file (the beat and a verb) must not both read SEALED and
 #: both append SUBMITTED — that pays twice and leaves a line no replay accepts.
-_FILE_LOCKS: Dict[str, threading.Lock] = {}
+_FILE_LOCKS: dict[str, threading.Lock] = {}
 _FILE_LOCKS_GUARD = threading.Lock()
 
 
@@ -86,7 +86,7 @@ class PublishState(Enum):
     WRITTEN_OFF = "written_off"  # a 207 that could not be bound; the money is gone, the cost logged
 
 
-_TRANSITIONS: Mapping[PublishState, FrozenSet[PublishState]] = MappingProxyType({
+_TRANSITIONS: Mapping[PublishState, frozenset[PublishState]] = MappingProxyType({
     PublishState.QUEUED: frozenset({PublishState.SEALED}),
     PublishState.SEALED: frozenset({PublishState.SUBMITTED}),
     PublishState.SUBMITTED: frozenset({PublishState.MINTED, PublishState.BOUND, PublishState.SEALED}),
@@ -122,7 +122,7 @@ class BatchRecord:
 
     batch_id: str
     state: PublishState
-    entries: Tuple[BatchEntry, ...]
+    entries: tuple[BatchEntry, ...]
     ual: Optional[str]
     cost_trac: Optional[Decimal]
     cost_bytes: Optional[int]
@@ -158,7 +158,7 @@ def publish_metrics(transitions: Sequence[Transition], now: float) -> PublishMet
     """The F-035 metrics from the ledger's transitions alone (no other state)."""
     last_success: Optional[float] = None
     failures = minted = 0
-    monthly: Dict[str, MonthlyCost] = {}
+    monthly: dict[str, MonthlyCost] = {}
     for step in transitions:
         record = step.record
         if record.state in (PublishState.BOUND, PublishState.SEEN):
@@ -203,7 +203,7 @@ def _byte_count(value: Optional[int]) -> Optional[int]:
 
 def _step(
     current: Optional[BatchRecord], batch_id: str, state: PublishState, *, at: float,
-    entries: Tuple[BatchEntry, ...] = (), ual: Optional[str] = None,
+    entries: tuple[BatchEntry, ...] = (), ual: Optional[str] = None,
     cost_trac: Optional[Decimal] = None, cost_bytes: Optional[int] = None, note: str = "",
 ) -> BatchRecord:
     """The one choke point every move passes — live and on reload alike."""
@@ -250,10 +250,10 @@ def _to_line(record: BatchRecord) -> str:
     return json.dumps(line, sort_keys=True)
 
 
-def _replay(lines: Iterable[str], source: Path) -> List[Transition]:
+def _replay(lines: Iterable[str], source: Path) -> list[Transition]:
     """Re-run every line through :func:`_step`; an unreadable or illegal line stops the load."""
-    current: Dict[str, BatchRecord] = {}
-    transitions: List[Transition] = []
+    current: dict[str, BatchRecord] = {}
+    transitions: list[Transition] = []
     for number, text in enumerate(lines, start=1):
         if not text.strip():
             continue
@@ -324,12 +324,12 @@ class PublishLedger:
         with self._exclusive():
             return self._current().get(batch_id)
 
-    def batches(self) -> Tuple[BatchRecord, ...]:
+    def batches(self) -> tuple[BatchRecord, ...]:
         """Every batch in its current state, in the order it was queued."""
         with self._exclusive():
             return tuple(self._current().values())
 
-    def transitions(self) -> Tuple[Transition, ...]:
+    def transitions(self) -> tuple[Transition, ...]:
         with self._exclusive():
             return tuple(self._load())
 
@@ -351,14 +351,14 @@ class PublishLedger:
             finally:
                 os.close(descriptor)  # closing releases the flock
 
-    def _load(self) -> List[Transition]:
+    def _load(self) -> list[Transition]:
         try:
             with self._path.open("r", encoding="utf-8") as handle:
                 return _replay(handle, self._path)
         except FileNotFoundError:
             return []
 
-    def _current(self) -> Dict[str, BatchRecord]:
+    def _current(self) -> dict[str, BatchRecord]:
         return {step.record.batch_id: step.record for step in self._load()}
 
     def _append(self, record: BatchRecord) -> BatchRecord:

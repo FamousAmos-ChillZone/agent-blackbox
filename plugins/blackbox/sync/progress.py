@@ -43,7 +43,7 @@ def read_durable_progress(
     context_graph_id: str,
     *,
     after: Optional[DurableProgressCursor] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Return the latest rootless durable-sync window for ``context_graph_id``.
 
     ``current_triples`` is transfer progress and may include the raw tail of an

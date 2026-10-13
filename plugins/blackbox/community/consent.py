@@ -32,7 +32,7 @@ import logging
 import os
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
@@ -127,7 +127,7 @@ def record() -> Optional[SharingConsentRecord]:
     turning sharing back on must never depend on it. None when it could not be saved."""
     text = terms_text()
     entry = SharingConsentRecord(terms_hash=terms_hash(text) if text else "", terms_version=terms_version(text) if text else "",
-                                 accepted_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat())
+                                 accepted_at=datetime.now(UTC).replace(microsecond=0).isoformat())
     return entry if _save(entry) else None
 
 
@@ -156,7 +156,7 @@ def withdraw() -> bool:
     base = entry or SharingConsentRecord(terms_hash=terms_hash(text) if text else "", terms_version=terms_version(text) if text else "",
                                          accepted_at="")
     return _save(SharingConsentRecord(base.terms_hash, base.terms_version, base.accepted_at,
-                                      withdrawn_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat()))
+                                      withdrawn_at=datetime.now(UTC).replace(microsecond=0).isoformat()))
 
 
 def erase() -> bool:
@@ -166,7 +166,7 @@ def erase() -> bool:
     turns sharing back on deliberately. True when a record existed before."""
     existed = _record_path().exists()
     _save(SharingConsentRecord(terms_hash="", terms_version="", accepted_at="",
-                               withdrawn_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat()))
+                               withdrawn_at=datetime.now(UTC).replace(microsecond=0).isoformat()))
     return existed
 
 

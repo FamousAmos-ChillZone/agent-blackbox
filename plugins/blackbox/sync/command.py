@@ -72,7 +72,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
         return 130
 
 
-def _terminal_sync_details(state: Dict[str, Any]) -> Dict[str, Any]:
+def _terminal_sync_details(state: dict[str, Any]) -> dict[str, Any]:
     return {
         key: value
         for key, value in state.items()
@@ -149,7 +149,7 @@ def _cmd_sync_with_managed_dkg(cfg: BlackboxConfig, args: argparse.Namespace) ->
             public_entries=known_public,
             community_entries=known_community,
         )
-        terminal_state: Dict[str, Any] = {}
+        terminal_state: dict[str, Any] = {}
         profile_changed = managed_node._set_persisted_dkg_sync_state(cfg)
         if profile_changed or not managed_node._managed_dkg_sync_mode_matches(
             cfg, managed_node.expected_node_settings(cfg)
@@ -248,7 +248,7 @@ def _cmd_sync_impl(args: argparse.Namespace) -> int:
     initial_rules_ready = False
     attempt = 0
     last_subscribe_error = ""
-    last_catchup: Dict[str, Any] = {}
+    last_catchup: dict[str, Any] = {}
 
     if release_graph and getattr(args, "wait", False):
         local_release = _complete_local_release_ruleset(cfg, client)
@@ -884,7 +884,7 @@ def _catchup_authoritative_vm(
             # daemon-thread wall-clock guard so a misbehaving daemon cannot pin
             # a fresh install forever. Polling also gives operators visible
             # proof of life while the request is legitimately busy.
-            outcome: "queue.Queue[tuple[str, Any]]" = queue.Queue(maxsize=1)
+            outcome: queue.Queue[tuple[str, Any]] = queue.Queue(maxsize=1)
 
             def _recover() -> None:
                 try:
@@ -1285,7 +1285,7 @@ def _peer_discovery_pending(exc: DkgError) -> bool:
     )
 
 
-def _configured_publisher_circuits(client: DkgClient, peer_id: str) -> List[str]:
+def _configured_publisher_circuits(client: DkgClient, peer_id: str) -> list[str]:
     """Build deterministic relay routes for a publisher on a cold peerstore."""
     try:
         config = json.loads(
@@ -1293,7 +1293,7 @@ def _configured_publisher_circuits(client: DkgClient, peer_id: str) -> List[str]
         )
     except (AttributeError, OSError, TypeError, ValueError, json.JSONDecodeError):
         return []
-    circuits: List[str] = []
+    circuits: list[str] = []
     for relay in config.get("relayPeers") or []:
         address = str(relay or "").rstrip("/")
         if "/p2p/" not in address:

@@ -46,7 +46,7 @@ import re
 import secrets
 import urllib.parse
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -127,11 +127,11 @@ class WithdrawalReport:
     ``failures`` — identifiers a revocation could not be proposed for."""
 
     ran: bool
-    revocations: Tuple[Proposal, ...] = ()
-    corrections: Tuple[CorrectionRequest, ...] = ()
-    extensions: Tuple[Extension, ...] = ()
-    undecided: Tuple[str, ...] = ()
-    failures: Tuple[str, ...] = ()
+    revocations: tuple[Proposal, ...] = ()
+    corrections: tuple[CorrectionRequest, ...] = ()
+    extensions: tuple[Extension, ...] = ()
+    undecided: tuple[str, ...] = ()
+    failures: tuple[str, ...] = ()
 
 
 #: One source's re-check of one confirmation: FOUND still listed, CLEAN
@@ -170,14 +170,14 @@ def source_recheck(source: Source) -> Recheck:
     def recheck(confirmation: CitedConfirmation) -> Lookup:
         try:
             status = source.check(confirmation.identifier).status
-        except Exception:  # noqa: BLE001 — a failing source is "could not tell", never withdrawn
+        except Exception:
             return Lookup.UNAVAILABLE
         return status if status in (Lookup.FOUND, Lookup.CLEAN) else Lookup.UNAVAILABLE
 
     return recheck
 
 
-def rechecks_for(sources: Sequence[Source], client: Optional[HttpClient] = None) -> Dict[str, Recheck]:
+def rechecks_for(sources: Sequence[Source], client: Optional[HttpClient] = None) -> dict[str, Recheck]:
     """One :data:`Recheck` per source name: OSV by advisory id, the rest via ``check``."""
     return {source.name: osv_recheck(client) if source.name == _OSV_SOURCE else source_recheck(source)
             for source in sources}
@@ -190,7 +190,7 @@ def _propose_revocation(ctx: CurateContext, store: ProposalStore, identifier: st
 
 
 def _utc_today() -> date:
-    return datetime.now(timezone.utc).date()
+    return datetime.now(UTC).date()
 
 
 class WithdrawalWatcher:
@@ -217,11 +217,11 @@ class WithdrawalWatcher:
         if not self.due():
             return WithdrawalReport(ran=False)
         today = self._today()
-        revocations: List[Proposal] = []
-        corrections: List[CorrectionRequest] = []
-        extensions: List[Extension] = []
-        undecided: List[str] = []
-        failures: List[str] = []
+        revocations: list[Proposal] = []
+        corrections: list[CorrectionRequest] = []
+        extensions: list[Extension] = []
+        undecided: list[str] = []
+        failures: list[str] = []
         for confirmation in confirmations:
             recheck = self._rechecks.get(confirmation.source)
             status = recheck(confirmation) if recheck is not None else Lookup.UNAVAILABLE

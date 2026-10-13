@@ -47,9 +47,9 @@ class SuffixRules:
     the bang), ``private`` (rules from the PRIVATE section — shared hosting),
     ``version`` (the file's VERSION line)."""
 
-    rules: FrozenSet[str]
-    exceptions: FrozenSet[str]
-    private: FrozenSet[str]
+    rules: frozenset[str]
+    exceptions: frozenset[str]
+    private: frozenset[str]
     version: str
 
 
@@ -89,7 +89,7 @@ def load() -> SuffixRules:
     return SuffixRules(frozenset(), frozenset(), frozenset(), "")
 
 
-def _matching_rule(labels: Tuple[str, ...], rules: SuffixRules) -> Tuple[int, bool]:
+def _matching_rule(labels: tuple[str, ...], rules: SuffixRules) -> tuple[int, bool]:
     """(number of labels the public suffix spans, whether a private-section
     rule matched) for *labels* (lowest-level label first)."""
     best, best_private = 0, False

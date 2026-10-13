@@ -41,7 +41,7 @@ class FakeSource:
         self.name = name
         self.terms = terms
         self.status = status
-        self.asked: List[str] = []
+        self.asked: list[str] = []
 
     def check(self, identifier: str) -> SourceVerdict:
         self.asked.append(identifier)
@@ -238,7 +238,7 @@ def test_no_verdict_enum_other_than_evidence_lookup_under_curate():
     curate = Path(sources.__file__).resolve().parents[1]
     enums = [f"{path.relative_to(curate)}:{match.group(1)}"
              for path in curate.rglob("*.py")
-             for match in re.finditer(r"^class (\w+)\((?:\w+\.)?(?:Enum|IntEnum|StrEnum)\)", path.read_text(), re.M)
+             for match in re.finditer(r"^class (\w+)\((?:\w+\.)?(?:Enum|IntEnum|StrEnum)\)", path.read_text(), re.MULTILINE)
              if "source" in match.group(1).lower() or "lookup" in match.group(1).lower()
              or path.parent.name == "sources"]
     assert enums == ["service/evidence.py:Lookup"]
@@ -327,18 +327,18 @@ def test_the_cache_file_ignores_non_numeric_entries(tmp_path):
 class _CountingTokens(float):
     """A token count whose arithmetic yields the thread, so a missing lock shows up as overspending."""
 
-    def __add__(self, other: float) -> "_CountingTokens":
+    def __add__(self, other: float) -> _CountingTokens:
         time.sleep(0.0005)
         return _CountingTokens(float(self) + other)
 
-    def __sub__(self, other: float) -> "_CountingTokens":
+    def __sub__(self, other: float) -> _CountingTokens:
         return _CountingTokens(float(self) - other)
 
 
 def test_concurrent_takes_never_overspend_a_bucket():
     bucket = TokenBucket(50, 3600, clock=Clock())
     bucket._capacity = bucket._tokens = _CountingTokens(50)   # min() keeps the subclass either way
-    granted: List[bool] = []
+    granted: list[bool] = []
     record = threading.Lock()
 
     def spend() -> None:
@@ -389,13 +389,13 @@ def test_queue_metrics_count_every_waiting_item_and_age_the_oldest():
 
 # -- SRC2: the adapters (OSV/GHSA, abuse.ch, PhishTank) --------------------------------
 
-from datetime import datetime, timezone  # noqa: E402 — SRC2 section imports kept with their tests
-from typing import Any, Dict, Mapping, Optional  # noqa: E402
+from datetime import datetime, timezone, UTC
+from typing import Any, Dict, Mapping, Optional
 
-from plugins.blackbox.curate.sources import abusech, phishtank  # noqa: E402
-from plugins.blackbox.curate.sources.osv import OsvSource  # noqa: E402
-from plugins.blackbox.curate.sources.protocol import REUSE_NEEDS_FOUNDER  # noqa: E402
-from plugins.blackbox.detection import osv as detection_osv  # noqa: E402
+from plugins.blackbox.curate.sources import abusech, phishtank
+from plugins.blackbox.curate.sources.osv import OsvSource
+from plugins.blackbox.curate.sources.protocol import REUSE_NEEDS_FOUNDER
+from plugins.blackbox.detection import osv as detection_osv
 
 #: The §03.3 terms table, one row per registered source: (citable, reuse state).
 TERMS_TABLE = {
@@ -416,7 +416,7 @@ class FakeHttp:
 
     def __init__(self, answer: Optional[Mapping[str, Any]]) -> None:
         self.answer = answer
-        self.calls: List[Dict[str, Any]] = []
+        self.calls: list[dict[str, Any]] = []
 
     def post(self, url: str, *, headers: Mapping[str, str], form: Optional[Mapping[str, str]] = None,
              json_body: Optional[Mapping[str, Any]] = None) -> Optional[Mapping[str, Any]]:
@@ -489,7 +489,7 @@ def test_abuse_ch_maps_listed_not_listed_and_could_not_tell(make, identifier, li
         assert http.calls[0]["url"] == endpoint and http.calls[0]["headers"] == {"Auth-Key": "k-123"}
 
 
-def _threatfox(answer, now=datetime(2026, 10, 11, tzinfo=timezone.utc)):
+def _threatfox(answer, now=datetime(2026, 10, 11, tzinfo=UTC)):
     http, fetcher = _fetcher(answer)
     return abusech.ThreatFoxSource(fetcher, now=lambda: now).check("ioc:ip:203.0.113.9"), http
 
@@ -567,7 +567,7 @@ def test_abuse_ch_never_sends_what_it_cannot_ask_about(make, identifier):
 
 # -- SRC3: ScamSniffer (look-up only) and urlscan.io (the level-3 visit) ----------------
 
-from plugins.blackbox.curate.sources import scamsniffer, urlscan  # noqa: E402
+from plugins.blackbox.curate.sources import scamsniffer, urlscan
 
 #: 2026-10-11 12:00:00 UTC — the day a ScamSniffer verdict must carry.
 NOON = 1_791_720_000.0
@@ -579,8 +579,8 @@ class ScriptedHttp(FakeHttp):
 
     def __init__(self, post_answer: Optional[Mapping[str, Any]] = None) -> None:
         super().__init__(post_answer)
-        self.gets: Dict[str, Any] = {}
-        self.get_calls: List[Dict[str, Any]] = []
+        self.gets: dict[str, Any] = {}
+        self.get_calls: list[dict[str, Any]] = []
 
     def get(self, url: str, *, headers: Mapping[str, str], max_bytes: int = 0) -> Any:
         self.get_calls.append({"url": url, "headers": dict(headers), "max_bytes": max_bytes})
@@ -671,7 +671,7 @@ def test_a_failed_scamsniffer_refresh_never_answers_clean_from_the_old_list():
 
 # urlscan.io
 
-def _result(malicious: Any = True, **changes: Any) -> Dict[str, Any]:
+def _result(malicious: Any = True, **changes: Any) -> dict[str, Any]:
     result = {
         "task": {"uuid": SCAN_UUID, "url": "https://evil.example/login"},
         "page": {"domain": "paypa1-secure.example", "url": "https://paypa1-secure.example/"},
@@ -853,10 +853,10 @@ def test_the_41st_urlscan_in_an_hour_is_refused_by_its_bucket(tmp_path):
 def test_the_http_clients_get_reads_a_json_list_and_maps_404_and_oversize_to_none():
     import http.server
 
-    seen: List[Optional[str]] = []
+    seen: list[Optional[str]] = []
 
     class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802 — http.server's naming
+        def do_GET(self) -> None:
             seen.append(self.headers.get("API-Key"))   # case-insensitive: urllib sends "Api-key"
             code, payload = {"/list": (200, b'["a.example", "b.example"]'),
                              "/big": (200, b'["' + b"a" * 100 + b'"]'),
@@ -953,16 +953,16 @@ def test_an_abuse_ch_error_status_is_could_not_tell_and_not_kept(error_status):
 
 # The shared HTTP client, against a loopback server this test starts and stops.
 
-import http.server  # noqa: E402
-import socket  # noqa: E402
+import http.server
+import socket
 
-from plugins.blackbox.curate.sources import client as source_client  # noqa: E402
+from plugins.blackbox.curate.sources import client as source_client
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
-    seen: List[Dict[str, Any]] = []
+    seen: list[dict[str, Any]] = []
 
-    def do_POST(self) -> None:  # noqa: N802 — http.server's naming
+    def do_POST(self) -> None:
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode()
         _Handler.seen.append({"path": self.path, "headers": dict(self.headers), "body": body})
         routes = {
@@ -984,7 +984,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
-    def do_GET(self) -> None:  # noqa: N802 — a followed redirect lands here and would answer
+    def do_GET(self) -> None:
         _Handler.seen.append({"path": self.path, "headers": dict(self.headers), "body": ""})
         payload = b'{"query_status": "ok"}'
         self.send_response(200)
@@ -1037,12 +1037,12 @@ def test_the_http_client_reads_an_unreachable_source_as_could_not_tell():
 
 # -- the withdrawal watcher and the 180-day address expiry (SRC4, §03.3, F-007/F-022) ------------
 
-from plugins.blackbox.curate.proposal import ProposalStore  # noqa: E402
-from plugins.blackbox.curate.sources import withdrawal  # noqa: E402
-from plugins.blackbox.curate.sources.withdrawal import CitedConfirmation, WithdrawalWatcher  # noqa: E402
-from plugins.blackbox.curate.watch import SigningLog  # noqa: E402
-from plugins.blackbox.kernel.signing.statement_order import CuratorStatement  # noqa: E402
-from test_blackbox_curate import FakeNode, _ctx, _machine, curators  # noqa: E402,F401 - fixture
+from plugins.blackbox.curate.proposal import ProposalStore
+from plugins.blackbox.curate.sources import withdrawal
+from plugins.blackbox.curate.sources.withdrawal import CitedConfirmation, WithdrawalWatcher
+from plugins.blackbox.curate.watch import SigningLog
+from plugins.blackbox.kernel.signing.statement_order import CuratorStatement
+from test_blackbox_curate import FakeNode, _ctx, _machine, curators
 
 WITHDRAWN_DEP = CitedConfirmation("dep:npm:evil-pkg@1.0.0", "osv", "MAL-2026-1", tested_day=_day(-30))
 ADDRESS = "ioc:domain:evil.example"

@@ -46,7 +46,7 @@ class StoreAnswer:
     ``"http 500: …"``, ``"no store endpoint"``, …).
     """
 
-    rows: Optional[List[Dict[str, str]]]
+    rows: Optional[list[dict[str, str]]]
     reason: str = ""
 
     @property
@@ -55,7 +55,7 @@ class StoreAnswer:
         return self.rows is not None
 
 
-def loopback_store_url(node_status: Dict[str, Any]) -> str:
+def loopback_store_url(node_status: dict[str, Any]) -> str:
     """The node's local store endpoint from ``GET /api/status``, or ``""``.
 
     DKG 10.0.2x reports ``storeUrl`` (``http://127.0.0.1:7878/query`` for the
@@ -115,14 +115,14 @@ def _parse_results(raw: bytes) -> StoreAnswer:
         return StoreAnswer(None, "malformed results")
     if not isinstance(bindings, list):
         return StoreAnswer(None, "malformed results")
-    rows: List[Dict[str, str]] = []
+    rows: list[dict[str, str]] = []
     for binding in bindings:
         if isinstance(binding, dict):
             rows.append({name: _term(cell) for name, cell in binding.items() if isinstance(cell, dict)})
     return StoreAnswer(rows)
 
 
-def _term(cell: Dict[str, Any]) -> str:
+def _term(cell: dict[str, Any]) -> str:
     """One SPARQL-JSON cell as the N-Triples term the DKG node's own API
     returns — IRIs bare, blank nodes ``_:x``, literals quoted and escaped —
     so every reader keeps decoding cells with ``sparql_text.extract_binding``

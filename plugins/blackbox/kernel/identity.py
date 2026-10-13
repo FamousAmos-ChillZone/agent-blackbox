@@ -17,7 +17,7 @@ from typing import Dict, Optional
 
 from .dkg_client import DkgClient
 
-_reporter_cache: Dict[str, str] = {}
+_reporter_cache: dict[str, str] = {}
 
 
 def reporter_address(client: DkgClient) -> Optional[str]:

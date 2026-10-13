@@ -43,12 +43,12 @@ _RUNNER_ROOT = Path(__file__).resolve().parents[2] / "integrations" / "threat-la
 if str(_RUNNER_ROOT) not in sys.path:
     sys.path.insert(0, str(_RUNNER_ROOT))
 
-from threat_lab.artifacts import ArtifactStore  # noqa: E402
-from threat_lab.config import LabConfig, LabConfigError  # noqa: E402
-from threat_lab.egress import NftablesEgressGuard  # noqa: E402
-from threat_lab.identifiers import threat_digest  # noqa: E402
-from threat_lab.runner import JobRequest, LabRunner  # noqa: E402
-from threat_lab.sandbox import GVisorSandbox, SandboxSpec  # noqa: E402
+from threat_lab.artifacts import ArtifactStore
+from threat_lab.config import LabConfig, LabConfigError
+from threat_lab.egress import NftablesEgressGuard
+from threat_lab.identifiers import threat_digest
+from threat_lab.runner import JobRequest, LabRunner
+from threat_lab.sandbox import GVisorSandbox, SandboxSpec
 
 PUBLIC_TARGET = os.environ.get("THREAT_LAB_EGRESS_TARGET", "1.1.1.1")
 SCANNING_IDENTIFIER = "url:https://scanner.example.test/"
@@ -76,13 +76,13 @@ class SampleSandbox(GVisorSandbox):
         super().__init__(config, egress)
         self._program = program
 
-    def command(self, spec: SandboxSpec, name: str) -> List[str]:
+    def command(self, spec: SandboxSpec, name: str) -> list[str]:
         argv = super().command(spec, name)
         return argv[:argv.index(self._config.image) + 1] + ["python", "-c", self._program]
 
 
 @pytest.fixture(scope="module")
-def lab() -> Dict[str, object]:
+def lab() -> dict[str, object]:
     """The lab host's config and guard, or a skip naming what is missing."""
     if platform.system() != "Linux":
         pytest.skip("runs only on the lab host (Linux with nftables, Docker and gVisor)")
@@ -134,7 +134,7 @@ def _gateway(config: LabConfig) -> str:
     return inspected.stdout.strip()
 
 
-def _reachability(config: LabConfig, guard: NftablesEgressGuard, targets: List[str]) -> Dict[str, bool]:
+def _reachability(config: LabConfig, guard: NftablesEgressGuard, targets: list[str]) -> dict[str, bool]:
     """``{"host:port": connected}`` for each target, tried from inside a real sandbox."""
     program = f"""
 import json, socket

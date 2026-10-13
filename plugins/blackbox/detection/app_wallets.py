@@ -47,11 +47,11 @@ class AppWallet:
     inside a place is protected; ``kind`` — what the dashboard calls it."""
 
     name: str
-    places: Tuple[str, ...]
+    places: tuple[str, ...]
     kind: str
 
 
-APP_WALLETS: Tuple[AppWallet, ...] = (
+APP_WALLETS: tuple[AppWallet, ...] = (
     AppWallet("Exodus", (
         "$XDG_CONFIG_HOME/Exodus/exodus.wallet",
         "~/Library/Application Support/Exodus/exodus.wallet",
@@ -68,7 +68,7 @@ APP_WALLETS: Tuple[AppWallet, ...] = (
     ), kind="Command line"),
 )
 #: Display name -> kind, for the dashboard.
-KINDS: Dict[str, str] = {wallet.name: wallet.kind for wallet in APP_WALLETS}
+KINDS: dict[str, str] = {wallet.name: wallet.kind for wallet in APP_WALLETS}
 #: The Solana CLI's own settings file, which names the key file in use.
 SOLANA_CONFIG = "$XDG_CONFIG_HOME/solana/cli/config.yml"
 _KEYPAIR_PATH = re.compile(r"^keypair_path:\s*['\"]?(?P<path>[^'\"\n]+?)['\"]?\s*$", re.MULTILINE)
@@ -92,7 +92,7 @@ def _absolute(place: str) -> str:
     return _real(place).lower()
 
 
-def _place_pattern(place: str) -> "re.Pattern[str]":
+def _place_pattern(place: str) -> re.Pattern[str]:
     parts = [re.escape(part) for part in _absolute(place).split("*")]
     return re.compile("^" + "[^/]+".join(parts) + "(?:/|$)")
 
@@ -103,7 +103,7 @@ class _SolanaKeyFile:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._cache: Tuple[Optional[float], Optional[str]] = (None, None)
+        self._cache: tuple[Optional[float], Optional[str]] = (None, None)
 
     def get(self) -> Optional[str]:
         config_path = _real(SOLANA_CONFIG)
@@ -150,10 +150,10 @@ def app_wallet_at(normalized: str) -> Optional[str]:
     return "Solana CLI" if configured and normalized == configured else None
 
 
-def existing_app_wallets() -> List[Tuple[str, str]]:
+def existing_app_wallets() -> list[tuple[str, str]]:
     """``[(normalized place, wallet name)]`` for every app-wallet place present on this
     machine (a bounded glob over the fixed places; nothing inside is opened)."""
-    found: List[Tuple[str, str]] = []
+    found: list[tuple[str, str]] = []
     for wallet in APP_WALLETS:
         for place in wallet.places:
             pattern = _real(place)

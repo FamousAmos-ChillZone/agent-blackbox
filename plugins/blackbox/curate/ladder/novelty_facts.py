@@ -37,7 +37,7 @@ from ...community import reputation
 OsvLookup = Callable[[str, str, str], Optional[Mapping[str, str]]]
 
 
-def dependency_parts(identifier: str) -> Optional[Tuple[str, str, str]]:
+def dependency_parts(identifier: str) -> Optional[tuple[str, str, str]]:
     """``(ecosystem, name, version)`` of a ``dep:eco:name@version`` identifier, else None."""
     if not identifier.startswith("dep:"):
         return None

@@ -97,7 +97,7 @@ class ShellFileArg:
 _WINDOWS_PATH = re.compile(r"[A-Za-z]:\\|%[A-Za-z_]+%\\")
 
 
-def _words(command: str) -> List[str]:
+def _words(command: str) -> list[str]:
     try:
         if _WINDOWS_PATH.search(command):
             lexer = shlex.shlex(command, posix=False, punctuation_chars=";&|<>")
@@ -114,7 +114,7 @@ def _looks_like_path(word: str) -> bool:
     return "/" in word or "\\" in word or word.startswith(("~", ".", "$HOME", "%")) or "." in word
 
 
-def shell_file_args(command: str) -> List[ShellFileArg]:
+def shell_file_args(command: str) -> list[ShellFileArg]:
     """Every path argument of a read, copy or archive command in *command*.
 
     Flags (``-r``, ``-czf``) are skipped; an argument after a separator
@@ -125,12 +125,12 @@ def shell_file_args(command: str) -> List[ShellFileArg]:
     if not command:
         return []
     words = _words(command)
-    out: List[ShellFileArg] = []
+    out: list[ShellFileArg] = []
     seen: set = set()
 
     folder = ""   # where an earlier ``cd`` in this command line moved to ("" = unknown)
 
-    def keep(found: List[ShellFileArg]) -> None:
+    def keep(found: list[ShellFileArg]) -> None:
         for arg in found:
             arg = _from_folder(arg, folder)
             if arg.path not in seen:
@@ -155,7 +155,7 @@ def shell_file_args(command: str) -> List[ShellFileArg]:
     return out
 
 
-def _segment_end(words: List[str], start: int) -> int:
+def _segment_end(words: list[str], start: int) -> int:
     """Index of the first separator at or after *start* (or the end)."""
     end = start
     while end < len(words) and words[end] not in _SEPARATORS:
@@ -163,7 +163,7 @@ def _segment_end(words: List[str], start: int) -> int:
     return end
 
 
-def _command_args(name: str, words: List[str], index: int) -> Tuple[List[ShellFileArg], int]:
+def _command_args(name: str, words: list[str], index: int) -> tuple[list[ShellFileArg], int]:
     """The path arguments of one read, copy or archive command at *index*, and where
     the next command starts. A word that is not such a command yields nothing."""
     reads = name in _READ_COMMANDS
@@ -187,7 +187,7 @@ def _command_args(name: str, words: List[str], index: int) -> Tuple[List[ShellFi
             for word in paths], end
 
 
-def _destinations(name: str, arguments: List[str], paths: List[str]) -> set:
+def _destinations(name: str, arguments: list[str], paths: list[str]) -> set:
     """The path arguments *name* writes to rather than reads: a copy's last path
     (``-t DIR`` names it up front instead), tar's word after an ``f`` flag when it
     creates (``c``/``r``/``u``; extracting or listing reads it), zip's
@@ -226,12 +226,12 @@ def _reads_files(name: str) -> bool:
     return name in _READ_COMMANDS or name in _RECURSIVE_COMMANDS or name in _RECURSIVE_WITH_FLAG
 
 
-def _find_args(words: List[str], index: int) -> Tuple[List[ShellFileArg], int]:
+def _find_args(words: list[str], index: int) -> tuple[list[ShellFileArg], int]:
     """``find``'s starting folders, as folders handed over whole — but only when what it
     finds is read: an ``-exec``/``-ok`` running a read, copy or archive command, or a
     pipe into ``xargs`` running one. A ``find`` that only lists names reads nothing."""
     position = index + 1
-    roots: List[str] = []
+    roots: list[str] = []
     while position < len(words) and not words[position].startswith(("-", "(", "!")) and words[position] not in _SEPARATORS:
         roots.append(words[position])
         position += 1
@@ -255,35 +255,35 @@ def _find_args(words: List[str], index: int) -> Tuple[List[ShellFileArg], int]:
     return [ShellFileArg(path=root, command="find", recursive=True) for root in roots], position
 
 
-def _script_args(name: str, words: List[str], index: int) -> Tuple[List[ShellFileArg], int]:
+def _script_args(name: str, words: list[str], index: int) -> tuple[list[ShellFileArg], int]:
     """The paths in the code an interpreter is handed on its command line."""
     end = _segment_end(words, index + 1)
     options = _INTERPRETERS[name]
-    found: List[ShellFileArg] = []
+    found: list[ShellFileArg] = []
     for position in range(index + 1, end - 1):
         if words[position] in options:
             found.extend(_paths_in_code(name, words[position + 1]))
     return found, end
 
 
-def _paths_in_code(interpreter: str, code: str) -> List[ShellFileArg]:
+def _paths_in_code(interpreter: str, code: str) -> list[ShellFileArg]:
     """Every quoted path in *code*: whole folders when the code walks or packs folders;
     a relative literal is also taken under the home folder when the code joins onto it."""
     recursive = bool(_WHOLE_FOLDER_CODE.search(code))
     joins_home = bool(_HOME_CODE.search(code))
-    found: List[ShellFileArg] = []
+    found: list[ShellFileArg] = []
     for match in _LITERAL.finditer(code):
         literal = match.group(2)
         if "://" in literal or not ("/" in literal or "\\" in literal or literal.startswith("~")):
             continue
         found.append(ShellFileArg(path=literal, command=interpreter, recursive=recursive))
         if joins_home and not literal.startswith(("/", "~", "$", "%")) and not re.match(r"[A-Za-z]:", literal):
-            relative = literal[2:] if literal.startswith("./") else literal   # keep ".config"'s own dot
+            relative = literal.removeprefix("./")   # keep ".config"'s own dot
             found.append(ShellFileArg(path="~/" + relative, command=interpreter, recursive=recursive))
     return found
 
 
-def _cd(words: List[str], index: int, folder: str) -> Tuple[str, int]:
+def _cd(words: list[str], index: int, folder: str) -> tuple[str, int]:
     """The folder a ``cd``/``pushd`` at *index* moves to: an absolute or home path as
     written, a relative one joined onto the folder already known; ``cd`` alone is home.
     Unknown (``""``) when it moves somewhere this cannot name (``cd -``, ``cd $DIR``)."""
@@ -306,6 +306,6 @@ def _from_folder(arg: ShellFileArg, folder: str) -> ShellFileArg:
     """*arg* with a relative path placed under the folder an earlier ``cd`` moved to."""
     if not folder or _is_anchored(arg.path):
         return arg
-    relative = arg.path[2:] if arg.path.startswith("./") else arg.path
+    relative = arg.path.removeprefix("./")
     joined = folder if relative in (".", "") else folder.rstrip("/") + "/" + relative
     return ShellFileArg(path=joined, command=arg.command, recursive=arg.recursive, destination=arg.destination)

@@ -53,7 +53,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 from typing import Callable, Dict, Mapping, Optional, Tuple
 
 from .. import detection
@@ -112,12 +112,12 @@ class ReportRecord:
     category: str
     severity: str
     framework: str
-    evidence: Tuple[Tuple[str, str], ...]
+    evidence: tuple[tuple[str, str], ...]
     matched_by: str = ""
     blackbox_version: str = ""
-    sighting: Tuple[Tuple[str, str], ...] = ()
+    sighting: tuple[tuple[str, str], ...] = ()
 
-    def common_fields(self) -> Dict[str, str]:
+    def common_fields(self) -> dict[str, str]:
         """The common fields this report states, keyed like the evidence."""
         stated = {"matched_by": self.matched_by, "blackbox_version": self.blackbox_version, **dict(self.sighting)}
         return {key: value for key, value in stated.items() if value}
@@ -149,7 +149,7 @@ def _one_of(name: str, value: Optional[str], allowed) -> str:
 # -- per-category validators (Strategy table): evidence in -> (derived id, evidence out)
 
 
-def _injection(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
+def _injection(ev: Mapping[str, str]) -> tuple[Optional[str], dict[str, str]]:
     out = {"context": _one_of("context", ev.get("context"), INJECTION_CONTEXTS)}
     if ev.get("owasp_category"):
         out["owasp_category"] = _one_of("owasp_category", ev["owasp_category"],
@@ -157,13 +157,13 @@ def _injection(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
     return None, out   # the identifier is the pattern's hash, checked by shape
 
 
-def _escalation(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
+def _escalation(ev: Mapping[str, str]) -> tuple[Optional[str], dict[str, str]]:
     tool = _one_of("tool_name", ev.get("tool_name"), detection.SHELL_TOOLS)
     shape = _one_of("arg_shape", ev.get("arg_shape"), detection.ESCALATION_SHAPES)
     return threat_ids.escalation_identifier(tool, shape), {"tool_name": tool, "arg_shape": shape}
 
 
-def _dependency(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
+def _dependency(ev: Mapping[str, str]) -> tuple[Optional[str], dict[str, str]]:
     eco = _one_of("ecosystem", ev.get("ecosystem"), detection.DEPENDENCY_ECOSYSTEMS)
     raw_name = _token("package_name", ev.get("package_name"))
     name = threat_ids.canonical_package_name(eco, raw_name)
@@ -183,7 +183,7 @@ def _dependency(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
     return threat_ids.dependency_identifier(eco, name, version), out
 
 
-def _dependency_reason(ev: Mapping[str, str], *, verified: bool) -> Tuple[str, str]:
+def _dependency_reason(ev: Mapping[str, str], *, verified: bool) -> tuple[str, str]:
     """(reason, advisory id): the closed reason, ``advisory:<id>`` — whose id
     must equal ``advisory_id`` when both are given — or, for a package the
     verified graph matched (*verified*), ``verified-match``."""
@@ -199,13 +199,13 @@ def _dependency_reason(ev: Mapping[str, str], *, verified: bool) -> Tuple[str, s
     return _one_of("reason", reason, allowed), advisory
 
 
-def _fileaccess(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
+def _fileaccess(ev: Mapping[str, str]) -> tuple[Optional[str], dict[str, str]]:
     tool = _token("tool_name", ev.get("tool_name")).lower()
     category = _one_of("file_category", ev.get("file_category"), detection.SENSITIVE_PATH_CATEGORIES)
     return threat_ids.fileaccess_identifier(tool, category), {"tool_name": tool, "file_category": category}
 
 
-def _skill(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
+def _skill(ev: Mapping[str, str]) -> tuple[Optional[str], dict[str, str]]:
     if ev.get("artifact_hash") or ev.get("danger_shape"):
         if ev.get("skill_name") or ev.get("skill_version") or ev.get("registry"):
             _fail("a local skill is reported by artifact hash + danger shape, never by name or version (KI-159)")
@@ -224,7 +224,7 @@ def _skill(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
     return None, out
 
 
-def _ioc(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
+def _ioc(ev: Mapping[str, str]) -> tuple[Optional[str], dict[str, str]]:
     out = {"ioc_type": _one_of("ioc_type", ev.get("ioc_type"), threat_ids.IOC_TYPES),
            "ioc_context": _one_of("ioc_context", ev.get("ioc_context"), constants.IOC_CONTEXTS)}
     if ev.get("reason"):
@@ -232,9 +232,9 @@ def _ioc(ev: Mapping[str, str]) -> Tuple[Optional[str], Dict[str, str]]:
     return None, out
 
 
-def _common_fields(given: Mapping[str, str]) -> Dict[str, str]:
+def _common_fields(given: Mapping[str, str]) -> dict[str, str]:
     """The common fields *given* states (:data:`COMMON_FIELD_KEYS`), checked."""
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     if given.get("matched_by"):
         out["matched_by"] = _one_of("matched_by", given["matched_by"], MATCHED_BY)
     if given.get("blackbox_version"):
@@ -251,7 +251,7 @@ _SIGHTING_SETS = {"agent_action": sighting_vocab.AGENT_ACTIONS, "outcome": sight
                   "threat_goal": sighting_vocab.THREAT_GOALS, "resource_at_risk": sighting_vocab.RESOURCES_AT_RISK}
 
 
-def _sighting_fields(given: Mapping[str, str], *, matched_by: str) -> Dict[str, str]:
+def _sighting_fields(given: Mapping[str, str], *, matched_by: str) -> dict[str, str]:
     """The threat-profile fields *given* states (threat-profiles §03.2), checked:
     closed sets, the tool rule (host tool verbatim, else ``mcp-tool``/``other``),
     ATT&CK/ATLAS shape, and a verified-rule link only on a verified match."""
@@ -276,7 +276,7 @@ def _sighting_fields(given: Mapping[str, str], *, matched_by: str) -> Dict[str, 
 
 _HOST_TOOLS = frozenset({*detection.SHELL_TOOLS, *detection.HOST_FILE_AND_SKILL_TOOLS})
 
-_VALIDATORS: Dict[str, Callable[[Mapping[str, str]], Tuple[Optional[str], Dict[str, str]]]] = {
+_VALIDATORS: dict[str, Callable[[Mapping[str, str]], tuple[Optional[str], dict[str, str]]]] = {
     "injection": _injection,
     "escalation": _escalation,
     "dependency": _dependency,
@@ -326,7 +326,7 @@ def validate_report(*, identifier: str, category: str, severity: str, framework:
     if str(severity or "").strip().lower() not in constants.SEVERITY_ORDER:
         _fail(f"severity must be one of: {', '.join(constants.SEVERITY_ORDER)}")
     framework_name = _one_of("framework", framework, constants.REPORT_FRAMEWORKS)
-    if ts is not None and _aware(ts) > datetime.now(timezone.utc) + MAX_CLOCK_SKEW:
+    if ts is not None and _aware(ts) > datetime.now(UTC) + MAX_CLOCK_SKEW:
         _fail("a report cannot be dated in the future")
     given = {k: v for k, v in evidence.items() if v not in (None, "")}
     common = _common_fields(given)
@@ -342,7 +342,7 @@ def validate_report(*, identifier: str, category: str, severity: str, framework:
                         sighting=tuple(sorted((k, v) for k, v in common.items() if k in sighting_vocab.SIGHTING_KEYS)))
 
 
-def validate_dispute(*, identifier: str, reason: str) -> Tuple[str, str]:
+def validate_dispute(*, identifier: str, reason: str) -> tuple[str, str]:
     """(identifier, reason) for a false-positive dispute, or
     :class:`ReportValidationError`. The reason is REQUIRED and closed
     (``constants.FALSE_POSITIVE_REASONS``, plan §04); the disputed identifier is
@@ -360,4 +360,4 @@ def validate_statement_identifier(identifier: str) -> str:
 
 
 def _aware(ts: datetime) -> datetime:
-    return ts if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc)
+    return ts if ts.tzinfo is not None else ts.replace(tzinfo=UTC)

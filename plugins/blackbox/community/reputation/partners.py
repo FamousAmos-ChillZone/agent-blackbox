@@ -64,10 +64,10 @@ def partner_weight(grant: PartnerGrant, reputation: float, rejections_last_30d: 
     return min(SPONSOR_WEIGHT_CAP, base * SPONSOR_WEIGHT_CAP) if grant.sponsored else base
 
 
-def org_clusters(grants: Iterable[PartnerGrant], today: str) -> Dict[str, Tuple[str, ...]]:
+def org_clusters(grants: Iterable[PartnerGrant], today: str) -> dict[str, tuple[str, ...]]:
     """``{org: (keys…)}`` for the grants in force today — however many keys
     an organisation runs, it is one cluster."""
-    clusters: Dict[str, list] = {}
+    clusters: dict[str, list] = {}
     for grant in grants:
         if grant.valid(today):
             clusters.setdefault(grant.org, []).append(grant.key)

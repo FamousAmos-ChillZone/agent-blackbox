@@ -79,7 +79,7 @@ def _reads_keychain(command: str) -> bool:
     return False
 
 
-def detect_keychain_access(tool_name: str, args: Any) -> List[Finding]:
+def detect_keychain_access(tool_name: str, args: Any) -> list[Finding]:
     """One finding when this call reads the macOS keychain (see the module doc)."""
     tool = (tool_name or "").strip().lower()
     reached = [(access_tool, mode) for access_tool, path, mode in _accesses(tool_name, args)

@@ -42,7 +42,7 @@ class CommunityEndpoints:
     reports: Callable[..., Any]
 
 
-VerifiedReportsRead = Callable[[Any], List[Any]]
+VerifiedReportsRead = Callable[[Any], list[Any]]
 #: The server's cached community read: cfg -> CommunityRead, or None before the first lands.
 CommunityReadSource = Callable[[Any], Any]
 #: Most rows of each statement kind one response carries.
@@ -61,7 +61,7 @@ def own_reporter_author() -> str:
 
 
 def _reports_of(community_read: CommunityReadSource) -> VerifiedReportsRead:
-    def verified_reports(cfg: Any) -> List[Any]:
+    def verified_reports(cfg: Any) -> list[Any]:
         read = community_read(cfg)
         return list(read.reports) if read is not None else []
     return verified_reports
@@ -144,7 +144,7 @@ def reports_payload(verified_reports: VerifiedReportsRead, limit: int) -> Any:
     }
 
 
-def community_statements_payload(community_read: CommunityReadSource) -> Dict[str, Any]:
+def community_statements_payload(community_read: CommunityReadSource) -> dict[str, Any]:
     """Refine R2: the statements the reader honoured, with who / when / why."""
     from ..kernel.config import load_blackbox_config
 
@@ -174,7 +174,7 @@ def community_statements_payload(community_read: CommunityReadSource) -> Dict[st
     }
 
 
-def _curator_payload(view: Any) -> Dict[str, Any]:
+def _curator_payload(view: Any) -> dict[str, Any]:
     if view.manifest is None:
         return {"trusted": False}
     manifest = view.manifest
@@ -194,7 +194,7 @@ def _curator_payload(view: Any) -> Dict[str, Any]:
     }
 
 
-def health_payload(community_read: CommunityReadSource, node_reachable: Callable[[Any], bool]) -> Dict[str, Any]:
+def health_payload(community_read: CommunityReadSource, node_reachable: Callable[[Any], bool]) -> dict[str, Any]:
     """R10: the operator's health items from the same inputs `blackbox status` uses."""
     from .. import audit, community, ruleset
     from ..kernel import health
@@ -214,7 +214,7 @@ def health_payload(community_read: CommunityReadSource, node_reachable: Callable
             "ruleset_age": health.ruleset_age_text(inputs.ruleset_age_s), "community_paused": inputs.community_paused}
 
 
-def _envelope_proof(signed_text: str) -> Dict[str, Any]:
+def _envelope_proof(signed_text: str) -> dict[str, Any]:
     """What a signed statement proves, read from the statement itself: the signer's
     key, the record fingerprint (sha256 of exactly the signed bytes — anyone can
     recompute it), the network and graph the signature is bound to, the signed day.
@@ -230,7 +230,7 @@ def _envelope_proof(signed_text: str) -> Dict[str, Any]:
             "day": safe_text(envelope.payload.get("day"), 16), "schema": int(envelope.schema_version)}
 
 
-def _node_network(cfg: Any) -> Dict[str, str]:
+def _node_network(cfg: Any) -> dict[str, str]:
     """This node's DKG network: its id and readable name ("DKG V10 Base Mainnet"), so a
     proof can say "this node's network" instead of a hash. Empty when the node is down."""
     from ..kernel.dkg_client import DkgClient
@@ -243,14 +243,14 @@ def _node_network(cfg: Any) -> Dict[str, str]:
             "name": safe_text(status.get("networkName") or status.get("networkConfig"), 80)}
 
 
-def _named(proof: Dict[str, Any], network: Dict[str, str]) -> Dict[str, Any]:
+def _named(proof: dict[str, Any], network: dict[str, str]) -> dict[str, Any]:
     """*proof* with ``network_name`` set when it is bound to this node's network."""
     if proof and network.get("id") and proof.get("network") == network["id"]:
         return {**proof, "network_name": network.get("name") or "", "this_network": True}
     return {**proof, "this_network": False} if proof else proof
 
 
-def threat_proof_payload(identifier: str, tier: str, verified_reports: VerifiedReportsRead) -> Dict[str, Any]:
+def threat_proof_payload(identifier: str, tier: str, verified_reports: VerifiedReportsRead) -> dict[str, Any]:
     """The proof behind one threat (threat profiles, 2026-10-12).
 
     ``community``: every VERIFIED report of *identifier* this node holds — each
@@ -266,7 +266,7 @@ def threat_proof_payload(identifier: str, tier: str, verified_reports: VerifiedR
 
     cfg = load_blackbox_config()
     network = _node_network(cfg)
-    out: Dict[str, Any] = {"identifier": safe_identifier(identifier), "tier": tier}
+    out: dict[str, Any] = {"identifier": safe_identifier(identifier), "tier": tier}
     if tier == "community":
         reports = [r for r in verified_reports(cfg) if r.identifier == identifier]
         out["reports"] = [{**_named(_envelope_proof(r.signed), network), "reporter": safe_text(r.reporter, 64),

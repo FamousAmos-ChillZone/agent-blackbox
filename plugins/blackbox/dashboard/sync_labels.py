@@ -38,7 +38,7 @@ def _sync_label(tier: str, state: str) -> str:
     return f"{tier} {_SYNC_LABEL_SUFFIX.get(state, state)}"
 
 
-def _community_progress(cfg: Any, rs: Any, community: int) -> Dict[str, Any]:
+def _community_progress(cfg: Any, rs: Any, community: int) -> dict[str, Any]:
     """The ``sync_progress.community`` entry of /api/graph-status: ``{count, state, label}``.
     Its state is independent of the VM catch-up — the community tier is live on its own."""
     if not getattr(cfg, "community_graph_id", ""):
@@ -52,7 +52,7 @@ def _community_progress(cfg: Any, rs: Any, community: int) -> Dict[str, Any]:
 
 
 
-def not_subscribed_activity() -> Dict[str, Any]:
+def not_subscribed_activity() -> dict[str, Any]:
     """Sync-panel payload for a node with NO verified-graph subscription — says so,
     names the fix, and carries no clock (the pair showed '51 min elapsed' with nothing syncing)."""
     return {

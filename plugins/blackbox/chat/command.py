@@ -156,8 +156,8 @@ def _ensure_blackbox_chat_profile(profile: str = _BLACKBOX_CHAT_PROFILE) -> str:
     return profile
 
 
-def _blackbox_chat_args(args: argparse.Namespace) -> List[str]:
-    out: List[str] = []
+def _blackbox_chat_args(args: argparse.Namespace) -> list[str]:
+    out: list[str] = []
     for attr, flag in [
         ("query", "--query"),
         ("image", "--image"),
@@ -201,7 +201,7 @@ def _blackbox_chat_args(args: argparse.Namespace) -> List[str]:
 
 
 def _blackbox_chat_cwd() -> Optional[Path]:
-    candidates: List[Path] = []
+    candidates: list[Path] = []
     # this file is plugins/blackbox/chat/command.py -> the plugin root is two up
     marker = Path(__file__).resolve().parents[1] / _BLACKBOX_SOURCE_ROOT_MARKER
     try:
@@ -266,7 +266,7 @@ def _ensure_blackbox_context_cap(profile_dir: Path) -> None:
     yaml_files.dump_yaml(config_path, data)
 
 
-def _blackbox_chat_argv(chat_args: Optional[List[str]], profile: str = _BLACKBOX_CHAT_PROFILE) -> List[str]:
+def _blackbox_chat_argv(chat_args: Optional[list[str]], profile: str = _BLACKBOX_CHAT_PROFILE) -> list[str]:
     args = [a for a in (chat_args or []) if a != "--"]
     argv = [sys.argv[0] or "hermes", "--profile", profile, "chat"]
     if args and not args[0].startswith("-"):

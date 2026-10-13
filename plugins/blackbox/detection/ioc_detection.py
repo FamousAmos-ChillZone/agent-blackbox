@@ -31,7 +31,7 @@ def ioc_context(tool_name: str, args: Any) -> Optional[str]:
     return None
 
 
-def ioc_rules(ruleset: Any, identifiers: List[str]) -> Dict[str, Dict[str, Any]]:
+def ioc_rules(ruleset: Any, identifiers: list[str]) -> dict[str, dict[str, Any]]:
     """The IOC rules among *identifiers* (``ioc:type:value``). A
     :class:`~..ruleset.Ruleset` answers through ``ioc_rules()`` (live verified
     lookup first, compiled dict after); a bare object with an ``ioc`` dict is indexed."""
@@ -52,7 +52,7 @@ def _known_protocol_contract(identifier: str) -> bool:
     return len(parts) == 3 and parts[1] in ("wallet", "contract") and bool(crypto_secrets.protocol_contract(parts[2]))
 
 
-def detect_ioc(tool_name: str, args: Any, ruleset: Any, context: Optional[str] = None) -> List[Finding]:
+def detect_ioc(tool_name: str, args: Any, ruleset: Any, context: Optional[str] = None) -> list[Finding]:
     """Match indicators (domain/url/ip/hash/wallet/contract) in the tool args.
 
     *context* (``constants.IOC_CONTEXTS``, from :func:`ioc_context`) says where
@@ -70,7 +70,7 @@ def detect_ioc(tool_name: str, args: Any, ruleset: Any, context: Optional[str] =
         return []
     candidates = [ident for ident in content_scanners.iter_ioc_candidates(text) if not _known_protocol_contract(ident)]
     rules = ioc_rules(ruleset, candidates)
-    out: List[Finding] = []
+    out: list[Finding] = []
     seen: set = set()
     for ident in candidates:
         rule = rules.get(ident)

@@ -8,7 +8,7 @@ refused. Rejects never leave the machine.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 
 import pytest
 
@@ -105,7 +105,7 @@ def test_severity_and_framework_are_closed():
 
 
 def test_a_report_dated_in_the_future_is_refused():
-    future = datetime.now(timezone.utc) + timedelta(hours=2)
+    future = datetime.now(UTC) + timedelta(hours=2)
     with pytest.raises(ReportValidationError):
         report_builder.build_report_quads(identifier="ioc:domain:x.example", category="ioc", severity="high",
                                           reporter_address="0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a", ioc_type="domain", ioc_context="in-skill", ts=future)

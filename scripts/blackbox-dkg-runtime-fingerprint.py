@@ -45,7 +45,7 @@ def write_limits(dkg_home: str, node_options: str, store_queue_limit: str) -> Pa
     return process_limits.write_process_limits(dkg_home, limits)
 
 
-def _add_bytes(digest: "hashlib._Hash", label: str, data: bytes) -> None:
+def _add_bytes(digest: hashlib._Hash, label: str, data: bytes) -> None:
     label_bytes = label.encode("utf-8")
     digest.update(len(label_bytes).to_bytes(8, "big"))
     digest.update(label_bytes)

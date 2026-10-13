@@ -33,7 +33,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 
-def load_yaml(path: Path) -> Dict[str, Any]:
+def load_yaml(path: Path) -> dict[str, Any]:
     if yaml is None or not path.exists():
         return {}
     try:
@@ -57,5 +57,5 @@ def atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def dump_yaml(path: Path, data: Dict[str, Any]) -> None:
+def dump_yaml(path: Path, data: dict[str, Any]) -> None:
     atomic_write(path, yaml.safe_dump(data, default_flow_style=False, sort_keys=False))

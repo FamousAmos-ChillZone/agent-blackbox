@@ -28,7 +28,7 @@ class Classification:
     resource_at_risk: str = "none-identified"
     attack_technique: str = ""
 
-    def as_fields(self) -> Dict[str, str]:
+    def as_fields(self) -> dict[str, str]:
         out = {"threat_goal": self.threat_goal, "resource_at_risk": self.resource_at_risk}
         if self.attack_technique:
             out["attack_technique"] = self.attack_technique
@@ -42,7 +42,7 @@ _INJECTION = Classification("agent-hijack", "agent-instructions", "AML.T0051")
 _PACKAGE = Classification("malware-delivery", "host-system", "T1195.002")
 
 #: Sensitive-file category (detection's closed list) -> what reading it steals.
-_FILE: Dict[str, Classification] = {
+_FILE: dict[str, Classification] = {
     "credentials": Classification("credential-theft", "cloud-credentials", "T1552.001"),
     "env-file": Classification("credential-theft", "api-keys", "T1552.001"),
     "ssh-private-key": Classification("credential-theft", "ssh-key", "T1552.004"),
@@ -55,7 +55,7 @@ _FILE: Dict[str, Classification] = {
     "macos-keychain": Classification("credential-theft", "password-store", "T1555.001"),
 }
 #: A secret the agent handled or sent (local-only findings): which secret type -> what it opens.
-_SECRET: Dict[str, Classification] = {
+_SECRET: dict[str, Classification] = {
     "seed-phrase": Classification("wallet-drain", "wallet-keys", "T1552.001"),
     "wallet-private-key": Classification("wallet-drain", "wallet-keys", "T1552.001"),
     "solana-private-key": Classification("wallet-drain", "wallet-keys", "T1552.001"),
@@ -66,7 +66,7 @@ _SECRET: Dict[str, Classification] = {
     "token-approval-unlimited": Classification("wallet-drain", "funds", "T1657"),
 }
 #: Dangerous command shape -> what running it does.
-_COMMAND: Dict[str, Classification] = {
+_COMMAND: dict[str, Classification] = {
     "remote-script-pipe": Classification("command-execution", "host-system", "T1059.004"),
     "remote-eval-pipe": Classification("command-execution", "host-system", "T1059.004"),
     "rm-rf-system-paths": Classification("command-execution", "host-system", "T1485"),
@@ -75,7 +75,7 @@ _COMMAND: Dict[str, Classification] = {
 }
 #: Skill danger shape -> what installing the skill hands over (a skill's code can
 #: hold the same dangerous command shapes a shell call can).
-_SKILL: Dict[str, Classification] = {
+_SKILL: dict[str, Classification] = {
     **_COMMAND,
     "shell-exec": Classification("command-execution", "host-system", "T1059"),
     "over-broad-shell": Classification("command-execution", "host-system", "T1059"),
@@ -87,7 +87,7 @@ _SKILL: Dict[str, Classification] = {
 #: A known-bad named skill (verified or registry): the agent's tools are compromised.
 _NAMED_SKILL = Classification("agent-hijack", "agent-tools", "AML.T0010")
 #: Indicator kind (the verified rule's ``kind``) or report reason -> what it is for.
-_INDICATOR: Dict[str, Classification] = {
+_INDICATOR: dict[str, Classification] = {
     "phishing": Classification("phishing-lure", "user-credentials", "T1566.002"),
     "credential-harvest": Classification("phishing-lure", "user-credentials", "T1566.002"),
     "scam": Classification("phishing-lure", "funds", "T1566.002"),
@@ -128,7 +128,7 @@ def _skill(finding: Mapping[str, Any]) -> Classification:
     return _SKILL.get(shape, UNKNOWN) if shape else _NAMED_SKILL
 
 
-_BY_CATEGORY: Dict[str, Callable[[Mapping[str, Any]], Classification]] = {
+_BY_CATEGORY: dict[str, Callable[[Mapping[str, Any]], Classification]] = {
     "injection": lambda finding: _INJECTION,
     "dependency": lambda finding: _PACKAGE,
     "fileaccess": lambda finding: _FILE.get(str(_fields(finding).get("file_category") or ""), UNKNOWN),

@@ -61,7 +61,7 @@ def newest_trusted_manifest(rows: Iterable[Mapping[str, Any]], environment: str,
 
 
 def trusted_manifests(rows: Iterable[Mapping[str, Any]], environment: str, graph: str,
-                      roots: RootPins) -> List[key_manifest.ManifestVerdict]:
+                      roots: RootPins) -> list[key_manifest.ManifestVerdict]:
     """The verdict on every manifest in *rows* a trusted root signed for this
     environment and graph — including freeze-only ones (a pinned root at
     another epoch), which may conflict but never be acted on."""
@@ -74,16 +74,16 @@ def trusted_manifests(rows: Iterable[Mapping[str, Any]], environment: str, graph
     return verdicts
 
 
-Order = Tuple[int, int]
+Order = tuple[int, int]
 
 
-def conflict_orders(manifests: Iterable[TrustedManifest]) -> Set[Order]:
+def conflict_orders(manifests: Iterable[TrustedManifest]) -> set[Order]:
     """The orders at which trusted manifests conflict: two different contents
     at one (root epoch, version), pending ones included (a conflicting list
     freezes at once — it is the defender's tool), or any freeze-only verdict
     (K1: a pinned root signing another epoch may freeze, never lead — D30)."""
-    contents: Dict[Order, Set[str]] = {}
-    conflicts: Set[Order] = set()
+    contents: dict[Order, set[str]] = {}
+    conflicts: set[Order] = set()
     for verdict in map(_verdict, manifests):
         contents.setdefault(verdict.manifest.order, set()).add(verdict.manifest.content_hash())
         if verdict.freeze_only:
@@ -91,7 +91,7 @@ def conflict_orders(manifests: Iterable[TrustedManifest]) -> Set[Order]:
     return conflicts | {order for order, hashes in contents.items() if len(hashes) > 1}
 
 
-def _freezing(conflicts: Set[Order], sticky_order: Optional[Order]) -> Set[Order]:
+def _freezing(conflicts: set[Order], sticky_order: Optional[Order]) -> set[Order]:
     """The conflicts that move the reader: those ABOVE its sticky order (D31 rule 3)."""
     return {order for order in conflicts if sticky_order is None or order > sticky_order}
 
@@ -117,7 +117,7 @@ def effective_manifest(manifests: Iterable[TrustedManifest], today: str, sticky_
 
 
 def _in_force_and_effective(manifests: Iterable[TrustedManifest], today: str, sticky_order: Optional[Order],
-                            sticky_hash: str) -> Tuple[Optional[key_manifest.KeyManifest], Optional[key_manifest.KeyManifest]]:
+                            sticky_hash: str) -> tuple[Optional[key_manifest.KeyManifest], Optional[key_manifest.KeyManifest]]:
     """(the newest usable list past its time-lock, the list acted on) — the second
     is the first advanced through any narrowing lists (:func:`effective_manifest`)."""
     verdicts = [_verdict(item) for item in manifests]
@@ -140,7 +140,7 @@ def _in_force_and_effective(manifests: Iterable[TrustedManifest], today: str, st
 
 
 def _narrowed(current: Optional[key_manifest.KeyManifest],
-              pending: List[key_manifest.KeyManifest]) -> Optional[key_manifest.KeyManifest]:
+              pending: list[key_manifest.KeyManifest]) -> Optional[key_manifest.KeyManifest]:
     """*current* advanced through every pending list that narrows it and comes
     after it (``narrows()`` ignores the order, so the order is checked here).
     Each step may narrow the one before it — one key per list."""
@@ -153,7 +153,7 @@ def _narrowed(current: Optional[key_manifest.KeyManifest],
 
 
 def sticky_after(manifests: Iterable[TrustedManifest], today: str, previous: Optional[Order],
-                 previous_hash: str = "") -> Tuple[Optional[Order], str]:
+                 previous_hash: str = "") -> tuple[Optional[Order], str]:
     """(order, content hash) to store after this read: the newest list acted on
     whose time-lock has passed. An early-effective narrowing list is not sticky
     until its own time-lock passes (the challenge window) — the in-force list it

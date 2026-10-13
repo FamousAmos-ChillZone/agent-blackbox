@@ -236,7 +236,7 @@ def read_process_limits(dkg_home: str) -> Optional[ProcessLimits]:
     return ProcessLimits(**limits)
 
 
-def apply_process_limits(env: Dict[str, str], limits: ProcessLimits) -> None:
+def apply_process_limits(env: dict[str, str], limits: ProcessLimits) -> None:
     """Put *limits* into the launch environment *env* (in place). A value the
     environment already carries wins: an explicit heap in ``NODE_OPTIONS`` or an
     explicit queue limit. The install-time projection switch is removed: the

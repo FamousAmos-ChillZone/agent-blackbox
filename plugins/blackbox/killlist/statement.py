@@ -89,7 +89,7 @@ class KillEntry:
     def key(self) -> str:
         return f"{self.registry}:{self.publisher or self.identifier}:{self.version or '*'}:{self.artifact_hash or '*'}"
 
-    def as_json(self) -> Dict[str, str]:
+    def as_json(self) -> dict[str, str]:
         """Compact: empty optional fields are omitted (the envelope is size-capped)."""
         data = {"registry": self.registry, "identifier": self.identifier, "action": self.action.value, "reason": self.reason}
         for name, value in (("version", self.version), ("artifact_hash", self.artifact_hash),
@@ -99,7 +99,7 @@ class KillEntry:
         return data
 
     @classmethod
-    def from_json(cls, data: Mapping[str, Any]) -> Optional["KillEntry"]:
+    def from_json(cls, data: Mapping[str, Any]) -> Optional[KillEntry]:
         try:
             entry = cls(registry=str(data["registry"]), identifier=str(data["identifier"]),
                         action=KillAction(str(data["action"])), reason=str(data.get("reason") or "malware"),
@@ -126,14 +126,14 @@ class KillList:
 
     version: int
     day: str
-    entries: Tuple[KillEntry, ...]
+    entries: tuple[KillEntry, ...]
 
-    def to_payload(self) -> Dict[str, str]:
+    def to_payload(self) -> dict[str, str]:
         return {"version": str(self.version), "day": self.day,
                 "entries": json.dumps([e.as_json() for e in self.entries], sort_keys=True, separators=(",", ":"))}
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, str], sequence: int) -> Optional["KillList"]:
+    def from_payload(cls, payload: Mapping[str, str], sequence: int) -> Optional[KillList]:
         try:
             version, day = int(payload["version"]), str(payload["day"])
             raw = json.loads(payload["entries"])
@@ -146,12 +146,12 @@ class KillList:
             return None
         return cls(version=version, day=day, entries=tuple(e for e in entries if e is not None))
 
-    def as_cache(self) -> Dict[str, Any]:
+    def as_cache(self) -> dict[str, Any]:
         """The plain dict the compiled ruleset carries (disk cache + memory)."""
         return {"version": self.version, "day": self.day, "entries": [e.as_json() for e in self.entries]}
 
     @classmethod
-    def from_cache(cls, data: Any) -> Optional["KillList"]:
+    def from_cache(cls, data: Any) -> Optional[KillList]:
         """The list from a ruleset's cached dict; None for an empty or malformed one."""
         if not isinstance(data, dict) or not data.get("entries"):
             return None
@@ -165,7 +165,7 @@ class KillList:
             return None
 
     @property
-    def disables(self) -> Tuple[KillEntry, ...]:
+    def disables(self) -> tuple[KillEntry, ...]:
         return tuple(e for e in self.entries if e.action is KillAction.DISABLE)
 
 
@@ -183,7 +183,7 @@ def kill_list_subject(version: int) -> str:
     return f"urn:guardian:curator:kill-list:{version}"
 
 
-def kill_list_quads(envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
+def kill_list_quads(envelope: signing.SignedEnvelope) -> list[rdf_terms.Quad]:
     subject = kill_list_subject(envelope.sequence)
     return [
         rdf_terms.make_quad(subject, constants.RDF_TYPE, rdf_terms.iri(KILL_LIST_TYPE_IRI)),
@@ -192,7 +192,7 @@ def kill_list_quads(envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
 
 
 def parse_kill_list(row: Mapping[str, Any], manifest: Optional[KeyManifest], *, graph: str
-                    ) -> Optional[Tuple[signing.SignedEnvelope, KillList]]:
+                    ) -> Optional[tuple[signing.SignedEnvelope, KillList]]:
     """The (envelope, list) in *row* when its envelope parses, its subject is
     its own, and at least the manifest's threshold of curator keys signed
     it; otherwise None (the blast-radius gates run afterwards, per entry)."""

@@ -96,10 +96,10 @@ class RunResult:
     (the lab broke; ``output`` is None and the curator runs the job again)."""
 
     state: str
-    output: Optional[Dict[str, Any]] = None
+    output: Optional[dict[str, Any]] = None
 
 
-def from_look(times: RunTimes, look: Mapping[str, Any]) -> Dict[str, Any]:
+def from_look(times: RunTimes, look: Mapping[str, Any]) -> dict[str, Any]:
     """Level 1. An unsupported identifier contacted nothing and answers nothing."""
     status = look.get("status")
     if status == "unsupported":
@@ -107,23 +107,23 @@ def from_look(times: RunTimes, look: Mapping[str, Any]) -> Dict[str, Any]:
     return _output(times, hosts=_strings(look.get("hosts")), notes=_status_notes(status))
 
 
-def from_read(times: RunTimes, fetch: Mapping[str, Any], read: Mapping[str, Any]) -> Dict[str, Any]:
+def from_read(times: RunTimes, fetch: Mapping[str, Any], read: Mapping[str, Any]) -> dict[str, Any]:
     """Level 2, the download read with the network off."""
     notes = [NoteCode.OBFUSCATED_SCRIPT] if read.get("obfuscated") else []
     if read.get("truncated"):
         notes.append(NoteCode.RESOURCE_CAP_REACHED)
-    files: Dict[str, Any] = {"entries": _flagged_entries(read)}
+    files: dict[str, Any] = {"entries": _flagged_entries(read)}
     if evidence_schema.is_sha256(read.get("artifact_sha256")):
         files["artifact_sha256"] = read["artifact_sha256"]
     return _output(times, hosts=_strings(fetch.get("hosts")), files=files, notes=notes)
 
 
-def from_failed_fetch(times: RunTimes, fetch: Mapping[str, Any]) -> Dict[str, Any]:
+def from_failed_fetch(times: RunTimes, fetch: Mapping[str, Any]) -> dict[str, Any]:
     """Level 2 when the download produced no code to read."""
     return _output(times, hosts=_strings(fetch.get("hosts")), notes=_status_notes(fetch.get("status")))
 
 
-def from_run(times: RunTimes, run: Mapping[str, Any]) -> Dict[str, Any]:
+def from_run(times: RunTimes, run: Mapping[str, Any]) -> dict[str, Any]:
     """Level 4: the guest's report joined with the host's ``traffic`` record."""
     # No traffic record (the capture never started) answers nothing about the network:
     # an empty host list would read as a definite "contacted nothing" (LES-011).
@@ -139,14 +139,14 @@ def from_run(times: RunTimes, run: Mapping[str, Any]) -> Dict[str, Any]:
     return raw
 
 
-def cap_reached(times: RunTimes, note: "NoteCode") -> Dict[str, Any]:
+def cap_reached(times: RunTimes, note: NoteCode) -> dict[str, Any]:
     """A run cut short by its deadline, a resource cap or an egress kill: the note, nothing else."""
     return _output(times, notes=[note])
 
 
-def _output(times: RunTimes, hosts: Optional[List[str]] = None, files: Optional[Dict[str, Any]] = None,
-            notes: Sequence["NoteCode"] = ()) -> Dict[str, Any]:
-    raw: Dict[str, Any] = {"job_key": times.job_key, "started_at": times.started_at,
+def _output(times: RunTimes, hosts: Optional[list[str]] = None, files: Optional[dict[str, Any]] = None,
+            notes: Sequence[NoteCode] = ()) -> dict[str, Any]:
+    raw: dict[str, Any] = {"job_key": times.job_key, "started_at": times.started_at,
                            "finished_at": max(times.started_at, times.finished_at)}
     if hosts is not None:
         raw["pcap"] = {"hosts": list(dict.fromkeys(hosts))}
@@ -156,15 +156,15 @@ def _output(times: RunTimes, hosts: Optional[List[str]] = None, files: Optional[
     return raw
 
 
-def _status_notes(status: Any) -> List["NoteCode"]:
+def _status_notes(status: Any) -> list[NoteCode]:
     if status == "ok":
         return []
     return [_STATUS_NOTES.get(status, NoteCode.INCONCLUSIVE)]
 
 
-def _flagged_entries(read: Mapping[str, Any]) -> List[Dict[str, str]]:
+def _flagged_entries(read: Mapping[str, Any]) -> list[dict[str, str]]:
     """One entry per distinct flagged file, smallest digest first, at most :data:`MAX_ENTRIES`."""
-    by_digest: Dict[str, str] = {}
+    by_digest: dict[str, str] = {}
     for section in _FLAGGED_SECTIONS:
         for entry in read.get(section) or []:
             if isinstance(entry, Mapping) and evidence_schema.is_sha256(entry.get("sha256")):
@@ -172,16 +172,16 @@ def _flagged_entries(read: Mapping[str, Any]) -> List[Dict[str, str]]:
     return [{"path": by_digest[digest], "sha256": digest} for digest in sorted(by_digest)[:MAX_ENTRIES]]
 
 
-def _processes(values: Any) -> List[Dict[str, str]]:
+def _processes(values: Any) -> list[dict[str, str]]:
     """The guest's process list in the extractor's shape; an entry it would
     refuse (a phase outside install/run) is a broken guest, so it is dropped
     here rather than forwarded: at most :data:`MAX_PROCESSES` entries."""
-    processes: List[Dict[str, str]] = []
+    processes: list[dict[str, str]] = []
     for entry in values if isinstance(values, list) else []:
         if isinstance(entry, Mapping) and isinstance(entry.get("name"), str) and entry.get("phase") in _PHASES:
             processes.append({"name": entry["name"][:MAX_PROCESS_NAME_CHARS], "phase": entry["phase"]})
     return processes[:MAX_PROCESSES]
 
 
-def _strings(values: Any) -> List[str]:
+def _strings(values: Any) -> list[str]:
     return [value for value in values or [] if isinstance(value, str)] if isinstance(values, list) else []

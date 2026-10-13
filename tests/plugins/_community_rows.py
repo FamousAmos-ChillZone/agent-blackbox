@@ -57,7 +57,7 @@ def signed_report_quads(identifier: str, reporter: Reporter, severity: str = "hi
 
 
 def signed_row(identifier: str, reporter: Reporter, severity: str = "high", category: str = "",
-               environment: str = NETWORK, graph: str = GRAPH, **evidence: str) -> Dict[str, str]:
+               environment: str = NETWORK, graph: str = GRAPH, **evidence: str) -> dict[str, str]:
     """One report row as the community reader's query returns it."""
     category = category or {"dep": "dependency"}.get(identifier.split(":", 1)[0], identifier.split(":", 1)[0])
     if category == "ioc":                                       # a real IOC report names its type and context
@@ -81,7 +81,7 @@ def signed_row(identifier: str, reporter: Reporter, severity: str = "high", cate
 
 
 def signed_retraction_row(identifier: str, reporter: Reporter, environment: str = NETWORK,
-                          graph: str = GRAPH, signed: bool = True) -> Dict[str, str]:
+                          graph: str = GRAPH, signed: bool = True) -> dict[str, str]:
     """One retraction row as the reader's retraction query returns it (Refine R1)."""
     signer = ReportSigner(private_key=reporter.key, environment=environment, graph=graph) if signed else None
     quads = report_builder.build_retraction_quads(identifier=identifier, reporter_address=reporter.address,
@@ -95,7 +95,7 @@ def signed_retraction_row(identifier: str, reporter: Reporter, environment: str 
 
 
 def signed_dispute_row(identifier: str, reporter: Reporter, reason: str = "wrong", environment: str = NETWORK,
-                       graph: str = GRAPH) -> Dict[str, str]:
+                       graph: str = GRAPH) -> dict[str, str]:
     """One dispute (g:FalsePositive) row as the reader's dispute query returns it (Refine R2)."""
     signer = ReportSigner(private_key=reporter.key, environment=environment, graph=graph)
     quads = report_builder.build_false_positive_quads(identifier=identifier, reporter_address=reporter.address,

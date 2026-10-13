@@ -41,8 +41,8 @@ class PartitionListing:
     public rule may come from.
     """
 
-    graphs: FrozenSet[str]
-    confirmed: Tuple[str, ...]
+    graphs: frozenset[str]
+    confirmed: tuple[str, ...]
 
 
 def confirmed_partitions(client: DkgClient, cg_id: str) -> Optional[PartitionListing]:
@@ -75,7 +75,7 @@ def fetch_tier(
     cg_id: str,
     view: str,
     agent_address: Optional[str] = None, listing: Optional[PartitionListing] = None,
-) -> Optional[List[Dict[str, Any]]]:
+) -> Optional[list[dict[str, Any]]]:
     """Fully paginate one tier. Returns all rows, or ``None`` if the node errored.
 
     ``None`` (error) is distinct from ``[]`` (the tier is genuinely empty) so
@@ -121,7 +121,7 @@ def fetch_tier(
     )
 
 
-def fetch_local_records(client: DkgClient, local_graph: str, agent_address: str) -> Optional[List[Dict[str, Any]]]:
+def fetch_local_records(client: DkgClient, local_graph: str, agent_address: str) -> Optional[list[dict[str, Any]]]:
     """This node's private audit records (``g:identifier`` rows) from its OWN graph's
     working memory — the dashboard's Local tier. ONE identifier lane only: the private
     graph holds audit records and nothing else, and the defender-signal lanes over a
@@ -135,7 +135,7 @@ def fetch_local_records(client: DkgClient, local_graph: str, agent_address: str)
 
 
 def _verified_small_tier_rows(client: DkgClient, cg_id: str, vm_prefix: str,
-                              listing: PartitionListing) -> Optional[List[Dict[str, Any]]]:
+                              listing: PartitionListing) -> Optional[list[dict[str, Any]]]:
     """The small verified tiers (injection, skill, corrections, legacy-identifier
     rules) from every CONFIRMED asset: one cursor-paged read per lane over
     ``GRAPH ?g`` under *vm_prefix*, then only rows whose graph the node confirmed
@@ -167,7 +167,7 @@ class _StoreLanes:
         self.store = store
 
     @classmethod
-    def for_node(cls, client: Any) -> Optional["_StoreLanes"]:
+    def for_node(cls, client: Any) -> Optional[_StoreLanes]:
         """A store-backed reader when the node reports a loopback store; else None."""
         status = getattr(client, "status", None)
         if not callable(status):
@@ -194,15 +194,15 @@ def _fetch_paged_lanes(
     *,
     view: Optional[str],
     agent_address: Optional[str] = None,
-) -> Optional[List[Dict[str, Any]]]:
+) -> Optional[list[dict[str, Any]]]:
     """Cursor-page every lane until an empty page; None when any page fails."""
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     lane_count = len(query_lanes(1, ""))
     for lane_index in range(lane_count):
         after = ""
         fetched_subjects = 0
         while fetched_subjects < sparql_text.MAX_ROWS:
-            kwargs: Dict[str, Any] = {"view": view, "on_error": _QUERY_ERROR}
+            kwargs: dict[str, Any] = {"view": view, "on_error": _QUERY_ERROR}
             if agent_address:
                 kwargs["agent_address"] = agent_address
             query = query_lanes(_PAGE_SIZE, after)[lane_index]
@@ -234,9 +234,9 @@ def _fetch_paged_lanes(
     return rows
 
 
-def _dedupe_threat_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _dedupe_threat_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Prefer confirmed partition rows when a migrated root repeats a threat."""
-    result: List[Dict[str, Any]] = []
+    result: list[dict[str, Any]] = []
     seen: set = set()
     for row in rows:
         threat = extract_binding(row.get("threat"))

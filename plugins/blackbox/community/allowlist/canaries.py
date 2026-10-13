@@ -47,7 +47,7 @@ class CanaryStore:
         self._path = path or (constants.blackbox_home() / "curate" / _CANARY_FILE)
         self._lock = threading.Lock()
 
-    def planted(self) -> List[str]:
+    def planted(self) -> list[str]:
         with self._lock:
             return self._load()
 
@@ -65,26 +65,26 @@ class CanaryStore:
             self._save([i for i in current if i != identifier])
             return True
 
-    def hits(self, reports: Iterable[_Report]) -> Dict[str, List[str]]:
+    def hits(self, reports: Iterable[_Report]) -> dict[str, list[str]]:
         """``{reporter key: [canary identifiers it reported]}`` — each one a
         strike candidate for the curator (never automatic: the curator
         records the outcome, so a planted-by-mistake real threat can be
         unplanted first)."""
         planted = set(self.planted())
-        found: Dict[str, List[str]] = {}
+        found: dict[str, list[str]] = {}
         for report in reports:
             if report.identifier in planted:
                 found.setdefault(report.author, []).append(report.identifier)
         return {author: sorted(set(ids)) for author, ids in found.items()}
 
-    def _load(self) -> List[str]:
+    def _load(self) -> list[str]:
         try:
             data = json.loads(self._path.read_text(encoding="utf-8"))
             return [str(i) for i in data.get("planted", []) if str(i).strip()]
         except (OSError, ValueError, AttributeError):
             return []
 
-    def _save(self, planted: List[str]) -> None:
+    def _save(self, planted: list[str]) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")

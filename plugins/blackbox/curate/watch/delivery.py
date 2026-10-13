@@ -63,9 +63,9 @@ class MetricsRecord(Protocol):
     (C4), the ONE record for the key console and the Slack monitor. Named by
     shape here because ``console`` itself reads ``curate.watch``."""
 
-    def as_payload(self) -> Dict[str, object]: ...   # {"kind": "metrics", "metrics": {name: value}}
+    def as_payload(self) -> dict[str, object]: ...   # {"kind": "metrics", "metrics": {name: value}}
 
-    def lines(self) -> List[str]: ...                # "name: value" per metric
+    def lines(self) -> list[str]: ...                # "name: value" per metric
 
 
 class IntakeSink(Protocol):
@@ -194,7 +194,7 @@ def node_sink(home: Optional[Path] = None) -> IntakeSink:
     raise SinkCredentialError(f"{NODE_SINK_FILE}: kind must be slack, webhook or telegram, with an https url")
 
 
-def manifest_items(manifest: Optional[Any], now: float, home: Optional[Path] = None) -> List[HealthItem]:
+def manifest_items(manifest: Optional[Any], now: float, home: Optional[Path] = None) -> list[HealthItem]:
     """The manifest watcher's items (W1) for the trusted *manifest* (``ctx.manifest``),
     built only through ``manifest_watch.watch_inputs`` over this node's seen-order
     record: a trusted list newer than the record → SECURITY, renewal reminders.

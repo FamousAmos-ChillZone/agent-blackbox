@@ -47,7 +47,7 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Set
 
@@ -82,7 +82,7 @@ class AlarmWatcher:
         self._lock = threading.Lock()
         self._metrics_at: Optional[float] = None
 
-    def poll(self, items: Iterable[Any], sink: "IntakeSink", *, now: Optional[float] = None) -> List[str]:
+    def poll(self, items: Iterable[Any], sink: IntakeSink, *, now: Optional[float] = None) -> list[str]:
         """Notify *sink* of every alarm message not delivered before; returns them.
         With *now*, also this UTC day's dead-man beat (once a day; its absence is the alarm)."""
         items = list(items)
@@ -98,7 +98,7 @@ class AlarmWatcher:
             _save_seen(self._path, seen)
         return [item.message for item in delivered]
 
-    def post_metrics(self, record_of: Callable[[], MetricsRecord], sink: "IntakeSink", now: float) -> bool:
+    def post_metrics(self, record_of: Callable[[], MetricsRecord], sink: IntakeSink, now: float) -> bool:
         """Post the record *record_of* builds to the node's monitor unless one went out in the
         last hour; True when posted. The record is built only when due (it reads every store)."""
         with self._lock:
@@ -110,7 +110,7 @@ class AlarmWatcher:
             return True
 
     @staticmethod
-    def _due_beat(seen: Set[str], items: List[Any], now: Optional[float]) -> Optional[HealthItem]:
+    def _due_beat(seen: set[str], items: list[Any], now: Optional[float]) -> Optional[HealthItem]:
         if now is None:
             return None
         today = time.strftime("%Y-%m-%d", time.gmtime(now))
@@ -118,14 +118,14 @@ class AlarmWatcher:
         return beat.as_health_item() if beat is not None else None
 
 
-def _load_seen(path: Path) -> Set[str]:
+def _load_seen(path: Path) -> set[str]:
     try:
         return set(str(x) for x in json.loads(path.read_text(encoding="utf-8")))
     except (OSError, ValueError, TypeError):
         return set()
 
 
-def _save_seen(path: Path, seen: Set[str]) -> None:
+def _save_seen(path: Path, seen: set[str]) -> None:
     kept = sorted(seen)[-_MAX_SEEN:]
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
@@ -140,7 +140,7 @@ class IntakeWatcher:
         self._path = path or (keys.curate_home() / _SEEN_FILE)
         self._lock = threading.Lock()
 
-    def poll(self, view: DeltaView, sink: IntakeSink) -> List[str]:
+    def poll(self, view: DeltaView, sink: IntakeSink) -> list[str]:
         """Notify *sink* of every item not announced before; returns their identifiers."""
         with self._lock:
             seen = _load_seen(self._path)
@@ -164,7 +164,7 @@ PUBLIC_DISPUTE_REASONS = ("wrong", "fixed")
 #: Who is filing — the kind of party, never who they are.
 DISPUTE_PARTIES = ("package-owner", "skill-author", "domain-owner", "address-owner")
 #: The form's fields, all required; any other field is refused.
-DISPUTE_FIELDS: FrozenSet[str] = frozenset({"identifier", "party", "reason", "reply_to"})
+DISPUTE_FIELDS: frozenset[str] = frozenset({"identifier", "party", "reason", "reply_to"})
 MAX_REPLY_TO_CHARS = 254
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(\.[A-Za-z0-9-]{1,63})*\.[A-Za-z]{2,63}")
 #: Open disputes held at once; past this the endpoint answers 503 (a flood cannot fill the disk).
@@ -231,11 +231,11 @@ class IntakeAnswer:
     (``error`` on refusal — never a stack trace)."""
 
     status: int
-    body: Dict[str, str]
+    body: dict[str, str]
 
 
 def _iso(epoch: float) -> str:
-    return datetime.fromtimestamp(epoch, timezone.utc).isoformat(timespec="seconds")
+    return datetime.fromtimestamp(epoch, UTC).isoformat(timespec="seconds")
 
 
 class DisputeIntake:

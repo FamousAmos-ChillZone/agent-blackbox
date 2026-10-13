@@ -508,7 +508,7 @@ def test_the_launchd_template_fills_into_a_valid_plist(tmp_path: Path) -> None:
     for placeholder, value in values.items():
         assert placeholder in text
         text = text.replace(placeholder, value)
-    assert "__" not in re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    assert "__" not in re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
 
     plist = plistlib.loads(text.encode())
     assert plist["Label"] == "ai.umanitek.blackbox-curate-backup"

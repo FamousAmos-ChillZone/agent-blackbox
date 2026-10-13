@@ -585,7 +585,7 @@ def test_identifiers_are_compared_in_compiler_canonical_form():
 
 def test_a_lookup_answering_in_another_spelling_still_matches():
     # The lookup's answer is canonicalised too, so an alias spelling it reports counts.
-    lookup = lambda identifiers: {"dep:npm:Evil-Pkg@1.0.0"}  # noqa: E731
+    lookup = lambda identifiers: {"dep:npm:Evil-Pkg@1.0.0"}
     assert precheck([_entry("dep:npm:evil-pkg@1.0.0")], lookup).kept == ()
 
 
@@ -695,17 +695,17 @@ def test_result_and_dropped_entries_are_immutable_records():
 # Corrections, never-flag and the advisory twin (P5)
 # ---------------------------------------------------------------------------
 
-import json  # noqa: E402  (section-local imports, kept with the section)
-import re  # noqa: E402
+import json
+import re
 
-from plugins.blackbox.community.statements import curator_statements  # noqa: E402
-from plugins.blackbox.community.statements import curator_view as cv  # noqa: E402
-from plugins.blackbox.curate import verbs  # noqa: E402
-from plugins.blackbox.curate.context import CurateContext  # noqa: E402
-from plugins.blackbox.curate.publishing import commands as correction_verbs  # noqa: E402
-from plugins.blackbox.curate.publishing import never_flag  # noqa: E402
-from plugins.blackbox.curate.publishing.errors import VerbError  # noqa: E402
-from test_blackbox_curate import CFG, COMMUNITY, VM_GRAPH, FakeNode, _machine  # noqa: E402
+from plugins.blackbox.community.statements import curator_statements
+from plugins.blackbox.community.statements import curator_view as cv
+from plugins.blackbox.curate import verbs
+from plugins.blackbox.curate.context import CurateContext
+from plugins.blackbox.curate.publishing import commands as correction_verbs
+from plugins.blackbox.curate.publishing import never_flag
+from plugins.blackbox.curate.publishing.errors import VerbError
+from test_blackbox_curate import CFG, COMMUNITY, VM_GRAPH, FakeNode, _machine
 
 LEGACY_8888 = "urn:defender:signal:94f04f19bc0000000000000000000000"
 publish_module = importlib.import_module("plugins.blackbox.curate.publishing.publish")   # not the re-exported function

@@ -30,10 +30,10 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Tuple
 
 #: Wallets Blackbox can protect today: id -> display name.
-SUPPORTED_WALLETS: Dict[str, str] = {"metamask": "MetaMask", "phantom": "Phantom",
+SUPPORTED_WALLETS: dict[str, str] = {"metamask": "MetaMask", "phantom": "Phantom",
                                      "exodus": "Exodus", "electrum": "Electrum", "solana-cli": "Solana CLI"}
 #: Wallets on the way (key-store IDs verified, rules not written yet) — shown as "coming soon".
-PLANNED_WALLETS: Tuple[str, ...] = ("Rabby", "Coinbase Wallet", "Trust Wallet", "OKX Wallet", "Keplr", "Solflare")
+PLANNED_WALLETS: tuple[str, ...] = ("Rabby", "Coinbase Wallet", "Trust Wallet", "OKX Wallet", "Keplr", "Solflare")
 #: Findings that belong to the mode: seed phrases, labelled private keys and Solana keys (any wallet)…
 WALLET_SECRET_IDENTIFIERS = frozenset({"secret:seed-phrase", "secret:wallet-private-key", "secret:solana-private-key",
                                        "secret:exchange-api-key",    # …an exchange key sent to a site not its own
@@ -68,8 +68,8 @@ class WalletProtection:
     machine only; never put in a finding, a log line or a report)."""
 
     enabled: bool = False
-    wallets: Tuple[str, ...] = tuple(SUPPORTED_WALLETS)
-    addresses: Tuple[str, ...] = ()
+    wallets: tuple[str, ...] = tuple(SUPPORTED_WALLETS)
+    addresses: tuple[str, ...] = ()
 
     def protects(self, wallet_id: str) -> bool:
         """Whether the wallet *wallet_id* is guarded under this mode — THE rule the gate
@@ -93,16 +93,16 @@ class WalletProtection:
             return self.protects(str((fields.get("wallet") if isinstance(fields, Mapping) else None) or ""))
         return True
 
-    def as_json(self) -> Dict[str, Any]:
+    def as_json(self) -> dict[str, Any]:
         """What the dashboard and the settings page show."""
         return {"enabled": self.enabled, "wallets": list(self.wallets), "addresses": list(self.addresses),
                 "supported": [{"id": key, "name": name} for key, name in SUPPORTED_WALLETS.items()],
                 "planned": list(PLANNED_WALLETS)}
 
 
-def _wallet_list(raw: Any) -> Tuple[str, ...]:
+def _wallet_list(raw: Any) -> tuple[str, ...]:
     """Supported wallet ids from *raw* (a list), lower-cased, deduplicated, in order."""
-    out: List[str] = []
+    out: list[str] = []
     for item in raw if isinstance(raw, list) else []:
         wallet = str(item or "").strip().lower()
         if wallet in SUPPORTED_WALLETS and wallet not in out:
@@ -110,9 +110,9 @@ def _wallet_list(raw: Any) -> Tuple[str, ...]:
     return tuple(out)
 
 
-def _address_list(raw: Any) -> Tuple[str, ...]:
+def _address_list(raw: Any) -> tuple[str, ...]:
     """Valid addresses from *raw* (a list), lower-cased, deduplicated, at most the cap."""
-    out: List[str] = []
+    out: list[str] = []
     for item in raw if isinstance(raw, list) else []:
         address = str(item or "").strip().lower()
         if _ADDRESS.match(address) and address not in out:
@@ -134,11 +134,11 @@ def current() -> WalletProtection:
     return from_entry(_blackbox_entry())
 
 
-def validate(payload: Mapping[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+def validate(payload: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
     """``(config updates, errors)`` for the mode's keys in a settings *payload*.
     Unknown wallets are refused, never stored."""
-    updates: Dict[str, Any] = {}
-    errors: List[str] = []
+    updates: dict[str, Any] = {}
+    errors: list[str] = []
     if "wallet_protection" in payload:
         if isinstance(payload["wallet_protection"], bool):
             updates["wallet_protection"] = payload["wallet_protection"]

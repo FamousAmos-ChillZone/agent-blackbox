@@ -124,7 +124,7 @@ def _needs_copy(dest: Path) -> bool:
         return False
 
 
-def _copy_ignore(_dir: str, names: List[str]) -> List[str]:
+def _copy_ignore(_dir: str, names: list[str]) -> list[str]:
     return [n for n in names if n in _COPY_EXCLUDE_DIRS or n.endswith(_COPY_EXCLUDE_SUFFIXES)]
 
 
@@ -187,7 +187,7 @@ def _bundle_openclaw_plugin(src: Path, dest: Path) -> None:
         return
 
 
-def _openclaw_ignore(_dir: str, names: List[str]) -> List[str]:
+def _openclaw_ignore(_dir: str, names: list[str]) -> list[str]:
     """Exclude deps/build/test dirs from the bundled OpenClaw plugin."""
     skip = {"node_modules", "dist", ".turbo", "test", "tests", "__pycache__"}
     return [n for n in names if n in skip or n.endswith((".pyc", ".log", ".tsbuildinfo"))]

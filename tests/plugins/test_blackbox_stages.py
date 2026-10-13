@@ -17,6 +17,7 @@ from plugins.blackbox.community.stages import Enforcement, Stage
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind
 from plugins.blackbox.ruleset import community_tier, compiler
+from datetime import UTC
 
 DAY = 86_400
 NOW = 1_800_000_000.0
@@ -297,8 +298,8 @@ def test_a_curator_deferral_lapses_after_thirty_days_on_the_reader(monkeypatch):
 
     keys = _keys("p", 3)
     view = _view([(k, f"org{i}") for i, k in enumerate(keys)])
-    fresh = datetime.fromtimestamp(NOW - 5 * DAY, tz=timezone.utc).date().isoformat()
-    stale = datetime.fromtimestamp(NOW - 40 * DAY, tz=timezone.utc).date().isoformat()
+    fresh = datetime.fromtimestamp(NOW - 5 * DAY, tz=UTC).date().isoformat()
+    stale = datetime.fromtimestamp(NOW - 40 * DAY, tz=UTC).date().isoformat()
     deferred = stages.stage_for("dep:npm:x@1", keys, NOW - 10 * DAY, view, 0, Kind.DEFERRAL, NOW, verdict_day=fresh)
     lapsed = stages.stage_for("dep:npm:x@1", keys, NOW - 10 * DAY, view, 0, Kind.DEFERRAL, NOW, verdict_day=stale)
     undated = stages.stage_for("dep:npm:x@1", keys, NOW - 10 * DAY, view, 0, Kind.DEFERRAL, NOW)

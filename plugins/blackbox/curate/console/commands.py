@@ -78,4 +78,4 @@ def cmd_console(args: argparse.Namespace) -> int:
     return 0
 
 
-__all__ = ["add_console_parser", "cmd_console", "load_settings", "ConsoleSetupError", "SETTINGS_FILE"]
+__all__ = ["SETTINGS_FILE", "ConsoleSetupError", "add_console_parser", "cmd_console", "load_settings"]

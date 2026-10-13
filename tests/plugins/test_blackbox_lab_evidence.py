@@ -250,11 +250,11 @@ def test_other_ipv6_addresses_keep_the_compressed_lower_case_form():
 # every result passes validate_evidence, and only EvidenceError escapes (the
 # controller's poll catches nothing else).
 
-import random  # noqa: E402
+import random
 
-from plugins.blackbox.curate.lab import extractor  # noqa: E402
-from plugins.blackbox.curate.lab.jobs import LabJob, threat_digest  # noqa: E402
-from plugins.blackbox.curate.queue import Lane  # noqa: E402
+from plugins.blackbox.curate.lab import extractor
+from plugins.blackbox.curate.lab.jobs import LabJob, threat_digest
+from plugins.blackbox.curate.queue import Lane
 
 PAGE = "url:https://login.example-phish.test/signin?email=victim@example.test"
 
@@ -532,7 +532,7 @@ def test_a_reader_crash_surfaces_as_evidence_error(monkeypatch):
 
 
 def test_the_extractor_satisfies_the_controller_contract():
-    from plugins.blackbox.curate.lab.controller import Extractor  # noqa: F401  (the Strategy type)
+    from plugins.blackbox.curate.lab.controller import Extractor
     import inspect
 
     assert list(inspect.signature(extractor.extract).parameters) == ["job", "raw"]

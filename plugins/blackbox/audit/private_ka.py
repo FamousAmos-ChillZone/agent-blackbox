@@ -31,7 +31,7 @@ def node_is_local(url: str) -> bool:
     return not host or host.lower() in _LOCAL_HOSTS
 
 
-def write_private_audit_ka(client: Any, cg_id: str, event: str, finding: Dict[str, Any]) -> None:
+def write_private_audit_ka(client: Any, cg_id: str, event: str, finding: dict[str, Any]) -> None:
     """Write a private WM audit KA carrying the observed command/prompt.
 
     Privacy split: the redacted-but-local evidence lives in the node's private

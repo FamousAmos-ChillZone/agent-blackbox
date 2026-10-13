@@ -43,7 +43,7 @@ GROWTH_QUIET_SECONDS = 900.0
 class PartitionRead:
     """What one refresh read: the rows of every partition available, and progress."""
 
-    rows: List[Row] = field(default_factory=list)
+    rows: list[Row] = field(default_factory=list)
     total: int = 0          # confirmed partitions the node lists
     compiled: int = 0       # of those, how many have rows (cached or read now)
     read_now: int = 0       # read from the node in this refresh
@@ -92,7 +92,7 @@ def record_progress(cg_id: str, read: PartitionRead) -> None:
         logger.warning("blackbox: could not record verified-graph progress: %s", exc)
 
 
-def _total_grew_at(previous: Optional[Dict[str, object]], total: int, now: float) -> float:
+def _total_grew_at(previous: Optional[dict[str, object]], total: int, now: float) -> float:
     """When the asset count last grew: *now* if it grew since *previous* (or
     this is the first record of a non-empty graph), else the earlier time."""
     before_total = (previous or {}).get("assets_total")
@@ -102,7 +102,7 @@ def _total_grew_at(previous: Optional[Dict[str, object]], total: int, now: float
     return now if total > 0 else 0.0
 
 
-def progress(cg_id: str) -> Optional[Dict[str, object]]:
+def progress(cg_id: str) -> Optional[dict[str, object]]:
     """The last recorded compile progress for *cg_id*, or None."""
     try:
         record = json.loads(_progress_path().read_text(encoding="utf-8"))

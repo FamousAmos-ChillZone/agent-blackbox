@@ -63,13 +63,13 @@ class Lookup:
     missing from ``rows`` may still exist. ``limited`` / ``failed`` — how many
     batches reached the limit / could not be read."""
 
-    rows: Tuple[Dict[str, str], ...] = ()
+    rows: tuple[dict[str, str], ...] = ()
     complete: bool = True
     limited: int = 0
     failed: int = 0
 
 
-def _plain(row: Mapping[str, Any]) -> Dict[str, str]:
+def _plain(row: Mapping[str, Any]) -> dict[str, str]:
     """A node row as plain strings: subject, shown identifier, and the signed
     statement written the canonical way — so a copy of a statement that
     differs only in how it is written (spacing, key order, an ignored key,
@@ -80,13 +80,13 @@ def _plain(row: Mapping[str, Any]) -> Dict[str, str]:
             "signedStatement": signing.canonical_text(envelope) if envelope is not None else text}
 
 
-def fold(rows: Iterable[Mapping[str, Any]]) -> List[Dict[str, str]]:
+def fold(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, str]]:
     """*rows* as plain rows with exact duplicates removed. A keep-alive copy of
     a statement is the same subject and the same signed text under a new asset
     name, and a rewritten copy has the same canonical text, so both fold to
     one (first occurrence wins the position)."""
     seen = set()
-    out: List[Dict[str, str]] = []
+    out: list[dict[str, str]] = []
     for row in rows:
         plain = _plain(row)
         key = (plain["r"], plain["signedStatement"])
@@ -115,7 +115,7 @@ def lookup_statements(client: Any, graph: str, identifiers: Iterable[str], *,
     ordering. At most ``MAX_IDENTIFIERS`` identifiers are asked for (the
     caller passes the most important first)."""
     wanted = list(dict.fromkeys(i for i in identifiers if i))[:MAX_IDENTIFIERS]
-    rows: List[Mapping[str, Any]] = []
+    rows: list[Mapping[str, Any]] = []
     limited = failed = 0
     for start in range(0, len(wanted), LOOKUP_BATCH):
         page = sparql_text.query_rows(client, statements_sparql(wanted[start:start + LOOKUP_BATCH]), graph, view)
@@ -152,7 +152,7 @@ SELECT ?r ?signedStatement WHERE {{
 """
 
 
-def next_manifest_subjects(known: Iterable[Tuple[int, int]]) -> List[str]:
+def next_manifest_subjects(known: Iterable[tuple[int, int]]) -> list[str]:
     """The exact subjects worth probing: the next versions after the newest
     known ``(root_epoch, version)`` and the first versions of the next epoch;
     with nothing known, the first versions of epochs 0 and 1."""
@@ -166,12 +166,12 @@ def next_manifest_subjects(known: Iterable[Tuple[int, int]]) -> List[str]:
     return [manifest_subject(epoch, version) for epoch, version in orders]
 
 
-def lookup_manifests(client: Any, graph: str, known: Iterable[Tuple[int, int]] = (), *,
+def lookup_manifests(client: Any, graph: str, known: Iterable[tuple[int, int]] = (), *,
                      view: str = constants.VIEW_SHARED_WORKING_MEMORY) -> Lookup:
     """Key-manifest rows in *graph*: an unordered lookup by type, plus exact
     probes for the subjects the next manifests would have (so a flood of
     manifest-typed junk cannot hide a rotation behind the type lookup's limit)."""
-    rows: List[Mapping[str, Any]] = []
+    rows: list[Mapping[str, Any]] = []
     limited = failed = 0
     for sparql in (_manifests_by_type_sparql(), _manifests_by_subject_sparql(next_manifest_subjects(known))):
         page = sparql_text.query_rows(client, sparql, graph, view)

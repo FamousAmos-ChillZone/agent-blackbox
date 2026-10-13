@@ -77,13 +77,13 @@ class JobRefused(Exception):
 class _Record:
     request: JobRequest
     state: str = QUEUED
-    output: Optional[Dict[str, Any]] = None
+    output: Optional[dict[str, Any]] = None
 
     @property
     def is_open(self) -> bool:
         return self.state in (QUEUED, RUNNING)
 
-    def to_status(self) -> Dict[str, Any]:
+    def to_status(self) -> dict[str, Any]:
         return {"key": self.request.key, "state": self.state}
 
 
@@ -96,7 +96,7 @@ class JobBoard:
         self._runner = runner
         self._capacity = capacity
         self._lock = threading.Lock()
-        self._records: "OrderedDict[str, _Record]" = OrderedDict()
+        self._records: OrderedDict[str, _Record] = OrderedDict()
         self._pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="threat-lab-job")
 
     @property
@@ -104,10 +104,10 @@ class JobBoard:
         return self._config.image_sha256
 
     @property
-    def levels(self) -> List[int]:
+    def levels(self) -> list[int]:
         return list(self._config.served_levels)
 
-    def submit(self, body: Any) -> Dict[str, Any]:
+    def submit(self, body: Any) -> dict[str, Any]:
         """Take the job in *body*; ``{"key"}``. Raises :class:`JobRefused`."""
         request = self._parse(body)
         with self._lock:
@@ -123,12 +123,12 @@ class JobBoard:
         self._pool.submit(self._work, record)
         return {"key": request.key}
 
-    def status(self, key: str) -> Optional[Dict[str, Any]]:
+    def status(self, key: str) -> Optional[dict[str, Any]]:
         with self._lock:
             record = self._records.get(key)
             return record.to_status() if record else None
 
-    def output(self, key: str) -> Tuple[int, Dict[str, Any]]:
+    def output(self, key: str) -> tuple[int, dict[str, Any]]:
         """``(200, raw output)`` for a done job; 404 unknown; 409 not done."""
         with self._lock:
             record = self._records.get(key)
@@ -213,7 +213,7 @@ class _Handler(BaseHTTPRequestHandler):
     server_version = "threat-lab"
     sys_version = ""
 
-    def do_GET(self) -> None:  # noqa: N802 (http.server's naming)
+    def do_GET(self) -> None:
         path = urllib.parse.urlsplit(self.path).path
         if path == "/health":
             self._send(200, {"image_sha256": self.board.image_sha256, "levels": self.board.levels,
@@ -229,13 +229,13 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, {"error": "not found"})
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         if urllib.parse.urlsplit(self.path).path != "/jobs":
             self._send(404, {"error": "not found"})
             return
         self._send(*self._submit())
 
-    def _submit(self) -> Tuple[int, Dict[str, Any]]:
+    def _submit(self) -> tuple[int, dict[str, Any]]:
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
@@ -251,7 +251,7 @@ class _Handler(BaseHTTPRequestHandler):
         except JobRefused as refused:
             return refused.status, {"error": refused.reason}
 
-    def _send(self, status: int, payload: Dict[str, Any]) -> None:
+    def _send(self, status: int, payload: dict[str, Any]) -> None:
         data = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -259,7 +259,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+    def log_message(self, format: str, *args: Any) -> None:
         logger.info("%s %s", self.address_string(), format % args)
 
 

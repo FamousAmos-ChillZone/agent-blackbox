@@ -69,11 +69,11 @@ class _Resolved:
     manifest: Optional[key_manifest.KeyManifest] = None
     conflict: bool = False
     unavailable: bool = False
-    enforcement_rows: Tuple[Row, ...] = ()
-    manifest_rows: Tuple[Dict[str, str], ...] = ()
+    enforcement_rows: tuple[Row, ...] = ()
+    manifest_rows: tuple[dict[str, str], ...] = ()
     ignored_conflict: bool = False
-    sticky: Tuple[Optional[Tuple[int, int]], str] = (None, "")
-    freeze_order: Optional[Tuple[int, int]] = None
+    sticky: tuple[Optional[tuple[int, int]], str] = (None, "")
+    freeze_order: Optional[tuple[int, int]] = None
 
 
 def read_curator_view(client: DkgClient, cfg: BlackboxConfig, environment: str = "", *,
@@ -135,7 +135,7 @@ def _community_roots(cfg: BlackboxConfig) -> trust_anchors.RootPins:
 
 
 def _community_statements(client: DkgClient, graph: str, stored: trust_store.StoredTrust,
-                          interest: Iterable[str]) -> Tuple[List[Dict[str, str]], bool, bool]:
+                          interest: Iterable[str]) -> tuple[list[dict[str, str]], bool, bool]:
     """(candidate statement rows, readable, complete): this node's stored
     statements plus an exact lookup of *interest*. ``readable`` is False only
     when the lookup could not be completed AND nothing is stored — the one case
@@ -172,7 +172,7 @@ def _resolve_verified(client: DkgClient, cfg: BlackboxConfig, environment: str, 
     return replace(resolved, enforcement_rows=tuple(rows))
 
 
-def _resolve_manifest(authority: Authority, roots: trust_anchors.RootPins, manifests: List[key_manifest.ManifestVerdict],
+def _resolve_manifest(authority: Authority, roots: trust_anchors.RootPins, manifests: list[key_manifest.ManifestVerdict],
                       stored: trust_store.StoredTrust, today: str) -> _Resolved:
     """The reader policy for one authority (:mod:`.manifests`, D31): the manifest
     acted on given this node's sticky order, the freezing conflict (R10b), the
@@ -226,7 +226,7 @@ def _statements_view(resolved: _Resolved, statements: Sequence[Row], readable: b
 
 
 def _trusted_manifest_rows(rows: Iterable[Row], environment: str, graph: str,
-                           roots: trust_anchors.RootPins) -> List[Dict[str, str]]:
+                           roots: trust_anchors.RootPins) -> list[dict[str, str]]:
     """The manifest rows a trusted root signed for this network and graph (worth
     storing — freeze-only ones too: a conflict must survive the next read)."""
     kept = []
@@ -238,7 +238,7 @@ def _trusted_manifest_rows(rows: Iterable[Row], environment: str, graph: str,
 
 
 def _verifiable(statements: Iterable[Row], verified: _Resolved, community: _Resolved,
-                graph: str) -> Tuple[List[Row], Set[str]]:
+                graph: str) -> tuple[list[Row], set[str]]:
     """(the statement rows worth storing, the keys of those the COMMUNITY
     authority signed). A row is kept when it verifies under either authority's
     manifest for a kind that authority may publish in the community graph. A
@@ -247,8 +247,8 @@ def _verifiable(statements: Iterable[Row], verified: _Resolved, community: _Reso
     signed statement however many copies of it the graph holds (KI-266): of the
     copies that verified, the one with the fewest signatures (anyone can add a
     signature of their own to a genuine statement), then the smallest text."""
-    kept: Dict[str, Row] = {}
-    community_keys: Set[str] = set()
+    kept: dict[str, Row] = {}
+    community_keys: set[str] = set()
     for row in statements:
         for resolved in (verified, community):
             if resolved.manifest is None:
@@ -265,14 +265,14 @@ def _verifiable(statements: Iterable[Row], verified: _Resolved, community: _Reso
     return list(kept.values()), community_keys
 
 
-def _copy_rank(row: Row) -> Tuple[int, str]:
+def _copy_rank(row: Row) -> tuple[int, str]:
     """Which of several verified copies of one statement is kept — lower wins."""
     text = str(row.get("signedStatement", ""))
     return text.count('"signer":'), text
 
 
 def known_curator_statements(client: DkgClient, cfg: BlackboxConfig, identifiers: Iterable[str], *,
-                             verified_graph: bool = False) -> List[Tuple[str, Dict[str, str]]]:
+                             verified_graph: bool = False) -> list[tuple[str, dict[str, str]]]:
     """``(graph id, row)`` for every curator statement about *identifiers* this
     node can find: its stored copies and an exact lookup in the community
     graph, plus (with *verified_graph*) the verified graph's statements. Rows
@@ -280,7 +280,7 @@ def known_curator_statements(client: DkgClient, cfg: BlackboxConfig, identifiers
     curators' tooling to continue sequence numbers where the last statement
     left off, whichever kind it was and whichever machine published it."""
     wanted = {identifier for identifier in identifiers if identifier}
-    found: List[Tuple[str, Dict[str, str]]] = []
+    found: list[tuple[str, dict[str, str]]] = []
     graph = cfg.community_graph_id
     if graph:
         stored = trust_store.TrustStore().load(graph).statements

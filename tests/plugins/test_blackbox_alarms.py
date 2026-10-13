@@ -29,7 +29,7 @@ from plugins.blackbox.kernel.signing import key_manifest as km
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind
 from plugins.blackbox.kernel.signing.trust_anchors import RootPins
 from plugins.blackbox.ruleset import compiler
-from test_blackbox_curate import FakeNode, _ctx, curators  # noqa: F401 - fixture
+from test_blackbox_curate import FakeNode, _ctx, curators
 from test_blackbox_curator_view import _curator_row
 
 TODAY = "2026-10-02"

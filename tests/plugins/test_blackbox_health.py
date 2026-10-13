@@ -171,13 +171,13 @@ def test_the_audit_counts_only_the_firings_that_blocked(monkeypatch, tmp_path):
 
 # ------------------------------------------------------------------ the manifest watcher (trust-and-threat-lab W1)
 
-from datetime import datetime, timedelta, timezone  # noqa: E402
+from datetime import datetime, timedelta, timezone, UTC
 
-from plugins.blackbox.kernel.health import manifest_watch as mw  # noqa: E402
+from plugins.blackbox.kernel.health import manifest_watch as mw
 
 CURATOR_A, CURATOR_B = "a" * 64, "b" * 64
 ISSUED = "2026-08-01"
-_ISSUED_NOON = datetime(2026, 8, 1, 12, tzinfo=timezone.utc).timestamp()
+_ISSUED_NOON = datetime(2026, 8, 1, 12, tzinfo=UTC).timestamp()
 
 
 def _on_day(day: int) -> float:

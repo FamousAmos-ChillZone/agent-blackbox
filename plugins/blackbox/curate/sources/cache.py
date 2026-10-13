@@ -29,7 +29,7 @@ from .. import keys
 NOT_LISTED_TTL_SECONDS = 24 * 60 * 60
 _FILE = "not_listed_cache.json"
 
-Entries = Dict[str, Dict[str, float]]
+Entries = dict[str, dict[str, float]]
 
 
 class NotListedCache:

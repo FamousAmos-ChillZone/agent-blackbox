@@ -126,7 +126,7 @@ def category_for(identifier: str) -> str:
     return _CATEGORY_FOR_PREFIX.get(prefix, "other")
 
 
-def parse_dependency_identifier(identifier: str) -> Optional[Tuple[str, str, str]]:
+def parse_dependency_identifier(identifier: str) -> Optional[tuple[str, str, str]]:
     """``(ecosystem, name, version)`` of a ``dep:`` identifier, else None."""
     if not identifier.startswith("dep:") or "@" not in identifier:
         return None

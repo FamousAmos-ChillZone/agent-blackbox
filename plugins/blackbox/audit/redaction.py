@@ -50,7 +50,7 @@ def redact(value: Any, depth: int = 0) -> Any:
     if isinstance(value, (list, tuple)):
         return [redact(item, depth + 1) for item in list(value)[:50]]
     if isinstance(value, dict):
-        out: Dict[str, Any] = {}
+        out: dict[str, Any] = {}
         for key, child in value.items():
             key_str = str(key)
             if _SECRET_KEY_RE.search(key_str):
