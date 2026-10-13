@@ -102,3 +102,14 @@ def own_keys_in(text: str, addresses: AbstractSet[str]) -> int:
         if address_of(bytes.fromhex(candidate)) in addresses:
             count += 1
     return count
+
+
+def checksum_address(address: str) -> Optional[str]:
+    """The EIP-55 mixed-case spelling of an ``0x`` + 40-hex *address* (any case), or None
+    when it is not one. A hex letter is upper-cased where the Keccak-256 of the
+    lower-case hex has a nibble ≥ 8 (EIP-55)."""
+    if not ADDRESS.match(address or ""):
+        return None
+    lower = address[2:].lower()
+    digest = keccak256(lower.encode("ascii")).hex()
+    return "0x" + "".join(char.upper() if int(digest[index], 16) >= 8 else char for index, char in enumerate(lower))

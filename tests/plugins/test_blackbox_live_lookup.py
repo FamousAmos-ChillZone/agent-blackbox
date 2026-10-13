@@ -145,6 +145,33 @@ def test_ioc_hits_cover_signals_and_active_observations(store):
     assert answer.rules["ioc:ip:203.0.113.9"]["severity"] == "medium"   # from the observation's provenance
 
 
+# KI-387: an EVM address stored checksummed must still match the lower-case id detection uses.
+# The vector is EIP-55's own (eips.ethereum.org/EIPS/eip-55).
+CHECKSUMMED = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+
+
+@pytest.mark.parametrize("stored", [CHECKSUMMED, CHECKSUMMED.lower()])
+def test_a_wallet_is_found_whichever_spelling_the_store_holds(stored):
+    store = FakeStore({PART_A: _ioc("urn:defender:signal:w1", stored, ioc_type="wallet")})
+    wanted = f"ioc:wallet:{CHECKSUMMED.lower()}"
+    answer = live.VerifiedLookup(SCOPE, store).iocs([wanted])
+    assert set(answer.rules) == {wanted} and answer.rules[wanted]["identifier"] == wanted
+    assert f'"{CHECKSUMMED}"' in store.queries[0] and f'"{CHECKSUMMED.lower()}"' in store.queries[0]
+    assert "LCASE" not in store.queries[0].upper()   # exact VALUES, never a scan of the shared store (LES-040)
+
+
+def test_a_mixed_case_wallet_row_compiles_to_the_lower_case_id():
+    from plugins.blackbox.ruleset.partitions import rows_from_triples
+    compiled = compiler.build_from_rows(rows_from_triples(PART_A, _ioc("urn:defender:signal:w1", CHECKSUMMED, ioc_type="wallet")))
+    assert set(compiled.ioc) == {f"ioc:wallet:{CHECKSUMMED.lower()}"}
+
+
+def test_only_the_first_evm_addresses_get_a_second_spelling(store):
+    identifiers = [f"ioc:wallet:0x{i:040x}" for i in range(live_lookup.CHECKSUM_SPELLINGS + 10)]
+    assert len(live_lookup._stored_spellings(identifiers)) <= len(identifiers) + live_lookup.CHECKSUM_SPELLINGS
+    assert live_lookup._stored_spellings(["ioc:domain:a.example", "ioc:wallet:0x" + "1" * 40]) == ["a.example", "0x" + "1" * 40]
+
+
 def test_a_store_failure_is_could_not_tell_not_clean():
     answer = live.VerifiedLookup(SCOPE, FakeStore(GRAPHS, fail="timeout")).dependencies([("npm", "react", "1.0")])
     assert answer.outcome == live.COULD_NOT_TELL and not answer.known and answer.reason == "timeout"
