@@ -46,7 +46,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..kernel import threat_ids
 from ..kernel.crypto_secrets import wallet_mode
@@ -221,17 +221,22 @@ def found_wallets() -> List[dict]:
     return list(grouped.values())
 
 
-def wallet_inside_folder(path: str) -> Optional[str]:
-    """The wallet whose key store sits somewhere inside folder *path* on this
-    machine, or ``None`` (also ``None`` when no key store exists here)."""
+def wallets_inside_folder(path: str) -> List[str]:
+    """Every wallet whose key store sits somewhere inside folder *path* on this
+    machine, in the order found, each once (empty when none exists here).
+
+    ALL of them, not the first: the Trader Shield gate keeps only findings for
+    the wallets the operator chose, so naming one wallet would let a chosen
+    wallet's vault leave inside an archive named after an unchosen one (KI-367)."""
     folder = normalize_path(path)
     if not folder:
-        return None
+        return []
     prefix = folder.rstrip("/") + "/"
+    wallets: List[str] = []
     for store, wallet in EXISTING_STORES.get():
-        if store == folder or store.startswith(prefix) or folder == "/":
-            return wallet
-    return None
+        if (store == folder or store.startswith(prefix) or folder == "/") and wallet not in wallets:
+            wallets.append(wallet)
+    return wallets
 
 
 # -- the detector -------------------------------------------------------------
@@ -254,8 +259,9 @@ def _finding(tool: str, mode: str, wallet: str) -> Finding:
 
 def detect_wallet_files(tool_name: str, args: Any) -> List[Finding]:
     """A finding when this call reads a wallet key store, or copies/archives a
-    folder that holds one. At most one finding per call; fail-open (an error
-    returns ``[]`` so a Blackbox fault never breaks the agent)."""
+    folder that holds one — one finding per wallet involved, so the mode gate can
+    keep the chosen ones. Fail-open (an error returns ``[]`` so a Blackbox fault
+    never breaks the agent)."""
     try:
         access = action_parsing.file_access_arg(tool_name, args)
         if access:
@@ -264,10 +270,12 @@ def detect_wallet_files(tool_name: str, args: Any) -> List[Finding]:
         tool = (tool_name or "").strip().lower()
         if tool not in shell_shapes.SHELL_TOOLS:
             return []
+        mode_by_wallet: Dict[str, str] = {}   # each wallet once, with how it was first reached
         for arg in shell_files.shell_file_args(shell_shapes.command_from_args(tool_name, args)):
-            wallet = wallet_in_path(arg.path) or (wallet_inside_folder(arg.path) if arg.recursive else None)
-            if wallet:
-                return [_finding(tool, "copy" if arg.recursive else "read", wallet)]
+            direct = wallet_in_path(arg.path)
+            found = [direct] if direct else (wallets_inside_folder(arg.path) if arg.recursive else [])
+            for wallet in found:
+                mode_by_wallet.setdefault(wallet, "copy" if arg.recursive else "read")
+        return [_finding(tool, mode, wallet) for wallet, mode in mode_by_wallet.items()]
     except Exception:  # pragma: no cover - fail open
         return []
-    return []

@@ -145,3 +145,21 @@ def test_a_firefox_vault_read_counts_while_trader_shield_is_on():
     assert wallet_mode.WalletProtection(enabled=True).allows_finding(as_dict)
     assert not wallet_mode.WalletProtection(enabled=False).allows_finding(as_dict)
     assert not wallet_mode.WalletProtection(enabled=True, wallets=()).allows_finding(as_dict)
+
+
+def test_archiving_a_folder_with_several_wallets_names_every_one(monkeypatch):
+    """KI-367: the archive check named only the FIRST wallet inside, so with that
+    wallet unticked the gate dropped the finding and a ticked wallet's vault left."""
+    from plugins.blackbox.kernel.crypto_secrets import wallet_mode
+
+    profile = wallet_files.normalize_path("~/.config/google-chrome/Default")
+    stores = [(profile + "/local extension settings/" + CHROME_ID, "MetaMask"),
+              (profile + "/local extension settings/" + "b" * 32, "SecondWallet")]
+    monkeypatch.setattr(wallet_files.EXISTING_STORES, "get", lambda: stores)
+
+    findings = detect_wallet_files("terminal", {"command": "tar czf /tmp/x.tgz ~/.config/google-chrome"})
+
+    assert sorted(f.fields["wallet"] for f in findings) == ["metamask", "secondwallet"]
+    only_second = wallet_mode.WalletProtection(enabled=True, wallets=("secondwallet",))
+    kept = [f for f in findings if only_second.allows_finding({"identifier": f.identifier, "fields": f.fields})]
+    assert [f.fields["wallet"] for f in kept] == ["secondwallet"]
