@@ -36,7 +36,7 @@ from .graph_pages import _balanced_graph_entries, _graph_entries
 from .network_sync import network_sync_argv as _network_sync_argv
 from .node_probe import NodeLiveness, RepeatGate, node_sync_probe
 from .sync_labels import (_community_progress, _is_hidden_swm_catchup_error, _is_retryable_durable_catchup_error,
-                          _sync_label, not_subscribed_activity)
+                          _sync_label, current_transfer_error, not_subscribed_activity)
 from .threat_detail_fields import DETAIL_FIELDS
 from .safe_payloads import graph_tier_item, safe_identifier, safe_text
 
@@ -445,7 +445,7 @@ def _sync_activity(
 
     catchup_result = catchup.get("result") if isinstance(catchup.get("result"), dict) else {}
     error = str(
-        transfer.get("error")
+        current_transfer_error(transfer, catchup)
         or connection.get("error")
         or catchup.get("error")
         or catchup_result.get("error")

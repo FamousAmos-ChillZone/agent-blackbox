@@ -84,3 +84,23 @@ def _is_retryable_durable_catchup_error(value: Any) -> bool:
         and "durable_catchup_all_peers_failed" in text
         and '"retryable":true' in compact
     )
+
+
+
+def current_transfer_error(transfer: dict[str, Any], catchup: dict[str, Any]) -> str:
+    """The failed transfer's recorded error, or "" once a catch-up job started AFTER it.
+
+    A newer queued/running job supersedes the old failure: the sync activity shows the
+    live job ("Fetching graph snapshot"), not a stale "waiting for publisher" or error.
+    """
+    newer_job = (str(catchup.get("status") or "").lower() in {"queued", "running"}
+                 and _sync_time(catchup.get("startedAt")) > _sync_time(transfer.get("updated_at")))
+    return "" if newer_job else str(transfer.get("error") or "")
+
+
+def _sync_time(value: Any) -> float:
+    """A sync-state time as seconds (0.0 when missing or unreadable)."""
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
