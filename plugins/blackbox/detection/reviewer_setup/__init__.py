@@ -2,17 +2,24 @@
 
 Finds an API key the operator already has (Hermes or OpenClaw config, env
 files, environment) and asks before using it; keys are masked on screen.
+
+KI-371: a key that lives in an environment variable Hermes loads (``~/.hermes/.env``)
+is saved as that variable's NAME (``llm.api_key_env``), never copied into config.yaml;
+only a key typed or pasted here is stored as itself. Nothing is switched on without
+the operator's yes: an unattended run (no terminal) only says how to turn it on.
 """
 
 from __future__ import annotations
 
 import argparse
-from typing import Optional
+import os
+from typing import Any, Optional
 
 from ...kernel import settings
 from .. import reviewer as llm
 from ...kernel.config import load_blackbox_config
-from .discovery import _LLM_KEY_ENV_VARS, _env_key, _hermes_llm_candidate, _openclaw_llm_candidate
+from .discovery import (_LLM_KEY_ENV_VARS, _env_key, _hermes_llm_candidate, _openclaw_llm_candidate,
+                        copied_key_env, reachable_key_env, stored_llm_entry)
 
 # ---------------------------------------------------------------------------
 # setup-llm: interactive picker for the optional LLM reviewer
@@ -55,6 +62,7 @@ def _auto_llm_candidate() -> tuple[str, Optional[dict[str, str]]]:
             "provider": cfg.llm_provider,
             "model": cfg.llm_model,
             "api_key": cfg.llm_api_key,
+            "api_key_env": "",
         }
     for resolver in (_hermes_llm_candidate, _openclaw_llm_candidate):
         candidate = resolver()
@@ -63,19 +71,50 @@ def _auto_llm_candidate() -> tuple[str, Optional[dict[str, str]]]:
     return "", None
 
 
-def _resolve_key(source: str, provider: str) -> str:
-    """Resolve an API key for *provider* from the chosen *source*."""
+def _resolve_key(source: str, provider: str) -> tuple[str, str]:
+    """(key, variable name to save instead of it — "" to save the key itself) from *source*.
+
+    ``new`` reads ``BLACKBOX_LLM_API_KEY`` (how the installer hands over a key: an
+    environment variable, never a command-line argument other programs can list).
+    """
     if source == "new":
-        return ""
-    if source == "openclaw":
-        candidate = _openclaw_llm_candidate()
-        if candidate and candidate["provider"] == provider:
-            return candidate["api_key"]
-    if source == "hermes":
-        candidate = _hermes_llm_candidate()
-        if candidate and candidate["provider"] == provider:
-            return candidate["api_key"]
+        return os.environ.get("BLACKBOX_LLM_API_KEY", "").strip(), ""
+    resolver = {"openclaw": _openclaw_llm_candidate, "hermes": _hermes_llm_candidate}.get(source)
+    candidate = resolver() if resolver else None
+    if candidate and candidate["provider"] == provider:
+        return candidate["api_key"], reachable_key_env(candidate)
     return _env_key(provider)
+
+
+def _llm_payload(provider: str, model: str, api_key: str, api_key_env: str) -> dict[str, Any]:
+    """The settings to save: the variable's name when there is one (no copy), else the key."""
+    key = {"api_key_env": api_key_env} if api_key_env else {"api_key": api_key}
+    return {"llm": {"enabled": True, "provider": provider, "model": model, **key}}
+
+
+def _operator_agrees(candidate: dict[str, str]) -> bool:
+    """Ask on the terminal before the reviewer starts sending text to the provider; no terminal = no."""
+    where = f"{candidate['provider']} key from {candidate['source']} ({_mask_key(candidate['api_key'])})"
+    tty = _tty()
+    if tty is None:
+        print(f"Found a {where}. The LLM reviewer would send the text your agent reads to "
+              f"{candidate['provider']}; it stays off until you turn it on:  blackbox setup-llm")
+        return False
+    try:
+        answer = _ask(f"Use the {where} for the LLM reviewer? It sends the text your agent reads "
+                      f"to {candidate['provider']} for a second opinion. [y/N]: ", tty)
+    finally:
+        tty.close()
+    return answer.strip().lower() in ("y", "yes")
+
+
+def _replace_copied_key(candidate: dict[str, str]) -> None:
+    """KI-371 clean-up: a key an earlier setup copied into config.yaml becomes its variable's name."""
+    if os.environ.get("BLACKBOX_LLM_API_KEY") or not stored_llm_entry().get("api_key"):
+        return
+    name = copied_key_env(candidate["provider"], candidate["api_key"])
+    if name and settings.write_settings({"llm": {"api_key_env": name}}).get("ok"):
+        print(f"The reviewer's key is now read from {name}; the copy in config.yaml was removed.")
 
 
 def _reuse_found_config() -> Optional[int]:
@@ -87,19 +126,16 @@ def _reuse_found_config() -> Optional[int]:
     if not candidate:
         return None
     if source == "Blackbox":
+        _replace_copied_key(candidate)
         print(
             f"LLM reviewer already configured: "
             f"provider={candidate['provider']}  model={candidate['model']}"
         )
         return 0
-    result = settings.write_settings({
-        "llm": {
-            "enabled": True,
-            "provider": candidate["provider"],
-            "model": candidate["model"],
-            "api_key": candidate["api_key"],
-        }
-    })
+    if not _operator_agrees(candidate):
+        return 2
+    result = settings.write_settings(_llm_payload(
+        candidate["provider"], candidate["model"], candidate["api_key"], reachable_key_env(candidate)))
     if not result.get("ok"):
         print(f"error: could not save settings: {result.get('errors')}")
         return 1
@@ -146,7 +182,7 @@ def cmd_setup_llm(args: argparse.Namespace) -> int:
 
         # --- key source + resolution ---------------------------------------
         source = args.key_source
-        api_key = args.api_key or ""
+        api_key, api_key_env = args.api_key or "", ""
         if not api_key:
             if not source:
                 ans = _ask(
@@ -154,7 +190,7 @@ def cmd_setup_llm(args: argparse.Namespace) -> int:
                     tty,
                 )
                 source = {"2": "openclaw", "3": "new"}.get(ans, "hermes")
-            api_key = _resolve_key(source, provider)
+            api_key, api_key_env = _resolve_key(source, provider)
             if not api_key:
                 env_hint = " / ".join(_LLM_KEY_ENV_VARS.get(provider, ()))
                 if source != "new":
@@ -173,9 +209,7 @@ def cmd_setup_llm(args: argparse.Namespace) -> int:
             model = ans or default_model
 
         # --- persist --------------------------------------------------------
-        result = settings.write_settings({
-            "llm": {"enabled": True, "provider": provider, "model": model, "api_key": api_key},
-        })
+        result = settings.write_settings(_llm_payload(provider, model, api_key, api_key_env))
         if not result.get("ok"):
             print(f"error: could not save settings: {result.get('errors')}")
             return 1

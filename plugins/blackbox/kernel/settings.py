@@ -146,7 +146,12 @@ def _validate(payload: dict[str, Any], *, sharing_consent: bool = False) -> tupl
 
 
 def _validate_llm(raw: Any, errors: list[str]) -> dict[str, Any]:
-    """The valid ``llm`` reviewer fields of *raw*; each problem is appended to *errors*."""
+    """The valid ``llm`` reviewer fields of *raw*; each problem is appended to *errors*.
+
+    The key is stored ONE way (KI-371): ``api_key_env`` (the name of the variable that
+    holds it, e.g. ``OPENAI_API_KEY`` from ~/.hermes/.env) or ``api_key`` (a key typed
+    in). Saving one clears the other — ``None`` here means "remove it" (see :func:`_apply`).
+    """
     llm: dict[str, Any] = {}
     if not isinstance(raw, dict):
         errors.append("llm must be an object")
@@ -166,6 +171,14 @@ def _validate_llm(raw: Any, errors: list[str]) -> dict[str, Any]:
         llm["model"] = str(raw["model"]).strip()
     if "api_key" in raw:
         llm["api_key"] = str(raw["api_key"]).strip()
+        llm["api_key_env"] = None
+    if raw.get("api_key_env"):
+        name = str(raw["api_key_env"]).strip()
+        if name.isascii() and name.isidentifier():
+            llm["api_key_env"] = name
+            llm["api_key"] = None
+        else:
+            errors.append(f"invalid llm.api_key_env: {raw['api_key_env']!r}")
     return llm
 
 
@@ -271,5 +284,7 @@ def _apply(entry: dict[str, Any], updates: dict[str, Any]) -> None:
                 existing = {}
                 entry["llm"] = existing
             existing.update(value)
+            for cleared in [name for name, setting in value.items() if setting is None]:
+                existing.pop(cleared, None)   # KI-371: a replaced key copy is removed, not left behind
         else:
             entry[key] = value

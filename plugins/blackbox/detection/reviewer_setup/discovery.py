@@ -1,6 +1,9 @@
 """Find an LLM reviewer key the operator already has: Hermes config + .env, OpenClaw, the environment.
 
-Each finder returns a candidate ``{"source", "provider", "model", "api_key"}`` or None.
+Each finder returns a candidate ``{"source", "provider", "model", "api_key", "api_key_env"}``
+or None. ``api_key_env`` names the environment variable the key was read from ("" when the
+key is written into a config file); :func:`reachable_key_env` says whether Blackbox can read
+that variable itself at run time, so ``setup-llm`` saves the name instead of a copy (KI-371).
 Used by :mod:`.` (``blackbox setup-llm``), which decides whether to use one.
 """
 
@@ -12,7 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from ... import attach
-from ...kernel import yaml_files
+from ...kernel import constants, yaml_files
 from .. import reviewer as llm
 
 #: Standard env var names each provider's key lives in (mirrors hermes auth).
@@ -37,13 +40,29 @@ _API_KEY_KEYS = ("api_key", "apiKey", "key", "token")
 _API_KEY_ENV_KEYS = ("key_env", "keyEnv", "api_key_env", "apiKeyEnv", "env", "env_var", "envVar")
 
 
-def _env_key(provider: str) -> str:
-    """First non-empty value among *provider*'s standard key env vars."""
-    for name in _LLM_KEY_ENV_VARS.get(provider, ()):  # ordered, first wins
-        val = os.environ.get(name)
-        if val and val.strip():
-            return val.strip()
-    return ""
+def _env_key(provider: str) -> tuple[str, str]:
+    """(key, variable name) from *provider*'s standard key variables in this process, or ("", "")."""
+    return _env_key_from(provider)
+
+
+def _runtime_env() -> dict[str, str]:
+    """The variables a Hermes process has at run time: its environment plus ~/.hermes/.env."""
+    try:
+        from hermes_cli import config as hconfig
+
+        return {**os.environ, **hconfig.load_env()}
+    except Exception:   # Hermes not importable (standalone run): the process environment only
+        return dict(os.environ)
+
+
+def reachable_key_env(candidate: dict[str, str]) -> str:
+    """*candidate*'s variable name when a Hermes process will find the same key under it, else "".
+
+    A key read from another profile's .env, or written into a config file, is not reachable:
+    saving only its name would leave the reviewer without a key.
+    """
+    name = candidate.get("api_key_env", "")
+    return name if name and _runtime_env().get(name, "").strip() == candidate.get("api_key") else ""
 
 
 def _provider_alias(value: object) -> str:
@@ -59,12 +78,13 @@ def _env_lookup(name: str, env: Optional[dict[str, str]] = None) -> str:
     return str(os.environ.get(name, "") or "").strip()
 
 
-def _env_key_from(provider: str, env: Optional[dict[str, str]] = None) -> str:
-    for name in _LLM_KEY_ENV_VARS.get(provider, ()):
+def _env_key_from(provider: str, env: Optional[dict[str, str]] = None) -> tuple[str, str]:
+    """(key, variable name): the first of *provider*'s standard key variables that is set."""
+    for name in _LLM_KEY_ENV_VARS.get(provider, ()):  # ordered, first wins
         val = _env_lookup(name, env)
         if val:
-            return val
-    return ""
+            return val, name
+    return "", ""
 
 
 def _value_from(mapping: dict[str, Any], keys: Iterable[str]) -> str:
@@ -75,16 +95,18 @@ def _value_from(mapping: dict[str, Any], keys: Iterable[str]) -> str:
     return ""
 
 
-def _key_from_mapping(mapping: dict[str, Any], provider: str, env: Optional[dict[str, str]] = None) -> str:
+def _key_from_mapping(mapping: dict[str, Any], provider: str, env: Optional[dict[str, str]] = None) -> tuple[str, str]:
+    """(key, variable name it came from — "" when the key is written in *mapping* itself)."""
     direct = _value_from(mapping, _API_KEY_KEYS)
     if direct:
-        return direct
+        return direct, ""
     for key in _API_KEY_ENV_KEYS:
         env_name = mapping.get(key)
         if env_name is not None:
-            found = _env_lookup(str(env_name).strip(), env)
+            name = str(env_name).strip()
+            found = _env_lookup(name, env)
             if found:
-                return found
+                return found, name
     return _env_key_from(provider, env)
 
 
@@ -106,11 +128,11 @@ def _candidate_from_mapping(
     provider = _provider_alias(_value_from(mapping, _PROVIDER_KEYS))
     if not provider:
         return None
-    api_key = _key_from_mapping(mapping, provider, env)
+    api_key, api_key_env = _key_from_mapping(mapping, provider, env)
     if not api_key:
         return None
     model = _value_from(mapping, _MODEL_KEYS) or llm.default_model(provider)
-    return {"source": source, "provider": provider, "model": model, "api_key": api_key}
+    return {"source": source, "provider": provider, "model": model, "api_key": api_key, "api_key_env": api_key_env}
 
 
 def _parse_env_value(value: str) -> str:
@@ -200,3 +222,18 @@ def _openclaw_llm_candidate() -> Optional[dict[str, str]]:
             if resolved:
                 return resolved
     return None
+
+
+def stored_llm_entry() -> dict[str, Any]:
+    """The ``plugins.entries.blackbox.llm`` mapping as saved in the active Hermes home's config.yaml."""
+    data = yaml_files.load_yaml(constants.hermes_home() / "config.yaml")
+    for key in ("plugins", "entries", "blackbox", "llm"):
+        data = data.get(key) if isinstance(data, dict) else None
+    return data if isinstance(data, dict) else {}
+
+
+def copied_key_env(provider: str, api_key: str) -> str:
+    """The standard variable a Hermes process holds *api_key* under, or "" (KI-371 clean-up)."""
+    runtime = _runtime_env()
+    names = _LLM_KEY_ENV_VARS.get(provider, ())
+    return next((name for name in names if api_key and runtime.get(name, "").strip() == api_key), "")

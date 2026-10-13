@@ -1875,7 +1875,8 @@ setup_llm() {
     [ -n "$BLACKBOX_LLM_PROVIDER" ] && args+=(--provider "$BLACKBOX_LLM_PROVIDER")
     [ -n "$BLACKBOX_LLM_MODEL" ] && args+=(--model "$BLACKBOX_LLM_MODEL")
     if [ -n "$BLACKBOX_LLM_API_KEY" ]; then
-        args+=(--api-key "$BLACKBOX_LLM_API_KEY")
+        # The key travels in the environment: a command-line argument is visible
+        # to every program on the machine (ps) while setup-llm runs (KI-371).
         args+=(--key-source new)
     elif [ -n "$BLACKBOX_LLM_KEY_SOURCE" ]; then
         args+=(--key-source "$BLACKBOX_LLM_KEY_SOURCE")
@@ -1883,7 +1884,7 @@ setup_llm() {
 
     if [ "${#args[@]}" -gt 0 ]; then
         step "Using BLACKBOX_LLM_* settings."
-        if "$HERMES_BIN" blackbox setup-llm "${args[@]}"; then
+        if BLACKBOX_LLM_API_KEY="$BLACKBOX_LLM_API_KEY" "$HERMES_BIN" blackbox setup-llm "${args[@]}"; then
             ok "LLM reviewer configured"
         else
             warn "LLM reviewer setup failed from BLACKBOX_LLM_* values."
