@@ -9,7 +9,6 @@ checked against the ruleset by identifier.
 from __future__ import annotations
 
 import re
-from urllib.parse import unquote_plus
 from typing import Dict, List
 from . import shell_shapes
 from ..kernel import crypto_secrets, redaction, threat_ids
@@ -94,25 +93,40 @@ def scan_injection_heuristics(text: str) -> list[dict[str, str]]:
     return out
 
 
-# Commands that SEND data off-box — a secret value alongside one of these is
-# exfiltration (critical/block), not routine handling.
-_EGRESS_RE = re.compile(
-    r"\b(?:nc|ncat|netcat|telnet|sendmail)\b"
-    r"|\b(?:curl|wget)\b[\s\S]{0,300}(?:\s-d\b|--data|--data-binary|--data-raw|\s-F\b|--form|\s-T\b|--upload-file)"
-    r"|\|\s*(?:nc|ncat|curl|wget)\b",
-    re.IGNORECASE,
-)
+#: Secret values are looked for in the first AND the last this-many characters of a text
+#: (the whole text when it is shorter than both): a secret padded past the head is still
+#: seen, and the cost stays bounded on any input (KI-376). A secret placed in the middle
+#: of a text longer than twice this is a known gap.
+SECRET_SCAN_WINDOW = 50_000
+_SEVERITY_RANK = {"": -1, "low": 0, "medium": 1, "high": 2, "critical": 3}
 
 
-def scan_secret_values(text: str) -> list[dict[str, str]]:
-    """Return recognizable secret VALUES present in *text* as ``[{type, severity}]``.
+def secret_scan_windows(text: str) -> tuple[str, ...]:
+    """The parts of *text* a secret scan reads: all of it, or its head and its tail."""
+    if len(text) <= 2 * SECRET_SCAN_WINDOW:
+        return (text,)
+    return (text[:SECRET_SCAN_WINDOW], text[-SECRET_SCAN_WINDOW:])
+
+
+def scan_secret_values(text: str, *more: str) -> list[dict[str, str]]:
+    """Return recognizable secret VALUES present in *text* (and in each of *more*, read
+    independently — e.g. the decoded URLs of the same call) as ``[{type, severity}]``,
+    each type once at the worst severity any window gave it (see
+    :data:`SECRET_SCAN_WINDOW`).
 
     Deterministic; the caller carries only the secret TYPE off-box, NEVER the
     value (see ``kernel.redaction.redact_secret_values``).
     """
-    if not text:
-        return []
-    scan = text[:_MAX_INJECTION_SCAN]
+    worst: dict[str, str] = {}
+    for window in (window for part in (text, *more) if part for window in secret_scan_windows(part)):
+        for hit in _scan_window(window):
+            if _SEVERITY_RANK[hit["severity"]] > _SEVERITY_RANK[worst.get(hit["type"], "")]:
+                worst[hit["type"]] = hit["severity"]
+    return [{"type": secret_type, "severity": severity} for secret_type, severity in worst.items()]
+
+
+def _scan_window(scan: str) -> list[dict[str, str]]:
+    """The secret values in one window of text."""
     out: list[dict[str, str]] = []
     seen: set = set()
     for typ, severity, pattern in redaction.SECRET_VALUE_RULES:
@@ -131,6 +145,9 @@ def scan_secret_values(text: str) -> list[dict[str, str]]:
     # agent's own trading setup may hold one: handling it flags, sending it is critical.
     if crypto_secrets.find_solana_secret_keys(scan):
         out.append({"type": "solana-private-key", "severity": "high"})
+    # A Bitcoin WIF key or an extended private key (xprv…) proves itself by its checksum.
+    if crypto_secrets.find_bitcoin_private_keys(scan):
+        out.append({"type": "bitcoin-private-key", "severity": "high"})
     return out
 
 
@@ -156,36 +173,6 @@ def _seed_phrase_severity(text: str) -> str:
             severity = "medium"
         worst = max(worst, severity, key=rank.__getitem__)
     return worst
-
-
-def looks_like_egress(text: str) -> bool:
-    """True when *text* contains a command that sends data off the machine."""
-    return bool(text and _EGRESS_RE.search(text))
-
-
-#: A web address in text (the part a secret would ride in: path, query, fragment).
-_URL = re.compile(r"https?://[^\s'\"<>`]+", re.IGNORECASE)
-#: Script code that talks to the network — an HTTP client, a raw socket, mail. A wallet
-#: secret in the same code is being sent (python requests/httpx/urllib, JS fetch/axios/
-#: http(s).request, PowerShell Invoke-WebRequest/-RestMethod, Ruby Net::HTTP, PHP curl).
-_SCRIPT_SEND_RE = re.compile(
-    r"\brequests\.(?:get|post|put|patch|request)\s*\(|\bhttpx\.(?:get|post|put|patch|request|Client|AsyncClient)\b"
-    r"|\burlopen\s*\(|\burllib\.request\b|\bfetch\s*\(|\baxios(?:\.(?:get|post|put|patch|request))?\s*\("
-    r"|\bhttps?\.(?:request|get)\s*\(|\bXMLHttpRequest\b|\bInvoke-(?:WebRequest|RestMethod)\b|\b(?:iwr|irm)\s"
-    r"|\bsmtplib\b|\bsocket\.(?:connect|create_connection)\b|\bnet\.connect\s*\(|\bNet::HTTP\b|\bcurl_exec\s*\(",
-    re.IGNORECASE,
-)
-
-
-def url_payloads(text: str) -> str:
-    """Every web address in *text*, decoded (``+`` and ``%20`` back to spaces), one per
-    line — what a secret looks like after it has been written into a URL."""
-    return "\n".join(unquote_plus(url) for url in _URL.findall(text or ""))
-
-
-def looks_like_script_send(text: str) -> bool:
-    """True when *text* holds script code that makes a network call."""
-    return bool(text and _SCRIPT_SEND_RE.search(text))
 
 
 # ---------------------------------------------------------------------------

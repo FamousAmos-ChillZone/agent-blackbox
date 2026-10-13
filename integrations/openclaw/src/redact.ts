@@ -14,8 +14,10 @@
  * no longer matches (KI-178).
  */
 
-import { redactSeedPhrases } from "./seedPhrase.js";
-import { redactSolanaKeys } from "./solanaKey.js";
+import { SEED_PHRASE_MARKER, allSeedPhraseSpans, redactSeedPhrases } from "./seedPhrase.js";
+import { SOLANA_KEY_MARKER, isSolanaSecretKey, redactSolanaKeys } from "./solanaKey.js";
+import { redactBitcoinKeys } from "./bitcoinKey.js";
+import { percentDecoded } from "./textView.js";
 
 /** Known secret shapes → typed markers. Mirrors `redaction.SECRET_VALUE_RULES`. */
 const SECRET_VALUE_RULES: ReadonlyArray<readonly [string, RegExp]> = [
@@ -32,8 +34,11 @@ const SECRET_VALUE_RULES: ReadonlyArray<readonly [string, RegExp]> = [
   ["stripe-key", /\b(?:sk|rk)_live_[0-9a-zA-Z]{20,}/g],
   ["gcp-service-account-key", /"type"\s*:\s*"service_account"/g],
   ["jwt", /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g],
-  // A raw wallet key only right after a key label (it is shaped like a tx hash).
-  ["wallet-private-key", /\b(?:[A-Za-z0-9_]*(?:private[ _-]?key|priv[_-]?key|secret[ _-]?key|signer[ _-]?key)[A-Za-z0-9_]*|pk)["']?[ \t]*(?:[:=]|\bis\b)[ \t]*["']?(?:0x)?[0-9a-fA-F]{64}\b/gi],
+  // A raw wallet key only right after a key label or inside a key-taking call (it is shaped like a tx hash).
+  // Names around the keyword are bounded (64 each side) so the rule runs in linear time (KI-382).
+  ["wallet-private-key", /(?:\b(?:[A-Za-z0-9_]{0,64}?(?:private[ _-]?key|priv[_-]?key|secret[ _-]?key|signer[ _-]?key|signing[ _-]?key|wallet[ _-]?key|eth[_-]?key|evm[_-]?key|account[_-]?key)[A-Za-z0-9_]{0,64}|pk|(?<!public )(?<!public_)(?<!public-)key)["']?[ \t]*(?:[:=]|\bis\b)[ \t]*["']?|\b(?:from_key|from_private_key|fromPrivateKey|privateKeyToAccount|Wallet|Account)[ \t]*\([ \t]*["'`]?)(?:0x)?[0-9a-f]{64}[0-9a-f]*/gi],
+  // A labelled Solana seed half (43-44 base58 characters, no self-check of its own).
+  ["wallet-private-key", /\b[A-Za-z0-9_]{0,32}?(?:sol(?:ana)?|phantom|keypair)[_ -]?(?:private|secret)?[_ -]?(?:key|seed)[A-Za-z0-9_]{0,32}["']?[ \t]*[:=][ \t]*["']?[1-9A-HJ-NP-Za-km-z]{43,44}(?![1-9A-HJ-NP-Za-km-z])/gi],
 ];
 
 /** Redaction-only shapes (too broad to be detection signals). Mirrors `_REDACTION_ONLY_RULES`. */
@@ -46,9 +51,13 @@ const BEARER_RE = /Bearer\s+[A-Za-z0-9._~+/=-]+/gi;
 
 // A secret-named key followed by `:` or `=` and a value: `DB_PASSWORD=...`,
 // `"api_key": "..."`. The key name stays (it explains the log line); the
-// value goes. A value already replaced by a typed marker is kept.
+// value goes. A value already replaced by a typed marker is kept. Linear time,
+// as in Python (KI-373): a bounded look-ahead finds the keyword, then at most
+// 64 name characters are taken with no backtracking — JavaScript has no
+// possessive `{1,64}+`, so the capture-inside-a-look-ahead + back-reference
+// idiom stands in for it.
 const SECRET_ASSIGNMENT_RE =
-  /(\b[A-Za-z0-9_-]*(?:api[_-]?key|token|secret|password|passwd|credential|private[_-]?key|client[_-]?secret|access[_-]?key)[A-Za-z0-9_-]*["']?)(\s*[:=]\s*["']?)([^\s"'[\],;]{8,})/gi;
+  /(?<key>\b(?=[A-Za-z0-9_-]{0,64}?(?:api[_-]?key|token|secret|password|passwd|credential|private[_-]?key|client[_-]?secret|access[_-]?key))(?=(?<name>[A-Za-z0-9_-]{1,64}))\k<name>["']?)(?<sep>\s*[:=]\s*["']?)(?<value>[^\s"'[\],;]{8,})/gi;
 
 /** Object KEYS whose whole value is dropped. Mirrors `audit/redaction._SECRET_KEY_RE`. */
 const SECRET_KEY_RE =
@@ -63,21 +72,95 @@ function marker(secretType: string): string {
  * rule pass, byte-for-byte the Python `redact_secret_values`. No truncation.
  */
 export function redactSecretValues(text: string): string {
-  let out = redactSeedPhrases(String(text)); // wallet seed phrases first, as in Python
+  let out = percentDecoded(String(text)); // a URL read as its receiver reads it, as in Python (KI-377)
+  out = redactSeedPhrases(out); // wallet seed phrases first, as in Python
   out = redactSolanaKeys(out); // then verified Solana keys, as in Python
+  out = redactBitcoinKeys(out); // then Bitcoin WIF / xprv keys, as in Python
   for (const [secretType, pattern] of SECRET_VALUE_RULES) out = out.replace(pattern, marker(secretType));
   for (const [secretType, pattern] of REDACTION_ONLY_RULES) out = out.replace(pattern, marker(secretType));
   out = out.replace(BEARER_RE, "Bearer [REDACTED]");
-  return out.replace(SECRET_ASSIGNMENT_RE, "$1$2[REDACTED]");
+  return out.replace(SECRET_ASSIGNMENT_RE, "$<key>$<sep>[REDACTED]");
 }
+
+// A long value is cut BEFORE redaction past this margin (cost), and the cut edge is
+// dropped after it (a secret split by the cut sits there) — as Python's sanitize_text.
+const REDACTION_MARGIN = 8192;
+const CUT_GUARD = 1024;
 
 /** Redact, THEN clamp to `maxLength` (never the other way round). */
 export function sanitizeText(value: string, maxLength = 2000): string {
-  const redacted = redactSecretValues(value);
-  return redacted.length > maxLength ? `${redacted.slice(0, maxLength)}...[truncated]` : redacted;
+  let text = String(value);
+  const precut = text.length > maxLength + REDACTION_MARGIN;
+  if (precut) text = text.slice(0, maxLength + REDACTION_MARGIN);
+  let redacted = redactSecretValues(text);
+  if (precut) redacted = redacted.slice(0, Math.max(0, redacted.length - CUT_GUARD));
+  return precut || redacted.length > maxLength ? `${redacted.slice(0, maxLength)}...[truncated]` : redacted;
+}
+
+const MAX_DEPTH = 5;
+const MAX_ITEMS = 50;
+const SOLANA_KEY_BYTES = 64;
+type Visitor = (kind: "value" | "key" | "bytes", piece: unknown) => unknown;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** `value` rebuilt with each piece the visitor replaces (`undefined` keeps it) — Python `_walk`. */
+function walk(value: unknown, depth: number, visit: Visitor): unknown {
+  if (depth > MAX_DEPTH) return value;
+  if (typeof value === "string") return visit("value", value) ?? value;
+  if (Array.isArray(value)) {
+    if (value.length === SOLANA_KEY_BYTES && value.every((item) => Number.isInteger(item) && item >= 0 && item < 256)) {
+      return visit("bytes", value) ?? value;
+    }
+    return value.slice(0, MAX_ITEMS).map((item) => walk(item, depth + 1, visit));
+  }
+  if (isPlainObject(value)) {
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value)) out[(visit("key", key) as string | undefined) ?? key] = walk(child, depth + 1, visit);
+    return out;
+  }
+  return value;
+}
+
+/** Indexes of the pieces that belong to a seed phrase read across them — Python `_hit_pieces`. */
+function hitPieces(pieces: string[]): Set<number> {
+  const starts: number[] = [];
+  let text = "";
+  for (const piece of pieces) {
+    starts.push(text.length);
+    text += piece + " ";
+  }
+  const hits = new Set<number>();
+  for (const [start, end] of allSeedPhraseSpans(text)) {
+    starts.forEach((pieceStart, index) => {
+      if (pieceStart < end && pieceStart + pieces[index].length > start) hits.add(index);
+    });
+  }
+  return hits;
+}
+
+/** Every piece of a secret assembled across pieces replaced by its marker — Python `_blank_assembled_secrets`. */
+function blankAssembledSecrets(value: unknown): unknown {
+  const pieces = { value: [] as string[], key: [] as string[], bytes: [] as unknown[] };
+  walk(value, 0, (kind, piece) => {
+    (pieces[kind] as unknown[]).push(piece);
+    return undefined;
+  });
+  const hits = { value: hitPieces(pieces.value), key: hitPieces(pieces.key) };
+  if (!hits.value.size && !hits.key.size && !pieces.bytes.length) return value;
+  const seen = { value: 0, key: 0 };
+  return walk(value, 0, (kind, piece) => {
+    if (kind === "bytes") return isSolanaSecretKey(Buffer.from(piece as number[])) ? SOLANA_KEY_MARKER : undefined;
+    const index = seen[kind]++;
+    if (!hits[kind].has(index)) return undefined;
+    return kind === "value" ? SEED_PHRASE_MARKER : `${SEED_PHRASE_MARKER}#${index}`;
+  });
 }
 
 export function redact(value: unknown, depth = 0): unknown {
+  if (depth === 0 && (Array.isArray(value) || isPlainObject(value))) value = blankAssembledSecrets(value);
   if (depth > 5) return "[truncated-depth]";
   if (value == null) return value;
   if (typeof value === "string") return sanitizeText(value);
@@ -85,7 +168,8 @@ export function redact(value: unknown, depth = 0): unknown {
   if (Array.isArray(value)) return value.slice(0, 50).map((item) => redact(item, depth + 1));
   if (typeof value === "object") {
     const out: Record<string, unknown> = {};
-    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    for (const [rawKey, child] of Object.entries(value as Record<string, unknown>)) {
+      const key = sanitizeText(rawKey, 200); // a key is text an agent chose: scrubbed too (KI-377)
       if (SECRET_KEY_RE.test(key)) {
         out[key] = "[REDACTED]";
       } else if (/^(content|body|fileContent|input|prompt)$/i.test(key) && typeof child === "string") {

@@ -356,7 +356,7 @@ def on_pre_api_request(**kwargs: Any) -> None:
         rs = ruleset.get(cfg)
         sources = _untrusted_request_sources(kwargs.get("user_message"), kwargs.get("request_messages"))
         text = "\n".join(part for _, part in sources)   # the LLM reviewer's input
-        findings = _injection_by_source(sources, rs, cfg.discover)
+        findings = _injection_by_source(sources, rs, cfg.discover) + detection.detect_model_request_secrets(sources)   # KI-381
         findings += injection_sites.injection_site_findings(findings, kwargs.get("request_messages"), rs)   # D8
         findings = reporting._flag_worthy(cfg, findings)
         detail = {

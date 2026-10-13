@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 
-from .crypto_secrets import redact_seed_phrases, redact_solana_keys
+from .crypto_secrets import redact_bitcoin_keys, redact_own_keys, redact_seed_phrases, redact_solana_keys, text_view
 
 # ---------------------------------------------------------------------------
 # Secret VALUE detection — an actual key/token/private-key present in tool args.
@@ -46,11 +46,29 @@ SECRET_VALUE_RULES = (
     # A raw wallet key (MetaMask "Export private key": 64 hex) is shaped exactly
     # like a transaction hash, so it counts only right after a key LABEL —
     # PRIVATE_KEY=, "privateKey": "…", private key: …, PK= (Polymarket's env
-    # name). The label goes with the value when redacted. Handling one flags
-    # (an agent's own trading config holds one); sending it out is critical.
+    # name), wallet_key / eth_key / key= — or inside a key-taking call
+    # (eth_account's Account.from_key(…), viem's privateKeyToAccount(…), ethers'
+    # new Wallet(…)). "public key" is never a label. The value is 64+ hex (0x / 0X,
+    # anything after it — a key followed by a letter or more hex is still a key).
+    # The label goes with the value when redacted.
+    # Handling one flags (an agent's own trading config holds one); sending it out
+    # is critical (KI-380).
+    # Linear time: the name around the keyword is at most 64 characters each side;
+    # the unbounded `[A-Za-z0-9_]*` before it backtracked quadratically ("privatekey"
+    # x 1000 took 0.2 s on every redaction, KI-382).
     ("wallet-private-key", "high", re.compile(
-        r"\b(?:[A-Za-z0-9_]*(?:private[ _-]?key|priv[_-]?key|secret[ _-]?key|signer[ _-]?key)[A-Za-z0-9_]*|pk)"
-        r"[\"']?[ \t]*(?:[:=]|\bis\b)[ \t]*[\"']?(?:0x)?[0-9a-fA-F]{64}\b",
+        r"(?:\b(?:[A-Za-z0-9_]{0,64}?(?:private[ _-]?key|priv[_-]?key|secret[ _-]?key|signer[ _-]?key|signing[ _-]?key"
+        r"|wallet[ _-]?key|eth[_-]?key|evm[_-]?key|account[_-]?key)[A-Za-z0-9_]{0,64}|pk|(?<!public )(?<!public_)(?<!public-)key)"
+        r"[\"']?[ \t]*(?:[:=]|\bis\b)[ \t]*[\"']?"
+        r"|\b(?:from_key|from_private_key|fromPrivateKey|privateKeyToAccount|Wallet|Account)[ \t]*\([ \t]*[\"'`]?)"
+        r"(?:0x)?[0-9a-f]{64}[0-9a-f]*",
+        re.IGNORECASE)),
+    # A Solana seed half (32 bytes, 43-44 base58 characters) has no self-check and reads
+    # like an address, so it counts only after a Solana key label (SOLANA_PRIVATE_KEY=,
+    # solanaSecretKey: …). A bare one stays a gap (KI-380).
+    ("wallet-private-key", "high", re.compile(
+        r"\b[A-Za-z0-9_]{0,32}?(?:sol(?:ana)?|phantom|keypair)[_ -]?(?:private|secret)?[_ -]?(?:key|seed)[A-Za-z0-9_]{0,32}"
+        r"[\"']?[ \t]*[:=][ \t]*[\"']?[1-9A-HJ-NP-Za-km-z]{43,44}(?![1-9A-HJ-NP-Za-km-z])",
         re.IGNORECASE)),
 )
 
@@ -83,17 +101,26 @@ _SECRET_ASSIGNMENT_RE = re.compile(
 def redact_secret_values(text: str) -> str:
     """Replace every recognizable secret value in *text* with a marker.
 
-    Wallet seed phrases become ``[REDACTED_SEED_PHRASE]`` and verified Solana
-    secret keys ``[REDACTED_SOLANA_KEY]``; known secret
+    Percent escapes are decoded first (a URL is read as its receiver reads it). Wallet
+    seed phrases become ``[REDACTED_SEED_PHRASE]`` and verified Solana
+    secret keys ``[REDACTED_SOLANA_KEY]``; Bitcoin WIF and extended keys
+    ``[REDACTED_BITCOIN_PRIVATE_KEY]`` / ``[REDACTED_EXTENDED_PRIVATE_KEY]``; a raw
+    64-hex key that opens one of the operator's listed addresses (Trader Shield settings)
+    ``[REDACTED_WALLET_PRIVATE_KEY]``; known secret
     shapes become typed markers (``[REDACTED_PRIVATE_KEY]``);
     bearer tokens become ``Bearer [REDACTED]``; secret-named assignments keep
     their key and lose their value (``DB_PASSWORD=[REDACTED]``). Truncate
     AFTER calling this, never before — a secret cut in half no longer matches.
     """
-    out = redact_seed_phrases(str(text))   # wallet seed phrases first: words no shape rule recognises
+    # A URL is read the way its receiver reads it: %2C, %3D, %20 and double-encoded escapes
+    # decoded first, so no rule is dodged by encoding (KI-377).
+    out = text_view.percent_decoded(str(text))
+    out = redact_seed_phrases(out)          # wallet seed phrases first: words no shape rule recognises
     out = redact_solana_keys(out)           # then Solana keys: proven by their own Ed25519 self-check
+    out = redact_bitcoin_keys(out)          # then Bitcoin WIF / xprv keys: proven by their Base58Check checksum
     for typ, _severity, pattern in SECRET_VALUE_RULES:
         out = pattern.sub(f"[REDACTED_{typ.upper().replace('-', '_')}]", out)
+    out = redact_own_keys(out)              # then UNLABELLED raw keys of the operator's listed addresses (KI-377)
     for typ, pattern in _REDACTION_ONLY_RULES:
         out = pattern.sub(f"[REDACTED_{typ.upper().replace('-', '_')}]", out)
     out = _BEARER_RE.sub("Bearer [REDACTED]", out)

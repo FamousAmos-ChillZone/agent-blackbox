@@ -9,7 +9,10 @@ byte of difference. The TypeScript half is `integrations/openclaw/test/redaction
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -62,6 +65,53 @@ def _solana_key() -> bytes:
     return private.private_bytes_raw() + private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
 
 
+def _base58check(payload: bytes) -> str:
+    return _base58(payload + hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4])
+
+
+def _wif(compressed: bool = True) -> str:
+    return _base58check(b"\x80" + os.urandom(31) + b"\x01" + (b"\x01" if compressed else b""))
+
+
+def _xprv() -> str:
+    return _base58check(bytes.fromhex("0488ade4") + b"\x00" * 9 + os.urandom(32) + b"\x00" + b"\x01" + os.urandom(31))
+
+
+def _key_material_cases() -> list[str]:
+    """KI-380: more key shapes and labels, and the Solana check's budget."""
+    solana = _solana_key()
+    decoys = " ".join(_base58(bytes((i + j) % 256 for j in range(64))) for i in range(300))
+    return [
+        "wif " + _wif() + " and old " + _wif(compressed=False) + " ok",
+        "xprv " + _xprv() + " ok",
+        "cut wif " + _wif()[:40],
+        "cut xprv " + _xprv()[:70],
+        "hex " + solana.hex() + " and b64 " + base64.b64encode(solana).decode() + " end",
+        "cut hex " + solana.hex()[:100],
+        "hidden " + _base58(solana) + " " + decoys,                      # a key behind 300 look-alikes
+        "wallet_key=0X" + _HEX + " eth_key: " + _HEX + "g key=" + _HEX,
+        "Account.from_key('0x" + _HEX + "') privateKeyToAccount(\"0x" + _HEX + "\")",
+        "public key: " + _HEX + " public_key=" + _HEX,                    # public keys stay
+        "SOLANA_PRIVATE_KEY=" + _base58(solana[:32]) + " and address " + _base58(solana[32:]),
+    ]
+
+
+def _spelling_cases() -> list[str]:
+    """KI-378: one phrase however its words are spelled (the bridge reads the same way)."""
+    words = _phrase(12).split()
+    fullwidth = " ".join("".join(chr(ord(c) + 0xFEE0) for c in word) for word in words)
+    return [
+        "a|" + "|".join(words) + "|b", "x " + "&".join(words) + " y", "x " + "\u00a0".join(words),
+        "x " + "\u200b".join(words) + " y", "x " + " ".join(w[:2] + "\u200b" + w[2:] for w in words),
+        "x " + (" " * 9).join(words), "x " + "".join(w.capitalize() for w in words) + " y",
+        "https://e.example/c?d=" + "%2C".join(words), "GET /" + "%0A".join(words) + " HTTP/1.1",
+        "u=" + "%2520".join(words), "x " + fullwidth + " y", "x " + "&nbsp;".join(words),
+        "x " + " ".join(w[:4] for w in words) + " y", "blob " + base64.b64encode(" ".join(words).encode()).decode() + " z",
+        "const el = document.getElementById(userInput); return el.innerText;",          # code stays
+        "rate 50%2C done %2541%0Aand q?" + "PRIVATE" + "_KEY%3D" + _HEX,                # decoded, then redacted
+    ]
+
+
 def _cases() -> list[str]:
     private = "PRIVATE"
     phantom, keyfile = _base58(_solana_key()), "[" + ", ".join(str(b) for b in _solana_key()) + "]"
@@ -101,7 +151,9 @@ def _cases() -> list[str]:
         "token=" + "abc",                                   # too short to be a value
         "mixed " + "sk-" + _ALNUM[:20] + " Bearer " + _ALNUM[:8] + " PRIVATE_KEY=" + _ALNUM[:9],
         "",
-    ]
+        "MY_API_TOKEN_" + "X" * 47 + "=" + "q" * 6 + "7" * 6,            # a 60-character name: redacted
+        "parity only: MY_API_TOKEN_" + "X" * 70 + "=" + "q" * 6 + "7" * 6,   # past the 64-character name bound (KI-373)
+    ] + _key_material_cases() + _spelling_cases()
 
 
 @pytest.mark.skipif(not TSX.exists() or shutil.which("node") is None, reason="tsx/node not installed")
@@ -115,11 +167,48 @@ def test_both_runtimes_redact_identically(tmp_path):
     from_python = [redaction.redact_secret_values(text) for text in cases]
     assert from_typescript == from_python
     # And the pass did something: every secret-shaped input lost its material.
+    stays = {cases[3], cases[4], "the password policy requires 12 characters", "token=abc"}
+    stays |= {text for text in cases if text.startswith(("public key: ", "const el = "))}
     for text, out in zip(cases, from_python):
         assert _BODY not in out and "hunter2secret" not in out
-        if text and text not in (cases[-4], cases[-3], cases[3], cases[4]):
+        if text in stays:
+            assert out == text
+        elif text and not text.startswith("parity only: "):
             assert "[REDACTED" in out, text
-    assert from_python[3] == cases[3] and from_python[4] == cases[4]
+
+
+STRUCTURE_SCRIPT = REPO / "integrations" / "openclaw" / "test" / "redaction-structure-parity.mjs"
+
+
+def _structure_cases() -> list:
+    """KI-377: secrets assembled from pieces of a structure (no newlines: the Python log
+    writer folds them, the bridge's does not — outside this test's scope)."""
+    words = _phrase(12).split()
+    key = list(_solana_key())
+    return [
+        {"words": words, "note": "ok"},
+        {f"w{i}": word for i, word in enumerate(words)},
+        {word: i for i, word in enumerate(words)},
+        {"backup": {"a": words[:6], "b": " ".join(words[6:])}, "keep": ["able", "x"]},
+        {"bytes": key, "other": list(range(64)), "short": key[:10]},
+        [{"cmd": "echo hi"}, ["one", "two"], 3, True, None],
+        {_phrase(12, start=11): "phrase as one key", "PRIVATE" + "_KEY": "x"},
+    ]
+
+
+@pytest.mark.skipif(not TSX.exists() or shutil.which("node") is None, reason="tsx/node not installed")
+def test_both_runtimes_redact_structures_identically(tmp_path):
+    from plugins.blackbox import audit
+
+    cases = _structure_cases()
+    case_file = tmp_path / "structures.json"
+    case_file.write_text(json.dumps(cases), encoding="utf-8")
+    result = subprocess.run([str(TSX), str(STRUCTURE_SCRIPT), str(case_file)], capture_output=True, text=True,
+                            timeout=120, cwd=str(REPO), check=True)
+    from_python = json.loads(json.dumps([audit.redact(case) for case in cases]))
+    assert json.loads(result.stdout) == from_python
+    for case, out in zip(cases[:5], from_python):
+        assert "[REDACTED" in json.dumps(out), case
 
 
 def test_both_runtimes_ship_the_same_pinned_wordlist():

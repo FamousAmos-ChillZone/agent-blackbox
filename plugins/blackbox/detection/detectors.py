@@ -30,7 +30,8 @@ from .skill_detection import detect_skill
 from .transactions.approvals import detect_token_approvals
 from .paths.keychain import detect_keychain_access
 from .paths.protected import detect_custom_fileaccess
-from .secrets_handled.exposure import detect_exchange_key_misdirection, detect_own_wallet_keys, detect_secret_exposure
+from .secrets_handled.exposure import (detect_exchange_key_misdirection, detect_model_request_secrets, detect_own_wallet_keys,
+                                       detect_secret_exposure)
 from .wallet_files import detect_wallet_files
 from ..kernel import threat_ids
 

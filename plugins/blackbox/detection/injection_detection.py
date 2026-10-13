@@ -118,15 +118,21 @@ def injection_scan_text(args: Any) -> str:
     injection patterns and lets a multi-line payload slip past even a curated,
     blockable rule. This instead concatenates every nested string value with
     real newlines preserved, so whitespace-tolerant patterns still match.
+
+    Dict KEYS are text the agent chose too (a seed phrase can be spelled as keys,
+    KI-377): they follow all the values, as their own block, so a key never lands
+    between two values and breaks what those values spell together.
     """
     if isinstance(args, str):
         return args
     parts: list[str] = []
+    keys: list[str] = []
 
     def walk(value: Any) -> None:
         if isinstance(value, str):
             parts.append(value)
         elif isinstance(value, dict):
+            keys.extend(key for key in value if isinstance(key, str))
             for item in value.values():
                 walk(item)
         elif isinstance(value, (list, tuple)):
@@ -134,4 +140,4 @@ def injection_scan_text(args: Any) -> str:
                 walk(item)
 
     walk(args)
-    return "\n".join(parts)
+    return "\n".join(parts + keys)
