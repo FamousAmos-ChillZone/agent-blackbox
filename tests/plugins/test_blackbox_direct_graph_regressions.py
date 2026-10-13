@@ -72,6 +72,11 @@ def test_category_selection_matches_unfiltered_entities(category):
     expected = {row['threat'] for row in full['result']['bindings'] if row['category'] == Literal(category).n3()}
     scoped = node.bounded(f'SELECT DISTINCT ?threat WHERE {{ {view._entities(CG, category=category)} }}', CG)
     assert {row['threat'] for row in scoped['result']['bindings']} == expected
+    # A partition probe has the same matches without manufacturing category
+    # literals for Blazegraph's resolver inside a correlated EXISTS.
+    probe = node.bounded(f'SELECT DISTINCT ?threat ?category WHERE {{ {queries.confirmed_scope(CG)} GRAPH ?sourceGraph {{ {view._entity_patterns(category, bind_category=False)} }} }}', CG)
+    assert {row['threat'] for row in probe['result']['bindings']} == expected
+    assert all('category' not in row for row in probe['result']['bindings'])
 
 
 def test_ioc_partition_sampling_rechecks_owner_status_and_cross_partition_corrections():

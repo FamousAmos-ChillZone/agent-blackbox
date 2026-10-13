@@ -19,7 +19,7 @@ def _entities(cg_id, source_graph=None, category=""):
     return f'{binding} {confirmed_scope(cg_id)} GRAPH {graph} {{ {_entity_patterns(category)} }}'
 
 
-def _entity_patterns(category=""):
+def _entity_patterns(category="", *, bind_category=True):
     if category:
         # Bind the requested category before reading entities, rather than
         # scanning every signal type and filtering the joined result afterward.
@@ -36,7 +36,8 @@ def _entity_patterns(category=""):
         prefix = "dep" if category == "dependency" else category
         branches.append(f'''{{ ?threat <{G}identifier> ?identifier .
             FILTER(STRSTARTS(?identifier, {literal(prefix + ':')})) }}''')
-        return '{ ' + ' UNION '.join(branches) + f' }} BIND({literal(category)} AS ?category)'
+        binding = f' BIND({literal(category)} AS ?category)' if bind_category else ''
+        return '{ ' + ' UNION '.join(branches) + ' }' + binding
     return f'''{{ ?threat a ?type . VALUES (?type ?category) {{
         (<urn:defender:DependencySignal> "dependency")
         (<urn:defender:InjectionSignal> "injection")
@@ -170,7 +171,9 @@ def sample_rules(cfg, *, client=None, cursor=None, category=""):
                 # Existential selection returns at most one match per partition.
                 # Enumerating all matching threats here consumes the shared read
                 # deadline before their selected properties can be fetched.
-                scope_body += f' GRAPH ?sourceGraph {{ FILTER EXISTS {{ {_entity_patterns(category)} }} }}'
+                # Existence only needs matching entities. Binding an unused literal
+                # here sends Blazegraph through MockTermResolverOp inside EXISTS.
+                scope_body += f' GRAPH ?sourceGraph {{ FILTER EXISTS {{ {_entity_patterns(category, bind_category=False)} }} }}'
             partitions = client.page(f'SELECT DISTINCT ?sourceGraph WHERE {{ {scope_body} {after} }} ORDER BY ?sourceGraph',
                                      cfg.context_graph_id, limit=1)
             rows = partitions["result"]["bindings"]
