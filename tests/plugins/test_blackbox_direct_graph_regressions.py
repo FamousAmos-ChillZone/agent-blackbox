@@ -91,7 +91,7 @@ def test_ioc_partition_sampling_rechecks_owner_status_and_cross_partition_correc
         node.add('urn:ioc:'+key, 'urn:defender:IocSignal', {DP+'iocType':'domain', DP+'value':key+'.example'}, graphs[key])
     node.add('urn:correction', 'urn:defender:CorrectionSignal',
              {DP+'targetSubject':'urn:ioc:c', DP+'action':'suppress'}, graphs['z'])
-    cfg = config.BlackboxConfig(detection_backend='dkg', context_graph_id=CG)
+    cfg = config.BlackboxConfig(detection_backend='dkg', context_graph_id=CG, community_graph_id='', report=False)
     cursor = {}
     view = load_blackbox('ruleset.direct.view')
     sampled = view.sample_rules(cfg, category='ioc', client=node, cursor=cursor)

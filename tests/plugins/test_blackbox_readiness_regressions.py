@@ -61,7 +61,7 @@ def test_partition_sample_keeps_corrections_owner_scope_and_observes_withdrawal(
     meta = node.store.graph(URIRef(BASE+"/_meta"))
     meta.set((URIRef(foreign+"/ka"), URIRef(D+"kaUal"), URIRef("did:dkg:evm:1/0x2222222222222222222222222222222222222222/1")))
     node.add("urn:foreign", "urn:defender:IocSignal", {DP+"iocType":"domain", DP+"value":"foreign.example"}, foreign)
-    configured = config.BlackboxConfig(detection_backend="dkg", context_graph_id=CG)
+    configured = config.BlackboxConfig(detection_backend="dkg", context_graph_id=CG, community_graph_id='', report=False)
     sample = view.sample_rules(configured, client=node, category="ioc")
     assert set(sample.ioc) == {"ioc:domain:active.example"}
     node.store.graph(URIRef(other)).remove((URIRef("urn:observation"), None, None))
