@@ -54,7 +54,7 @@ function publicKey(seed: Buffer): Buffer {
   return Buffer.from(jwk.x, "base64url");
 }
 
-function isSolanaSecretKey(material: Buffer | null): boolean {
+export function isSolanaSecretKey(material: Buffer | null): boolean {
   if (!material || material.length !== 2 * SEED_BYTES) return false;
   return publicKey(material.subarray(0, SEED_BYTES)).equals(material.subarray(SEED_BYTES));
 }

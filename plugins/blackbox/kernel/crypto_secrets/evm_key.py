@@ -27,6 +27,7 @@ value), so a log full of the same transaction hashes is derived once (KI-382).
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import threading
 from dataclasses import dataclass
@@ -34,6 +35,8 @@ from typing import AbstractSet, Optional
 
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+logger = logging.getLogger(__name__)
 
 #: secp256k1's group order: a private key is 1 ≤ k < N.
 _CURVE_ORDER = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
@@ -141,10 +144,11 @@ class OwnKeyScan:
     """``spans`` — ``(start, end)`` of every 64-hex value in the text that opens a listed
     address; ``unchecked`` — distinct values left underived because the text held more
     than :data:`MAX_CANDIDATES` (a caller that must not miss a key treats them as
-    "could not tell", never as "no key")."""
+    "could not tell", never as "no key"), at ``unchecked_spans``."""
 
     spans: tuple[tuple[int, int], ...] = ()
     unchecked: int = 0
+    unchecked_spans: tuple[tuple[int, int], ...] = ()
 
 
 def _check_order(text: str, matches: list[re.Match[str]]) -> list[str]:
@@ -169,8 +173,40 @@ def scan_own_keys(text: str, addresses: AbstractSet[str]) -> OwnKeyScan:
     matches = list(_CANDIDATE.finditer(text))
     order = _check_order(text, matches)
     own = {value for value in order[:MAX_CANDIDATES] if _ADDRESSES.address(value) in addresses}
-    spans = tuple(match.span() for match in matches if match.group(1).lower() in own)
-    return OwnKeyScan(spans=spans, unchecked=max(0, len(order) - MAX_CANDIDATES))
+    skipped = set(order[MAX_CANDIDATES:])
+    return OwnKeyScan(spans=tuple(match.span() for match in matches if match.group(1).lower() in own),
+                      unchecked=len(skipped),
+                      unchecked_spans=tuple(match.span() for match in matches if match.group(1).lower() in skipped))
+
+
+#: What a redacted own key becomes (the labelled-key rule's marker: one kind of secret).
+MARKER = "[REDACTED_WALLET_PRIVATE_KEY]"
+
+
+def _listed_addresses() -> frozenset[str]:
+    """The operator's listed addresses (Trader Shield settings), or none when the config
+    cannot be read — then no key can be proven, and nothing is derived."""
+    try:
+        from .wallet_mode import current
+
+        return frozenset(current().addresses)
+    except Exception as exc:  # fail open: redaction must never break a log write
+        logger.warning("blackbox: listed wallet addresses unreadable (%s); own keys are not redacted", exc)
+        return frozenset()
+
+
+def redact_own_keys(text: str, addresses: Optional[AbstractSet[str]] = None) -> str:
+    """*text* with every 64-hex value that opens a listed address replaced by
+    :data:`MARKER` — and, when the text holds more values than the budget, the unchecked
+    ones too (logs fail closed). *addresses* defaults to the operator's listed ones, read
+    only when a 64-hex value is present. A key no label marks and no listed address
+    opens is indistinguishable from a transaction hash and stays."""
+    if not text or not _CANDIDATE.search(text):
+        return text
+    scan = scan_own_keys(text, _listed_addresses() if addresses is None else addresses)
+    for start, end in sorted(scan.spans + scan.unchecked_spans, reverse=True):
+        text = text[:start] + MARKER + text[end:]
+    return text
 
 
 def own_keys_in(text: str, addresses: AbstractSet[str]) -> int:

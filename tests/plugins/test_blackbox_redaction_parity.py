@@ -108,6 +108,7 @@ def _spelling_cases() -> list[str]:
         "u=" + "%2520".join(words), "x " + fullwidth + " y", "x " + "&nbsp;".join(words),
         "x " + " ".join(w[:4] for w in words) + " y", "blob " + base64.b64encode(" ".join(words).encode()).decode() + " z",
         "const el = document.getElementById(userInput); return el.innerText;",          # code stays
+        "rate 50%2C done %2541%0Aand q?" + "PRIVATE" + "_KEY%3D" + _HEX,                # decoded, then redacted
     ]
 
 
@@ -174,6 +175,40 @@ def test_both_runtimes_redact_identically(tmp_path):
             assert out == text
         elif text and not text.startswith("parity only: "):
             assert "[REDACTED" in out, text
+
+
+STRUCTURE_SCRIPT = REPO / "integrations" / "openclaw" / "test" / "redaction-structure-parity.mjs"
+
+
+def _structure_cases() -> list:
+    """KI-377: secrets assembled from pieces of a structure (no newlines: the Python log
+    writer folds them, the bridge's does not — outside this test's scope)."""
+    words = _phrase(12).split()
+    key = list(_solana_key())
+    return [
+        {"words": words, "note": "ok"},
+        {f"w{i}": word for i, word in enumerate(words)},
+        {word: i for i, word in enumerate(words)},
+        {"backup": {"a": words[:6], "b": " ".join(words[6:])}, "keep": ["able", "x"]},
+        {"bytes": key, "other": list(range(64)), "short": key[:10]},
+        [{"cmd": "echo hi"}, ["one", "two"], 3, True, None],
+        {_phrase(12, start=11): "phrase as one key", "PRIVATE" + "_KEY": "x"},
+    ]
+
+
+@pytest.mark.skipif(not TSX.exists() or shutil.which("node") is None, reason="tsx/node not installed")
+def test_both_runtimes_redact_structures_identically(tmp_path):
+    from plugins.blackbox import audit
+
+    cases = _structure_cases()
+    case_file = tmp_path / "structures.json"
+    case_file.write_text(json.dumps(cases), encoding="utf-8")
+    result = subprocess.run([str(TSX), str(STRUCTURE_SCRIPT), str(case_file)], capture_output=True, text=True,
+                            timeout=120, cwd=str(REPO), check=True)
+    from_python = json.loads(json.dumps([audit.redact(case) for case in cases]))
+    assert json.loads(result.stdout) == from_python
+    for case, out in zip(cases[:5], from_python):
+        assert "[REDACTED" in json.dumps(out), case
 
 
 def test_both_runtimes_ship_the_same_pinned_wordlist():

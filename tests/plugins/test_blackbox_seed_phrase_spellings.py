@@ -81,7 +81,7 @@ def test_a_phrase_cut_off_after_twelve_words_is_still_removed():
 ])
 def test_ordinary_text_and_code_are_not_phrases(text):
     assert find_seed_phrase_runs(text) == []
-    assert redaction.redact_secret_values(text) == text
+    assert "[REDACTED" not in redaction.redact_secret_values(text)
 
 
 def verdict(tool: str, args) -> list[tuple[str, str]]:

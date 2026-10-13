@@ -90,10 +90,10 @@ function decodedText(blob: string): string | null {
   return raw.toString("ascii");
 }
 
-/** `text` with every seed-phrase run (plain or base64-encoded) replaced by {@link SEED_PHRASE_MARKER}. */
-export function redactSeedPhrases(text: string): string {
+/** Merged `[start, end)` spans of every seed-phrase run in `text`, plain or base64-encoded (Python `seed_phrase_spans`). */
+export function allSeedPhraseSpans(text: string): Array<[number, number]> {
   const words = loadWordlist();
-  if (!text || !words) return text;
+  if (!text || !words) return [];
   const spans = seedPhraseSpans(text, words);
   for (const match of [...text.matchAll(BASE64_RE)].slice(0, MAX_ENCODED)) {
     const decoded = decodedText(match[0]);
@@ -105,7 +105,12 @@ export function redactSeedPhrases(text: string): string {
     if (last && start < last[1]) last[1] = Math.max(end, last[1]);
     else merged.push([start, end]);
   }
+  return merged;
+}
+
+/** `text` with every seed-phrase run (plain or base64-encoded) replaced by {@link SEED_PHRASE_MARKER}. */
+export function redactSeedPhrases(text: string): string {
   let out = text;
-  for (const [start, end] of merged.reverse()) out = out.slice(0, start) + SEED_PHRASE_MARKER + out.slice(end);
+  for (const [start, end] of allSeedPhraseSpans(text).reverse()) out = out.slice(0, start) + SEED_PHRASE_MARKER + out.slice(end);
   return out;
 }

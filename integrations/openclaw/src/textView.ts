@@ -21,6 +21,13 @@ export interface TextView {
   originalSpan(start: number, end: number): [number, number];
 }
 
+const PERCENT = /%(?:25)*([0-9A-Fa-f]{2})/g;
+
+/** `text` with every percent escape decoded, as `percent_decoded` does (redaction reads a URL as its receiver does). */
+export function percentDecoded(text: string): string {
+  return text.includes("%") ? text.replace(PERCENT, (_whole, hex: string) => String.fromCharCode(parseInt(hex, 16))) : text;
+}
+
 const INVISIBLE = /[\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff]/;
 
 function replacement(match: RegExpMatchArray, invisible: string): string {

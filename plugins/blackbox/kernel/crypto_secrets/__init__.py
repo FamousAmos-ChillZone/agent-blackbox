@@ -10,7 +10,8 @@ Public surface:
 
 * :func:`find_seed_phrase_runs` / :class:`SeedPhraseRun` — BIP-39 seed phrases
   (MetaMask's Secret Recovery Phrase), checksum-verified;
-* :func:`redact_seed_phrases` and :data:`SEED_PHRASE_MARKER`;
+* :func:`redact_seed_phrases` / :func:`seed_phrase_spans` and :data:`SEED_PHRASE_MARKER`;
+* :func:`text_view.percent_decoded` — a text read the way a URL's receiver reads it;
 * :func:`find_solana_secret_keys` / :func:`redact_solana_keys` and
   :data:`SOLANA_KEY_MARKER` — Solana secret keys (Phantom's exported key, the
   Solana CLI ``id.json``), verified by their Ed25519 self-check;
@@ -20,18 +21,19 @@ Public surface:
 * :func:`misdirected_exchange_keys` — an exchange's API key header sent to a
   site that is not that exchange;
 * :func:`scan_own_keys` / :class:`OwnKeyScan` / :func:`own_keys_in` / :func:`address_of`
-  — raw Ethereum private keys that open one of the operator's listed addresses;
+  / :func:`redact_own_keys` — raw Ethereum private keys that open one of the operator's
+  listed addresses;
 * :func:`protocol_contract` — well-known exchange routers (never a drainer, never flagged).
 """
 
 from .seed_phrase import MARKER as SEED_PHRASE_MARKER
 from . import wallet_mode
-from .seed_phrase import SeedPhraseRun, find_seed_phrase_runs, redact_seed_phrases, wordlist_ready
+from .seed_phrase import SeedPhraseRun, find_seed_phrase_runs, redact_seed_phrases, seed_phrase_spans, wordlist_ready
 from .solana_key import MARKER as SOLANA_KEY_MARKER
-from .solana_key import find_solana_secret_keys, redact_solana_keys, scan_solana_keys
+from .solana_key import find_solana_secret_keys, is_solana_secret_key, redact_solana_keys, scan_solana_keys
 from .bitcoin_key import find_bitcoin_private_keys, redact_bitcoin_keys
-from .evm_key import OwnKeyScan, address_of, own_keys_in, scan_own_keys
-from . import exchange_keys
+from .evm_key import OwnKeyScan, address_of, own_keys_in, redact_own_keys, scan_own_keys
+from . import exchange_keys, text_view
 from .exchange_keys import misdirected_exchange_keys
 from .known_contracts import protocol_contract
 
@@ -45,14 +47,18 @@ __all__ = [
            "find_bitcoin_private_keys",
            "find_seed_phrase_runs",
            "find_solana_secret_keys",
+           "is_solana_secret_key",
            "misdirected_exchange_keys",
            "own_keys_in",
            "protocol_contract",
            "redact_bitcoin_keys",
+           "redact_own_keys",
            "redact_seed_phrases",
            "redact_solana_keys",
            "scan_own_keys",
            "scan_solana_keys",
+           "seed_phrase_spans",
+           "text_view",
            "wallet_mode",
            "wordlist_ready",
 ]

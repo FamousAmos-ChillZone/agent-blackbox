@@ -251,6 +251,14 @@ def _spans(text: str, words: dict[str, int]) -> list[tuple[int, int]]:
     return merged
 
 
+def seed_phrase_spans(text: str) -> list[tuple[int, int]]:
+    """``(start, end)`` of every run of 12+ list words in *text* (plain or base64), merged
+    and in order — what :func:`redact_seed_phrases` removes. For callers that must map a
+    phrase back onto the pieces it was assembled from (a list of words, a dict)."""
+    words = _wordlist()
+    return _spans(text, words) if text and words is not None else []
+
+
 def redact_seed_phrases(text: str) -> str:
     """*text* with every run of 12+ consecutive wordlist words (plain or base64-encoded)
     replaced by :data:`MARKER` — checksum or not: a mistyped phrase is still a secret. No

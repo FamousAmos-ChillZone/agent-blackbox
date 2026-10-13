@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 
-from .crypto_secrets import redact_bitcoin_keys, redact_seed_phrases, redact_solana_keys
+from .crypto_secrets import redact_bitcoin_keys, redact_own_keys, redact_seed_phrases, redact_solana_keys, text_view
 
 # ---------------------------------------------------------------------------
 # Secret VALUE detection — an actual key/token/private-key present in tool args.
@@ -101,19 +101,26 @@ _SECRET_ASSIGNMENT_RE = re.compile(
 def redact_secret_values(text: str) -> str:
     """Replace every recognizable secret value in *text* with a marker.
 
-    Wallet seed phrases become ``[REDACTED_SEED_PHRASE]`` and verified Solana
+    Percent escapes are decoded first (a URL is read as its receiver reads it). Wallet
+    seed phrases become ``[REDACTED_SEED_PHRASE]`` and verified Solana
     secret keys ``[REDACTED_SOLANA_KEY]``; Bitcoin WIF and extended keys
-    ``[REDACTED_BITCOIN_PRIVATE_KEY]`` / ``[REDACTED_EXTENDED_PRIVATE_KEY]``; known secret
+    ``[REDACTED_BITCOIN_PRIVATE_KEY]`` / ``[REDACTED_EXTENDED_PRIVATE_KEY]``; a raw
+    64-hex key that opens one of the operator's listed addresses (Trader Shield settings)
+    ``[REDACTED_WALLET_PRIVATE_KEY]``; known secret
     shapes become typed markers (``[REDACTED_PRIVATE_KEY]``);
     bearer tokens become ``Bearer [REDACTED]``; secret-named assignments keep
     their key and lose their value (``DB_PASSWORD=[REDACTED]``). Truncate
     AFTER calling this, never before — a secret cut in half no longer matches.
     """
-    out = redact_seed_phrases(str(text))   # wallet seed phrases first: words no shape rule recognises
+    # A URL is read the way its receiver reads it: %2C, %3D, %20 and double-encoded escapes
+    # decoded first, so no rule is dodged by encoding (KI-377).
+    out = text_view.percent_decoded(str(text))
+    out = redact_seed_phrases(out)          # wallet seed phrases first: words no shape rule recognises
     out = redact_solana_keys(out)           # then Solana keys: proven by their own Ed25519 self-check
     out = redact_bitcoin_keys(out)          # then Bitcoin WIF / xprv keys: proven by their Base58Check checksum
     for typ, _severity, pattern in SECRET_VALUE_RULES:
         out = pattern.sub(f"[REDACTED_{typ.upper().replace('-', '_')}]", out)
+    out = redact_own_keys(out)              # then UNLABELLED raw keys of the operator's listed addresses (KI-377)
     for typ, pattern in _REDACTION_ONLY_RULES:
         out = pattern.sub(f"[REDACTED_{typ.upper().replace('-', '_')}]", out)
     out = _BEARER_RE.sub("Bearer [REDACTED]", out)

@@ -63,6 +63,16 @@ class TextView:
         return begin, finish
 
 
+_PERCENT = re.compile(r"%(?:25)*([0-9A-Fa-f]{2})")
+
+
+def percent_decoded(text: str) -> str:
+    """*text* with every percent escape (any number of ``25`` layers) replaced by its
+    character — the same decoding :func:`normalised` applies, for callers that want the
+    decoded text itself (redaction reads a URL the way its receiver will)."""
+    return _PERCENT.sub(lambda match: chr(int(match.group(1), 16)), text) if "%" in text else text
+
+
 _INVISIBLE = re.compile(r"[\u00ad\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff]")
 
 
