@@ -31,7 +31,7 @@ def _as_float(value: Any, default: float) -> float:
         return default
 
 
-def _env_or(entry: Dict[str, Any], *, env: str, key: str, default: Any) -> Any:
+def _env_or(entry: dict[str, Any], *, env: str, key: str, default: Any) -> Any:
     """Resolve a single config value: env var wins, then config entry, then default."""
     env_val = os.environ.get(env)
     if env_val is not None and env_val.strip() != "":

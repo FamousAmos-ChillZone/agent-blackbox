@@ -47,9 +47,9 @@ from .direct.client import GraphReadUnavailable
 from .direct.view import ready_sample, page as graph_page, lookup as graph_lookup
 
 __all__ = [
-    "DetectionRead", "read_for_action", "validate_config", "GraphReadUnavailable",
-    "ready_sample", "graph_page", "graph_lookup",
+    "DetectionRead",
     "DownloadTotals",
+    "GraphReadUnavailable",
     "GrowthWatch",
     "Ruleset",
     "RulesetRefreshIncomplete",
@@ -59,11 +59,16 @@ __all__ = [
     "fetch_local_records",
     "fetch_tier",
     "get",
+    "graph_lookup",
+    "graph_page",
     "live",
     "peek",
     "pulse",
+    "read_for_action",
+    "ready_sample",
     "refresh",
     "request_refresh_now",
+    "validate_config",
     "verified_download_totals",
     "verified_identifiers",
     "verified_progress",

@@ -43,7 +43,7 @@ def test_review_streamed_response_cannot_exceed_shared_deadline(tmp_path):
             self.send_response(200); self.send_header('Content-Length', str(len(raw))); self.end_headers()
             try:
                 for byte in raw:
-                    self.wfile.write(bytes([byte])); self.wfile.flush(); time.sleep(.1)
+                    self.wfile.write(bytes([byte])); self.wfile.flush(); time.sleep(.1)  # health: allow HX013 -- slow streaming is the deadline behavior under test
             except (BrokenPipeError, ConnectionResetError): pass
     server = ThreadingHTTPServer(('127.0.0.1',0),Handler)
     t = Thread(target=server.serve_forever,daemon=True); t.start()

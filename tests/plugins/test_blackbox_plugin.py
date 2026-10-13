@@ -12,7 +12,6 @@ import pytest
 
 from _blackbox_loader import load_blackbox
 
-
 blackbox = load_blackbox()
 hooks = load_blackbox("guard.hooks")
 community_sharing = load_blackbox("community.sharing")

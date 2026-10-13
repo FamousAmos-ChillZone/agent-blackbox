@@ -32,7 +32,7 @@ from ..kernel.browser_boundary import BrowserBoundary
 from ..sync import state as sync_state
 from ..sync import read_durable_progress
 from . import community_routes, graph_pages, lifecycle, protection, sync_meter, sync_timing, direct_reads
-from .graph_pages import _balanced_graph_entries, _graph_entries  # noqa: F401 — moved there; tests reach them here
+from .graph_pages import _balanced_graph_entries, _graph_entries
 from .network_sync import network_sync_argv as _network_sync_argv
 from .node_probe import NodeLiveness, RepeatGate, node_sync_probe
 from .sync_labels import (_community_progress, _is_hidden_swm_catchup_error, _is_retryable_durable_catchup_error,
@@ -1769,7 +1769,7 @@ def create_app(*, manage_blackbox: bool = False):
         tier, _view = _tier_view(tier)
         cfg = load_blackbox_config()
 
-        if getattr(cfg, 'detection_backend', 'legacy-cache') == "dkg" and tier == "public":
+        if direct_reads.handles(cfg, tier):
             return direct_reads.page(cfg, limit=limit, offset=offset, q=q, category=category, ecosystem=ecosystem)
         if tier in {"public", "community"}:
             rs = ruleset.peek(cfg)
@@ -1838,25 +1838,10 @@ def create_app(*, manage_blackbox: bool = False):
         """Targeted threat detail in the requested tier; unavailable reads are explicit."""
         tier, view = _tier_view(tier, default="public")
         cfg = load_blackbox_config()
-        if getattr(cfg, 'detection_backend', 'legacy-cache') == "dkg" and tier == "public":
+        if direct_reads.handles(cfg, tier):
             return direct_reads.lookup(cfg, identifier, tier)
         if tier == "community":
-            # Serve straight from the aggregated community store (sanitized).
-            rs = ruleset.peek(cfg)
-            rule = (getattr(rs, "community", {}) or {}).get(identifier)
-            if not rule:
-                return {"identifier": safe_identifier(identifier), "tier": "community", "found": False}
-            detail = {
-                safe_text(k, 64): (safe_text(v) if isinstance(v, str) else v)
-                for k, v in rule.items()
-            }
-            detail.update({
-                "identifier": safe_identifier(identifier),
-                "tier": "community",
-                "found": True,
-                "reporters": int(rule.get("reporterCount") or 0), **graph_pages.verified_profile(rs, identifier),
-            })
-            return detail
+            return graph_pages.community_threat(ruleset.peek(cfg), identifier)
         prefix = identifier.split(":", 1)[0].lower() if ":" in identifier else ""
         category = prefix if prefix in ("dep", "injection", "escalation", "fileaccess", "skill", "ioc") else "other"
         if category == "dep":
