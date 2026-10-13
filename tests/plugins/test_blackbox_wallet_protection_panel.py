@@ -49,7 +49,7 @@ def test_a_machine_without_a_wallet_lists_none(home):
 def test_the_panel_says_whether_it_blocks_or_only_watches(home, monkeypatch, mode, shown):
     monkeypatch.setattr(protection, "load_blackbox_config", lambda: BlackboxConfig(mode=mode))
     payload = protection.wallet_protection_payload()
-    assert payload["mode"] == shown and payload["seed_checker"] is True and payload["terminal_reads"] == "logged"
+    assert payload["mode"] == shown and payload["seed_checker"] is True and payload["terminal_reads"] == "blocked"
 
 
 def test_only_wallet_events_are_listed_with_blocked_or_flagged(home, monkeypatch):
@@ -209,3 +209,19 @@ def test_a_firefox_profile_name_is_shown_as_it_is_not_defanged(home, monkeypatch
     monkeypatch.setattr(wallet_files.EXISTING_STORES, "get", lambda: [(store, wallet_files.FIREFOX_EXTENSION)])
     [shown] = protection.wallet_protection_payload()["wallets"]
     assert shown["profile"] == "ab12.default-release" and "[.]" not in str(shown)
+
+
+def test_the_panel_states_todays_rules(home, monkeypatch):
+    # Terminal reads follow the protected-path rule (FIX-0103); the exchange list and the
+    # own-address COUNT are shown — never the addresses themselves.
+    own = wallet_mode.WalletProtection(enabled=True, addresses=("0x" + "ab" * 20,))
+    monkeypatch.setattr(wallet_mode, "current", lambda: own)
+    payload = protection.wallet_protection_payload()
+    assert payload["terminal_reads"] == "blocked" and payload["own_addresses"] == 1
+    assert "Binance" in payload["exchanges"] and "ab" * 20 not in str(payload)
+
+
+def test_keychain_and_approval_findings_are_trader_shield_events():
+    for identifier in ("fileaccess:terminal:macos-keychain", "secret:token-approval-drainer", "secret:exchange-api-key"):
+        assert wallet_mode.belongs_to_mode(identifier), identifier
+    assert not wallet_mode.belongs_to_mode("fileaccess:terminal:user-protected")

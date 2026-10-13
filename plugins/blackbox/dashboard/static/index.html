@@ -5292,23 +5292,35 @@
         esc(g.browsers.join(", ")) + '<div class="wp-sub">' + esc(where) + " — " +
         (g.protected ? guard : "not selected in Settings, so not protected") + "</div>");
     });
-    if (!found.length) found.push(wpRow("–", "none", "No browser wallet found on this machine." +
-      '<div class="wp-sub">Blackbox checks the usual browser folders by name every few minutes; it never opens a vault.</div>'));
+    if (!found.length) found.push(wpRow("–", "none", "No wallet found on this machine." +
+      '<div class="wp-sub">Blackbox checks the usual browser and wallet-app folders by name every few minutes; it never opens a vault.</div>'));
     var col1 = '<div class="wp-col"><div class="wp-h">Found on this machine ' +
-      wpHelp("Wallets whose key store (the encrypted vault holding your keys) exists in a browser profile here. Blackbox only checks that the folder exists — it never opens or reads it.") +
+      wpHelp("Wallets whose key store (the encrypted vault holding your keys) exists here: in a browser profile, a desktop wallet's folder (Exodus, Electrum) or the Solana command line's key file. Blackbox only checks that the folder exists — it never opens or reads it.") +
       "</div>" + found.join("") + "</div>";
+    // Optional fields (LES-018): a daemon older than this page sends neither.
+    var ownAddresses = typeof d.own_addresses === "number" ? d.own_addresses : 0;
+    var exchanges = Array.isArray(d.exchanges) ? d.exchanges.map(String).slice(0, 10) : [];
     var watch = [
       wpRow(d.seed_checker ? "✓" : "!", d.seed_checker ? "ok" : "warn", "<b>Seed phrases</b> " +
         wpHelp("12–24 word recovery phrases are recognised by their built-in checksum. A phrase with a cue like 'seed:', or 18+ words, is blocked in block mode; any phrase sent off the machine is blocked.") +
         '<div class="wp-sub">' + (d.seed_checker ? "checker on — 2,048-word list, checksum verified" : "checker OFF — the word list did not load") + "</div>"),
       wpRow("✓", "ok", "<b>Private keys</b> " +
-        wpHelp("A key written next to a label like PRIVATE_KEY= or pk: is recognised. Handling it is only flagged, because trading configs legitimately hold one; sending it off the machine is blocked.") +
-        '<div class="wp-sub">labelled keys flagged · blocked if sent off the machine</div>'),
+        wpHelp("A key written next to a label like PRIVATE_KEY= or pk: is recognised, and so is a Solana key. Handling one is only flagged, because trading configs legitimately hold one; sending it off the machine is blocked — by a command, in a web address, or from a script. A bare 64-character key is recognised when it opens one of the addresses you list in Settings.") +
+        '<div class="wp-sub">labelled and Solana keys · blocked if sent · ' +
+        (ownAddresses ? ownAddresses + " own address" + (ownAddresses === 1 ? "" : "es") + " listed for raw keys"
+                      : "list your addresses in Settings to catch raw keys") + "</div>"),
+      exchanges.length ? wpRow("✓", "ok", "<b>Exchange API keys</b> " +
+        wpHelp("An exchange's key header may only go to that exchange. Sent anywhere else, it is blocked.") +
+        '<div class="wp-sub">' + esc(exchanges.join(" · ")) + " — only to their own site</div>") : "",
+      exchanges.length ? wpRow("✓", "ok", "<b>Token approvals</b> " +
+        wpHelp("The approval a drainer needs. An approval to a wallet the verified threat graph lists as a drainer is blocked; any unlimited approval is flagged so you see it.") +
+        '<div class="wp-sub">known drainer blocked · unlimited approvals flagged</div>') : "",
       wpRow("✓", "ok", "<b>Protected files</b> " +
-        wpHelp("Your protected file patterns from Settings. Reading a matching file through a file tool is flagged critical and blocked in block mode.") +
-        '<div class="wp-sub">' + esc((d.protected_paths || []).slice(0, 6).join(" · ")) + ((d.protected_paths || []).length > 6 ? " …" : "") + "</div>"),
+        wpHelp("Your protected file patterns from Settings. Reading a matching file through a file tool or the terminal is flagged critical and blocked in block mode. The macOS keychain is guarded as well while Trader Shield is on.") +
+        '<div class="wp-sub">' + esc((d.protected_paths || []).slice(0, 6).join(" · ")) + ((d.protected_paths || []).length > 6 ? " …" : "") +
+        (d.terminal_reads === "logged" ? "" : " · file tools and terminal") + "</div>"),
       d.terminal_reads === "logged" ? wpRow("!", "warn", "<b>Not yet:</b> reading a protected file through the terminal (e.g. <code>cat .env</code>) is logged, not blocked " +
-        wpHelp("A known gap that is being fixed: the protected-files rule only checks file tools so far. Wallet vaults are already covered in the terminal.")) : ""
+        wpHelp("This Blackbox version checks protected files only for file tools. Update Blackbox to cover the terminal too.")) : ""
     ];
     var col2 = '<div class="wp-col"><div class="wp-h">Always watching</div>' + watch.join("") + "</div>";
     var events = (d.events || []).slice(0, 6).map(function (e) {
@@ -5513,6 +5525,7 @@
     vault: "The vault holds your seed phrase and private keys, encrypted with your wallet password. Copied off this machine it can be cracked offline, and whoever cracks it can empty the wallet.",
     seed: "A seed phrase IS the wallet: anyone who has the words controls every account in it, on any device, forever.",
     key: "A private key signs transactions for its account. Whoever holds it can move the funds.",
+    keychain: "The keychain holds every password macOS saved and the key each browser uses to lock its saved passwords and cookies — including your exchange logins.",
     approval: "A token approval lets the spender move your tokens whenever it likes, without asking again. An unlimited one covers every token you will ever hold of that kind — it is how most wallets are drained.",
     exchange: "An exchange API key trades — and, if withdrawals are allowed, withdraws — as your account. A key sent anywhere but its own exchange has been handed to someone else."
   };
@@ -5539,6 +5552,7 @@
     if (id === "secret:seed-phrase") return "seed";
     if (id === "secret:wallet-private-key" || id === "secret:solana-private-key") return "key";
     if (id === "secret:exchange-api-key") return "exchange";
+    if (/:macos-keychain$/.test(id)) return "keychain";
     if (id === "secret:token-approval-drainer" || id === "secret:token-approval-unlimited") return "approval";
     return "";
   }
@@ -5550,6 +5564,7 @@
     var how = /^copy/.test(String(f.evidence || "")) ? "by copying or archiving a folder that contains it" : "by reading it directly";
     if (kind === "vault") rows.push(["Reached for", wallet + "'s vault (the wallet's key store), " + how]);
     if (kind === "seed") rows.push(["Reached for", "a seed phrase (wallet recovery words) in what the agent was handling or sending"]);
+    if (kind === "keychain") rows.push(["Reached for", "the macOS keychain (" + how.replace("it directly", "it directly, or with the security tool") + ")"]);
     if (kind === "approval") rows.push(["Reached for", String(f.identifier || "") === "secret:token-approval-drainer"
       ? "a token approval to an address listed as a wallet drainer" : "an unlimited token approval (approve MAX or approve-all)"]);
     if (kind === "exchange") rows.push(["Reached for", "an exchange API key, in the header only that exchange uses, sent to " +

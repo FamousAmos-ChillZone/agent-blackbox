@@ -54,6 +54,13 @@ MAX_WALLET_ADDRESSES = 50
 _ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 
 
+def belongs_to_mode(identifier: str) -> bool:
+    """Whether a finding identifier is a Trader Shield finding — THE list the mode gate
+    and the dashboard's wallet events both use."""
+    return (identifier in WALLET_SECRET_IDENTIFIERS or identifier.endswith(WALLET_FILE_SUFFIX)
+            or identifier.endswith(KEYCHAIN_FILE_SUFFIX))
+
+
 @dataclass(frozen=True)
 class WalletProtection:
     """``enabled`` — the mode is on; ``wallets`` — supported wallet ids to guard;
