@@ -225,3 +225,12 @@ def test_keychain_and_approval_findings_are_trader_shield_events():
     for identifier in ("fileaccess:terminal:macos-keychain", "secret:token-approval-drainer", "secret:exchange-api-key"):
         assert wallet_mode.belongs_to_mode(identifier), identifier
     assert not wallet_mode.belongs_to_mode("fileaccess:terminal:user-protected")
+
+
+def test_each_protection_state_has_its_own_mark():
+    # Green check = secured (blocked), amber = watched only (audit mode), grey = not protected,
+    # red = needs attention; the panel carries a legend for them, and green is its own token.
+    page = (protection.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert 'var on = block ? ["✓", "ok"] : ["~", "watch"];' in page
+    assert "--secure:" in page and ".wp-ic.ok { color: var(--secure)" in page
+    assert all(word in page for word in ("secured — blocked", "watched — flagged only", "not protected", "needs attention"))

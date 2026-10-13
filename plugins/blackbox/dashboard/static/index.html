@@ -86,6 +86,9 @@
        never orange. Signal Orange is reserved for live and flagged states. */
     --mint: #F1EFE9;
     --teal: #BBB8B1;
+    /* Protection states (Trader Shield panel): secured = green, watched only = amber. */
+    --secure: #4CC38A; --secure-soft: rgba(76,195,138,0.14);
+    --caution: #E3B341; --caution-soft: rgba(227,179,65,0.14);
     --critical: #FF4F00;
     --high: #FF4F00;
     --medium: #F1EFE9;
@@ -134,6 +137,8 @@
     --signal-soft: rgba(198,60,0,0.10);
     --mint: #171719;
     --teal: #484540;
+    --secure: #1E8A55; --secure-soft: rgba(30,138,85,0.12);
+    --caution: #9A6512; --caution-soft: rgba(154,101,18,0.12);
     --critical: #C63C00;
     --high: #C63C00;
     --medium: #343230;
@@ -846,8 +851,14 @@
   .wp-col:last-child { border-right: 0; }
   .wp-h { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
   .wp-row { display: grid; grid-template-columns: 18px 1fr; gap: 8px; font-size: 13px; line-height: 1.45; align-items: start; }
-  .wp-ic { font-weight: 700; text-align: center; }
-  .wp-ic.ok { color: var(--mint); } .wp-ic.warn { color: #c9821a; } .wp-ic.none { color: var(--muted); }
+  .wp-ic { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 800; line-height: 1; margin-top: 1px; }
+  .wp-ic.ok { color: var(--secure); background: var(--secure-soft); box-shadow: inset 0 0 0 1px var(--secure); }
+  .wp-ic.watch { color: var(--caution); background: var(--caution-soft); box-shadow: inset 0 0 0 1px var(--caution); }
+  .wp-ic.none { color: var(--muted); box-shadow: inset 0 0 0 1px var(--border-strong, var(--muted)); }
+  .wp-ic.warn { color: var(--signal); background: var(--signal-soft); box-shadow: inset 0 0 0 1px var(--signal); }
+  .wp-legend { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 18px; border-top: 1px solid var(--border);
+    font-size: 12px; color: var(--muted); }
+  .wp-legend span { display: inline-flex; align-items: center; gap: 6px; }
   .wp-sub { color: var(--muted); font-size: 12px; }
   .wp-ev { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 12.5px; padding: 6px 0; border-bottom: 1px solid var(--border); }
   .wp-ev:last-child { border-bottom: 0; }
@@ -5281,6 +5292,8 @@
                          : "Wallet threats are recorded and shown, but not stopped. Turn on Block in Settings to stop them.";
     }
     var guard = block ? "protected — blocked if the agent reaches for it" : "watched — flagged, not blocked (audit mode)";
+    // One mark per state: secured (blocked) / watched only (audit mode) / not protected / needs attention.
+    var on = block ? ["✓", "ok"] : ["~", "watch"];
     // One row per WALLET (protected in every browser it is in), listing the browsers — not one
     // row per browser profile.
     var found = walletGroups(d.wallets).map(function (g) {
@@ -5288,7 +5301,7 @@
       var where = g.id === "any-extension"
         ? "every extension's storage in " + g.profiles + " Firefox profile" + (g.profiles === 1 ? "" : "s")
         : g.areas.join(", ");
-      return wpRow(g.protected ? "✓" : "–", g.protected ? "ok" : "none", walletLogoByName(g.wallet) + "<b>" + esc(name) + "</b> · " +
+      return wpRow(g.protected ? on[0] : "–", g.protected ? on[1] : "none", walletLogoByName(g.wallet) + "<b>" + esc(name) + "</b> · " +
         esc(g.browsers.join(", ")) + '<div class="wp-sub">' + esc(where) + " — " +
         (g.protected ? guard : "not selected in Settings, so not protected") + "</div>");
     });
@@ -5301,21 +5314,21 @@
     var ownAddresses = typeof d.own_addresses === "number" ? d.own_addresses : 0;
     var exchanges = Array.isArray(d.exchanges) ? d.exchanges.map(String).slice(0, 10) : [];
     var watch = [
-      wpRow(d.seed_checker ? "✓" : "!", d.seed_checker ? "ok" : "warn", "<b>Seed phrases</b> " +
+      wpRow(d.seed_checker ? on[0] : "!", d.seed_checker ? on[1] : "warn", "<b>Seed phrases</b> " +
         wpHelp("12–24 word recovery phrases are recognised by their built-in checksum. A phrase with a cue like 'seed:', or 18+ words, is blocked in block mode; any phrase sent off the machine is blocked.") +
         '<div class="wp-sub">' + (d.seed_checker ? "checker on — 2,048-word list, checksum verified" : "checker OFF — the word list did not load") + "</div>"),
-      wpRow("✓", "ok", "<b>Private keys</b> " +
+      wpRow(on[0], on[1], "<b>Private keys</b> " +
         wpHelp("A key written next to a label like PRIVATE_KEY= or pk: is recognised, and so is a Solana key. Handling one is only flagged, because trading configs legitimately hold one; sending it off the machine is blocked — by a command, in a web address, or from a script. A bare 64-character key is recognised when it opens one of the addresses you list in Settings.") +
         '<div class="wp-sub">labelled and Solana keys · blocked if sent · ' +
         (ownAddresses ? ownAddresses + " own address" + (ownAddresses === 1 ? "" : "es") + " listed for raw keys"
                       : "list your addresses in Settings to catch raw keys") + "</div>"),
-      exchanges.length ? wpRow("✓", "ok", "<b>Exchange API keys</b> " +
+      exchanges.length ? wpRow(on[0], on[1], "<b>Exchange API keys</b> " +
         wpHelp("An exchange's key header may only go to that exchange. Sent anywhere else, it is blocked.") +
         '<div class="wp-sub">' + esc(exchanges.join(" · ")) + " — only to their own site</div>") : "",
-      exchanges.length ? wpRow("✓", "ok", "<b>Token approvals</b> " +
+      exchanges.length ? wpRow(on[0], on[1], "<b>Token approvals</b> " +
         wpHelp("The approval a drainer needs. An approval to a wallet the verified threat graph lists as a drainer is blocked; any unlimited approval is flagged so you see it.") +
         '<div class="wp-sub">known drainer blocked · unlimited approvals flagged</div>') : "",
-      wpRow("✓", "ok", "<b>Protected files</b> " +
+      wpRow(on[0], on[1], "<b>Protected files</b> " +
         wpHelp("Your protected file patterns from Settings. Reading a matching file through a file tool or the terminal is flagged critical and blocked in block mode. The macOS keychain is guarded as well while Trader Shield is on.") +
         '<div class="wp-sub">' + esc((d.protected_paths || []).slice(0, 6).join(" · ")) + ((d.protected_paths || []).length > 6 ? " …" : "") +
         (d.terminal_reads === "logged" ? "" : " · file tools and terminal") + "</div>"),
@@ -5332,7 +5345,12 @@
       wpHelp("The latest times your agent reached for a wallet, a seed phrase or a private key, and what Blackbox did. Click one for the full story.") +
       (events.length ? '<button type="button" class="wev-all" data-wev-open="">View all →</button>' : "") + "</div>" +
       (events.length ? events.join("") : '<div class="wp-sub">Nothing yet — no agent has reached for a wallet or key.</div>') + "</div>";
-    $("wp-body").innerHTML = col1 + col2 + col3;
+    var legend = '<div class="wp-legend" aria-label="What the marks mean">' +
+      '<span><span class="wp-ic ok">✓</span>secured — blocked</span>' +
+      '<span><span class="wp-ic watch">~</span>watched — flagged only (audit mode)</span>' +
+      '<span><span class="wp-ic none">–</span>not protected</span>' +
+      '<span><span class="wp-ic warn">!</span>needs attention</span></div>';
+    $("wp-body").innerHTML = col1 + col2 + col3 + legend;
   }
   function loadWalletProtection() {
     if (!$("wp-body")) return;
