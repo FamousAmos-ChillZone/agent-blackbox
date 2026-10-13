@@ -199,3 +199,13 @@ def test_the_panel_calls_a_store_protected_exactly_when_the_gate_would_count_it(
                             lambda chosen=chosen: wallet_mode.WalletProtection(enabled=True, wallets=tuple(chosen)))
         shown = {w["wallet"]: w["protected"] for w in protection.wallet_protection_payload()["wallets"]}
         assert shown == expected
+
+
+def test_a_firefox_profile_name_is_shown_as_it_is_not_defanged(home, monkeypatch):
+    """Seen on a macOS lab run: the panel showed "lab[.]default" — local folder names went
+    through the community-text sanitizer, which defangs anything shaped like a domain."""
+    store = wallet_files.normalize_path(
+        "~/Library/Application Support/Firefox/Profiles/ab12.default-release/storage/default/moz-extension+++x^usercontextid=4294967295")
+    monkeypatch.setattr(wallet_files.EXISTING_STORES, "get", lambda: [(store, wallet_files.FIREFOX_EXTENSION)])
+    [shown] = protection.wallet_protection_payload()["wallets"]
+    assert shown["profile"] == "ab12.default-release" and "[.]" not in str(shown)

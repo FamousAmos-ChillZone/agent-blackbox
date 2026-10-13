@@ -29,7 +29,7 @@ from ... import audit, detection
 from ...kernel import crypto_secrets
 from ...kernel.config import load_blackbox_config
 from ..safe_payloads import safe_identifier, safe_text
-from .events import is_wallet_identifier, wallet_event_report
+from .events import is_wallet_identifier, local_text, wallet_event_report
 
 MAX_EVENTS = 20
 
@@ -63,7 +63,8 @@ def wallet_protection_payload() -> Dict[str, Any]:
         "wallet_mode": mode.as_json(),
         "mode": "block" if cfg.block_enabled else "audit",
         "block_severity": safe_text(cfg.block_severity, 16),
-        "wallets": [{**{key: (safe_text(value, 64) if isinstance(value, str) else [safe_text(a, 32) for a in value])
+        # Folder names found on THIS machine: cleaned, never defanged (a Firefox profile is "x.default-release").
+        "wallets": [{**{key: (local_text(value, 64) if isinstance(value, str) else [local_text(a, 32) for a in value])
                         for key, value in wallet.items()},
                      "protected": mode.protects(str(wallet.get("id") or ""))}   # the gate's own rule
                     for wallet in wallets],
