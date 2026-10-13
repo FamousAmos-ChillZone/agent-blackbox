@@ -104,6 +104,7 @@ def shield(tmp_path, monkeypatch):
                    "@SOLDECOYS@": " ".join(_base58(random.randbytes(64)) for _ in range(100))})
     # KI-378: the same 12 words spelled to slip past a word matcher.
     values.update({"@SEED12ZW@": "\u200b|".join(seed12.split()), "@SEED12CAMEL@": "".join(w.capitalize() for w in seed12.split())})
+    values["@FILLER@"] = "lorem ipsum " * 5000   # KI-376: 60,000 characters of padding
 
     def fill(value):
         if isinstance(value, str):

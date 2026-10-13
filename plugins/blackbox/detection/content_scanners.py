@@ -93,15 +93,40 @@ def scan_injection_heuristics(text: str) -> list[dict[str, str]]:
     return out
 
 
-def scan_secret_values(text: str) -> list[dict[str, str]]:
-    """Return recognizable secret VALUES present in *text* as ``[{type, severity}]``.
+#: Secret values are looked for in the first AND the last this-many characters of a text
+#: (the whole text when it is shorter than both): a secret padded past the head is still
+#: seen, and the cost stays bounded on any input (KI-376). A secret placed in the middle
+#: of a text longer than twice this is a known gap.
+SECRET_SCAN_WINDOW = 50_000
+_SEVERITY_RANK = {"": -1, "low": 0, "medium": 1, "high": 2, "critical": 3}
+
+
+def secret_scan_windows(text: str) -> tuple[str, ...]:
+    """The parts of *text* a secret scan reads: all of it, or its head and its tail."""
+    if len(text) <= 2 * SECRET_SCAN_WINDOW:
+        return (text,)
+    return (text[:SECRET_SCAN_WINDOW], text[-SECRET_SCAN_WINDOW:])
+
+
+def scan_secret_values(text: str, *more: str) -> list[dict[str, str]]:
+    """Return recognizable secret VALUES present in *text* (and in each of *more*, read
+    independently — e.g. the decoded URLs of the same call) as ``[{type, severity}]``,
+    each type once at the worst severity any window gave it (see
+    :data:`SECRET_SCAN_WINDOW`).
 
     Deterministic; the caller carries only the secret TYPE off-box, NEVER the
     value (see ``kernel.redaction.redact_secret_values``).
     """
-    if not text:
-        return []
-    scan = text[:_MAX_INJECTION_SCAN]
+    worst: dict[str, str] = {}
+    for window in (window for part in (text, *more) if part for window in secret_scan_windows(part)):
+        for hit in _scan_window(window):
+            if _SEVERITY_RANK[hit["severity"]] > _SEVERITY_RANK[worst.get(hit["type"], "")]:
+                worst[hit["type"]] = hit["severity"]
+    return [{"type": secret_type, "severity": severity} for secret_type, severity in worst.items()]
+
+
+def _scan_window(scan: str) -> list[dict[str, str]]:
+    """The secret values in one window of text."""
     out: list[dict[str, str]] = []
     seen: set = set()
     for typ, severity, pattern in redaction.SECRET_VALUE_RULES:

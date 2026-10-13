@@ -78,7 +78,9 @@ def detect_secret_exposure(tool_name: str, args: Any) -> list[Finding]:
     text = injection_scan_text(args)
     if not text:
         return []
-    hits = content_scanners.scan_secret_values(text)
+    # The decoded web addresses are read on their own too: a secret only visible once its
+    # URL is decoded must not depend on the raw text having raised something (KI-376).
+    hits = content_scanners.scan_secret_values(text, sending.url_payloads(text))
     egress = sending.looks_like_egress(text)
     wallet_sent = _wallet_secrets_sent(tool_name, text, hits) if hits else set()
     out: list[Finding] = []
