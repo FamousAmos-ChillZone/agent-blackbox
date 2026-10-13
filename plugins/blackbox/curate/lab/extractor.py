@@ -98,7 +98,7 @@ class _Findings:
     hosts: set = field(default_factory=set)
     artifact: Optional[str] = None
     fingerprints: set = field(default_factory=set)
-    observations: Dict[Check, bool] = field(default_factory=dict)
+    observations: dict[Check, bool] = field(default_factory=dict)
     notes: set = field(default_factory=set)
 
     def answer(self, check: Check, seen: bool) -> None:
@@ -334,7 +334,7 @@ def _mapping(value: Any, name: str) -> Mapping[str, Any]:
     return value
 
 
-def _list(value: Any, name: str) -> List[Any]:
+def _list(value: Any, name: str) -> list[Any]:
     if not isinstance(value, list):
         raise EvidenceError(f"{name} must be a list")
     return value

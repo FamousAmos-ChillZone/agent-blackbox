@@ -97,7 +97,7 @@ def test_a_due_generation_is_refreshed_although_it_was_compiled_moments_ago(cloc
     """The hooks' lazy refresh follows the schedule, not the compile age."""
     rs = _compiled_ruleset()
     rs.refresh_due_at = NOW - 1
-    started: List[str] = []
+    started: list[str] = []
 
     class _Thread:
         def __init__(self, target, args, name, daemon):

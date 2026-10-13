@@ -152,5 +152,12 @@ def _set_session_cookie(response: Any, session_id: str) -> None:
     response.set_cookie(SESSION_COOKIE, session_id, path="/", secure=True, httponly=True, samesite="strict")
 
 
-__all__ = ["ConsoleSettings", "create_console_app", "CONSOLE_BIND_HOST", "DEFAULT_CONSOLE_PORT",
-           "SESSION_COOKIE", "LOGIN_PATH", "TAILSCALE_LOGIN_HEADER"]
+__all__ = [
+    "CONSOLE_BIND_HOST",
+    "DEFAULT_CONSOLE_PORT",
+    "LOGIN_PATH",
+    "SESSION_COOKIE",
+    "TAILSCALE_LOGIN_HEADER",
+    "ConsoleSettings",
+    "create_console_app",
+]

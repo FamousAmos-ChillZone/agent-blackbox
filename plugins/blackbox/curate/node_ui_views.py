@@ -40,7 +40,7 @@ class SavedView:
         return f"urn:blackbox:saved-query:{self.slug}"
 
 
-COMMUNITY_VIEWS: Tuple[SavedView, ...] = (
+COMMUNITY_VIEWS: tuple[SavedView, ...] = (
     SavedView("reports-by-threat", "Guardian · reports per threat",
               "Community threat reports grouped by identifier with the number of reporting rows (unverified count; the plugin verifies signatures).",
               _G + "SELECT ?identifier (COUNT(DISTINCT ?r) AS ?rows) WHERE { ?r a g:ThreatReport ; g:identifier ?identifier } "
@@ -70,7 +70,7 @@ COMMUNITY_VIEWS: Tuple[SavedView, ...] = (
               _G + "SELECT ?r ?identifier WHERE { ?r a g:CuratorStatement ; g:identifier ?identifier } ORDER BY ?r LIMIT 500"),
 )
 
-VERIFIED_VIEWS: Tuple[SavedView, ...] = (
+VERIFIED_VIEWS: tuple[SavedView, ...] = (
     SavedView("verified-by-kind", "Guardian · verified threats by kind",
               "The verified graph's threats with severity and kind.",
               _G + "SELECT ?identifier ?severity ?kind WHERE { ?t g:identifier ?identifier ; g:severity ?severity . "
@@ -87,7 +87,7 @@ VERIFIED_VIEWS: Tuple[SavedView, ...] = (
 )
 
 
-def catalog_quads(views: Tuple[SavedView, ...], scope_graph: str) -> List[rdf_terms.Quad]:
+def catalog_quads(views: tuple[SavedView, ...], scope_graph: str) -> list[rdf_terms.Quad]:
     """The catalog entries for *views*, scoped to *scope_graph* (a context graph id)."""
     scope = f"did:dkg:context-graph:{scope_graph}"
     quads = [

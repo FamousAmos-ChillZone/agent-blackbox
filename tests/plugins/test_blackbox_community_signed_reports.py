@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -45,7 +45,7 @@ def test_signed_report_verifies_and_covers_its_fields():
         identifier="dep:npm:evil@1.0.0", category="dependency", severity="Critical",
         reporter_address=REPORTER, signer=signer,
         ecosystem="npm", package_name="evil", package_version="1.0.0", kind="malware", reason="install-hook",
-        ts=datetime(2026, 10, 1, 17, 42, tzinfo=timezone.utc),
+        ts=datetime(2026, 10, 1, 17, 42, tzinfo=UTC),
     )
     envelope = _envelope(quads)
     assert _verify(envelope) == signing.public_key_hex(signer.private_key)
@@ -59,9 +59,9 @@ def test_signed_report_verifies_and_covers_its_fields():
 def test_report_timestamp_is_rounded_to_the_day():
     quads = report_builder.build_report_quads(
         identifier="ioc:domain:x.example", category="ioc", severity="high", reporter_address=REPORTER, ioc_type="domain", ioc_context="fetched-by-tool",
-        ts=datetime(2026, 10, 1, 17, 42, 9, tzinfo=timezone.utc),
+        ts=datetime(2026, 10, 1, 17, 42, 9, tzinfo=UTC),
     )
-    stamp = [q["object"] for q in quads if q["predicate"] == constants.SCHEMA_DATE_MODIFIED_PRED][0]
+    stamp = next(q["object"] for q in quads if q["predicate"] == constants.SCHEMA_DATE_MODIFIED_PRED)
     assert "2026-10-01T00:00:00" in stamp and "17:42" not in stamp
 
 

@@ -33,6 +33,7 @@ from .. import shell_shapes
 from ..finding import Finding
 from ...kernel import threat_ids
 from .protected import _accesses, _folder_holds, _protected_path_match
+import itertools
 
 #: The file category these findings carry (a closed name, never a path).
 KEYCHAIN_CATEGORY = "macos-keychain"
@@ -68,7 +69,7 @@ def _reads_keychain(command: str) -> bool:
         if verb not in _KEYCHAIN_SECRET_VERBS:
             continue
         if verb == "export":
-            types = [value.lower() for flag, value in zip(options, options[1:]) if flag == "-t"]
+            types = [value.lower() for flag, value in itertools.pairwise(options) if flag == "-t"]
             if not types or not set(types) <= _EXPORT_HARMLESS_TYPES:
                 return True
             continue
@@ -79,7 +80,7 @@ def _reads_keychain(command: str) -> bool:
     return False
 
 
-def detect_keychain_access(tool_name: str, args: Any) -> List[Finding]:
+def detect_keychain_access(tool_name: str, args: Any) -> list[Finding]:
     """One finding when this call reads the macOS keychain (see the module doc)."""
     tool = (tool_name or "").strip().lower()
     reached = [(access_tool, mode) for access_tool, path, mode in _accesses(tool_name, args)

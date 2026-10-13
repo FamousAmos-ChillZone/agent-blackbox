@@ -55,7 +55,7 @@ def print_community_status(cfg) -> None:
 #: Per-type required args (KI-025): a manual report with missing coordinates
 #: would derive a malformed identifier (e.g. ``dep::pkg@``) that poisons
 #: corroboration counting — reject loudly, submit nothing.
-_REPORT_REQUIRED_ARGS: Dict[str, "tuple[str, ...]"] = {
+_REPORT_REQUIRED_ARGS: dict[str, tuple[str, ...]] = {
     "injection": ("pattern", "context"),
     "escalation": ("tool", "arg_shape"),
     "dependency": ("ecosystem", "name", "package_version", "kind", "reason"),
@@ -73,7 +73,7 @@ _FLAG_NAMES = {"package_version": "package-version"}
 
 
 #: (identifier, fields, error) for one report type's parsed args.
-_ParsedReport = Tuple[str, Dict[str, Any], str]
+_ParsedReport = tuple[str, dict[str, Any], str]
 
 
 def _injection_args(args: argparse.Namespace) -> _ParsedReport:
@@ -149,7 +149,7 @@ def _queue_refused_share(cfg, finding, *, subject: str, name: str, quads, detail
     return 1
 
 
-def _report_finding_from_args(args: argparse.Namespace) -> "tuple[Optional[dict], str]":
+def _report_finding_from_args(args: argparse.Namespace) -> tuple[Optional[dict], str]:
     """Factory: parsed report args → the finding dict the share path expects.
 
     Pattern: Factory function — the one creational seam of the manual path.
@@ -183,14 +183,14 @@ def _report_finding_from_args(args: argparse.Namespace) -> "tuple[Optional[dict]
     }, ""
 
 
-def _choices(values) -> List[str]:
+def _choices(values) -> list[str]:
     return sorted(values)
 
 
 #: Every `blackbox report` flag: (flags, argparse options). Data, not code, so
 #: the closed vocabularies are visible in one place (Refine R1: no free text
 #: leaves the machine; each choice list is the one the schema checks against).
-_REPORT_FLAGS: Tuple[Tuple[Tuple[str, ...], Dict[str, Any]], ...] = (
+_REPORT_FLAGS: tuple[tuple[tuple[str, ...], dict[str, Any]], ...] = (
     (("--type",), dict(choices=list(_REPORT_REQUIRED_ARGS))),
     (("--status",), dict(action="store_true", help="Show what this node has contributed, and what happened to each report")),
     (("--standing",), dict(action="store_true", help="Your standing as a reporter: counted or on probation, and co-sightings")),
@@ -238,10 +238,10 @@ _REPORT_FLAGS: Tuple[Tuple[Tuple[str, ...], Dict[str, Any]], ...] = (
 
 
 #: cfg -> the compiled community store ({identifier: rule dict with stage fields}).
-CompiledCommunity = Callable[[Any], Dict[str, Dict[str, Any]]]
+CompiledCommunity = Callable[[Any], dict[str, dict[str, Any]]]
 
 
-def add_report_parser(sub: "argparse._SubParsersAction", *, compiled_community: Optional[CompiledCommunity] = None) -> None:
+def add_report_parser(sub: argparse._SubParsersAction, *, compiled_community: Optional[CompiledCommunity] = None) -> None:
     """Register ``blackbox report`` and its flags (:data:`_REPORT_FLAGS`) on
     the CLI's sub-parsers. Called once by ``cli.setup_cli``; the parsed
     namespace goes to :func:`cmd_report`. *compiled_community* is injected by
@@ -313,7 +313,7 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
-def _reporting_identity(client: DkgClient, graph: str) -> Optional[Tuple[str, report_signer.ReportSigner]]:
+def _reporting_identity(client: DkgClient, graph: str) -> Optional[tuple[str, report_signer.ReportSigner]]:
     """(reporter address, signer) for a manual report, or None after telling
     the operator why nothing can be submitted (no identity, or cannot sign)."""
     reporter = identity.reporter_address(client)
@@ -333,13 +333,13 @@ def _reporting_identity(client: DkgClient, graph: str) -> Optional[Tuple[str, re
 _STATUS_STAGE_ROWS = 25
 
 
-def _print_stages(community_rules: Dict[str, Dict[str, Any]]) -> None:
+def _print_stages(community_rules: dict[str, dict[str, Any]]) -> None:
     """R3: every community threat's local stage and reason (counts per stage,
     then the first rows) — the compiled ruleset's view, so it is offline-safe."""
     staged = [(ident, rule) for ident, rule in community_rules.items() if rule.get("stage")]
     if not staged:
         return
-    by_stage: Dict[str, int] = {}
+    by_stage: dict[str, int] = {}
     for _ident, rule in staged:
         by_stage[str(rule["stage"])] = by_stage.get(str(rule["stage"]), 0) + 1
     print("Community threats by local stage: " + ", ".join(f"{s} {n}" for s, n in sorted(by_stage.items())))

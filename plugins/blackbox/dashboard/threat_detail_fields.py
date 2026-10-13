@@ -12,7 +12,7 @@ from typing import Dict
 
 from ..kernel import constants
 
-DETAIL_FIELDS: Dict[str, str] = {
+DETAIL_FIELDS: dict[str, str] = {
     constants.SEVERITY_PRED: "severity",
     constants.KIND_PRED: "kind",
     constants.SCHEMA_NAME_PRED: "name",

@@ -30,7 +30,7 @@ def _function(name: str) -> str:
 
 def _run(body: str, env: dict) -> subprocess.CompletedProcess:
     script = "set -euo pipefail\nstep() { :; }\n" + _function("find_uv") + "\n" + _function("ensure_venv_pip") + "\n" + body
-    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=env)
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, env=env, check=False)
 
 
 def test_find_uv_finds_the_copy_setup_hermes_installed_off_path(tmp_path: Path) -> None:
@@ -55,10 +55,10 @@ def test_ensure_venv_pip_bootstraps_pip_into_a_uv_built_venv(tmp_path: Path) -> 
     venv = tmp_path / "venv"
     subprocess.run(["uv", "venv", "-q", str(venv)], check=True, capture_output=True)
     assert subprocess.run([str(venv / "bin" / "python"), "-m", "pip", "--version"],
-                          capture_output=True).returncode != 0   # the KI-042 starting point
+                          capture_output=True, check=False).returncode != 0   # the KI-042 starting point
 
     result = _run(f"ensure_venv_pip {shlex.quote(str(venv))}", {**os.environ, "HOME": str(tmp_path)})
 
     assert result.returncode == 0, result.stderr
     assert subprocess.run([str(venv / "bin" / "python"), "-m", "pip", "--version"],
-                          capture_output=True).returncode == 0
+                          capture_output=True, check=False).returncode == 0

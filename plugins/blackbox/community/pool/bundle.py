@@ -61,7 +61,7 @@ MAX_MANIFESTS = 64
 _ENTRY_KEYS = frozenset({"identifier", "threat", "evidence", "confirmation", "reports", "listings"})
 
 
-def entry_document(entry: PoolEntry) -> Dict[str, Any]:
+def entry_document(entry: PoolEntry) -> dict[str, Any]:
     """One entry as it is written in a bundle: the signed statements, and in
     the clear what they say about the threat."""
     return {"identifier": entry.identifier,
@@ -78,8 +78,8 @@ class Bundle:
 
     environment: str
     graph: str
-    manifests: Tuple[str, ...]
-    entries: Tuple[PoolEntry, ...]
+    manifests: tuple[str, ...]
+    entries: tuple[PoolEntry, ...]
     version: int = VERSION
 
     def to_text(self) -> str:
@@ -107,7 +107,7 @@ class BundleReport:
     entry. ``manifest`` — the key manifest everything was checked against."""
 
     error: str = ""
-    entries: Tuple[EntryResult, ...] = ()
+    entries: tuple[EntryResult, ...] = ()
     manifest: Optional[KeyManifest] = None
 
     @property
@@ -115,7 +115,7 @@ class BundleReport:
         return not self.error and all(result.ok for result in self.entries)
 
     @property
-    def passed(self) -> Tuple[PoolEntry, ...]:
+    def passed(self) -> tuple[PoolEntry, ...]:
         return tuple(result.entry for result in self.entries if result.ok and result.entry is not None)
 
 
@@ -137,7 +137,7 @@ def verify_bundle(text: str, roots: AbstractSet[str], *, environment: str, graph
     manifest = manifest_policy.effective_manifest(trusted, day)
     if manifest is None:
         return BundleReport(error="no key manifest in the bundle is signed by the given root for this network and graph")
-    results: List[EntryResult] = []
+    results: list[EntryResult] = []
     seen = set()
     for raw in document["entries"]:
         result = _verify_entry(raw, manifest, environment, graph, day)
@@ -148,7 +148,7 @@ def verify_bundle(text: str, roots: AbstractSet[str], *, environment: str, graph
     return BundleReport(entries=tuple(results), manifest=manifest)
 
 
-def _document(text: str, environment: str, graph: str) -> Tuple[Optional[Dict[str, Any]], str]:
+def _document(text: str, environment: str, graph: str) -> tuple[Optional[dict[str, Any]], str]:
     """(the parsed bundle, "") or (None, why it fails as a whole)."""
     if not isinstance(text, str) or len(text) > MAX_BUNDLE_CHARS:
         return None, "the bundle is too large to read"
@@ -199,9 +199,9 @@ def _entry_shaped(raw: Any) -> bool:
             and _texts(raw["reports"], MAX_STATEMENTS_PER_ENTRY) and _texts(raw["listings"], MAX_STATEMENTS_PER_ENTRY))
 
 
-def _statement_rows(raw: Mapping[str, Any], manifest: KeyManifest, graph: str) -> Tuple[List[Dict[str, str]], str]:
+def _statement_rows(raw: Mapping[str, Any], manifest: KeyManifest, graph: str) -> tuple[list[dict[str, str]], str]:
     """(the entry's curator statements as verified rows, "") or ([], why one fails)."""
-    rows: List[Dict[str, str]] = []
+    rows: list[dict[str, str]] = []
     for position, text in enumerate([raw["confirmation"], *raw["listings"]]):
         name = "the confirmation" if position == 0 else f"listing {position}"
         row = curator_statements.row_for_signed(text)
@@ -220,10 +220,10 @@ def _statement_rows(raw: Mapping[str, Any], manifest: KeyManifest, graph: str) -
 
 
 def _reports(raw: Mapping[str, Any], identifier: str, environment: str, graph: str,
-             today: str) -> Tuple[List[VerifiedReport], str]:
+             today: str) -> tuple[list[VerifiedReport], str]:
     """(the entry's verified reports, "") or ([], why one fails)."""
     verifier = ReportVerifier(environment, graph, today)
-    reports: List[VerifiedReport] = []
+    reports: list[VerifiedReport] = []
     for position, text in enumerate(raw["reports"], start=1):
         report = verifier.verify_signed(text) if signing.is_canonical(text) else None
         if report is None:

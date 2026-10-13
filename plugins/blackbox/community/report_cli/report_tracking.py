@@ -28,7 +28,7 @@ _OUTCOME_LABELS = {"accepted": "ok", "already-shared": "already shared", "failed
                    "kept-alive": "kept alive"}                                                # R5
 
 
-def outcome_line(row: Dict[str, Any], compiled: Dict[str, Dict[str, Any]]) -> str:
+def outcome_line(row: dict[str, Any], compiled: dict[str, dict[str, Any]]) -> str:
     """R10 TRACK: one ledger row as "what happened to my report": the share
     outcome, then the threat's current local stage and reason from the
     compiled community store (what every node sees)."""
@@ -63,7 +63,7 @@ def report_standing(cfg) -> int:
     return 0
 
 
-def graduation_progress(own_author: str, read: Any, today: str) -> Tuple[int, int]:
+def graduation_progress(own_author: str, read: Any, today: str) -> tuple[int, int]:
     """(confirmed reports, days since the first report) of *own_author* on the
     PUBLIC record: how many of its reported threats a curator confirmation
     stands for, and how long it has been reporting (its earliest signed day)."""
@@ -77,7 +77,7 @@ def graduation_progress(own_author: str, read: Any, today: str) -> Tuple[int, in
     return len(confirmed), max(0, days)
 
 
-def standing_lines(own_author: str, read: Any, today: Optional[str] = None) -> List[str]:
+def standing_lines(own_author: str, read: Any, today: Optional[str] = None) -> list[str]:
     entry = read.curator.counted.get(own_author)
     mine = {r.identifier for r in read.reports if r.author == own_author}
     co_sighted = sum(read.heat[i].agents for i in mine if i in read.heat)

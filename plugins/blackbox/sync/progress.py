@@ -43,7 +43,7 @@ def read_durable_progress(
     context_graph_id: str,
     *,
     after: Optional[DurableProgressCursor] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Return the latest rootless durable-sync window for ``context_graph_id``.
 
     ``current_triples`` is transfer progress and may include the raw tail of an
@@ -101,6 +101,21 @@ def read_durable_progress(
         "snapshot_complete": safe_current >= expected,
     }
 
+
+
+def apply_completion_contract(durable_progress: dict, result: dict) -> None:
+    """Let the node's own completion answer decide ``snapshot_complete`` in *durable_progress*.
+
+    Newer DKG releases report a recovery request's completion contract directly
+    (``durableComplete`` in *result*); :func:`read_durable_progress`'s log parsing is
+    the compatibility fallback for 10.0.9, used only when the node does not say.
+    Apply it to the read scoped to THIS invocation (``after=`` the cursor): completion is
+    decided there, never from the whole log, whose lines may come from an earlier run.
+    """
+    if result.get("durableComplete") is True:
+        durable_progress["snapshot_complete"] = True
+    elif result.get("durableComplete") is False:
+        durable_progress["snapshot_complete"] = False
 
 _RECONCILE_PASS_RE = re.compile(
     r'^(?P<logged_at>\S+ \S+) .*VM reconcile pass timing for "(?P<graph>[^"]+)".*\bpending=(?P<pending>\d+)',

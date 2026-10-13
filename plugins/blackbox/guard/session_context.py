@@ -29,11 +29,11 @@ _MAX_TRACKED_SESSIONS = 256
 # Last conversation snapshot per session, captured at ``pre_api_request`` so a
 # later tool-call finding (which has no conversation access) can still show the
 # surrounding turns. Bounded, best-effort.
-_last_convo: Dict[str, List[Dict[str, str]]] = {}
+_last_convo: dict[str, list[dict[str, str]]] = {}
 _convo_lock = threading.Lock()
 
 
-def _message_role(msg: Dict[str, Any]) -> str:
+def _message_role(msg: dict[str, Any]) -> str:
     role = str(msg.get("role") or "").lower()
     return role if role in ("user", "assistant", "system", "tool") else "user"
 
@@ -42,7 +42,7 @@ def _message_text(content: Any) -> str:
     """Flatten a message's ``content`` (str, or a list of text parts) to text."""
     if isinstance(content, str):
         return content
-    parts: List[str] = []
+    parts: list[str] = []
     if isinstance(content, list):
         for item in content:
             if isinstance(item, str):
@@ -52,12 +52,12 @@ def _message_text(content: Any) -> str:
     return "\n".join(p for p in parts if p)
 
 
-def _conversation_turns(user_message: Any, request_messages: Any) -> List[Dict[str, str]]:
+def _conversation_turns(user_message: Any, request_messages: Any) -> list[dict[str, str]]:
     """Build a capped, redacted ``[{role, text}]`` from the request messages.
 
     Falls back to ``user_message`` when the messages list is unavailable.
     """
-    turns: List[Dict[str, str]] = []
+    turns: list[dict[str, str]] = []
     msgs = request_messages if isinstance(request_messages, list) else []
     # Only the tail matters; cap the scan so a long history doesn't cost us on
     # the synchronous request path.
@@ -78,7 +78,7 @@ def _conversation_turns(user_message: Any, request_messages: Any) -> List[Dict[s
     return turns[-_CONTEXT_TURNS:]
 
 
-def _remember_convo(session_id: str, turns: List[Dict[str, str]]) -> None:
+def _remember_convo(session_id: str, turns: list[dict[str, str]]) -> None:
     if not session_id or not turns:
         return
     try:
@@ -91,7 +91,7 @@ def _remember_convo(session_id: str, turns: List[Dict[str, str]]) -> None:
         pass
 
 
-def _recent_convo(session_id: str) -> List[Dict[str, str]]:
+def _recent_convo(session_id: str) -> list[dict[str, str]]:
     if not session_id:
         return []
     try:
@@ -109,9 +109,9 @@ def _forget_convo(session_id: str) -> None:
         pass
 
 
-def _tool_context(session_id: str, args: Any) -> Optional[Dict[str, Any]]:
+def _tool_context(session_id: str, args: Any) -> Optional[dict[str, Any]]:
     """Context for a tool-call finding: the scanned tool input + recent turns."""
-    ctx: Dict[str, Any] = {}
+    ctx: dict[str, Any] = {}
     turns = _recent_convo(session_id)
     if turns:
         ctx["turns"] = turns

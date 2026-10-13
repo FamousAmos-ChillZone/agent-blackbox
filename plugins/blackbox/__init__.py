@@ -17,7 +17,7 @@ from . import cli as _cli
 from . import guard as _hooks
 from .kernel.constants import __version__
 
-__all__ = ["register", "__version__"]
+__all__ = ["__version__", "register"]
 
 
 def register(ctx) -> None:

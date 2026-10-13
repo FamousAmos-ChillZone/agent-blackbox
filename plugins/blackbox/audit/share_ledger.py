@@ -81,7 +81,7 @@ def record_share_outcome(
         logger.debug("blackbox: share-ledger write failed (%s)", exc)
 
 
-def read_share_ledger(limit: int = 100) -> List[Dict[str, Any]]:
+def read_share_ledger(limit: int = 100) -> list[dict[str, Any]]:
     """Newest-first rows from the reports ledger; empty list when absent.
 
     The offline half of ``blackbox report --status`` (the graph-backed half
@@ -90,9 +90,9 @@ def read_share_ledger(limit: int = 100) -> List[Dict[str, Any]]:
     path = log_store._home() / _REPORTS_LOG
     if not path.exists():
         return []
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     try:
-        with path.open("r", encoding="utf-8") as fh:
+        with path.open("r", encoding="utf-8-sig") as fh:
             for line in fh:
                 line = line.strip()
                 if not line:
@@ -129,12 +129,12 @@ def previously_accepted(asset_name: str) -> bool:
 _LEDGER_SCAN_LIMIT = 100_000
 
 
-def _read_rate_state() -> Dict[str, Any]:
+def _read_rate_state() -> dict[str, Any]:
     path = _rate_state_path()
     if not path.exists():
         return {}
     try:
-        state = json.loads(path.read_text(encoding="utf-8"))
+        state = json.loads(path.read_text(encoding="utf-8-sig"))
         return state if isinstance(state, dict) else {}
     except Exception:
         return {}

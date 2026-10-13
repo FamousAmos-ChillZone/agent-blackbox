@@ -37,7 +37,7 @@ class Lane(Enum):
 
     DISPUTES_AND_REVOCATIONS = 1
     #: The same lane by its short name — where a public-page dispute waits (an Enum alias, not a sixth lane).
-    DISPUTE = 1
+    DISPUTE = 1  # noqa: PIE796 — a deliberate alias of DISPUTES_AND_REVOCATIONS (see the comment above)
     BLOCKABLE_WITH_EVIDENCE = 2
     GRADUATION = 3
     BLOCKABLE_NEEDS_REPRODUCTION = 4
@@ -69,9 +69,9 @@ class DeltaView:
     Without this rule 5,000 fresh single-author reports would fill every
     lane and fire the intake webhook 5,000 times (KI-194)."""
 
-    new: Tuple[QueueItem, ...]
-    already_verified: Tuple[str, ...]
-    unlisted_only: Tuple[str, ...] = ()
+    new: tuple[QueueItem, ...]
+    already_verified: tuple[str, ...]
+    unlisted_only: tuple[str, ...] = ()
 
 
 def admitted(rule: Mapping[str, Any]) -> bool:

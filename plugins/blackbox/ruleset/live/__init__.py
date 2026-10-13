@@ -48,4 +48,4 @@ from .health import HEALTH, LookupHealth, LookupState
 from .lookup import CLEAN, COULD_NOT_TELL, HIT, LookupAnswer, VerifiedLookup
 from .scope import VerifiedScope, refresh_scope, scope_for_generation
 
-__all__ = ["CLEAN", "CorrectionPin", "COULD_NOT_TELL", "FALLBACK_INDEX", "FALLBACK_OFF", "FallbackIndex", "HEALTH", "HIT", "maintain_fallback_index", "LiveAnswering", "NO_PIN", "LivePage", "LookupAnswer", "LookupHealth", "LookupState", "public_page", "signed_suppressions", "VerifiedLookup", "VerifiedScope", "refresh_scope", "scope_for_generation"]
+__all__ = ["CLEAN", "COULD_NOT_TELL", "FALLBACK_INDEX", "FALLBACK_OFF", "HEALTH", "HIT", "NO_PIN", "CorrectionPin", "FallbackIndex", "LiveAnswering", "LivePage", "LookupAnswer", "LookupHealth", "LookupState", "VerifiedLookup", "VerifiedScope", "maintain_fallback_index", "public_page", "refresh_scope", "scope_for_generation", "signed_suppressions"]

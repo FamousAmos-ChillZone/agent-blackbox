@@ -60,8 +60,8 @@ class DroppedEntry:
 class PrecheckResult:
     """``kept`` — the entries to publish, in their original order; ``dropped`` — the rest."""
 
-    kept: Tuple[ConfirmedEntry, ...]
-    dropped: Tuple[DroppedEntry, ...]
+    kept: tuple[ConfirmedEntry, ...]
+    dropped: tuple[DroppedEntry, ...]
 
 
 def canonical_identifier(identifier: str) -> str:

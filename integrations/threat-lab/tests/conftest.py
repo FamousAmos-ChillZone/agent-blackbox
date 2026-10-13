@@ -12,8 +12,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from threat_lab.config import LabConfig  # noqa: E402
-from threat_lab.sandbox import SandboxResult, SandboxSpec  # noqa: E402
+from threat_lab.config import LabConfig
+from threat_lab.sandbox import SandboxResult, SandboxSpec
 
 IMAGE_SHA256 = "e" * 64
 IMAGE = f"registry.lab.test/threat-lab-probe@sha256:{IMAGE_SHA256}"
@@ -28,9 +28,9 @@ class RecordingSandbox:
     """Answers each probe step from *answers* (step name → callable(spec) → SandboxResult)
     and records every spec it was handed, with the work folder's state at the time."""
 
-    def __init__(self, answers: Dict[str, Callable[[SandboxSpec], SandboxResult]]) -> None:
+    def __init__(self, answers: dict[str, Callable[[SandboxSpec], SandboxResult]]) -> None:
         self.answers = answers
-        self.specs: List[SandboxSpec] = []
+        self.specs: list[SandboxSpec] = []
 
     def run(self, spec: SandboxSpec) -> SandboxResult:
         self.specs.append(spec)

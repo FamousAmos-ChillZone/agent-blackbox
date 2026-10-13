@@ -29,7 +29,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from ... import community
@@ -51,12 +51,12 @@ _VERDICTS = frozenset({CuratorStatement.CONFIRMATION.value, CuratorStatement.REJ
                        CuratorStatement.DEFERRAL_LAPSED.value})
 
 
-def store() -> "community.keep_alive.LiveReportStore":
+def store() -> community.keep_alive.LiveReportStore:
     """The published-statements store (the report keep-alive store at the curator's path)."""
     return community.keep_alive.LiveReportStore(keys.curate_home() / _STORE_FILE)
 
 
-def _signed(quads: Iterable[Dict[str, str]]) -> Optional[signing.SignedEnvelope]:
+def _signed(quads: Iterable[dict[str, str]]) -> Optional[signing.SignedEnvelope]:
     """The signed envelope a statement's quads carry (None: nothing to keep alive)."""
     for quad in quads:
         if quad.get("predicate") == constants.SIGNED_STATEMENT_PRED:
@@ -73,7 +73,7 @@ def _unquote(literal: str) -> str:
         return literal.strip('"')
 
 
-def slot(envelope: signing.SignedEnvelope) -> Optional[Tuple[str, str]]:
+def slot(envelope: signing.SignedEnvelope) -> Optional[tuple[str, str]]:
     """Which slot a statement occupies — a newer statement in the same slot
     supersedes it. None: never kept alive (a heartbeat)."""
     kind = envelope.statement_type
@@ -89,11 +89,11 @@ def slot(envelope: signing.SignedEnvelope) -> Optional[Tuple[str, str]]:
     return kind.split(".", 1)[-1].replace("counted-authors", "listing"), identifier
 
 
-def _order(envelope: signing.SignedEnvelope) -> Tuple[int, int]:
+def _order(envelope: signing.SignedEnvelope) -> tuple[int, int]:
     return envelope.root_epoch, envelope.sequence
 
 
-def remember(cfg: Any, *, graph: str, name: str, quads: List[Dict[str, str]], now: Optional[float] = None) -> None:
+def remember(cfg: Any, *, graph: str, name: str, quads: list[dict[str, str]], now: Optional[float] = None) -> None:
     """Remember a statement this node just published in the community graph (and
     read back), so it is kept alive; older statements in the same slot stop
     being kept alive. Fail-open: a publish never fails over its memory."""
@@ -113,7 +113,7 @@ def remember(cfg: Any, *, graph: str, name: str, quads: List[Dict[str, str]], no
         logger.warning("blackbox: could not remember a published curator statement for keep-alive (%s)", exc)
 
 
-def _retire_superseded(live: Any, where: Tuple[str, str]) -> None:
+def _retire_superseded(live: Any, where: tuple[str, str]) -> None:
     """Keep only the newest statement(s) of *where*; the rest are allowed to lapse."""
     entries = []
     for entry in live.all():
@@ -148,7 +148,7 @@ def publish_due(client: Any, cfg: Any, now: Optional[float] = None) -> int:
     if days <= 0:
         return 0
     when = time.time() if now is None else now
-    today = datetime.fromtimestamp(when, timezone.utc).date().isoformat()
+    today = datetime.fromtimestamp(when, UTC).date().isoformat()
     epoch = community.keep_alive.current_epoch(when, days)
     live = store()
     sent, retired = 0, []

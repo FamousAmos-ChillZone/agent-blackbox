@@ -312,15 +312,15 @@ def test_the_opt_in_fallback_index_applies_the_same_flag_cap(tmp_path):
 # not name (a transplanted envelope) is never served, flags its asset and
 # raises the alarm input. Rows are written by the real row builders (P2).
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from plugins.blackbox.community.trust import manifest_history  # noqa: E402
-from plugins.blackbox.curate.publishing import row_builders as rb  # noqa: E402
-from plugins.blackbox.kernel import constants, signing, threat_ids  # noqa: E402
-from plugins.blackbox.kernel.signing import key_manifest as km  # noqa: E402
-from plugins.blackbox.ruleset import graph_queries  # noqa: E402
-from plugins.blackbox.ruleset.live import envelope_tier  # noqa: E402
-from plugins.blackbox.ruleset.live.asset_facts import SignedRule  # noqa: E402
+from plugins.blackbox.community.trust import manifest_history
+from plugins.blackbox.curate.publishing import row_builders as rb
+from plugins.blackbox.kernel import constants, signing, threat_ids
+from plugins.blackbox.kernel.signing import key_manifest as km
+from plugins.blackbox.ruleset import graph_queries
+from plugins.blackbox.ruleset.live import envelope_tier
+from plugins.blackbox.ruleset.live.asset_facts import SignedRule
 
 NETWORK = "sandbox-net"
 CURATOR_A, CURATOR_B, CURATOR_C = (Ed25519PrivateKey.generate() for _ in range(3))
@@ -659,9 +659,9 @@ def test_the_history_read_needs_a_pinned_root_and_reports_could_not_tell(monkeyp
 # later asset there is out of scope entirely — not even flag — and new assets come
 # only from the successor graph, whose envelopes must name the successor.
 
-from plugins.blackbox.community import ActiveGraph  # noqa: E402
-from plugins.blackbox.kernel.signing.graph_migration import GraphMigration  # noqa: E402
-from plugins.blackbox.ruleset import fetching  # noqa: E402
+from plugins.blackbox.community import ActiveGraph
+from plugins.blackbox.kernel.signing.graph_migration import GraphMigration
+from plugins.blackbox.ruleset import fetching
 
 SUCCESSOR = "0x" + "2" * 40 + "/agent-blackbox-vm"
 SUCCESSOR_VM = graph_queries.verifiable_memory_prefix(SUCCESSOR) + "0x" + "2" * 40 + "/"

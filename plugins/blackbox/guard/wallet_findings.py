@@ -4,7 +4,7 @@ from .. import detection
 from ..kernel import constants, crypto_secrets
 
 
-def own_key_findings(raw: List[detection.Finding], tool_name: str, args: Any) -> List[detection.Finding]:
+def own_key_findings(raw: list[detection.Finding], tool_name: str, args: Any) -> list[detection.Finding]:
     """Raw keys of the operator's own listed addresses (Trader Shield), unless the
     labelled-key rule already raised the same finding at least as high."""
     found = detection.detect_own_wallet_keys(tool_name, args, lambda: crypto_secrets.wallet_mode.current().addresses)

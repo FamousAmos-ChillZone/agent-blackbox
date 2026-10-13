@@ -1,6 +1,7 @@
 """Action-scoped detection reads from local DKG; no exported graph cache."""
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -10,6 +11,9 @@ from .. import curator_tier
 from ...kernel.dkg_client import extract_binding, DkgError
 from .client import GraphReadUnavailable, LocalGraphClient, local_url
 from .queries import candidate_query, candidates
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -49,6 +53,7 @@ def read_for_action(cfg, tool: str, args, *, client=None) -> DetectionRead:
         result.code = "QUERY_UNAVAILABLE"
     except Exception:
         # A malformed rule/adapter must never bypass independent local checks.
+        logger.exception("blackbox: action-scoped graph response could not be processed")
         result.code = "QUERY_MALFORMED_RESPONSE"
     return result
 

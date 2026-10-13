@@ -33,7 +33,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any, Dict
 
@@ -141,7 +141,7 @@ def withdraw_consent() -> int:
     return 1
 
 
-def export_document(store: reporter_key.ReporterKeyStore) -> Dict[str, Any]:
+def export_document(store: reporter_key.ReporterKeyStore) -> dict[str, Any]:
     """The export as a dict: format, time, signer name, key backup, ledger."""
     pem = store.export_pem().decode("ascii")
     record = consent.current()
@@ -149,7 +149,7 @@ def export_document(store: reporter_key.ReporterKeyStore) -> Dict[str, Any]:
     return {
         "format": EXPORT_FORMAT,
         "version": EXPORT_VERSION,
-        "exported": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "exported": datetime.now(UTC).replace(microsecond=0).isoformat(),
         "reporter_public_key": signing.public_key_hex(store.load_or_create()),
         "reporter_key_pem": pem,
         "statements": audit.read_share_ledger(limit=_EXPORT_LEDGER_ROWS),

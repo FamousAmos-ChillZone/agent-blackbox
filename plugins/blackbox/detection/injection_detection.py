@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 _MAX_INJECTION_TEXT = 50_000
 
 
-def detect_injection(text: str, ruleset: Any, context: Optional[str] = None) -> List[Finding]:
+def detect_injection(text: str, ruleset: Any, context: Optional[str] = None) -> list[Finding]:
     """Match each cached injection regex against *text*.
 
     Patterns are peer-supplied and therefore untrusted: each is wrapped so a
@@ -38,7 +38,7 @@ def detect_injection(text: str, ruleset: Any, context: Optional[str] = None) -> 
         return []
     if len(text) > _MAX_INJECTION_TEXT:
         text = text[:_MAX_INJECTION_TEXT]
-    out: List[Finding] = []
+    out: list[Finding] = []
     seen: set = set()
     for rule in getattr(ruleset, "injection", []) or []:
         pattern = rule.get("pattern")
@@ -68,7 +68,7 @@ def detect_injection(text: str, ruleset: Any, context: Optional[str] = None) -> 
     return out
 
 
-def discover_injection(text: str, ruleset: Any, context: Optional[str] = None) -> List[Finding]:
+def discover_injection(text: str, ruleset: Any, context: Optional[str] = None) -> list[Finding]:
     """Built-in injection discovery: heuristic matches not already in the graph.
 
     Runs the built-in OWASP LLM01/LLM06 heuristics over *text* and nominates a
@@ -85,7 +85,7 @@ def discover_injection(text: str, ruleset: Any, context: Optional[str] = None) -
         ident = rule.get("identifier")
         if ident:
             known.add(ident)
-    out: List[Finding] = []
+    out: list[Finding] = []
     seen: set = set()
     for hit in content_scanners.scan_injection_heuristics(text or ""):
         signature = hit["pattern"]                 # heuristic regex source (shareable)
@@ -121,7 +121,7 @@ def injection_scan_text(args: Any) -> str:
     """
     if isinstance(args, str):
         return args
-    parts: List[str] = []
+    parts: list[str] = []
 
     def walk(value: Any) -> None:
         if isinstance(value, str):

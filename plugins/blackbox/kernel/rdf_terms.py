@@ -10,13 +10,13 @@ Usage: ``make_quad(subject, constants.SEVERITY_PRED, literal("high"))``.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from typing import Dict, Iterable, Optional
 from . import constants
 
 # A quad is a ``{subject, predicate, object}`` dict. ``object`` is a ready N-Triples
 # term (IRIs bare, literals quoted). No per-quad ``graph`` — the daemon pins it.
-Quad = Dict[str, str]
+Quad = dict[str, str]
 
 
 # ---------------------------------------------------------------------------
@@ -133,10 +133,10 @@ def literal(value: str) -> str:
 
 def datetime_literal(ts: Optional[datetime] = None) -> str:
     """Render an ``xsd:dateTime`` typed literal (UTC ISO-8601)."""
-    when = ts or datetime.now(timezone.utc)
+    when = ts or datetime.now(UTC)
     if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    iso = when.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        when = when.replace(tzinfo=UTC)
+    iso = when.astimezone(UTC).isoformat().replace("+00:00", "Z")
     return f'{literal(iso)}^^{constants.XSD_DATETIME}'
 
 

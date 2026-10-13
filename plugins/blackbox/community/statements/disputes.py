@@ -87,9 +87,9 @@ def _verified(row: Mapping[str, Any], environment: str, graph: str) -> Optional[
                            reason=reason, day=payload.get("day", ""))
 
 
-def verified_disputes(rows: Iterable[Mapping[str, Any]], environment: str, graph: str) -> List[VerifiedDispute]:
+def verified_disputes(rows: Iterable[Mapping[str, Any]], environment: str, graph: str) -> list[VerifiedDispute]:
     """Every dispute row that verifies; the rest are dropped and counted in the log."""
-    found: List[VerifiedDispute] = []
+    found: list[VerifiedDispute] = []
     dropped = 0
     for row in rows:
         dispute = _verified(row, environment, graph)

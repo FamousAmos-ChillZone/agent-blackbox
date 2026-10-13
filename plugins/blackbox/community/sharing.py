@@ -33,7 +33,7 @@ HOST_FRAMEWORK = "hermes"
 NEVER_SHARED_SOURCES = ("custom", "llm", "secret")
 
 
-def is_vulnerability_finding(finding: Dict[str, Any]) -> bool:
+def is_vulnerability_finding(finding: dict[str, Any]) -> bool:
     """True for a finding that describes a VULNERABILITY (vs. malware).
 
     Either it says so (``kind == "vulnerability"``, any tier), or it is an OSV
@@ -89,7 +89,7 @@ class CommunitySharePolicy:
     def __init__(self, cfg: BlackboxConfig) -> None:
         self._cfg = cfg
 
-    def decide(self, finding: Dict[str, Any], reporter: Optional[str]) -> "tuple[bool, str]":
+    def decide(self, finding: dict[str, Any], reporter: Optional[str]) -> tuple[bool, str]:
         if not self._cfg.community_enabled:
             return False, "community sharing disabled"
         if not consent.in_force():   # R13: opt-in, bound to the terms' content, withdrawable
@@ -113,7 +113,7 @@ class CommunitySharePolicy:
 LOCAL_ONLY_FIELDS = frozenset({"answered_by"})
 
 
-def shareable_fields(finding: Dict[str, Any]) -> Dict[str, Any]:
+def shareable_fields(finding: dict[str, Any]) -> dict[str, Any]:
     """The fields a report may carry: the finding's evidence plus the sighting
     the guard attached (threat-profiles §03.2) — set, and not local-only."""
     fields = finding.get("fields") if isinstance(finding.get("fields"), dict) else {}
@@ -121,7 +121,7 @@ def shareable_fields(finding: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in {**fields, **sighting}.items() if v is not None and k not in LOCAL_ONLY_FIELDS}
 
 
-def _schema_decision(finding: Dict[str, Any]) -> "tuple[bool, str]":
+def _schema_decision(finding: dict[str, Any]) -> tuple[bool, str]:
     """Whether *finding* builds a valid report (the R1 schema), and why not."""
     fields = shareable_fields(finding)
     try:
@@ -157,7 +157,7 @@ class ShareOutcome(Enum):
 ALREADY_SEALED_REPLY = "is not an active working memory draft"
 
 
-def send_report(client: DkgClient, graph: str, name: str, quads: List[Dict[str, str]]) -> Tuple[ShareOutcome, str]:
+def send_report(client: DkgClient, graph: str, name: str, quads: list[dict[str, str]]) -> tuple[ShareOutcome, str]:
     """Send one built report and say honestly what happened: (outcome, detail).
 
     A report this node already got onto the network (its ledger says so) is
@@ -181,7 +181,7 @@ def send_report(client: DkgClient, graph: str, name: str, quads: List[Dict[str, 
 
 
 def spawn_community_share(
-    client: DkgClient, cfg: BlackboxConfig, finding: Dict[str, Any], reporter: str
+    client: DkgClient, cfg: BlackboxConfig, finding: dict[str, Any], reporter: str
 ) -> threading.Thread:
     """Run the share network lifecycle off the hook hot path (KI-033).
 
@@ -200,7 +200,7 @@ def spawn_community_share(
 
 
 def _share_sighting(
-    client: DkgClient, cfg: BlackboxConfig, finding: Dict[str, Any], reporter: str
+    client: DkgClient, cfg: BlackboxConfig, finding: dict[str, Any], reporter: str
 ) -> None:
     """Share one privacy-safe sighting into the COMMUNITY graph and ledger it.
 
@@ -248,7 +248,7 @@ def _share_sighting(
                                            severity=str(finding.get("severity") or "info"), quads=q)
 
 
-def _ledger_share(finding: Dict[str, Any], subject: str, name: str, *, ok: bool, error: str = "",
+def _ledger_share(finding: dict[str, Any], subject: str, name: str, *, ok: bool, error: str = "",
                   outcome: str = "") -> None:
     audit.record_share_outcome(
         identifier=str(finding.get("identifier") or ""),

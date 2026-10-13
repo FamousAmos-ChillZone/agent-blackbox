@@ -38,9 +38,9 @@ from .events import is_wallet_identifier, local_text, wallet_event_report
 MAX_EVENTS = 20
 
 
-def _events() -> List[Dict[str, Any]]:
+def _events() -> list[dict[str, Any]]:
     """The latest wallet findings, newest first: when, what, which tool, blocked or flagged."""
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for row in audit.read_findings(limit=500):   # flattened rows, newest first
         identifier = str(row.get("identifier") or "")
         if not is_wallet_identifier(identifier):
@@ -54,7 +54,7 @@ def _events() -> List[Dict[str, Any]]:
     return out
 
 
-def wallet_protection_payload() -> Dict[str, Any]:
+def wallet_protection_payload() -> dict[str, Any]:
     """What the panel shows (see the module doc). Fail-open: a part that cannot be read is empty."""
     cfg = load_blackbox_config()
     mode = crypto_secrets.wallet_mode.current()

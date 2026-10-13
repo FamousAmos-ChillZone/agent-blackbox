@@ -39,7 +39,7 @@ def next_sequence(ctx: CurateContext, store: ProposalStore, identifier: str) -> 
     return max(seen) + 1
 
 
-def _published_sequences(ctx: CurateContext, identifier: str) -> List[int]:
+def _published_sequences(ctx: CurateContext, identifier: str) -> list[int]:
     """Sequence numbers of published statements about *identifier* that a
     curator key of the acting authority's manifest signed. Best effort: an
     unreadable graph contributes nothing (the proposal store still counts)."""

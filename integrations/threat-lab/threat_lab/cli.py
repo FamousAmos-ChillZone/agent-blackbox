@@ -39,7 +39,7 @@ DEFAULT_PORT = 8790
 _SWEEP_INTERVAL_SECONDS = 86_400
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: Optional[list[str]] = None) -> int:
     args = _parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     try:

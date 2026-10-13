@@ -17,7 +17,7 @@ def _classes_that_override_hidden(html):
     A class rule such as ``display: flex`` outranks the browser's ``[hidden]`` default, so
     ``el.hidden = true`` silently does nothing (the Trader Shield banner stayed on screen
     after Trader Shield was engaged, 2026-10-12)."""
-    css = "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", html, re.S))
+    css = "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", html, re.DOTALL))
     offenders = []
     for tag in re.findall(r"<[a-z]+\b[^>]*\shidden(?=[\s>/])[^>]*>", html):
         classes = re.search(r'class="([^"]+)"', tag)

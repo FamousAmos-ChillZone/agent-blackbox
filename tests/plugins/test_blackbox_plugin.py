@@ -12,7 +12,6 @@ import pytest
 
 from _blackbox_loader import load_blackbox
 
-
 blackbox = load_blackbox()
 hooks = load_blackbox("guard.hooks")
 community_sharing = load_blackbox("community.sharing")
@@ -137,7 +136,7 @@ def test_release_floor_completion_uses_deduplicated_rule_target(monkeypatch):
     monkeypatch.setattr(sync_command, "load_blackbox_config", lambda: cfg)
     monkeypatch.setattr(sync_command.ruleset, "refresh", lambda *_args, **_kwargs: LocalRules())
     monkeypatch.setattr(sync_command.sync_state, "write", lambda *_args, **_kwargs: {})
-    monkeypatch.setattr(sync_command.sync_state, "read", lambda: {})
+    monkeypatch.setattr(sync_command.sync_state, "read", dict)
 
     result = sync_command._cmd_sync_impl(
         argparse.Namespace(wait=True, timeout=30, require_rules=True)
@@ -1493,7 +1492,7 @@ def test_blackbox_sync_fails_instead_of_waiting_on_empty_zero_insert_snapshot(
         "write",
         lambda status, **details: states.append((status, details)) or details,
     )
-    monkeypatch.setattr(sync_command.sync_state, "read", lambda: {})
+    monkeypatch.setattr(sync_command.sync_state, "read", dict)
 
     result = sync_command._cmd_sync_impl(
         argparse.Namespace(wait=True, timeout=30, require_rules=True)
@@ -3047,7 +3046,7 @@ def test_blackbox_chat_profile_writes_identity_and_attaches(tmp_path, monkeypatc
 
     monkeypatch.setattr(chat_command.attach, "attach_hermes", lambda path: calls.append(path))
 
-    import hermes_cli.profiles as profiles
+    from hermes_cli import profiles
 
     monkeypatch.setattr(profiles, "profile_exists", lambda name: False)
 

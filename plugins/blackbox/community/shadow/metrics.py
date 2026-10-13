@@ -28,7 +28,7 @@ import os
 import secrets
 import statistics
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
@@ -52,8 +52,8 @@ class Snapshot:
     threats with and without counted weight (the newcomer-calibration input)."""
 
     at: str
-    stages: Dict[str, int] = field(default_factory=dict)
-    would_enforce: Dict[str, int] = field(default_factory=dict)
+    stages: dict[str, int] = field(default_factory=dict)
+    would_enforce: dict[str, int] = field(default_factory=dict)
     community_total: int = 0
     already_verified: int = 0
     reporters_median: float = 0.0
@@ -73,10 +73,10 @@ def build_snapshot(rs: Any, now: float) -> Snapshot:
     subset = getattr(rs, "verified_subset", None)
     verified = (set(subset(community)) if callable(subset) else
                 {str(rule.get("identifier") or "") for _cat, rule in rs.iter_rules() if rule.get("source") == "public"})
-    stages: Dict[str, int] = {}
-    would: Dict[str, int] = {}
-    reporters: List[int] = []
-    corroborated_days: List[float] = []
+    stages: dict[str, int] = {}
+    would: dict[str, int] = {}
+    reporters: list[int] = []
+    corroborated_days: list[float] = []
     counted = unlisted = already = 0
     for identifier, rule in community.items():
         stages[str(rule.get("stage") or "")] = stages.get(str(rule.get("stage") or ""), 0) + 1
@@ -91,7 +91,7 @@ def build_snapshot(rs: Any, now: float) -> Snapshot:
             already += 1
         if rule.get("stage") == "corroborated" and rule.get("firstSeen"):
             corroborated_days.append(max(0.0, now - float(rule["firstSeen"])) / _DAY_SECONDS)
-    return Snapshot(at=datetime.fromtimestamp(now, timezone.utc).replace(microsecond=0).isoformat(), stages=stages,
+    return Snapshot(at=datetime.fromtimestamp(now, UTC).replace(microsecond=0).isoformat(), stages=stages,
                     would_enforce=would, community_total=len(community), already_verified=already,
                     reporters_median=float(statistics.median(reporters)) if reporters else 0.0,
                     days_to_corroborated_median=float(statistics.median(corroborated_days)) if corroborated_days else 0.0,
@@ -106,7 +106,7 @@ def write_snapshot(snapshot: Snapshot, path: Optional[Path] = None) -> None:
     """Append (bounded to MAX_SNAPSHOTS lines; fail-open on an unwritable home)."""
     target = path or _path()
     try:
-        lines = [line for line in target.read_text(encoding="utf-8").splitlines() if line.strip()] if target.exists() else []
+        lines = [line for line in target.read_text(encoding="utf-8-sig").splitlines() if line.strip()] if target.exists() else []
         lines = (lines + [json.dumps(asdict(snapshot))])[-MAX_SNAPSHOTS:]
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(f"{target.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
@@ -116,9 +116,9 @@ def write_snapshot(snapshot: Snapshot, path: Optional[Path] = None) -> None:
         logger.warning("blackbox: shadow metrics not written (%s)", exc)
 
 
-def read_all(path: Optional[Path] = None) -> List[Snapshot]:
+def read_all(path: Optional[Path] = None) -> list[Snapshot]:
     try:
-        rows = [json.loads(line) for line in (path or _path()).read_text(encoding="utf-8").splitlines() if line.strip()]
+        rows = [json.loads(line) for line in (path or _path()).read_text(encoding="utf-8-sig").splitlines() if line.strip()]
         return [Snapshot(**{k: v for k, v in row.items() if k in Snapshot.__dataclass_fields__}) for row in rows]
     except (OSError, ValueError, TypeError):
         return []
@@ -129,13 +129,13 @@ def latest(path: Optional[Path] = None) -> Optional[Snapshot]:
     return snapshots[-1] if snapshots else None
 
 
-def calibration_gap(ledger: Any, today: str) -> Tuple[float, float, float]:
+def calibration_gap(ledger: Any, today: str) -> tuple[float, float, float]:
     """(unlisted rejection rate, counted rejection rate, ratio) from the
     curator-private ledger: rejected / (confirmed + rejected) per band. A
     ratio above 2 means newcomers are rejected far more often than listed
     reporters on the same work — review the graduation rule (plan §12)."""
     from ..reputation import ReputationBand
-    rates: Dict[str, List[int]] = {"unlisted": [0, 0], "counted": [0, 0]}
+    rates: dict[str, list[int]] = {"unlisted": [0, 0], "counted": [0, 0]}
     for key in ledger.keys():
         standing = ledger.standing(key)
         band = "unlisted" if standing.band is ReputationBand.PROBATION else "counted"

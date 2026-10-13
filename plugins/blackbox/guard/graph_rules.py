@@ -21,11 +21,11 @@ def detection_rules(cfg, tool_name, args):
         try:
             audit.record(event="protection_degraded", detail=read.evidence())
         except Exception:
-            pass
+            logger.exception("blackbox: could not record degraded graph protection")
         logger.warning("blackbox: graph protection degraded (%s); local checks remain active", read.code)
         try:
             previous = killlist.LastGoodStore().current()
             read.rules.kill_list = previous.as_cache() if previous is not None else {}
         except Exception:
-            pass  # local secret/path policies must run even with a corrupt trust store
+            logger.exception("blackbox: could not load last known trusted rules")
     return read.rules, read.evidence()

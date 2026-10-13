@@ -31,7 +31,7 @@ def _home() -> Path:
     return home
 
 
-def _append_jsonl(path: Path, record: Dict[str, Any]) -> None:
+def _append_jsonl(path: Path, record: dict[str, Any]) -> None:
     line = json.dumps(record, ensure_ascii=False)
     with _lock:
         with path.open("a", encoding="utf-8") as fh:
@@ -56,7 +56,7 @@ def _trim_if_needed(path: Path) -> None:
         pass
 
 
-def _findings_files() -> List["tuple[Path, str]"]:
+def _findings_files() -> list[tuple[Path, str]]:
     """Return ``(path, default_framework)`` for every findings log in the home.
 
     ``findings.jsonl`` is the Hermes plugin's own log; sibling
@@ -65,7 +65,7 @@ def _findings_files() -> List["tuple[Path, str]"]:
     finding line when present, else the filename.
     """
     home = _home()
-    out: List["tuple[Path, str]"] = [(home / "findings.jsonl", "hermes")]
+    out: list[tuple[Path, str]] = [(home / "findings.jsonl", "hermes")]
     try:
         for extra in sorted(home.glob("findings.*.jsonl")):
             # findings.<framework>.jsonl → framework from the middle segment.
@@ -77,10 +77,10 @@ def _findings_files() -> List["tuple[Path, str]"]:
     return out
 
 
-def _audit_files() -> List["tuple[Path, str]"]:
+def _audit_files() -> list[tuple[Path, str]]:
     """Return routine audit logs for Hermes and every attached framework."""
     home = _home()
-    out: List["tuple[Path, str]"] = [(home / "audit.jsonl", "hermes")]
+    out: list[tuple[Path, str]] = [(home / "audit.jsonl", "hermes")]
     try:
         for extra in sorted(home.glob("audit.*.jsonl")):
             parts = extra.name.split(".")
@@ -91,16 +91,16 @@ def _audit_files() -> List["tuple[Path, str]"]:
     return out
 
 
-def _load_jsonl(path: Path, default_event: str) -> List[Dict[str, Any]]:
+def _load_jsonl(path: Path, default_event: str) -> list[dict[str, Any]]:
     """Load a jsonl file, tagging each row with ``event=default_event`` when
     the line has no explicit event (e.g. file_access.jsonl, dependencies.jsonl)."""
     if not path.exists():
         return []
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
     except Exception:
         return []
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for line in lines:
         line = line.strip()
         if not line:

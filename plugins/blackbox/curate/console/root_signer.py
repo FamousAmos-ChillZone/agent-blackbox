@@ -27,7 +27,6 @@ Usage::
 from __future__ import annotations
 
 import base64
-import fcntl
 import hashlib
 import hmac
 import json
@@ -116,6 +115,8 @@ class TotpSecondFactor:
     @contextmanager
     def _exclusive(self) -> Iterator[None]:
         """Hold this object's thread lock and the cross-process file lock."""
+        import fcntl  # POSIX-only: the curator key console runs on Linux/macOS (on Windows this raises, failing closed)
+
         with self._lock:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             fd = os.open(self._path.with_name(self._path.name + ".lock"), os.O_RDWR | os.O_CREAT, _FILE_MODE)
@@ -125,10 +126,10 @@ class TotpSecondFactor:
             finally:
                 os.close(fd)        # closing the descriptor releases the flock
 
-    def _read(self) -> Optional[Tuple[bytes, int]]:
+    def _read(self) -> Optional[tuple[bytes, int]]:
         """(secret bytes, last step), or None when not enrolled or damaged (fail closed)."""
         try:
-            state = json.loads(self._path.read_text(encoding="utf-8"))
+            state = json.loads(self._path.read_text(encoding="utf-8-sig"))
             return base64.b32decode(state["secret"]), int(state["last_step"])
         except (OSError, ValueError, KeyError, TypeError):
             return None
@@ -177,7 +178,7 @@ class RootSigner:
         failure: Optional[str] = None
         try:
             envelope = self._ctx.sign(ManifestDraft(prepared_manifest), key)
-        except Exception as exc:  # noqa: BLE001 - any failure, not only the documented ValueError refusal
+        except Exception as exc:
             # Keep only the message: a live traceback would hold the frames that hold the key
             # (an OSError from the signing log included). Nothing escapes unlogged either way.
             failure = f"{type(exc).__name__}: {exc}"

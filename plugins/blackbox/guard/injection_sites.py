@@ -24,9 +24,9 @@ from . import session_context
 _URL_KEYS = ("url", "uri", "href", "link")
 
 
-def _call_urls(messages: List[Any]) -> Dict[str, Tuple[str, str]]:
+def _call_urls(messages: list[Any]) -> dict[str, tuple[str, str]]:
     """``tool_call_id`` -> (fetch tool name, the URL it was given)."""
-    urls: Dict[str, Tuple[str, str]] = {}
+    urls: dict[str, tuple[str, str]] = {}
     for msg in messages:
         calls = msg.get("tool_calls") if isinstance(msg, Mapping) else None
         for call in calls if isinstance(calls, list) else []:
@@ -48,7 +48,7 @@ def _call_urls(messages: List[Any]) -> Dict[str, Tuple[str, str]]:
     return urls
 
 
-def _fetched_pages(messages: List[Any]) -> List[Tuple[str, str, str]]:
+def _fetched_pages(messages: list[Any]) -> list[tuple[str, str, str]]:
     """(fetch tool, url, page text) for every fetched page returned since the last user turn."""
     start = max((i for i, m in enumerate(messages) if isinstance(m, Mapping) and m.get("role") == "user"), default=0)
     urls = _call_urls(messages)
@@ -59,7 +59,7 @@ def _fetched_pages(messages: List[Any]) -> List[Tuple[str, str, str]]:
     return pages
 
 
-def injection_site_findings(findings: List[detection.Finding], request_messages: Any, rs: Any) -> List[detection.Finding]:
+def injection_site_findings(findings: list[detection.Finding], request_messages: Any, rs: Any) -> list[detection.Finding]:
     """One ``injection-host`` IOC finding per site that carried a VERIFIED
     injection found in a fetched page this turn (deduplicated)."""
     verified = {f.identifier: f for f in findings
@@ -67,7 +67,7 @@ def injection_site_findings(findings: List[detection.Finding], request_messages:
     if not verified:
         return []
     messages = request_messages if isinstance(request_messages, list) else []
-    out: Dict[str, detection.Finding] = {}
+    out: dict[str, detection.Finding] = {}
     for tool, url, text in _fetched_pages(messages):
         matched = [f for f in detection.detect_injection(text, rs, "in-fetched-page") if f.identifier in verified]
         site = community.injection_host_identifier(url) if matched else None

@@ -524,7 +524,7 @@
     {
       "type": "ip",
       "in": "::ffff:192.0.2.128",
-      "canonical": "::ffff:c000:280"
+      "canonical": "::ffff:192.0.2.128"
     },
     {
       "type": "ip",

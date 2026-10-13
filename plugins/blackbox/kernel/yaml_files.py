@@ -14,10 +14,18 @@ from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
-try:  # PyYAML ships with hermes; degrade gracefully if it is somehow absent.
-    import yaml
-except Exception:  # pragma: no cover - yaml is a hard dep in practice
-    yaml = None  # type: ignore[assignment]
+# Hermes 0.21.7 removed PyYAML and reads YAML through its own ruamel-backed ``hermes_yaml``
+# (same safe_load / safe_dump calls); older Hermes ships PyYAML. Without either, every config
+# read would come back empty and Blackbox would silently run on defaults — so say so loudly.
+try:
+    import hermes_yaml as yaml  # type: ignore[import-not-found]
+except ImportError:
+    try:
+        import yaml  # type: ignore[no-redef]
+    except ImportError:  # pragma: no cover - no YAML library at all
+        yaml = None  # type: ignore[assignment]
+        logger.warning("blackbox: no YAML library (hermes_yaml or PyYAML) — config.yaml cannot be read; "
+                       "Blackbox is running on its defaults")
 
 
 # ---------------------------------------------------------------------------
@@ -25,11 +33,11 @@ except Exception:  # pragma: no cover - yaml is a hard dep in practice
 # ---------------------------------------------------------------------------
 
 
-def load_yaml(path: Path) -> Dict[str, Any]:
+def load_yaml(path: Path) -> dict[str, Any]:
     if yaml is None or not path.exists():
         return {}
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data = yaml.safe_load(path.read_text(encoding="utf-8-sig"))
     except Exception as exc:
         logger.debug("blackbox.attach: could not parse %s (%s)", path, exc)
         return {}
@@ -49,5 +57,5 @@ def atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def dump_yaml(path: Path, data: Dict[str, Any]) -> None:
+def dump_yaml(path: Path, data: dict[str, Any]) -> None:
     atomic_write(path, yaml.safe_dump(data, default_flow_style=False, sort_keys=False))
