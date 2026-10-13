@@ -13,9 +13,11 @@ builds the plugin subparsers (issue #54678).
 
 from __future__ import annotations
 
+import io
 import sys
 
 import pytest
+from contextlib import redirect_stdout
 from types import SimpleNamespace
 from unittest.mock import patch
 
