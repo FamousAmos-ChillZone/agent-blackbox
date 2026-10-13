@@ -5507,7 +5507,8 @@
   var WALLET_WHY = {
     vault: "The vault holds your seed phrase and private keys, encrypted with your wallet password. Copied off this machine it can be cracked offline, and whoever cracks it can empty the wallet.",
     seed: "A seed phrase IS the wallet: anyone who has the words controls every account in it, on any device, forever.",
-    key: "A private key signs transactions for its account. Whoever holds it can move the funds."
+    key: "A private key signs transactions for its account. Whoever holds it can move the funds.",
+    exchange: "An exchange API key trades — and, if withdrawals are allowed, withdraws — as your account. A key sent anywhere but its own exchange has been handed to someone else."
   };
   // The wallet an event is about, recognisable at a glance: a vault event shows that wallet's
   // logo (served from /wallets/<id>.svg, allowlisted); a seed phrase or key — which belongs to
@@ -5531,6 +5532,7 @@
     if (/:crypto-wallet$/.test(id)) return "vault";
     if (id === "secret:seed-phrase") return "seed";
     if (id === "secret:wallet-private-key" || id === "secret:solana-private-key") return "key";
+    if (id === "secret:exchange-api-key") return "exchange";
     return "";
   }
   function walletRows(f) {
@@ -5541,6 +5543,8 @@
     var how = /^copy/.test(String(f.evidence || "")) ? "by copying or archiving a folder that contains it" : "by reading it directly";
     if (kind === "vault") rows.push(["Reached for", wallet + "'s vault (the wallet's key store), " + how]);
     if (kind === "seed") rows.push(["Reached for", "a seed phrase (wallet recovery words) in what the agent was handling or sending"]);
+    if (kind === "exchange") rows.push(["Reached for", "an exchange API key, in the header only that exchange uses, sent to " +
+      "a different site (" + ((/\(([^)]+)\)/.exec(String(f.title || "")) || [])[1] || "an exchange") + ")"]);
     if (kind === "key") rows.push(["Reached for", String(f.identifier || "") === "secret:solana-private-key"
       ? "a Solana secret key (what Phantom's \"Export private key\" shows, or a Solana CLI key file)"
       : "a wallet private key, written next to a key label"]);

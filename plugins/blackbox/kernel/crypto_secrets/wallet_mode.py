@@ -32,7 +32,8 @@ SUPPORTED_WALLETS: Dict[str, str] = {"metamask": "MetaMask", "phantom": "Phantom
 #: Wallets on the way (key-store IDs verified, rules not written yet) — shown as "coming soon".
 PLANNED_WALLETS: Tuple[str, ...] = ("Rabby", "Coinbase Wallet", "Trust Wallet", "OKX Wallet", "Keplr", "Solflare")
 #: Findings that belong to the mode: seed phrases, labelled private keys and Solana keys (any wallet)…
-WALLET_SECRET_IDENTIFIERS = frozenset({"secret:seed-phrase", "secret:wallet-private-key", "secret:solana-private-key"})
+WALLET_SECRET_IDENTIFIERS = frozenset({"secret:seed-phrase", "secret:wallet-private-key", "secret:solana-private-key",
+                                       "secret:exchange-api-key"})   # …and an exchange key sent to a site not its own
 #: …and key-store access, which names its wallet in ``fields["wallet"]``.
 WALLET_FILE_SUFFIX = ":crypto-wallet"
 #: ``fields["wallet"]`` of a Firefox extension key store: Firefox names each install's

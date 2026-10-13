@@ -30,7 +30,7 @@ from .ioc_detection import detect_ioc, ioc_context
 from .skill_detection import detect_skill
 from .paths.protected import detect_custom_fileaccess  # noqa: F401 — re-exported for callers
 from .wallet_files import detect_wallet_files
-from ..kernel import threat_ids
+from ..kernel import crypto_secrets, threat_ids
 
 logger = logging.getLogger(__name__)
 
@@ -324,6 +324,25 @@ def detect_secret_exposure(tool_name: str, args: Any) -> List[Finding]:
     return out
 
 
+def detect_exchange_key_misdirection(tool_name: str, args: Any) -> List[Finding]:
+    """An exchange's API key header sent to a site that is not that exchange
+    (:mod:`kernel.crypto_secrets.exchange_keys`). Critical, local-only, under Trader Shield."""
+    exchanges = crypto_secrets.misdirected_exchange_keys(injection_scan_text(args))
+    return [
+        Finding(
+            identifier="secret:exchange-api-key",
+            category="secret",
+            severity="critical",
+            title=f"Exchange API key sent to another site ({', '.join(exchanges)})",
+            tool_name=tool_name or "",
+            matched="exchange-api-key",   # the TYPE only — never the key
+            evidence=f"exchange-api-key ({', '.join(exchanges)})",
+            confirmed=False,
+            source="secret",
+        )
+    ] if exchanges else []
+
+
 def detect_all(tool_name: str, args: Any, ruleset: Any, discover: bool = True) -> List[Finding]:
     """Run every detector (graph rules + built-in discovery) across categories.
 
@@ -347,6 +366,7 @@ def detect_all(tool_name: str, args: Any, ruleset: Any, discover: bool = True) -
     findings.extend(detect_ioc(tool_name, args, ruleset, ioc_context(tool_name, args)))
     # Secret exposure and wallet key stores always run (not gated by discovery): personal, never shared.
     findings.extend(detect_secret_exposure(tool_name, args))
+    findings.extend(detect_exchange_key_misdirection(tool_name, args))
     findings.extend(detect_wallet_files(tool_name, args))
     if not discover:
         findings = [f for f in findings if f.source != "heuristic"]
