@@ -95,21 +95,29 @@ def detect_secret_exposure(tool_name: str, args: Any) -> list[Finding]:
 
 def detect_exchange_key_misdirection(tool_name: str, args: Any) -> list[Finding]:
     """An exchange's API key header sent to a site that is not that exchange
-    (:mod:`kernel.crypto_secrets.exchange_keys`). Critical, local-only, under Trader Shield."""
-    exchanges = crypto_secrets.misdirected_exchange_keys(injection_scan_text(args))
-    return [
-        Finding(
-            identifier="secret:exchange-api-key",
-            category="secret",
-            severity="critical",
-            title=f"Exchange API key sent to another site ({', '.join(exchanges)})",
-            tool_name=tool_name or "",
-            matched="exchange-api-key",   # the TYPE only — never the key
-            evidence=f"exchange-api-key ({', '.join(exchanges)})",
-            confirmed=False,
-            source="secret",
-        )
-    ] if exchanges else []
+    (:mod:`kernel.crypto_secrets.exchange_keys`): critical, local-only, under Trader Shield.
+    When the text cannot show the key — headers read from a file, a key and secret sent as
+    values — and it goes to a site no exchange uses: flagged high, or critical when the
+    key and secret travel with an exchange named (KI-379)."""
+    text = injection_scan_text(args)
+    exchanges = crypto_secrets.misdirected_exchange_keys(text)
+    doubts = [] if exchanges else crypto_secrets.exchange_keys.exchange_key_doubts(text)
+    if not exchanges and not doubts:
+        return []
+    named = "an API key and secret" in doubts and crypto_secrets.exchange_keys.names_an_exchange(text)
+    detail = ", ".join(exchanges or doubts)
+    return [Finding(
+        identifier="secret:exchange-api-key",
+        category="secret",
+        severity="critical" if (exchanges or named) else "high",
+        title=(f"Exchange API key sent to another site ({detail})" if exchanges
+               else f"Exchange API key may be going to another site ({detail})"),
+        tool_name=tool_name or "",
+        matched="exchange-api-key",   # the TYPE only — never the key
+        evidence=f"exchange-api-key ({detail})",
+        confirmed=False,
+        source="secret",
+    )]
 
 
 #: A 64-hex value: the only shape a raw Ethereum private key can take.
