@@ -16,6 +16,10 @@ Two more ways a command reads files without naming them to ``cat``:
   quoted paths in its code are read (:func:`_script_args`). A path the code builds
   piece by piece is not seen, except the common ``home + '.config/…'`` join.
 
+A ``cd`` earlier in the same command line is followed (``cd ~ && zip -r x .config/Exodus``
+reads ``~/.config/Exodus``); the agent's starting folder is not known, so a relative path
+with no ``cd`` before it stays relative.
+
 Words are split the way a POSIX shell splits them (quotes and backslash
 escapes respected), so ``~/Library/Application\\ Support/...`` stays ONE path.
 A command line the shell parser cannot split (an unbalanced quote) falls back
@@ -124,8 +128,11 @@ def shell_file_args(command: str) -> List[ShellFileArg]:
     out: List[ShellFileArg] = []
     seen: set = set()
 
+    folder = ""   # where an earlier ``cd`` in this command line moved to ("" = unknown)
+
     def keep(found: List[ShellFileArg]) -> None:
         for arg in found:
+            arg = _from_folder(arg, folder)
             if arg.path not in seen:
                 seen.add(arg.path)
                 out.append(arg)
@@ -133,6 +140,9 @@ def shell_file_args(command: str) -> List[ShellFileArg]:
     index = 0
     while index < len(words):
         name = words[index].rsplit("/", 1)[-1].lower()
+        if name in ("cd", "pushd"):
+            folder, index = _cd(words, index, folder)
+            continue
         if name == "find":
             found, index = _find_args(words, index)
         elif name in _INTERPRETERS:
@@ -166,7 +176,12 @@ def _command_args(name: str, words: List[str], index: int) -> Tuple[List[ShellFi
     if flags:
         recursive = any(word in flags or (word.startswith("-") and not word.startswith("--")
                                           and ("r" in word or "R" in word)) for word in arguments)
-    paths = [word for word in arguments if not word.startswith("-") and _looks_like_path(word)]
+    # A copy or archive command's operands are all paths, bare folder names included
+    # (``cd ~/.config && tar czf x.tgz Exodus``); a read command's need to look like one.
+    old_style_tar_flags = name == "tar" and bool(arguments) and arguments[0].isalpha()   # ``tar czf …``
+    paths = [word for position, word in enumerate(arguments) if not word.startswith("-")
+             and not (old_style_tar_flags and position == 0)
+             and (_looks_like_path(word) or (name in _RECURSIVE_COMMANDS and word != "{}"))]
     written = _destinations(name, arguments, paths)
     return [ShellFileArg(path=word, command=name, recursive=recursive, destination=word in written)
             for word in paths], end
@@ -196,6 +211,8 @@ def _destinations(name: str, arguments: List[str], paths: List[str]) -> set:
                 return {value}
         return set()
     if name in _ARCHIVE_FIRST:
+        if "-" in arguments[:arguments.index(paths[0])] if paths else False:
+            return set()   # ``zip -r - SRC``: the archive goes to stdout, every path is read
         return {paths[0]} if paths else set()
     if name == "compress-archive":
         lowered = [word.lower() for word in arguments]
@@ -264,3 +281,31 @@ def _paths_in_code(interpreter: str, code: str) -> List[ShellFileArg]:
             relative = literal[2:] if literal.startswith("./") else literal   # keep ".config"'s own dot
             found.append(ShellFileArg(path="~/" + relative, command=interpreter, recursive=recursive))
     return found
+
+
+def _cd(words: List[str], index: int, folder: str) -> Tuple[str, int]:
+    """The folder a ``cd``/``pushd`` at *index* moves to: an absolute or home path as
+    written, a relative one joined onto the folder already known; ``cd`` alone is home.
+    Unknown (``""``) when it moves somewhere this cannot name (``cd -``, ``cd $DIR``)."""
+    end = _segment_end(words, index + 1)
+    targets = [word for word in words[index + 1:end] if not word.startswith("-") or word == "-"]
+    target = targets[0] if targets else "~"
+    if target == "-" or (target.startswith("$") and not target.startswith("$HOME")):
+        return "", end
+    if _is_anchored(target):
+        return target.rstrip("/") or "/", end
+    return (folder.rstrip("/") + "/" + target) if folder else "", end
+
+
+def _is_anchored(path: str) -> bool:
+    """True for a path that does not depend on the current folder."""
+    return path.startswith(("/", "~", "$HOME", "%")) or bool(re.match(r"[A-Za-z]:[\\/]", path))
+
+
+def _from_folder(arg: ShellFileArg, folder: str) -> ShellFileArg:
+    """*arg* with a relative path placed under the folder an earlier ``cd`` moved to."""
+    if not folder or _is_anchored(arg.path):
+        return arg
+    relative = arg.path[2:] if arg.path.startswith("./") else arg.path
+    joined = folder if relative in (".", "") else folder.rstrip("/") + "/" + relative
+    return ShellFileArg(path=joined, command=arg.command, recursive=arg.recursive, destination=arg.destination)

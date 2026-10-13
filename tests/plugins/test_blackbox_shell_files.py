@@ -44,7 +44,7 @@ def test_grep_reads_folders_only_with_a_recursive_flag():
 
 def test_each_command_after_a_separator_is_its_own():
     assert _paths("cd /tmp && cat a.txt | base64 > b.txt; ls ~/x") == [
-        ("a.txt", "cat", False),
+        ("/tmp/a.txt", "cat", False),   # the cd before it is followed
     ]
 
 
@@ -140,3 +140,29 @@ def test_a_heredoc_script_is_read_like_a_one_liner():
 ])
 def test_scripts_without_file_paths_yield_nothing(command):
     assert _paths(command) == []
+
+
+# -- cd: relative paths after a cd in the same command line --------------------
+
+@pytest.mark.parametrize("command, path", [
+    ("cd ~ && zip -qr - .config/Exodus/exodus.wallet", "~/.config/Exodus/exodus.wallet"),   # found on the bench
+    ("cd ~/.config && tar czf x.tgz Exodus", "~/.config/Exodus"),
+    ("cd && cat .ssh/id_rsa", "~/.ssh/id_rsa"),
+    ("cd /srv; cd app && cat .env", "/srv/app/.env"),
+    ("cd ~/.config/google-chrome && find . -exec cat {} +", "~/.config/google-chrome"),
+])
+def test_a_cd_earlier_in_the_line_places_relative_paths(command, path):
+    assert path in [arg.path for arg in shell_file_args(command)]
+
+
+def test_a_cd_to_somewhere_unknown_leaves_paths_relative():
+    assert [arg.path for arg in shell_file_args("cd $DIR && cat a/b.txt")] == ["a/b.txt"]
+    assert [arg.path for arg in shell_file_args("cd - && cat a/b.txt")] == ["a/b.txt"]
+
+
+def test_zip_to_stdout_reads_every_path():
+    assert [(arg.path, arg.destination) for arg in shell_file_args("zip -qr - ~/.ssh")] == [("~/.ssh", False)]
+
+
+def test_old_style_tar_flags_are_not_a_path():
+    assert [arg.path for arg in shell_file_args("tar czf - ~/.ssh")] == ["~/.ssh"]
