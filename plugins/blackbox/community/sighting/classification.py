@@ -51,6 +51,8 @@ _FILE: Dict[str, Classification] = {
     "system-shadow": Classification("credential-theft", "system-accounts", "T1003.008"),
     # A browser wallet's key store: the encrypted vault, cracked offline once copied (ATT&CK: Credentials from Web Browsers).
     "crypto-wallet": Classification("wallet-drain", "wallet-keys", "T1555.003"),
+    # The macOS keychain: saved passwords and the browsers' Safe Storage keys (ATT&CK: Keychain).
+    "macos-keychain": Classification("credential-theft", "password-store", "T1555.001"),
 }
 #: A secret the agent handled or sent (local-only findings): which secret type -> what it opens.
 _SECRET: Dict[str, Classification] = {

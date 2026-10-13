@@ -15,12 +15,6 @@ writes (``cp .env.example .env`` sets a project up; it reads no secret).
 A template (``.env.example``, ``.env.sample``…) is not a secret: it matches only
 a pattern that names the template itself.
 
-The macOS keychain has a second door: the ``security`` tool prints a saved
-password or dumps the keychain without touching its file (macOS stealers take
-the browsers' "Safe Storage" key this way). While a protected pattern covers
-``Library/Keychains``, those ``security`` commands count as reading it
-(:func:`_reads_keychain`; options checked against ``security <verb> -h``, macOS 15).
-
 Usage::
 
     detect_custom_fileaccess("read_file", {"path": "~/.ssh/id_rsa"}, ["~/.ssh/*"])
@@ -32,7 +26,6 @@ from __future__ import annotations
 
 import fnmatch
 import os
-import re
 from typing import Any, Iterable, List, Tuple
 
 from .. import action_parsing, shell_shapes
@@ -42,21 +35,6 @@ from . import shell_files
 
 #: Endings that mark a file as a template to copy, not the secret itself.
 _TEMPLATE_SUFFIXES = (".example", ".sample", ".template", ".dist", ".default")
-#: ``security`` verbs that reveal secrets, with the options that make them do it
-#: (empty: the verb always does). ``export`` reveals keys unless limited to certificates.
-_KEYCHAIN_SECRET_VERBS = {
-    "find-generic-password": ("-w", "-g"),
-    "find-internet-password": ("-w", "-g"),
-    "dump-keychain": ("-d", "-r"),
-    "export": (),
-}
-_EXPORT_HARMLESS_TYPES = {"certs", "pubkeys"}
-#: Words after which the next word is a command being run (not an argument).
-_COMMAND_POSITION = frozenset({";", "&&", "||", "|", "&", "sudo", "exec", "command", "nohup", "time", "env"})
-#: ``NAME=`` before a command (``K=$(security …)`` after the substitution is opened up).
-_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-#: What a secret-printing ``security`` command is taken to read: the user's keychain folder.
-_KEYCHAIN_FOLDER = "~/Library/Keychains/login.keychain-db"
 
 
 def _protected_path_match(path: str, pattern: str) -> bool:
@@ -105,30 +83,6 @@ def _folder_holds(folder: str, pattern: str) -> bool:
     return place == norm_folder or place.startswith(norm_folder.rstrip(os.sep) + os.sep)
 
 
-def _reads_keychain(command: str) -> bool:
-    """True when *command* runs ``security`` in a way that prints keychain secrets."""
-    words = command.replace(";", " ; ").replace("$(", " ").replace("`", " ").split()
-    for index, word in enumerate(words):
-        if word.rsplit("/", 1)[-1] != "security" or index + 1 >= len(words):
-            continue
-        before = words[index - 1] if index else ";"
-        if before not in _COMMAND_POSITION and not _ASSIGNMENT.match(before):   # "echo security …" only mentions it
-            continue
-        verb, options = words[index + 1], words[index + 2:]
-        if verb not in _KEYCHAIN_SECRET_VERBS:
-            continue
-        if verb == "export":
-            types = [value.lower() for flag, value in zip(options, options[1:]) if flag == "-t"]
-            if not types or not set(types) <= _EXPORT_HARMLESS_TYPES:
-                return True
-            continue
-        wanted = {flag.lstrip("-") for flag in _KEYCHAIN_SECRET_VERBS[verb]}
-        if any(option.startswith("-") and not option.startswith("--") and wanted & set(option.lstrip("-"))
-               for option in options):
-            return True
-    return False
-
-
 def _accesses(tool_name: str, args: Any) -> List[Tuple[str, str, str]]:
     """``(tool, path, mode)`` for each file this call reads or copies: the file tool's
     path, or every path a terminal command reads, copies or archives (``mode`` is
@@ -140,11 +94,8 @@ def _accesses(tool_name: str, args: Any) -> List[Tuple[str, str, str]]:
     if tool not in shell_shapes.SHELL_TOOLS:
         return []
     command = shell_shapes.command_from_args(tool_name, args)
-    found = [(tool, arg.path, "copy" if arg.recursive else "read")
-             for arg in shell_files.shell_file_args(command) if not arg.destination]
-    if _reads_keychain(command):
-        found.append((tool, _KEYCHAIN_FOLDER, "read"))
-    return found
+    return [(tool, arg.path, "copy" if arg.recursive else "read")
+            for arg in shell_files.shell_file_args(command) if not arg.destination]
 
 
 def detect_custom_fileaccess(

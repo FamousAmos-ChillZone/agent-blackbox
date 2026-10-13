@@ -35,7 +35,6 @@ DEFAULT_PROTECTED_PATHS: Tuple[str, ...] = (
     "*.key",             # private key files
     "*.p12",             # PKCS#12 / PFX keystores
     "~/.aws/credentials",  # cloud credential store
-    "~/Library/Keychains/*",   # macOS keychains: saved passwords, the browsers' Safe Storage keys (stealers copy these)
     "~/.hermes/blackbox/*",   # Blackbox's own state: overrides, allowlist, consent, ledgers (review round 4)
     "~/.hermes/plugins/blackbox/*",   # the plugin code itself
 )

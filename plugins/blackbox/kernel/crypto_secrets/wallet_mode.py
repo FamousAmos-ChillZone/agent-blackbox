@@ -40,6 +40,8 @@ WALLET_SECRET_IDENTIFIERS = frozenset({"secret:seed-phrase", "secret:wallet-priv
                                        "secret:token-approval-drainer", "secret:token-approval-unlimited"})   # …token approvals
 #: …and key-store access, which names its wallet in ``fields["wallet"]``.
 WALLET_FILE_SUFFIX = ":crypto-wallet"
+#: …and the macOS keychain (saved passwords, the browsers' Safe Storage keys), any wallet.
+KEYCHAIN_FILE_SUFFIX = ":macos-keychain"
 #: ``fields["wallet"]`` of a Firefox extension key store: Firefox names each install's
 #: storage by a random UUID, so the folder cannot be tied to one wallet. It belongs to
 #: EVERY chosen wallet — counted whenever the mode is on with any wallet chosen.
@@ -76,6 +78,8 @@ class WalletProtection:
         not wallet findings are always allowed (this mode governs wallets only)."""
         identifier = str(finding.get("identifier") or "")
         if identifier in WALLET_SECRET_IDENTIFIERS:
+            return self.enabled
+        if identifier.endswith(KEYCHAIN_FILE_SUFFIX):
             return self.enabled
         if identifier.endswith(WALLET_FILE_SUFFIX):
             fields = finding.get("fields")
