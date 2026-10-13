@@ -37,7 +37,8 @@ PLANNED_WALLETS: tuple[str, ...] = ("Rabby", "Coinbase Wallet", "Trust Wallet", 
 #: Findings that belong to the mode: seed phrases, labelled private keys and Solana keys (any wallet)…
 WALLET_SECRET_IDENTIFIERS = frozenset({"secret:seed-phrase", "secret:wallet-private-key", "secret:solana-private-key",
                                        "secret:exchange-api-key",    # …an exchange key sent to a site not its own
-                                       "secret:token-approval-drainer", "secret:token-approval-unlimited"})   # …token approvals
+                                       "secret:token-approval-drainer", "secret:token-approval-unlimited",    # …token approvals
+                                       "secret:token-approval-unchecked-spender"})
 #: …and key-store access, which names its wallet in ``fields["wallet"]``.
 WALLET_FILE_SUFFIX = ":crypto-wallet"
 #: …and the macOS keychain (saved passwords, the browsers' Safe Storage keys), any wallet.

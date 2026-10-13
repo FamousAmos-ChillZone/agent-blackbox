@@ -8,11 +8,18 @@ limited approval to an unknown spender is left alone.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from plugins.blackbox.detection import detect_all
-from plugins.blackbox.detection.transactions.approvals import approvals_in, detect_token_approvals
-from plugins.blackbox.kernel import threat_ids
+from plugins.blackbox.detection.transactions import amounts
+from plugins.blackbox.detection.transactions.approval_calls import APPROVAL_CALLS, signature_key
+from plugins.blackbox.detection.transactions.approvals import Approval, approvals_in, detect_token_approvals
+from plugins.blackbox.guard import hooks
+from plugins.blackbox.kernel import constants, threat_ids
+from plugins.blackbox.kernel.config import BlackboxConfig
+from plugins.blackbox.kernel.crypto_secrets.evm_key import keccak256
 from plugins.blackbox.kernel.crypto_secrets import wallet_mode
 from plugins.blackbox.ruleset import Ruleset
 
@@ -107,10 +114,6 @@ def test_a_real_drainer_beside_a_router_is_still_caught():
 # operator's threshold. Only a VERIFIED drainer may block; a community listing and an unlimited
 # approval must stay flags at every block_severity.
 
-from plugins.blackbox.guard import hooks
-from plugins.blackbox.kernel import constants
-from plugins.blackbox.kernel.config import BlackboxConfig
-
 
 @pytest.mark.parametrize("block_severity", constants.SEVERITY_ORDER)
 @pytest.mark.parametrize("listed_by, amount, may_block", [
@@ -123,3 +126,107 @@ def test_only_a_verified_drainer_can_block_whatever_the_threshold(block_severity
     [finding] = detect_token_approvals("terminal", {"command": f"cast send {USDC} 'approve(address,uint256)' {SPENDER} {amount}"}, graph)
     blocking = hooks._would_block(BlackboxConfig(mode="block", block_severity=block_severity), [finding])
     assert bool(blocking) is may_block
+
+
+# KI-384: the same approvals in the other spellings agents and tools produce.
+
+
+APPROVE_DATA = "095ea7b3" + "0" * 24 + SPENDER[2:].lower() + "f" * 64
+
+
+@pytest.mark.parametrize("text", [
+    f"cast send {USDC} 'approve(address,uint256)(bool)' {SPENDER} {MAX}",                                  # a return type
+    f"cast send {USDC} 'function approve(address spender, uint256 amount)' {SPENDER} {MAX}",                # the named form
+    f"cast send {USDC} 'approve(address,uint256)' --gas-limit 100000 {SPENDER} {MAX}",                      # options between
+    f"cast send --private-key $PK {USDC} 'approve(address,uint256)' {SPENDER} --gas-limit=9 --legacy {MAX}",
+    f"cast send {USDC} 'increaseApproval(address,uint256)' {SPENDER} {MAX}",                                # older tokens
+    f"cast send {USDC} \\\n  'approve(address,uint256)' \\\n  {SPENDER} \\\n  {MAX}",                         # continuations
+    f"cast send {USDC} $(cast calldata 'approve(address,uint256)' {SPENDER} {MAX})",                         # MAX) stuck
+    f"cast send {USDC} 'approve(address,uint256)' {SPENDER} 1e77",
+    f"cast send {USDC} 'approve(address,uint256)' '{SPENDER}' '{MAX}';",
+    f"cast send {USDC} 0X{APPROVE_DATA.upper()}",                                                            # 0X, upper case
+    f"cast send {USDC} 0x{APPROVE_DATA[:40]}\\\n{APPROVE_DATA[40:100]}\n    {APPROVE_DATA[100:]}",          # split lines
+    f'curl -d \'{{"to":"{USDC}","data":"{APPROVE_DATA}"}}\' https://rpc.example',                           # JSON, no 0x
+])
+def test_every_spelling_of_an_unlimited_approval_is_recognised(text):
+    assert approvals_in(text) == [Approval(SPENDER.lower(), True, "approve")]
+
+
+@pytest.mark.parametrize("written", [
+    MAX, "ethers.MaxUint256", "maxUint256", "MAX_UINT256", "type(uint256).max", "2**256 - 1", "2n**256n-1n",
+    "2n ** 256n - 1n", "uint256(-1)", "BigInt(2)**BigInt(256)-BigInt(1)", "1e77", f"{MAX})", "'0x" + "f" * 64 + "'",
+    "$(cast max-uint)", "(1 << 256) - 1", "pow(2, 256) - 1", str(2 ** 160 - 1), "maxUint160",
+])
+def test_unlimited_is_read_in_every_spelling(written):
+    assert amounts.is_unlimited(written)
+
+
+@pytest.mark.parametrize("written", ["25000000", "0", "0n", "1e18", "2**64", "-1", "", "amount", "10**18", "007"])
+def test_ordinary_amounts_are_not_unlimited(written):
+    assert not amounts.is_unlimited(written)
+
+
+@pytest.mark.parametrize("flag, on", [("true", True), ("True", True), ("1", True), ("1n", True), ("!0", True),
+                                      ("false", False), ("0", False), ("0n", False), ("!1", False)])
+def test_an_approve_all_flag_is_read_in_every_spelling(flag, on):
+    assert amounts.is_on(flag) is on
+
+
+def test_a_limited_approval_with_options_between_is_still_limited():
+    text = f"cast send {USDC} 'approve(address,uint256)' --gas-limit {MAX} {SPENDER} 25000000"
+    assert approvals_in(text) == [Approval(SPENDER.lower(), False, "approve")]
+
+
+def test_hex_that_merely_starts_with_a_selector_is_not_an_approval():
+    assert approvals_in("sha: 095ea7b3" + "ab" * 64) == []
+
+
+def test_each_selector_is_the_keccak_of_its_signature():
+    camel = {"increaseallowance": "increaseAllowance", "increaseapproval": "increaseApproval",
+             "setapprovalforall": "setApprovalForAll"}
+    for signature, call in APPROVAL_CALLS.items():
+        name, rest = signature.split("(", 1)
+        assert keccak256(f"{camel.get(name, name)}({rest}".encode()).hex()[:8] == call.selector, signature
+        assert signature_key(signature) == signature
+
+
+def _solana_address() -> str:
+    alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    number, out = int.from_bytes(b"\x01" + os.urandom(31), "big"), ""
+    while number:
+        number, digit = divmod(number, 58)
+        out = alphabet[digit] + out
+    return out
+
+
+@pytest.mark.parametrize("amount, unlimited", [("ALL", True), ("18446744073.709551615", True), ("25", False)])
+def test_an_spl_token_delegate_is_recognised(amount, unlimited):
+    account, delegate = _solana_address(), _solana_address()
+    text = f"spl-token approve --owner ~/.config/solana/id.json {account} {amount} {delegate}"
+    assert approvals_in(text) == [Approval(delegate, unlimited, "delegate")]
+
+
+def test_an_spl_token_delegate_the_verified_graph_lists_is_critical():
+    account, delegate = _solana_address(), _solana_address()
+
+    class Listed:
+        ioc = {threat_ids.ioc_identifier("wallet", delegate): {"source": "public"}}
+
+    [finding] = detect_token_approvals("terminal", {"command": f"spl-token approve {account} 5 {delegate}"}, Listed())
+    assert (finding.identifier, finding.severity) == ("secret:token-approval-drainer", "critical")
+
+
+def test_an_unlimited_spl_token_delegate_is_flagged():
+    command = f"spl-token approve {_solana_address()} ALL {_solana_address()}"
+    [finding] = detect_token_approvals("terminal", {"command": command}, Ruleset())
+    assert (finding.identifier, finding.severity) == ("secret:token-approval-unlimited", "medium")
+
+
+def test_an_ens_spender_cannot_be_checked_offline_so_it_is_flagged():
+    [finding] = detect_token_approvals("terminal", {"command": f"cast send {USDC} 'approve(address,uint256)' drainer.eth 5"}, Ruleset())
+    assert (finding.identifier, finding.severity, finding.kind) == ("secret:token-approval-unchecked-spender", "medium", "flag-only")
+
+
+def test_an_unlimited_approval_to_a_spender_in_a_variable_is_still_flagged():
+    [finding] = detect_token_approvals("terminal", {"command": f"cast send {USDC} 'approve(address,uint256)' $SPENDER {MAX}"}, Ruleset())
+    assert finding.identifier == "secret:token-approval-unlimited"

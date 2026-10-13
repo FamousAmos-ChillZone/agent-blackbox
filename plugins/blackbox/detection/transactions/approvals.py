@@ -5,15 +5,9 @@ on a token, or ``setApprovalForAll(operator, true)`` on an NFT collection, after
 which the spender moves the tokens whenever it likes. An agent can be steered
 into sending exactly that ("claim your airdrop: approve this contract").
 
-What is recognised, in the three ways an agent sends a transaction:
-
-* Foundry: ``cast send|mktx|calldata <token> "approve(address,uint256)" <spender> <amount>``
-  (also ``increaseAllowance`` and ``setApprovalForAll(address,bool)``);
-* raw calldata anywhere in the call: selectors ``0x095ea7b3`` (approve),
-  ``0x39509351`` (increaseAllowance), ``0xa22cb465`` (setApprovalForAll) — the
-  bytes ``cast calldata`` produces (Foundry 1.8.5, checked on the trader bench);
-* script code (ethers / web3 / viem): ``.approve(<spender>, MaxUint256)`` and
-  ``setApprovalForAll(<operator>, true)``.
+What is recognised — Foundry ``cast`` and ``spl-token`` command lines, raw calldata
+however its hex is written, and ethers / web3 / viem script code, in every spelling of
+the signature and of "unlimited" — is listed in :mod:`.approval_forms`.
 
 What it does with one:
 
@@ -25,6 +19,9 @@ What it does with one:
   ``2**256-1``, ``cast max-uint``) or an approve-all → medium, flagged so the operator
   sees it: DeFi bots approve routers this way every day, so it must not block
   (``flag-only`` too, even with ``block_severity`` lowered to medium);
+* a spender written as an ENS name (``drainer.eth``) → medium, flagged: the name
+  cannot be resolved to an address offline, so it cannot be looked up — saying so
+  beats saying nothing;
 * a limited approval to an unknown spender → nothing;
 * an approval to a well-known exchange router (Uniswap, SushiSwap, PancakeSwap, 1inch —
   ``kernel/crypto_secrets/known_contracts.json``) → nothing, whatever a feed says about it:
@@ -49,6 +46,7 @@ from .. import ioc_detection
 from ..finding import KIND_FLAG_ONLY, Finding, _rule_source
 from ..injection_detection import injection_scan_text
 from ...kernel import crypto_secrets, threat_ids
+from .approval_calls import is_ens_name
 from .approval_forms import Approval, approvals_in
 
 __all__ = ["Approval", "approvals_in", "detect_token_approvals"]
@@ -56,7 +54,9 @@ __all__ = ["Approval", "approvals_in", "detect_token_approvals"]
 
 def _listed_by(ruleset: Any, address: str) -> str:
     """Who lists *address* as malicious: ``"public"`` (the verified graph), another rule
-    source (community), or ``""`` for nobody."""
+    source (community), or ``""`` for nobody (or for a spender that is no address)."""
+    if not address or is_ens_name(address):
+        return ""
     identifiers = [threat_ids.ioc_identifier("wallet", address), threat_ids.ioc_identifier("contract", address)]
     sources = {_rule_source(rule) for rule in ioc_detection.ioc_rules(ruleset, identifiers).values()}
     return "public" if "public" in sources else (next(iter(sources)) if sources else "")
@@ -80,6 +80,9 @@ def detect_token_approvals(tool_name: str, args: Any, ruleset: Any) -> list[Find
     elif unlimited:
         finding = _finding(tool_name, "token-approval-unlimited", "medium",
                            "Unlimited token approval (the spender can move every token, any time)", KIND_FLAG_ONLY)
+    elif any(is_ens_name(approval.spender) for approval in approvals):
+        finding = _finding(tool_name, "token-approval-unchecked-spender", "medium",
+                           "Token approval to a spender Blackbox cannot check (an ENS name)", KIND_FLAG_ONLY)
     return [finding] if finding else []
 
 
