@@ -9,8 +9,8 @@ from test_blackbox_direct_graph import GraphNode, CG, PART, BASE, D, DP, config,
 
 
 @pytest.mark.parametrize("recovery", ["transient", "persistent", "empty"])
-def test_complete_snapshot_waits_for_fresh_read_and_preserves_read_failure(tmp_path, local_server, monkeypatch, recovery):
-    url, calls, _ = local_server
+def test_complete_snapshot_waits_for_fresh_read_and_preserves_read_failure(tmp_path, request, monkeypatch, recovery):
+    url, calls, _ = request.getfixturevalue("local_server")
     configured = replace(cfg(tmp_path), dkg_url=url)
     samples = 0
 
