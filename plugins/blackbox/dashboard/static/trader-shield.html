@@ -557,11 +557,10 @@
       el.innerHTML = '<span class="state off">Not engaged</span><span class="detail">Trader Shield is off on this machine.</span>';
       return;
     }
-    var found = (d.wallets || []).filter(function (w) { return w.protected; }).map(function (w) {
-      return esc(w.wallet) + " · " + esc(w.browser) + (w.profile ? " (" + esc(w.profile) + ")" : "");
-    });
+    // The wallets themselves are listed on the dashboard's panel; here only the state, and a note if none is guarded.
+    var guarded = (d.wallets || []).some(function (w) { return w.protected; });
     el.innerHTML = '<span class="state on">● Engaged · ' + (d.mode === "block" ? "blocking" : "watching only (audit mode)") + "</span>" +
-      '<span class="detail">' + (found.length ? "Protecting " + found.join(", ") : "No protected wallet found on this machine yet") + "</span>";
+      (guarded ? "" : '<span class="detail">No protected wallet found on this machine yet</span>');
     var engage = document.getElementById("engage");
     engage.textContent = "Trader Shield is engaged";
     engage.disabled = true;
