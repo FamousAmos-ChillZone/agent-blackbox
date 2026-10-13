@@ -102,7 +102,7 @@ def test_a_no_on_the_terminal_switches_nothing_on(monkeypatch):
 def test_a_key_hermes_will_not_have_at_run_time_is_not_saved_by_name(monkeypatch):
     # found in ANOTHER profile's .env: this process's Hermes will not load it
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr(discovery, "_runtime_env", lambda: {})
+    monkeypatch.setattr(discovery, "_runtime_env", dict)
 
     assert discovery.reachable_key_env(_hermes_candidate()) == ""
 

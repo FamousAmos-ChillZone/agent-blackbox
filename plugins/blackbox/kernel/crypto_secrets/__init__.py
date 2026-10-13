@@ -41,8 +41,8 @@ from .known_contracts import RouterMatch, protocol_contract, router_match
 __all__ = [
            "SEED_PHRASE_MARKER",
            "SOLANA_KEY_MARKER",
-           "RouterMatch",
            "OwnKeyScan",
+           "RouterMatch",
            "SeedPhraseRun",
            "address_of",
            "checksum_address",
