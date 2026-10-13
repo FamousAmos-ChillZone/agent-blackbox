@@ -35,7 +35,8 @@ from . import community_routes, graph_pages, lifecycle, protection, sync_meter, 
 from .graph_pages import _balanced_graph_entries, _graph_entries
 from .network_sync import network_sync_argv as _network_sync_argv
 from .node_probe import NodeLiveness, RepeatGate, node_sync_probe
-from .sync_labels import _community_progress, _sync_label, not_subscribed_activity
+from .sync_labels import (_community_progress, _is_hidden_swm_catchup_error, _is_retryable_durable_catchup_error,
+                          _sync_label, not_subscribed_activity)
 from .threat_detail_fields import DETAIL_FIELDS
 from .safe_payloads import graph_tier_item, safe_identifier, safe_text
 
@@ -316,25 +317,6 @@ def _graph_sync_state(
     if not node_reachable:
         return "unreachable"
     return "empty"
-
-
-def _is_hidden_swm_catchup_error(value: Any) -> bool:
-    """Temporarily suppress the known DKG SWM catch-up UI failure."""
-    text = str(value or "").lower()
-    return "/api/shared-memory/catchup" in text and (
-        "transport error" in text or "timed out" in text or "timeout" in text
-    )
-
-
-def _is_retryable_durable_catchup_error(value: Any) -> bool:
-    """Recognize DKG's explicit transient durable-catchup response."""
-    text = str(value or "").lower()
-    compact = "".join(text.split())
-    return (
-        "/api/shared-memory/catchup" in text
-        and "durable_catchup_all_peers_failed" in text
-        and '"retryable":true' in compact
-    )
 
 
 def _sync_activity(

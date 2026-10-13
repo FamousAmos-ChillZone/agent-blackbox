@@ -6,6 +6,8 @@ Three pure helpers, so the route body stays a wiring list:
 * ``_community_progress(cfg, rs, count)`` → ``{"count", "state", "label"}`` — the community
   tier's whole ``sync_progress`` entry. Its state is independent of the VM catch-up: the
   community tier is live on its own (a pulse can change it with no VM sync at all).
+* ``_is_hidden_swm_catchup_error`` / ``_is_retryable_durable_catchup_error`` — which recorded
+  catch-up errors the sync activity shows as a wait instead of a failure.
 """
 
 from __future__ import annotations
@@ -63,3 +65,22 @@ def not_subscribed_activity() -> dict[str, Any]:
         "started_at": None, "updated_at": None, "current": None, "expected": None,
         "percent": None, "indeterminate": True,
     }
+
+
+def _is_hidden_swm_catchup_error(value: Any) -> bool:
+    """Temporarily suppress the known DKG SWM catch-up UI failure."""
+    text = str(value or "").lower()
+    return "/api/shared-memory/catchup" in text and (
+        "transport error" in text or "timed out" in text or "timeout" in text
+    )
+
+
+def _is_retryable_durable_catchup_error(value: Any) -> bool:
+    """Recognize DKG's explicit transient durable-catchup response."""
+    text = str(value or "").lower()
+    compact = "".join(text.split())
+    return (
+        "/api/shared-memory/catchup" in text
+        and "durable_catchup_all_peers_failed" in text
+        and '"retryable":true' in compact
+    )
