@@ -28,9 +28,9 @@ KNOWN_CONTRACTS_FILE = Path(__file__).with_name("known_contracts.json")
 
 
 @lru_cache(maxsize=1)
-def known_protocol_contracts() -> Dict[str, str]:
+def known_protocol_contracts() -> dict[str, str]:
     """``{lower-case address: name}`` from the shipped list."""
-    data = json.loads(KNOWN_CONTRACTS_FILE.read_text(encoding="utf-8"))
+    data = json.loads(KNOWN_CONTRACTS_FILE.read_text(encoding="utf-8-sig"))
     return {address.lower(): entry["name"] for address, entry in data["contracts"].items()}
 
 

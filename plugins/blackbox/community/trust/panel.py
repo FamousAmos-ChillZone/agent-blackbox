@@ -47,7 +47,7 @@ class AuthorityFacts(TypedDict):
     version: int
     keys: int
     threshold: int
-    heartbeats: List[Heartbeat]
+    heartbeats: list[Heartbeat]
 
 
 class TrustedReporter(TypedDict):
@@ -70,9 +70,9 @@ class Confirmed(TypedDict):
 class TrustPanel(TypedDict):
     available: bool             # False: the community graph could not be read (never "nothing is trusted")
     reason: str
-    authorities: List[AuthorityFacts]
-    reporters: List[TrustedReporter]
-    confirmed: List[Confirmed]
+    authorities: list[AuthorityFacts]
+    reporters: list[TrustedReporter]
+    confirmed: list[Confirmed]
     held_raising: int           # raising statements this reader holds under its daily cap
     lookup_incomplete: bool     # the trust lookup was cut short
 
@@ -113,7 +113,7 @@ def trust_panel(read: Any, today: Optional[str] = None) -> TrustPanel:
     reporters = [TrustedReporter(key=key, address=entry.address, author_class=entry.author_class, org=entry.org,
                                  expires=entry.expires, listed_by="community" if key in listed_by_community else "verified")
                  for key, entry in sorted(combined.counted.items(), key=lambda item: (item[1].expires, item[0]))]
-    signers: Dict[str, set] = {}
+    signers: dict[str, set] = {}
     for report in read.reports:
         signers.setdefault(report.identifier, set()).add(report.author)
     confirmed = [Confirmed(identifier=identifier, evidence=record.field("evidence"), day=record.day,
@@ -127,7 +127,7 @@ def trust_panel(read: Any, today: Optional[str] = None) -> TrustPanel:
                       lookup_incomplete=bool(community is not None and community.lookup_incomplete))
 
 
-def status_lines(panel: TrustPanel) -> List[str]:
+def status_lines(panel: TrustPanel) -> list[str]:
     """The same facts as `blackbox status` prints them (terminal-safe)."""
     if not panel["available"]:
         return [f"  trust:             unavailable ({display_safety.term_safe(panel['reason'], 120)})"]

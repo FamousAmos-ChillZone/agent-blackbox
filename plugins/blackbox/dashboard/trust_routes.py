@@ -24,7 +24,7 @@ MAX_ROWS = 200
 KEY_CHARS = 16
 
 
-def trust_payload(community_read: Callable[[Any], Any]) -> Dict[str, Any]:
+def trust_payload(community_read: Callable[[Any], Any]) -> dict[str, Any]:
     """The trust panel for the page, sanitized."""
     from .. import community
     from ..kernel.config import load_blackbox_config

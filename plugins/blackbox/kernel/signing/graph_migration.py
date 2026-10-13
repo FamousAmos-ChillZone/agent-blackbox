@@ -80,11 +80,11 @@ class GraphMigration:
         _validate(self)
 
     @property
-    def order(self) -> Tuple[int, int]:
+    def order(self) -> tuple[int, int]:
         """``(root_epoch, sequence)`` — compare migrations by this pair."""
         return self.root_epoch, self.sequence
 
-    def to_payload(self) -> Dict[str, str]:
+    def to_payload(self) -> dict[str, str]:
         """The migration as the flat str→str payload its envelope signs."""
         return {
             "environment": self.environment,

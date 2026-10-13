@@ -34,7 +34,7 @@ class LivePool:
     community curators confirmed that are NOT in the pool because the verified
     authority said otherwise or already lists them."""
 
-    entries: Tuple[community.pool.PoolEntry, ...] = ()
+    entries: tuple[community.pool.PoolEntry, ...] = ()
     unavailable: str = ""
     withheld: int = 0
 

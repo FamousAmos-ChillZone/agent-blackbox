@@ -44,11 +44,11 @@ class ProvenanceMap:
         self._path = path or (keys.curate_home() / _PROVENANCE_FILE)
         self._lock = threading.Lock()
 
-    def credit(self, identifier: str, report_subjects: Iterable[str]) -> List[str]:
+    def credit(self, identifier: str, report_subjects: Iterable[str]) -> list[str]:
         ids = []
         with self._lock:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            with os.fdopen(os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), "a", encoding="utf-8") as fh:
+            with os.fdopen(os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), "a", encoding="utf-8") as fh:  # windows-footgun: ok — a WRITE (mode "w"/"a"); writes stay utf-8
                 for subject in report_subjects:
                     random_id = secrets.token_hex(8)
                     fh.write(json.dumps({"id": random_id, "identifier": identifier, "subject": subject}) + "\n")
@@ -57,7 +57,7 @@ class ProvenanceMap:
 
 
 def payload_for(identifier: str, *, severity: str, advisory: str, report_subjects: Iterable[str],
-                provenance: ProvenanceMap, name: str = "") -> Dict[str, str]:
+                provenance: ProvenanceMap, name: str = "") -> dict[str, str]:
     """The flat, signed payload of a promotion. Dependency + kind=malware only."""
     parts = threat_ids.parse_dependency_identifier(identifier)
     if parts is None:

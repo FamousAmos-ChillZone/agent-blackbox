@@ -32,7 +32,7 @@ def _lock_path() -> Path:
     return constants.blackbox_home() / "ruleset.lock"
 
 
-def _serialize(rs: compiler.Ruleset) -> Dict[str, Any]:
+def _serialize(rs: compiler.Ruleset) -> dict[str, Any]:
     return {
         "synced_at": rs.synced_at,
         "refresh_due_at": rs.refresh_due_at,
@@ -58,7 +58,7 @@ def _serialize(rs: compiler.Ruleset) -> Dict[str, Any]:
     }
 
 
-def _deserialize(data: Dict[str, Any]) -> compiler.Ruleset:
+def _deserialize(data: dict[str, Any]) -> compiler.Ruleset:
     rs = compiler.Ruleset(
         synced_at=float(data.get("synced_at", 0.0)),
         refresh_due_at=float(data.get("refresh_due_at", 0.0)),
@@ -109,7 +109,7 @@ def _deserialize(data: Dict[str, Any]) -> compiler.Ruleset:
     return rs
 
 
-def _restore_live_scope(rs: compiler.Ruleset, data: Dict[str, Any]) -> None:
+def _restore_live_scope(rs: compiler.Ruleset, data: dict[str, Any]) -> None:
     """The live verified scope and the curator's revocations (DKG-lookup B2)."""
     scope = data.get("verified_scope")
     rs.verified_scope = live.VerifiedScope.from_json(scope) if isinstance(scope, dict) else None
@@ -133,7 +133,7 @@ def _read_cache() -> Optional[compiler.Ruleset]:
     if not path.exists():
         return None
     try:
-        return _deserialize(json.loads(path.read_text(encoding="utf-8")))
+        return _deserialize(json.loads(path.read_text(encoding="utf-8-sig")))
     except Exception as exc:  # pragma: no cover - fail open
         logger.debug("blackbox: ruleset cache read failed: %s", exc)
         return None

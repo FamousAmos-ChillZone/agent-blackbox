@@ -83,7 +83,7 @@ def _folder_holds(folder: str, pattern: str) -> bool:
     return place == norm_folder or place.startswith(norm_folder.rstrip(os.sep) + os.sep)
 
 
-def _accesses(tool_name: str, args: Any) -> List[Tuple[str, str, str]]:
+def _accesses(tool_name: str, args: Any) -> list[tuple[str, str, str]]:
     """``(tool, path, mode)`` for each file this call reads or copies: the file tool's
     path, or every path a terminal command reads, copies or archives (``mode`` is
     ``read`` or ``copy``; where a copy writes is left out)."""
@@ -100,7 +100,7 @@ def _accesses(tool_name: str, args: Any) -> List[Tuple[str, str, str]]:
 
 def detect_custom_fileaccess(
     tool_name: str, args: Any, protected_paths: Iterable[str]
-) -> List[Finding]:
+) -> list[Finding]:
     """Match a file tool or terminal command against the USER'S protected-path list.
 
     These are personal, locally-configured rules (``source="custom"``): they

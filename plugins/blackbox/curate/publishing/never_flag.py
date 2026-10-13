@@ -64,8 +64,8 @@ class NeverFlagReview:
     order kept); ``refused`` — every other value and why."""
 
     source: str
-    accepted: Tuple[str, ...]
-    refused: Tuple[Refusal, ...]
+    accepted: tuple[str, ...]
+    refused: tuple[Refusal, ...]
 
 
 def review(warninglist: Mapping[str, Any]) -> NeverFlagReview:
@@ -78,8 +78,8 @@ def review(warninglist: Mapping[str, Any]) -> NeverFlagReview:
         raise NeverFlagError(f"a {warninglist['type']} list holds patterns; never-flag entries are exact values")
     if len(values) > MAX_ENTRIES:
         raise NeverFlagError(f"{len(values)} values; one batch holds at most {MAX_ENTRIES}")
-    accepted: List[str] = []
-    refused: List[Refusal] = []
+    accepted: list[str] = []
+    refused: list[Refusal] = []
     for raw in values:
         value = str(raw).strip()
         if not value:
@@ -92,7 +92,7 @@ def review(warninglist: Mapping[str, Any]) -> NeverFlagReview:
     return NeverFlagReview(f"misp-warninglists:{name.strip()[:150]}", tuple(accepted), tuple(refused))
 
 
-def classify(value: str) -> Tuple[str, str]:
+def classify(value: str) -> tuple[str, str]:
     """``(identifier, "")`` for an exact address that may be a never-flag entry,
     else ``("", why not)``. *value* is a bare IP or hostname, or an ``ioc:``
     identifier."""
@@ -113,7 +113,7 @@ def classify(value: str) -> Tuple[str, str]:
     return threat_ids.ioc_identifier("ip", str(address)), ""
 
 
-def _hostname(value: str) -> Tuple[str, str]:
+def _hostname(value: str) -> tuple[str, str]:
     identifier = threat_ids.ioc_identifier("domain", value)
     host = identifier.split(":", 2)[2]
     if not threat_ids.ioc_value_is_well_formed("domain", host) or "." not in host or host.replace(".", "").isdigit():
@@ -124,7 +124,7 @@ def _hostname(value: str) -> Tuple[str, str]:
 
 
 @lru_cache(maxsize=1)
-def _shared_hosting_apexes() -> FrozenSet[str]:
+def _shared_hosting_apexes() -> frozenset[str]:
     """Every domain a Public Suffix List PRIVATE rule sits under (``s3.amazonaws.com``
     → ``amazonaws.com``), the bare top-level label excluded."""
     apexes = set()

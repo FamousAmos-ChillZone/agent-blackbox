@@ -25,8 +25,8 @@ from plugins.blackbox import community as community_pkg
 from plugins.blackbox.community import sharing as community_sharing
 from plugins.blackbox.kernel import identity as kernel_identity
 from plugins.blackbox.guard import reporting as guard_reporting
-from plugins.blackbox.community import report_builder as report_builder
-from plugins.blackbox.kernel import threat_ids as threat_ids
+from plugins.blackbox.community import report_builder
+from plugins.blackbox.kernel import threat_ids
 from plugins.blackbox.kernel import constants
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.kernel.dkg_client import DkgError

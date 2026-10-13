@@ -28,17 +28,17 @@ LISTING_DAYS = 365
 
 
 def _listing(standing: ReporterStanding, address: str, author_class: str, org: str, today: str,
-             days: int = LISTING_DAYS) -> Dict[str, str]:
+             days: int = LISTING_DAYS) -> dict[str, str]:
     expires = (date.fromisoformat(today) + timedelta(days=days)).isoformat()
     return {"listed": "yes", "class": author_class, "org": org, "expires": expires, "address": address.lower()}
 
 
-def _delisting(address: str, today: str) -> Dict[str, str]:
+def _delisting(address: str, today: str) -> dict[str, str]:
     return {"listed": "no", "class": "established", "org": "", "expires": today, "address": address.lower()}
 
 
 def renewal_fields(standing: ReporterStanding, *, address: str, today: str,
-                   listing_days: int = LISTING_DAYS) -> Dict[str, str]:
+                   listing_days: int = LISTING_DAYS) -> dict[str, str]:
     """The counted-author payload that renews a plain ESTABLISHED listing in
     good standing for another term (no organisation, no cluster — renewing a
     partner or a collapsed group is a person's decision)."""
@@ -47,7 +47,7 @@ def renewal_fields(standing: ReporterStanding, *, address: str, today: str,
 
 def nomination_fields(standing: ReporterStanding, *, address: str, today: str,
                       reputation: Optional[float] = None, cluster: str = "",
-                      listing_days: int = LISTING_DAYS) -> Optional[Dict[str, str]]:
+                      listing_days: int = LISTING_DAYS) -> Optional[dict[str, str]]:
     """The counted-author payload a standing calls for today, or None.
 
     * PROBATION that :func:`graduates` → listed ESTABLISHED (``org`` = the

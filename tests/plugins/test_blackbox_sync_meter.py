@@ -74,10 +74,10 @@ def test_the_totals_query_shares_the_partition_listings_owner_pin():
 class _Client:
     """Answers every query with *rows* and records the call."""
 
-    def __init__(self, rows: List[Dict[str, Any]]) -> None:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
         self.rows, self.calls = rows, []
 
-    def query(self, sparql: str, cg_id: str, **kwargs: Any) -> List[Dict[str, Any]]:
+    def query(self, sparql: str, cg_id: str, **kwargs: Any) -> list[dict[str, Any]]:
         self.calls.append((sparql, cg_id, kwargs))
         return self.rows
 
@@ -175,7 +175,7 @@ def test_the_route_serves_the_meter_and_reuses_a_reading_within_the_cache_window
                         lambda client, graph, timeout=None: ruleset.DownloadTotals(assets=137, triples=1_500_000))
     monkeypatch.setattr(ruleset, "verified_progress", lambda graph: {"assets_compiled": 124})
     cfg = type("Cfg", (), {"context_graph_id": VM_GRAPH, "dkg_url": "http://127.0.0.1:1", "dkg_home": str(tmp_path)})()
-    loads: List[int] = []
+    loads: list[int] = []
 
     def load_config():
         loads.append(1)

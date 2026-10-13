@@ -36,7 +36,7 @@ from ..verification import unique_by_subject
 logger = logging.getLogger(__name__)
 
 #: One withdrawn voice: (signer key, threat identifier).
-Withdrawal = Tuple[str, str]
+Withdrawal = tuple[str, str]
 
 
 @dataclass(frozen=True)
@@ -93,9 +93,9 @@ def _verified_withdrawal(row: Mapping[str, Any], environment: str, graph: str) -
                               day=envelope.payload.get("day", ""))
 
 
-def verified_retractions(rows: Iterable[Mapping[str, Any]], environment: str, graph: str) -> List[VerifiedRetraction]:
+def verified_retractions(rows: Iterable[Mapping[str, Any]], environment: str, graph: str) -> list[VerifiedRetraction]:
     """Every retraction row that verifies; the rest are dropped and counted in the log."""
-    found: List[VerifiedRetraction] = []
+    found: list[VerifiedRetraction] = []
     dropped = 0
     for row in rows:
         retraction = _verified_withdrawal(row, environment, graph)
@@ -109,6 +109,6 @@ def verified_retractions(rows: Iterable[Mapping[str, Any]], environment: str, gr
 
 
 
-def apply_retractions(reports: Iterable[VerifiedReport], withdrawn: FrozenSet[Withdrawal]) -> List[VerifiedReport]:
+def apply_retractions(reports: Iterable[VerifiedReport], withdrawn: frozenset[Withdrawal]) -> list[VerifiedReport]:
     """*reports* without those their own signer withdrew."""
     return [report for report in reports if (report.author, report.identifier) not in withdrawn]

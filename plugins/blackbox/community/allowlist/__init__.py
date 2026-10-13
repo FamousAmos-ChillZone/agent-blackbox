@@ -21,6 +21,17 @@ from .tables import SEED_DOMAINS, SEED_PACKAGES, AllowTables, allowlist_key, loa
 from .verdicts import CONFUSABLE_DISTANCE, AllowlistVerdict, Verdict, check, confusable_of, edit_distance, skeleton
 
 __all__ = [
-    "AllowTables", "AllowlistVerdict", "CONFUSABLE_DISTANCE", "CanaryStore", "SEED_DOMAINS", "SEED_PACKAGES",
-    "Verdict", "allowlist_key", "check", "confusable_of", "edit_distance", "load", "skeleton",
+    "CONFUSABLE_DISTANCE",
+    "SEED_DOMAINS",
+    "SEED_PACKAGES",
+    "AllowTables",
+    "AllowlistVerdict",
+    "CanaryStore",
+    "Verdict",
+    "allowlist_key",
+    "check",
+    "confusable_of",
+    "edit_distance",
+    "load",
+    "skeleton",
 ]

@@ -112,16 +112,16 @@ class OrderedStatement:
     sequence: int
 
     @property
-    def rank(self) -> Tuple[int, int]:
+    def rank(self) -> tuple[int, int]:
         """Sort key: higher sequence first; at a tie the statement that enforces
         LESS wins (terminal, then deferral, then a notice, then confirmation),
         so the outcome never depends on which row was read first."""
         return self.sequence, restriction(self.kind)
 
 
-def current_by_type(statements: Iterable[OrderedStatement]) -> Dict[Tuple[str, CuratorStatement], OrderedStatement]:
+def current_by_type(statements: Iterable[OrderedStatement]) -> dict[tuple[str, CuratorStatement], OrderedStatement]:
     """The highest-sequence statement per (threat, type)."""
-    current: Dict[Tuple[str, CuratorStatement], OrderedStatement] = {}
+    current: dict[tuple[str, CuratorStatement], OrderedStatement] = {}
     for statement in statements:
         key = (statement.threat, statement.kind)
         if key not in current or statement.sequence > current[key].sequence:
@@ -129,11 +129,11 @@ def current_by_type(statements: Iterable[OrderedStatement]) -> Dict[Tuple[str, C
     return current
 
 
-def current_by_threat(statements: Iterable[OrderedStatement]) -> Dict[str, OrderedStatement]:
+def current_by_threat(statements: Iterable[OrderedStatement]) -> dict[str, OrderedStatement]:
     """The one statement that decides each threat: the highest sequence, a
     terminal statement winning a tie. A replayed lower-sequence statement
     never overrides a terminal one."""
-    current: Dict[str, OrderedStatement] = {}
+    current: dict[str, OrderedStatement] = {}
     for statement in current_by_type(statements).values():
         held = current.get(statement.threat)
         if held is None or statement.rank > held.rank:

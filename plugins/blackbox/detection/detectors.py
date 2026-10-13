@@ -23,20 +23,20 @@ from typing import Any, Dict, Iterable, List
 from . import action_parsing
 from . import osv
 from . import shell_shapes
-from .finding import ANSWERED_BY_FALLBACK, FALLBACK_REASON, Finding, _rule_source, mark_answered_by, rule_subject  # noqa: F401 — re-exported for callers
+from .finding import ANSWERED_BY_FALLBACK, FALLBACK_REASON, Finding, _rule_source, mark_answered_by, rule_subject
 from .injection_detection import detect_injection, discover_injection, injection_scan_text
 from .ioc_detection import detect_ioc, ioc_context
 from .skill_detection import detect_skill
 from .transactions.approvals import detect_token_approvals
 from .paths.keychain import detect_keychain_access
-from .paths.protected import detect_custom_fileaccess  # noqa: F401 — re-exported for callers
-from .secrets_handled.exposure import detect_exchange_key_misdirection, detect_own_wallet_keys, detect_secret_exposure  # noqa: F401 — re-exported
+from .paths.protected import detect_custom_fileaccess
+from .secrets_handled.exposure import detect_exchange_key_misdirection, detect_own_wallet_keys, detect_secret_exposure
 from .wallet_files import detect_wallet_files
 from ..kernel import threat_ids
 
 logger = logging.getLogger(__name__)
 
-def _dependency_candidates(dep: Dict[str, Any]) -> List[Any]:
+def _dependency_candidates(dep: dict[str, Any]) -> list[Any]:
     """The ``(ecosystem, name, version)`` candidates one parsed install can match:
     the exact pinned version first, then the package-level ``@*`` rule — whole-
     package malware / typosquats where EVERY version is bad, including an
@@ -46,7 +46,7 @@ def _dependency_candidates(dep: Dict[str, Any]) -> List[Any]:
     return ([(ecosystem, dep["name"], version)] if version else []) + [(ecosystem, dep["name"], "*")]
 
 
-def dependency_rules(ruleset: Any, candidates: List[Any]) -> Dict[str, Dict[str, Any]]:
+def dependency_rules(ruleset: Any, candidates: list[Any]) -> dict[str, dict[str, Any]]:
     """The dependency rules for ``(ecosystem, name, version)`` *candidates*, keyed
     by ``dependency_key``. A :class:`~..ruleset.Ruleset` answers through
     ``dependency_rules()`` (live verified lookup first, compiled dict after);
@@ -62,7 +62,7 @@ def dependency_rules(ruleset: Any, candidates: List[Any]) -> Dict[str, Dict[str,
     return {key: compiled[key] for key in keys if key in compiled}
 
 
-def detect_escalation(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
+def detect_escalation(tool_name: str, args: Any, ruleset: Any) -> list[Finding]:
     """Match a tool call against escalation rules on BOTH toolName AND argShape.
 
     This is the fix for the original bug where only the tool name (or only the
@@ -73,7 +73,7 @@ def detect_escalation(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     if not arg_shape:
         return []
     tool_lower = (tool_name or "").strip().lower()
-    out: List[Finding] = []
+    out: list[Finding] = []
     seen: set = set()
     for rule in getattr(ruleset, "escalation", []) or []:
         identifier = rule.get("identifier", "")
@@ -122,7 +122,7 @@ def detect_escalation(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     return out
 
 
-def detect_dependency(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
+def detect_dependency(tool_name: str, args: Any, ruleset: Any) -> list[Finding]:
     """Parse install commands, then look each package up in the ruleset.
 
     Only pinned installs (``name@version`` / ``name==version``) can match a
@@ -135,7 +135,7 @@ def detect_dependency(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     installs = action_parsing.parse_dependency_installs(command)
     # One round trip asks for every candidate of every install at once.
     rules = dependency_rules(ruleset, [c for dep in installs for c in _dependency_candidates(dep)])
-    out: List[Finding] = []
+    out: list[Finding] = []
     seen: set = set()
     for dep in installs:
         version = dep.get("version") or ""
@@ -175,7 +175,7 @@ def detect_dependency(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     return out
 
 
-def detect_fileaccess(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
+def detect_fileaccess(tool_name: str, args: Any, ruleset: Any) -> list[Finding]:
     """Detect access to a sensitive-path category (graph rule or built-in).
 
     A file-access tool call whose path falls in a sensitive category is a
@@ -219,7 +219,7 @@ def detect_fileaccess(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     ]
 
 
-def discover_dependency_candidates(tool_name: str, args: Any, ruleset: Any, osv_lookup: Any) -> List[Finding]:
+def discover_dependency_candidates(tool_name: str, args: Any, ruleset: Any, osv_lookup: Any) -> list[Finding]:
     """Best-effort OSV auto-discovery of bad installs not in the graph.
 
     Parses install commands, skips pinned deps a graph rule covers, and calls
@@ -230,7 +230,7 @@ def discover_dependency_candidates(tool_name: str, args: Any, ruleset: Any, osv_
     command = action_parsing.command_text(args)   # "" parses to no installs
     pinned = [dep for dep in action_parsing.parse_dependency_installs(command) if dep.get("version")]
     covered = dependency_rules(ruleset, [(dep["ecosystem"].lower(), dep["name"], dep["version"]) for dep in pinned])
-    out: List[Finding] = []
+    out: list[Finding] = []
     seen: set = set()
     for dep in pinned:
         version = dep["version"]
@@ -272,7 +272,7 @@ def discover_dependency_candidates(tool_name: str, args: Any, ruleset: Any, osv_
     return out
 
 
-def detect_all(tool_name: str, args: Any, ruleset: Any, discover: bool = True) -> List[Finding]:
+def detect_all(tool_name: str, args: Any, ruleset: Any, discover: bool = True) -> list[Finding]:
     """Run every detector (graph rules + built-in discovery) across categories.
 
     Graph-backed detection (public + community rules) ALWAYS runs for every
@@ -281,7 +281,7 @@ def detect_all(tool_name: str, args: Any, ruleset: Any, discover: bool = True) -
     Dependency OSV auto-discovery is NOT run here — it is best-effort and runs
     off the blocking path (see :mod:`hooks`).
     """
-    findings: List[Finding] = []
+    findings: list[Finding] = []
     findings.extend(detect_escalation(tool_name, args, ruleset))
     findings.extend(detect_dependency(tool_name, args, ruleset))
     args_text = injection_scan_text(args)

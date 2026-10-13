@@ -35,7 +35,7 @@ foreach ($e in $errors) { "line {0}: {1}" -f $e.Extent.StartLineNumber, $e.Messa
 def test_the_windows_installer_has_no_powershell_syntax_errors() -> None:
     result = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-Command", PARSE],
                             capture_output=True, text=True, timeout=120,
-                            env={**os.environ, "BLACKBOX_PS1_UNDER_TEST": str(INSTALL_PS1)})
+                            env={**os.environ, "BLACKBOX_PS1_UNDER_TEST": str(INSTALL_PS1)}, check=False)
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "", result.stdout

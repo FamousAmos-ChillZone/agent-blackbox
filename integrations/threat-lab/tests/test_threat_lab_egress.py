@@ -55,7 +55,7 @@ def test_the_ruleset_parses_with_nft():
     nft = shutil.which("nft")
     if nft is None:
         pytest.skip("nft is not installed here; CI and the lab host run this check")
-    checked = subprocess.run([nft, "-c", "-f", str(egress.RULESET_PATH)], capture_output=True, text=True)
+    checked = subprocess.run([nft, "-c", "-f", str(egress.RULESET_PATH)], capture_output=True, text=True, check=False)
     if checked.returncode != 0 and "Operation not permitted" in checked.stderr:
         pytest.skip("nft -c needs CAP_NET_ADMIN here; run the suite as root on the lab host or in CI")
     assert checked.returncode == 0, checked.stderr
@@ -67,7 +67,7 @@ def _chain(name: str) -> str:
     return matched.group(1)
 
 
-def _rules(name: str) -> List[str]:
+def _rules(name: str) -> list[str]:
     """The chain's rules: not its hook header, blank lines or comments."""
     lines = (line.strip() for line in _chain(name).splitlines())
     return [line for line in lines if line and not line.startswith(("#", "type "))]
@@ -216,8 +216,8 @@ class FakeGuard:
 
     def __init__(self, answer: Optional[bool] = True, yes_after: int = 2) -> None:
         self.answer, self.yes_after = answer, yes_after
-        self.asked: List[str] = []
-        self.forgotten: List[str] = []
+        self.asked: list[str] = []
+        self.forgotten: list[str] = []
 
     def offended(self, address: str) -> Optional[bool]:
         self.asked.append(address)

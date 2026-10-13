@@ -76,7 +76,7 @@ def _unquote_literal(term: str) -> str:
     before the closing quote is read correctly. A term with no closing quote
     is returned unchanged.
     """
-    out: List[str] = []
+    out: list[str] = []
     i = 1
     while i < len(term):
         ch = term[i]
@@ -100,13 +100,13 @@ def _unquote_literal(term: str) -> str:
     return term
 
 
-def normalize_bindings(result: Any) -> List[Dict[str, Any]]:
+def normalize_bindings(result: Any) -> list[dict[str, Any]]:
     """Extract a list of binding rows from any of the daemon's response shapes."""
     rows = recognized_bindings(result)
     return [] if rows is None else rows
 
 
-def recognized_bindings(result: Any) -> Optional[List[Dict[str, Any]]]:
+def recognized_bindings(result: Any) -> Optional[list[dict[str, Any]]]:
     """The binding rows of a response in a shape the daemon is known to use,
     or None for anything else (a malformed reply is NOT an empty result)."""
     if not isinstance(result, dict):
@@ -152,7 +152,7 @@ _FAILED = object()
 
 
 def query_rows(client: Any, sparql: str, graph: str, view: str, *,
-               slow_empty_seconds: float = SLOW_EMPTY_SECONDS) -> Optional[List[Dict[str, Any]]]:
+               slow_empty_seconds: float = SLOW_EMPTY_SECONDS) -> Optional[list[dict[str, Any]]]:
     """Run ONE query against *graph* / *view* and return its rows — or None
     when the read cannot be believed: the query failed, or it came back EMPTY
     after at least *slow_empty_seconds* (the node's timeout signature, KI-262).
@@ -175,7 +175,7 @@ def query_rows(client: Any, sparql: str, graph: str, view: str, *,
 
 
 def page_rows(client: Any, graph: str, view: str, sparql_after: Callable[[str], str], *,
-              page_size: int = STATEMENT_PAGE_SIZE, max_rows: int = STATEMENT_MAX_ROWS) -> Optional[List[Dict[str, Any]]]:
+              page_size: int = STATEMENT_PAGE_SIZE, max_rows: int = STATEMENT_MAX_ROWS) -> Optional[list[dict[str, Any]]]:
     """Page every row a query returns from *graph* / *view*; ``sparql_after(cursor)``
     builds one page's query (subjects after *cursor*, ordered, LIMITed).
 
@@ -185,7 +185,7 @@ def page_rows(client: Any, graph: str, view: str, sparql_after: Callable[[str], 
     (:func:`query_rows`), so the caller keeps last-good (fail-open); [] when
     the node answered that the graph holds no such rows.
     """
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     after = ""
     while len(rows) < max_rows:
         page = query_rows(client, sparql_after(after), graph, view)

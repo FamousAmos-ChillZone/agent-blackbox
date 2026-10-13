@@ -66,7 +66,7 @@ class ActiveGraph:
         return self.successor or self.configured
 
     @property
-    def subscriptions(self) -> Tuple[str, ...]:
+    def subscriptions(self) -> tuple[str, ...]:
         """The graphs the node keeps subscribed: the configured one always (its
         legacy assets stay readable there), then the successor when active."""
         return tuple(graph for graph in (self.configured, self.successor) if graph)

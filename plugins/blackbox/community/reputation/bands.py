@@ -60,7 +60,7 @@ class ReporterStanding:
     def locked_out(self, today: str) -> bool:
         return bool(self.lockout_until) and today < self.lockout_until
 
-    def reset_after_lockout(self) -> "ReporterStanding":
+    def reset_after_lockout(self) -> ReporterStanding:
         """Re-graduation starts from zero: every counter and credit is cleared."""
         return replace(self, band=ReputationBand.PROBATION, confirmed=0, rejected=0, strikes=0,
                        novel_credits=0, lockout_until="")

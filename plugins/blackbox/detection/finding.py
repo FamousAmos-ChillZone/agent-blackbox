@@ -48,10 +48,10 @@ class Finding:
     source: str = "public"  # public | community | heuristic | custom
     # malware | vulnerability | historical; vulnerability/historical never block
     kind: Optional[str] = None
-    fields: Dict[str, Any] = field(default_factory=dict)
+    fields: dict[str, Any] = field(default_factory=dict)
     rule_subject: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "identifier": self.identifier,
             "category": self.category,
@@ -69,12 +69,12 @@ class Finding:
         }
 
 
-def rule_subject(rule: Optional[Dict[str, Any]]) -> str:
+def rule_subject(rule: Optional[dict[str, Any]]) -> str:
     """The matched graph rule's subject IRI (``""`` when there is no rule)."""
     return str((rule or {}).get("subject") or "")
 
 
-def _rule_source(rule: Dict[str, Any]) -> str:
+def _rule_source(rule: dict[str, Any]) -> str:
     """Trust tier of a graph rule. Untagged rules default to ``public`` —
     rules built before tier tagging (or handed in directly by tests) were
     always treated as verified."""
@@ -88,7 +88,7 @@ FALLBACK_REASON = "fallback index"
 ANSWERED_BY_FALLBACK = "local index (graph store down)"
 
 
-def mark_answered_by(answer: Any) -> Dict[str, Dict[str, Any]]:
+def mark_answered_by(answer: Any) -> dict[str, dict[str, Any]]:
     """The answer's rules; when the graph store was down and the local index answered,
     each rule is copied with ``answered_by`` set so the finding and the audit row say so."""
     rules = getattr(answer, "rules", {}) or {}

@@ -86,7 +86,7 @@ class ReputationLedger:
         outcomes = [Outcome(o["day"], bool(o["confirmed"])) for o in (entry or {}).get("outcomes", [])]
         return beta_reputation(outcomes, today)
 
-    def keys(self) -> List[str]:
+    def keys(self) -> list[str]:
         with self._lock:
             return sorted(self._load()["salts"])
 
@@ -176,15 +176,15 @@ class ReputationLedger:
 
     # -- storage -------------------------------------------------------------
 
-    def _entry(self, data: Dict[str, Any], key: str) -> Optional[Dict[str, Any]]:
+    def _entry(self, data: dict[str, Any], key: str) -> Optional[dict[str, Any]]:
         salt = data["salts"].get(key.lower())
         return data["entries"].get(pseudonym(salt, key)) if salt else None
 
-    def _load(self) -> Dict[str, Any]:
-        entries: Dict[str, Dict[str, Any]] = {}
-        publishers: Dict[str, int] = {}
+    def _load(self) -> dict[str, Any]:
+        entries: dict[str, dict[str, Any]] = {}
+        publishers: dict[str, int] = {}
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
             entries = {str(k): dict(v) for k, v in data.get("entries", {}).items() if isinstance(v, dict)}
             publishers = {str(k): int(v) for k, v in dict(data.get("publishers") or {}).items()}
         except (OSError, ValueError, AttributeError, TypeError):
@@ -195,13 +195,13 @@ class ReputationLedger:
         live_salts = {key: salt for key, salt in salts.items() if pseudonym(salt, key) in live or not entries}
         return {"salts": live_salts, "entries": live, "publishers": publishers}
 
-    def _load_salts(self) -> Dict[str, str]:
+    def _load_salts(self) -> dict[str, str]:
         """The index (reporter key -> salt). A sealed index that cannot be
         opened is an EMPTY index: its entries are unreachable, as after an
         erasure. An index written before sealing (a clear map) is read once
         and sealed at once, so reporter keys do not stay readable on disk."""
         try:
-            text = self._salts_path.read_text(encoding="utf-8")
+            text = self._salts_path.read_text(encoding="utf-8-sig")
         except OSError:
             return {}
         if sealed_index.is_sealed(text):
@@ -225,7 +225,7 @@ class ReputationLedger:
             logger.warning("blackbox: the reputation ledger's index key could not be created (%s)", exc)
             return None
 
-    def _sealed(self, salts: Dict[str, str]) -> str:
+    def _sealed(self, salts: dict[str, str]) -> str:
         key = self._index_key()
         if key is None:   # never fall back to a clear index: an unsaved ledger is safer than a readable one
             raise OSError("the ledger index key is unreadable")
@@ -238,7 +238,7 @@ class ReputationLedger:
         os.chmod(tmp, 0o600)
         os.replace(tmp, path)
 
-    def _save(self, data: Dict[str, Any]) -> None:
+    def _save(self, data: dict[str, Any]) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             index = self._sealed(data["salts"])
@@ -251,7 +251,7 @@ class ReputationLedger:
 _HEX = frozenset("0123456789abcdef")
 
 
-def _well_formed(salts: Dict[str, str]) -> Dict[str, str]:
+def _well_formed(salts: dict[str, str]) -> dict[str, str]:
     """Only the index rows whose salt can be used (non-empty, even-length lower-case hex). A row with a
     damaged salt could never reach its entry anyway; it is dropped instead of crashing the ledger. Keys
     are not judged here: whatever key the ledger was given is the key it must find again."""
@@ -259,13 +259,13 @@ def _well_formed(salts: Dict[str, str]) -> Dict[str, str]:
             if key and salt and len(salt) % 2 == 0 and set(salt) <= _HEX}
 
 
-def _new_entry(first_seen_day: str) -> Dict[str, Any]:
+def _new_entry(first_seen_day: str) -> dict[str, Any]:
     return {"band": ReputationBand.PROBATION.value, "first_seen_day": first_seen_day, "confirmed": 0, "rejected": 0,
             "strikes": 0, "novel_credits": 0, "org": "", "sponsor": "", "lockout_until": "", "last_day": "",
             "outcomes": []}
 
 
-def _standing_from(key: str, entry: Dict[str, Any]) -> ReporterStanding:
+def _standing_from(key: str, entry: dict[str, Any]) -> ReporterStanding:
     try:
         band = ReputationBand(entry.get("band") or "probation")
     except ValueError:

@@ -81,7 +81,7 @@ def test_load_config_drops_unknown_llm_provider(monkeypatch):
 
 
 def test_load_config_env_overrides_llm(monkeypatch):
-    monkeypatch.setattr(config_mod, "_blackbox_entry", lambda: {})
+    monkeypatch.setattr(config_mod, "_blackbox_entry", dict)
     monkeypatch.setenv("BLACKBOX_LLM_ENABLED", "1")
     monkeypatch.setenv("BLACKBOX_LLM_PROVIDER", "openai")
     monkeypatch.setenv("BLACKBOX_LLM_MODEL", "gpt-4o-mini")
@@ -322,8 +322,8 @@ def test_setup_llm_reuses_discovered_hermes_home_config(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     (home / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-profile\n", encoding="utf-8")
-    monkeypatch.setattr(hconfig, "load_config", lambda: {})
-    monkeypatch.setattr(hconfig, "load_env", lambda: {})
+    monkeypatch.setattr(hconfig, "load_config", dict)
+    monkeypatch.setattr(hconfig, "load_env", dict)
     monkeypatch.setattr(reviewer_setup.attach, "discover_hermes_homes", lambda: [home])
 
     candidate = reviewer_setup._hermes_llm_candidate()

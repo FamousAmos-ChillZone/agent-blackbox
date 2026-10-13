@@ -117,7 +117,7 @@ def test_the_controller_map_and_the_dpia_carry_the_community_authority_and_the_o
     assert "Version: 1.1" in controllers and "Community curators' operator" in controllers and "decision 15" in controllers
     assert "Version: 1.5" in dpia and "OPT-OUT" in dpia and "COUNSEL REVIEW REQUIRED" in dpia and "community_trust.json" in dpia and "Export bundle" in dpia and "art. 22" in dpia
     checklist = dpia.split("## 8. Compliant-by-default checklist", 1)[1]
-    rows = re.findall(r"^\| (?!Item|---)(.+?) \| (\w[\w ,]*?) \|", checklist, re.M)
+    rows = re.findall(r"^\| (?!Item|---)(.+?) \| (\w[\w ,]*?) \|", checklist, re.MULTILINE)
     assert len(rows) == 10 and {state for _, state in rows} <= {"done", "partly", "not applicable", "done, one name open", "departed"}
 
 

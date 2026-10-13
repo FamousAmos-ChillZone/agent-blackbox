@@ -40,14 +40,32 @@ from .withdrawal import CitedConfirmation, CorrectionRequest, Extension, Withdra
 from .protocol import LookupResult, Source, SourceRegistry, SourceTerms, SourceVerdict
 
 _ABUSE_CH = AbuseChFetcher()
-SOURCES: Tuple[Source, ...] = (
+SOURCES: tuple[Source, ...] = (
     OsvSource(), UrlhausSource(_ABUSE_CH), ThreatFoxSource(_ABUSE_CH), MalwareBazaarSource(_ABUSE_CH), PhishTankSource(),
     ScamSnifferSource(), UrlscanSource(),
 )
 
 __all__ = [
-    "SOURCES", "CredentialsError", "LookupBudget", "LookupItem", "LookupResult", "NotListedCache", "QueueMetrics",
-    "Source", "SourceRegistry", "SourceTerms", "SourceVerdict", "TokenBucket", "load_credentials", "queue_metrics",
-    "UrlscanScan", "select_for_lookup", "CitedConfirmation", "CorrectionRequest", "Extension", "WithdrawalReport",
-    "WithdrawalWatcher", "rechecks_for",
+    "SOURCES",
+    "CitedConfirmation",
+    "CorrectionRequest",
+    "CredentialsError",
+    "Extension",
+    "LookupBudget",
+    "LookupItem",
+    "LookupResult",
+    "NotListedCache",
+    "QueueMetrics",
+    "Source",
+    "SourceRegistry",
+    "SourceTerms",
+    "SourceVerdict",
+    "TokenBucket",
+    "UrlscanScan",
+    "WithdrawalReport",
+    "WithdrawalWatcher",
+    "load_credentials",
+    "queue_metrics",
+    "rechecks_for",
+    "select_for_lookup",
 ]

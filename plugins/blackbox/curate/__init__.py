@@ -34,7 +34,7 @@ from .service import self_test
 __all__ = ["add_curate_parser", "cmd_curate", "status_health_items"]
 
 
-def status_health_items(now: float) -> List[HealthItem]:
+def status_health_items(now: float) -> list[HealthItem]:
     """This machine's curator alarms for ``blackbox status``: a suspended self-test
     and proposals that reached no other curator for 3 beats. Read from local
     files only; empty on a node that is not a curator."""

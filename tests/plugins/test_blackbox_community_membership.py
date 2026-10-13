@@ -112,7 +112,7 @@ def test_a_failed_join_is_retried_only_after_the_window():
 
 def test_no_graph_configured_does_nothing():
     node = _Node()
-    ok, detail = CommunityMembership().ensure(node, SimpleNamespace(community_graph_id="", community_graph_peer_id=""))
+    ok, _detail = CommunityMembership().ensure(node, SimpleNamespace(community_graph_id="", community_graph_peer_id=""))
     assert not ok and node.subscribe_calls == 0 and node.join_calls == 0
 
 

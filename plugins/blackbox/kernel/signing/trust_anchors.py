@@ -49,10 +49,10 @@ _COMMUNITY_ROOT_ENV = "BLACKBOX_COMMUNITY_ROOT_KEYS"
 #: Empty until launch — the pin ships as ONE unit with the default community
 #: graph id and its owner peer id (``constants.DEFAULT_COMMUNITY_GRAPH_ID`` /
 #: ``DEFAULT_COMMUNITY_GRAPH_PEER_ID``).
-COMMUNITY_ROOT_KEYS: Mapping[str, Tuple[str, ...]] = {}
+COMMUNITY_ROOT_KEYS: Mapping[str, tuple[str, ...]] = {}
 
 
-def _keys(values: Iterable[str]) -> FrozenSet[str]:
+def _keys(values: Iterable[str]) -> frozenset[str]:
     """Well-formed keys only (64 lower-case hex); malformed ones are ignored."""
     return frozenset(k.strip().lower() for k in values if _KEY_HEX.fullmatch(k.strip().lower()))
 
@@ -71,11 +71,11 @@ class RootPins:
     authority) or :meth:`unbound` (a plain key set); ask :meth:`may_sign`.
     """
 
-    by_epoch: Tuple[Tuple[int, FrozenSet[str]], ...] = ()
-    any_epoch: FrozenSet[str] = frozenset()
+    by_epoch: tuple[tuple[int, frozenset[str]], ...] = ()
+    any_epoch: frozenset[str] = frozenset()
 
     @classmethod
-    def for_environment(cls, environment: str, env: Mapping[str, str] = os.environ) -> "RootPins":
+    def for_environment(cls, environment: str, env: Mapping[str, str] = os.environ) -> RootPins:
         """The verified-authority roots of *environment* (a DKG network id): its
         pins from ``constants.CURATOR_ROOT_KEYS``, else (unpinned networks only)
         the ``BLACKBOX_CURATOR_ROOT_KEYS`` variable, valid at any epoch."""
@@ -85,12 +85,12 @@ class RootPins:
         return cls.unbound(env.get(_ROOT_ENV, "").split(","))
 
     @classmethod
-    def unbound(cls, keys: Iterable[str]) -> "RootPins":
+    def unbound(cls, keys: Iterable[str]) -> RootPins:
         """Roots that may sign at any epoch (malformed keys are ignored)."""
         return cls(any_epoch=_keys(keys))
 
     @property
-    def keys(self) -> FrozenSet[str]:
+    def keys(self) -> frozenset[str]:
         """Every trusted root, whatever its epoch."""
         return self.any_epoch.union(*(keys for _, keys in self.by_epoch))
 
@@ -108,7 +108,7 @@ class RootPins:
         return bool(self.keys)
 
 
-def trusted_roots(environment: str, env: Mapping[str, str] = os.environ) -> FrozenSet[str]:
+def trusted_roots(environment: str, env: Mapping[str, str] = os.environ) -> frozenset[str]:
     """The curator root keys *environment* trusts, as a plain set (every epoch):
     for membership checks only. Verifying a manifest needs the epochs —
     use :meth:`RootPins.for_environment`."""
@@ -120,7 +120,7 @@ def community_root_pinned(graph_id: str) -> bool:
     return bool(COMMUNITY_ROOT_KEYS.get(graph_id))
 
 
-def community_roots(graph_id: str, env: Mapping[str, str] = os.environ) -> FrozenSet[str]:
+def community_roots(graph_id: str, env: Mapping[str, str] = os.environ) -> frozenset[str]:
     """The community root keys trusted for the community graph *graph_id*: the
     pinned ones, else (unpinned graphs only) those in
     ``BLACKBOX_COMMUNITY_ROOT_KEYS``. No graph id, no root."""

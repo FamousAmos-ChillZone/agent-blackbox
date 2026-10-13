@@ -177,7 +177,7 @@ def _refresh_unlocked(
         if existing is not None:
             return _reuse_generation(existing, context_graph_id, client, config, listing)
 
-    rows: List[Any] = []
+    rows: list[Any] = []
     for tier, view_rows in fetched.items():
         if view_rows is None:  # a failed tier (fail-open handled below)
             continue
@@ -277,7 +277,7 @@ def _retry_shares(client: DkgClient, config: BlackboxConfig) -> None:
         logger.debug("blackbox: share retry skipped this beat: %s", exc)
 
 
-def _restore_tiers(rs: compiler.Ruleset, prior: compiler.Ruleset, tiers: List[str]) -> None:
+def _restore_tiers(rs: compiler.Ruleset, prior: compiler.Ruleset, tiers: list[str]) -> None:
     """Re-add *prior* rules from the given (errored) *tiers* into *rs*.
 
     Only fills gaps: a rule already present from a freshly-fetched tier wins,

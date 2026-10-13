@@ -32,10 +32,11 @@ from ..kernel.browser_boundary import BrowserBoundary
 from ..sync import state as sync_state
 from ..sync import read_durable_progress
 from . import community_routes, graph_pages, lifecycle, protection, sync_meter, sync_timing
-from .graph_pages import _balanced_graph_entries, _graph_entries  # noqa: F401 — moved there; tests reach them here
+from .graph_pages import _balanced_graph_entries, _graph_entries
 from .network_sync import network_sync_argv as _network_sync_argv
 from .node_probe import NodeLiveness, RepeatGate, node_sync_probe
-from .sync_labels import _community_progress, _sync_label, not_subscribed_activity
+from .sync_labels import (_community_progress, _is_hidden_swm_catchup_error, _is_retryable_durable_catchup_error,
+                          _sync_label, current_transfer_error, not_subscribed_activity)
 from .threat_detail_fields import DETAIL_FIELDS
 from .safe_payloads import graph_tier_item, safe_identifier, safe_text
 
@@ -60,17 +61,17 @@ _BLACKBOX_RUNTIME_PORT = 9121
 _BLACKBOX_RESTART_DELAY_SEC = 2.0
 _join_lock = threading.Lock()
 _network_sync_lock = threading.Lock()
-_connection_states: Dict[str, Dict[str, Any]] = {}
+_connection_states: dict[str, dict[str, Any]] = {}
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 _FONTS_DIR = _ASSETS_DIR / "fonts"
-def _dkg_durable_progress(dkg_home: str, context_graph_id: str) -> Dict[str, Any]:
+def _dkg_durable_progress(dkg_home: str, context_graph_id: str) -> dict[str, Any]:
     """Read the latest resumable VM offset reported by the managed DKG."""
     return read_durable_progress(dkg_home, context_graph_id)
 
 
-def _blackbox_runtime_argv(port: int = _BLACKBOX_RUNTIME_PORT) -> List[str]:
+def _blackbox_runtime_argv(port: int = _BLACKBOX_RUNTIME_PORT) -> list[str]:
     """Command for the dashboard-owned, profile-isolated Agent Blackbox backend."""
     return [
         sys.executable,
@@ -87,7 +88,7 @@ def _blackbox_runtime_argv(port: int = _BLACKBOX_RUNTIME_PORT) -> List[str]:
     ]
 
 
-def _blackbox_runtime_env() -> Dict[str, str]:
+def _blackbox_runtime_env() -> dict[str, str]:
     """Build a clean named-profile environment without changing the parent."""
     env = dict(os.environ)
     # The explicit --profile selector must win even when Blackbox itself was
@@ -104,16 +105,16 @@ def _port_is_listening(host: str, port: int) -> bool:
         return False
 
 
-def _recent_daemon_lines(dkg_home: str, *, max_lines: int = 400) -> List[str]:
+def _recent_daemon_lines(dkg_home: str, *, max_lines: int = 400) -> list[str]:
     path = Path(dkg_home).expanduser() / "daemon.log"
     try:
-        with path.open("r", encoding="utf-8", errors="replace") as handle:
+        with path.open("r", encoding="utf-8-sig", errors="replace") as handle:
             return list(deque(handle, maxlen=max_lines))
     except Exception:
         return []
 
 
-def _daemon_connection_hint(dkg_home: str, cg_id: str) -> Dict[str, str]:
+def _daemon_connection_hint(dkg_home: str, cg_id: str) -> dict[str, str]:
     """Infer the freshest actionable join/sync blocker from daemon.log."""
     if not dkg_home or not cg_id:
         return {}
@@ -160,7 +161,7 @@ def _graph_source_count(rs: Any, source: str) -> int:
     return int(rs.source_count(source) or 0)
 
 
-def _ruleset_sync_counts(rs: Any) -> Dict[str, int]:
+def _ruleset_sync_counts(rs: Any) -> dict[str, int]:
     public = _graph_source_count(rs, "public")
     return {
         "total": max(_ruleset_total(rs), public),
@@ -174,7 +175,7 @@ def _network_sync_once(
     ruleset_mod: Any,
     *,
     timeout: int = 3600,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Fetch and verify the latest VM snapshot, once per dashboard process.
 
     The CLI owns the complete curator-pinned recovery protocol and publishes
@@ -188,7 +189,7 @@ def _network_sync_once(
     try:
         completed = subprocess.run(
             _network_sync_argv(timeout),
-            capture_output=True,
+            stdin=subprocess.DEVNULL, capture_output=True,
             text=True,
             timeout=max(30, int(timeout) + 30),
             check=False,
@@ -225,7 +226,7 @@ def _network_sync_once(
         _network_sync_lock.release()
 
 
-def _sync_ruleset_once(load_config: Any, dkg_client_cls: Any, ruleset_mod: Any) -> Dict[str, int]:
+def _sync_ruleset_once(load_config: Any, dkg_client_cls: Any, ruleset_mod: Any) -> dict[str, int]:
     """Ensure one public-graph subscription and refresh curated VM rules."""
     cfg = load_config()
     transfer = sync_state.read_for_graph(cfg.context_graph_id)
@@ -252,9 +253,6 @@ def _sync_ruleset_once(load_config: Any, dkg_client_cls: Any, ruleset_mod: Any) 
     except Exception:
         catchup = {}
     catchup_state = str(catchup.get("status") or "").lower()
-    catchup_job_id = str(
-        catchup.get("jobId") or catchup.get("job_id") or catchup.get("id") or ""
-    )
     if catchup_state in {"queued", "running"}:
         with _join_lock:
             _connection_states[cfg.context_graph_id] = {
@@ -321,34 +319,15 @@ def _graph_sync_state(
     return "empty"
 
 
-def _is_hidden_swm_catchup_error(value: Any) -> bool:
-    """Temporarily suppress the known DKG SWM catch-up UI failure."""
-    text = str(value or "").lower()
-    return "/api/shared-memory/catchup" in text and (
-        "transport error" in text or "timed out" in text or "timeout" in text
-    )
-
-
-def _is_retryable_durable_catchup_error(value: Any) -> bool:
-    """Recognize DKG's explicit transient durable-catchup response."""
-    text = str(value or "").lower()
-    compact = "".join(text.split())
-    return (
-        "/api/shared-memory/catchup" in text
-        and "durable_catchup_all_peers_failed" in text
-        and '"retryable":true' in compact
-    )
-
-
 def _sync_activity(
     *,
     public: int,
     community: int,
     node_reachable: bool,
-    catchup: Dict[str, Any],
-    connection: Dict[str, Any],
-    transfer: Dict[str, Any],
-) -> Dict[str, Any]:
+    catchup: dict[str, Any],
+    connection: dict[str, Any],
+    transfer: dict[str, Any],
+) -> dict[str, Any]:
     catchup_status = str(catchup.get("status") or "").lower()
     connection_state = str(connection.get("state") or "").lower()
     transfer_status = str(transfer.get("status") or "").lower()
@@ -357,7 +336,7 @@ def _sync_activity(
     expected = int(transfer.get("expected_public_entries") or 0)
     current_triples = int(transfer.get("current_triples") or 0)
     expected_triples = int(transfer.get("expected_triples") or 0)
-    progress: Dict[str, Any] = {
+    progress: dict[str, Any] = {
         "status": "idle",
         "phase": "idle",
         "label": "Waiting for graph sync",
@@ -466,7 +445,7 @@ def _sync_activity(
 
     catchup_result = catchup.get("result") if isinstance(catchup.get("result"), dict) else {}
     error = str(
-        transfer.get("error")
+        current_transfer_error(transfer, catchup)
         or connection.get("error")
         or catchup.get("error")
         or catchup_result.get("error")
@@ -617,11 +596,11 @@ def _blackbox_sync_health(
     *,
     public: int,
     sync_interval: Any,
-    activity: Dict[str, Any],
-    transfer: Dict[str, Any],
+    activity: dict[str, Any],
+    transfer: dict[str, Any],
     node_reachable: bool = True,
     now: Any = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Describe whether Agent Blackbox needs a graph update.
 
     The DKG has no lightweight remote threat-count endpoint, so an idle node
@@ -640,7 +619,7 @@ def _blackbox_sync_health(
     except (TypeError, ValueError):
         percent = None
 
-    base: Dict[str, Any] = {
+    base: dict[str, Any] = {
         "out_of_sync": False,
         "state": "ready",
         "reason": "fresh",
@@ -737,18 +716,18 @@ def _workspace_key(value: Any) -> str:
 
 
 def _profile_activity_state(
-    attach_rows: List[Dict[str, Any]],
-    audit_rows: List[Dict[str, Any]],
-    finding_rows: List[Dict[str, Any]],
-) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    attach_rows: list[dict[str, Any]],
+    audit_rows: list[dict[str, Any]],
+    finding_rows: list[dict[str, Any]],
+) -> dict[tuple[str, str], dict[str, Any]]:
     """Aggregate local activity and findings by framework *and* workspace.
 
     Older rows predate workspace attribution. They are assigned exactly once
     to the first (canonical/default) protected workspace for that framework,
     rather than copied onto every attached profile.
     """
-    states: Dict[Tuple[str, str], Dict[str, Any]] = {}
-    canonical: Dict[str, Tuple[str, str]] = {}
+    states: dict[tuple[str, str], dict[str, Any]] = {}
+    canonical: dict[str, tuple[str, str]] = {}
     for row in attach_rows:
         if not row.get("target") or not row.get("protected", row.get("already")):
             continue
@@ -760,10 +739,10 @@ def _profile_activity_state(
         states.setdefault(key, {"is_active": False, "findings": 0})
         canonical.setdefault(framework, key)
 
-    legacy_active: Set[str] = set()
-    legacy_findings: Dict[str, int] = {}
+    legacy_active: set[str] = set()
+    legacy_findings: dict[str, int] = {}
 
-    def _identity(row: Dict[str, Any]) -> Tuple[str, str]:
+    def _identity(row: dict[str, Any]) -> tuple[str, str]:
         detail = row.get("detail") if isinstance(row.get("detail"), dict) else {}
         finding = row.get("finding") if isinstance(row.get("finding"), dict) else {}
         framework = str(
@@ -828,14 +807,14 @@ def create_app(*, manage_blackbox: bool = False):
         origins (the middleware rejects rebound/foreign hosts first)."""
         return {"token": _session_token}
 
-    _rescan_state: Dict[str, Any] = {
+    _rescan_state: dict[str, Any] = {
         "stop": False,
         "known": set(),
         "last_reconcile": 0.0,
         "lock": threading.Lock(),
     }
     _blackbox_stop = threading.Event()
-    _blackbox_state: Dict[str, Any] = {
+    _blackbox_state: dict[str, Any] = {
         "process": None,
         "thread": None,
         "ready": False,
@@ -852,7 +831,7 @@ def create_app(*, manage_blackbox: bool = False):
         with _blackbox_state["lock"]:
             _blackbox_state.update(updates)
 
-    def _blackbox_snapshot() -> Dict[str, Any]:
+    def _blackbox_snapshot() -> dict[str, Any]:
         with _blackbox_state["lock"]:
             process = _blackbox_state.get("process")
             return {
@@ -953,7 +932,7 @@ def create_app(*, manage_blackbox: bool = False):
             if not _blackbox_stop.is_set():
                 _blackbox_stop.wait(_BLACKBOX_RESTART_DELAY_SEC)
 
-    def _rescan_once(*, force: bool = False) -> List[Dict[str, Any]]:
+    def _rescan_once(*, force: bool = False) -> list[dict[str, Any]]:
         """Discover local Hermes/OpenClaw workspaces and hook Blackbox into them.
 
         ``force`` re-attaches every discovered workspace — an idempotent
@@ -964,14 +943,14 @@ def create_app(*, manage_blackbox: bool = False):
         Serialized so the loop and a manual refresh never write one config at the
         same time. Fail-open per target."""
         with _rescan_state["lock"]:
-            current: Set[Tuple[str, str]] = set()
+            current: set[tuple[str, str]] = set()
             for h in attach.discover_hermes_homes():
                 current.add(("hermes", str(h)))
             for w in attach.discover_openclaw_workspaces():
                 current.add(("openclaw", str(w)))
-            known: Set[Tuple[str, str]] = _rescan_state["known"]
+            known: set[tuple[str, str]] = _rescan_state["known"]
             removed = known - current
-            touched: List[Dict[str, Any]] = []
+            touched: list[dict[str, Any]] = []
             now = time.monotonic()
             reconcile = force or now - float(_rescan_state["last_reconcile"] or 0.0) >= _RECONCILE_INTERVAL_SEC
             targets = current if reconcile else current - known
@@ -1092,7 +1071,7 @@ def create_app(*, manage_blackbox: bool = False):
 
     _PREFIX = "PREFIX g: <http://umanitek.ai/ontology/guardian/> "
 
-    def _count_query(client: "DkgClient", cfg: Any, where: str, view: str) -> int:
+    def _count_query(client: DkgClient, cfg: Any, where: str, view: str) -> int:
         """Run a single-``?n``-binding COUNT query; 0 on any failure (fail-open)."""
         try:
             rows = client.query(_PREFIX + where, cfg.context_graph_id, view=view)
@@ -1122,8 +1101,8 @@ def create_app(*, manage_blackbox: bool = False):
     _node_reachable = _liveness.reachable
     _node_read_log = RepeatGate()
     _swr_lock = threading.Lock()
-    _swr_state: Dict[str, Dict[str, Any]] = {}   # key -> {"val", "ts"}
-    _swr_busy: Set[str] = set()
+    _swr_state: dict[str, dict[str, Any]] = {}   # key -> {"val", "ts"}
+    _swr_busy: set[str] = set()
 
     def _swr(key: str, producer: Any, default: Any, ttl: float = _SWR_TTL) -> Any:
         """Return the cached value for ``key`` instantly, refreshing in the
@@ -1171,7 +1150,7 @@ def create_app(*, manage_blackbox: bool = False):
                 return None
         return _swr("community:verified", _load, None)
 
-    def _verified_reports(cfg: Any) -> List[Any]:
+    def _verified_reports(cfg: Any) -> list[Any]:
         read = _community_read(cfg)
         return list(read.reports) if read is not None else []
 
@@ -1240,7 +1219,7 @@ def create_app(*, manage_blackbox: bool = False):
             return JSONResponse({"error": "could not read settings"}, status_code=500)
 
     @app.post("/api/settings")
-    def post_settings(payload: Dict[str, Any] = Body(...)) -> Any:
+    def post_settings(payload: dict[str, Any] = Body(...)) -> Any:
         """Validate + persist detection policy under plugins.entries.blackbox.*.
 
         Loopback-only; writes are validated server-side in :mod:`settings` so a
@@ -1254,7 +1233,7 @@ def create_app(*, manage_blackbox: bool = False):
             return JSONResponse({"ok": False, "errors": ["internal error"]}, status_code=500)
 
     def _clean_chat_output(text: str) -> str:
-        lines: List[str] = []
+        lines: list[str] = []
         for line in (text or "").splitlines():
             stripped = line.strip()
             if not stripped:
@@ -1266,7 +1245,7 @@ def create_app(*, manage_blackbox: bool = False):
             lines.append(line.rstrip())
         return "\n".join(lines).strip()
 
-    def _parse_chat_session_id(text: str) -> Optional[str]:
+    def _parse_chat_session_id(text: str) -> str | None:
         for line in (text or "").splitlines():
             stripped = line.strip()
             if stripped.startswith("session_id:"):
@@ -1274,7 +1253,7 @@ def create_app(*, manage_blackbox: bool = False):
         return None
 
     @app.post("/api/blackbox-chat")
-    def blackbox_chat(payload: Dict[str, Any] = Body(...)) -> Any:
+    def blackbox_chat(payload: dict[str, Any] = Body(...)) -> Any:
         """Run one scoped Blackbox assistant turn through the managed profile."""
         message = str((payload or {}).get("message") or "").strip()
         if not message:
@@ -1291,8 +1270,8 @@ def create_app(*, manage_blackbox: bool = False):
                 argv,
                 cwd=str(attach.repo_root()),
                 text=True,
-                capture_output=True,
-                timeout=120,
+                stdin=subprocess.DEVNULL, capture_output=True,
+                timeout=120, check=False
             )
         except subprocess.TimeoutExpired:
             return JSONResponse({"ok": False, "error": "Blackbox took too long to answer."}, status_code=504)
@@ -1490,7 +1469,7 @@ def create_app(*, manage_blackbox: bool = False):
         cfg = load_blackbox_config()
         # Keyed by (framework, lowercased-address) so the same wallet under two
         # frameworks shows as two agents, and the same wallet+framework folds.
-        found: "Dict[tuple, Dict[str, Any]]" = {}
+        found: dict[tuple, dict[str, Any]] = {}
 
         # This node's wallet, shared by every local framework. Live node call,
         # so served through the SWR cache.
@@ -1505,7 +1484,7 @@ def create_app(*, manage_blackbox: bool = False):
                 return None
         local_addr = _swr("agent-identity", _load_identity, "") or ""
 
-        attach_state: Dict[str, List[Dict[str, Any]]] = {"hermes": [], "openclaw": []}
+        attach_state: dict[str, list[dict[str, Any]]] = {"hermes": [], "openclaw": []}
         try:
             attach_state = attach.attach_all(dry_run=True)
         except Exception as exc:  # pragma: no cover - fail open
@@ -1536,7 +1515,7 @@ def create_app(*, manage_blackbox: bool = False):
             audit_rows = audit.read_audit(limit=50_000)
         except Exception:  # pragma: no cover - fail open
             audit_rows = []
-        counts_by_fw: "Dict[str, int]" = {}
+        counts_by_fw: dict[str, int] = {}
         try:
             finding_rows = audit.read_findings(limit=50_000)
             for row in finding_rows:
@@ -1648,8 +1627,8 @@ def create_app(*, manage_blackbox: bool = False):
     @app.get("/api/attach-targets")
     def attach_targets() -> Any:
         """Discover local agent configs the dashboard can attach Blackbox to."""
-        targets: List[Dict[str, Any]] = []
-        returned: Set[str] = set()
+        targets: list[dict[str, Any]] = []
+        returned: set[str] = set()
         supported = {
             "hermes": "Hermes was not detected on this machine.",
             "openclaw": "OpenClaw was not detected on this machine. Start OpenClaw once so its openclaw.json workspace can be discovered.",
@@ -1688,9 +1667,9 @@ def create_app(*, manage_blackbox: bool = False):
         return {"targets": targets}
 
     @app.post("/api/attach")
-    def attach_selected(payload: Dict[str, Any] = Body(...)) -> Any:
+    def attach_selected(payload: dict[str, Any] = Body(...)) -> Any:
         """Attach Blackbox to selected local targets."""
-        rows: List[Dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
         for item in payload.get("targets") or []:
             if not isinstance(item, dict):
                 continue
@@ -1706,9 +1685,9 @@ def create_app(*, manage_blackbox: bool = False):
         return JSONResponse({"ok": ok, "targets": rows}, status_code=200 if ok else 400)
 
     @app.post("/api/agents/protection")
-    def save_agent_protection(payload: Dict[str, Any] = Body(...)) -> Any:
+    def save_agent_protection(payload: dict[str, Any] = Body(...)) -> Any:
         """Apply desired Blackbox protection state for selected local targets."""
-        rows: List[Dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
         for item in payload.get("targets") or []:
             if not isinstance(item, dict):
                 continue
@@ -1790,7 +1769,7 @@ def create_app(*, manage_blackbox: bool = False):
         ecosystem: str = Query("", max_length=80),
     ) -> Any:
         """Threats from one graph tier: ``public`` | ``community`` | ``local``."""
-        tier, view = _tier_view(tier)
+        tier, _view = _tier_view(tier)
         cfg = load_blackbox_config()
 
         # The ruleset merges complete public VM threats with community SWM rows
@@ -1831,7 +1810,7 @@ def create_app(*, manage_blackbox: bool = False):
         def _load() -> Any:
             if not _node_reachable(cfg):
                 return None   # keep the default (empty) cached briefly; retry next poll
-            seen: "Dict[str, Dict[str, Any]]" = {}
+            seen: dict[str, dict[str, Any]] = {}
             try:
                 client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
                 agent_address = str(client.agent_identity().get("agentAddress") or "")
@@ -1885,7 +1864,7 @@ def create_app(*, manage_blackbox: bool = False):
         category = prefix if prefix in ("dep", "injection", "escalation", "fileaccess", "skill", "ioc") else "other"
         if category == "dep":
             category = "dependency"
-        detail: Dict[str, Any] = {
+        detail: dict[str, Any] = {
             "identifier": identifier,
             "tier": tier,
             "category": category,
@@ -1925,7 +1904,7 @@ def create_app(*, manage_blackbox: bool = False):
                     agent_address = str(identity.get("agentAddress") or "")
                 graph = (audit.local_audit_graph(client) or cfg.context_graph_id) if tier == "local" else cfg.context_graph_id
                 rows = client.query(lookup, graph, view=view, agent_address=agent_address)
-            subjects: Dict[str, List[Any]] = {}
+            subjects: dict[str, list[Any]] = {}
             for row in rows:
                 subjects.setdefault(extract_binding(row.get("t")), []).append(
                     (extract_binding(row.get("p")), extract_binding(row.get("o")))

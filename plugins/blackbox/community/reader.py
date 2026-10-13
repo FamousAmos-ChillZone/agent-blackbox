@@ -136,14 +136,14 @@ def community_pause_active(client: DkgClient, cfg: BlackboxConfig) -> bool:
         return False
 
 
-def fetch_community_report_rows(client: DkgClient, cfg: BlackboxConfig) -> Optional[List[Dict[str, Any]]]:
+def fetch_community_report_rows(client: DkgClient, cfg: BlackboxConfig) -> Optional[list[dict[str, Any]]]:
     """Page every ThreatReport from the community graph's shared memory
     (see :func:`page_community_rows`)."""
     return page_community_rows(client, cfg, _community_reports_sparql)
 
 
 def page_community_rows(client: DkgClient, cfg: BlackboxConfig,
-                        sparql_after: Callable[[str], str]) -> Optional[List[Dict[str, Any]]]:
+                        sparql_after: Callable[[str], str]) -> Optional[list[dict[str, Any]]]:
     """Page a community-graph query (shared memory); see :func:`page_rows`."""
     return page_rows(client, cfg.community_graph_id, constants.VIEW_SHARED_WORKING_MEMORY, sparql_after,
                      page_size=_COMMUNITY_PAGE_SIZE, max_rows=_COMMUNITY_MAX_ROWS)
@@ -176,11 +176,11 @@ class CommunityRead:
     """
 
     state: ReadState
-    reports: Tuple[VerifiedReport, ...] = ()
+    reports: tuple[VerifiedReport, ...] = ()
     reason: str = ""
-    disputes: Tuple[disputes.VerifiedDispute, ...] = ()
-    retractions: Tuple[retractions.VerifiedRetraction, ...] = ()
-    digests: Tuple[digests.VerifiedDigest, ...] = ()
+    disputes: tuple[disputes.VerifiedDispute, ...] = ()
+    retractions: tuple[retractions.VerifiedRetraction, ...] = ()
+    digests: tuple[digests.VerifiedDigest, ...] = ()
     heat: Mapping[str, digests.HeatEstimate] = field(default_factory=dict)
     held_back: int = 0
     pending_tombstones: int = 0
@@ -263,14 +263,14 @@ def _held_verdicts(client: DkgClient, cfg: BlackboxConfig, environment: str, hel
     return curator_view.CuratorView() if view.unavailable else view
 
 
-def _trust_interest(reports: List[VerifiedReport], *statement_lists: Any) -> List[str]:
+def _trust_interest(reports: list[VerifiedReport], *statement_lists: Any) -> list[str]:
     """The identifiers worth asking the curators about, most important first:
     every signer of a statement this node holds (``author:<key>`` — is it a
     counted author?), then every reported threat, the most reported first
     (has it a verdict or an attested stage?). The trust read asks for these
     by exact lookup instead of scanning the graph (Community Curation C3)."""
     authors = dict.fromkeys(f"author:{item.author}" for items in (reports, *statement_lists) for item in items)
-    reported: Dict[str, int] = {}
+    reported: dict[str, int] = {}
     for report in reports:
         reported[report.identifier] = reported.get(report.identifier, 0) + 1
     disputed = dict.fromkeys(getattr(item, "identifier", "") for items in statement_lists for item in items)
@@ -279,7 +279,7 @@ def _trust_interest(reports: List[VerifiedReport], *statement_lists: Any) -> Lis
 
 
 def _honour_statements(client: DkgClient, cfg: BlackboxConfig, environment: str,
-                       reports: List[VerifiedReport], held: Iterable[str] = ()) -> CommunityRead:
+                       reports: list[VerifiedReport], held: Iterable[str] = ()) -> CommunityRead:
     """Honour every reporter statement BEFORE anything is counted (Refine R2).
 
     Reads and verifies retractions and disputes, applies ONE per-author

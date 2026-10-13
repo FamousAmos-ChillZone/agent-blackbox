@@ -72,7 +72,7 @@ def _matched_by(finding: Mapping[str, Any]) -> str:
     return "advisory" if fields.get("advisory_id") else "built-in"
 
 
-def sighting_fields(finding: Mapping[str, Any], *, outcome: str) -> Dict[str, str]:
+def sighting_fields(finding: Mapping[str, Any], *, outcome: str) -> dict[str, str]:
     """The sighting fields for one finding dict (``Finding.to_dict()``), every
     value from :mod:`.vocab`. *outcome* is ``blocked`` or ``flagged`` — what the
     hook did with THIS finding."""

@@ -7,8 +7,9 @@ refused. Rejects never leave the machine.
 
 from __future__ import annotations
 
+import ipaddress
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 
 import pytest
 
@@ -105,7 +106,7 @@ def test_severity_and_framework_are_closed():
 
 
 def test_a_report_dated_in_the_future_is_refused():
-    future = datetime.now(timezone.utc) + timedelta(hours=2)
+    future = datetime.now(UTC) + timedelta(hours=2)
     with pytest.raises(ReportValidationError):
         report_builder.build_report_quads(identifier="ioc:domain:x.example", category="ioc", severity="high",
                                           reporter_address="0x66bc7cd539d3bb0be39158dd14f27b38342c7e6a", ioc_type="domain", ioc_context="in-skill", ts=future)
@@ -390,3 +391,32 @@ def test_verified_prefixed_hash_identifier_is_reportable():
     identifier = "ioc:hash:sha256:d2e1ab10d5a0c16a724aeda8acb46b38f551ade58137969c3bc3c9cdc0a12425"
     assert _ok("ioc", identifier, ioc_type="hash", ioc_context="fetched-by-tool").identifier == identifier
     _bad("ioc", "ioc:hash:sha256:" + "a" * 40, ioc_type="hash", ioc_context="fetched-by-tool")
+
+
+# --- KI-339: an IPv4-mapped address has one spelling on every Python -------------
+# CPython 3.11.7 printed ::ffff:c000:280, 3.11.15 / 3.13+ ::ffff:192.0.2.128, so two
+# nodes minted different identifiers for one address. The dotted form is spelt out.
+
+
+@pytest.mark.parametrize("spelling", ["::ffff:192.0.2.128", "::ffff:c000:280", "::FFFF:C000:0280",
+                                       "[::ffff:192.0.2.128]:443", "::ffff:192.0.2.128%eth0"])
+def test_every_spelling_of_a_mapped_address_canonicalises_to_the_dotted_form(spelling):
+    from plugins.blackbox.kernel import threat_ids
+    assert threat_ids.normalize_ioc_value("ip", spelling) == "::ffff:192.0.2.128"
+
+
+def test_only_the_dotted_mapped_form_is_canonical():
+    from plugins.blackbox.kernel import threat_ids
+    assert threat_ids.ioc_value_is_well_formed("ip", "::ffff:192.0.2.128")
+    assert not threat_ids.ioc_value_is_well_formed("ip", "::ffff:c000:280")
+
+
+def test_the_spelling_survives_a_python_that_prints_mapped_addresses_in_hex(monkeypatch):
+    # LES-043: our text, not the library's str(); fake the 3.11.7 rendering.
+    from plugins.blackbox.kernel import threat_ids
+    real = ipaddress.IPv6Address.compressed
+    def old_python(self):
+        return "::ffff:c000:280" if self.ipv4_mapped is not None else real.fget(self)
+    monkeypatch.setattr(ipaddress.IPv6Address, "compressed", property(old_python))
+    assert threat_ids.normalize_ioc_value("ip", "::ffff:192.0.2.128") == "::ffff:192.0.2.128"
+    assert threat_ids.normalize_ioc_value("ip", "2001:db8::1") == "2001:db8::1"

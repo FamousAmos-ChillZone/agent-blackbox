@@ -44,7 +44,7 @@ def load_credentials(path: Optional[Path] = None) -> Mapping[str, str]:
     if mode & (stat.S_IRWXG | stat.S_IRWXO):
         raise CredentialsError(f"{path} is mode {stat.S_IMODE(mode):04o}; run: chmod 600 {path}")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError) as exc:
         raise CredentialsError(f"{path} is not readable JSON") from exc
     if not isinstance(data, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in data.items()):

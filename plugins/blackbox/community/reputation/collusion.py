@@ -39,12 +39,12 @@ def _overlapping(reports_a: AbstractSet[str], reports_b: AbstractSet[str]) -> bo
 
 
 def collapse(reports_by_key: Mapping[str, AbstractSet[str]],
-             peer_id_by_key: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
+             peer_id_by_key: Optional[Mapping[str, str]] = None) -> dict[str, str]:
     """``{key: cluster id}`` — the smallest key of each group. *reports_by_key*
     holds each key's threat identifiers inside the overlap window (the caller
     windows them); *peer_id_by_key* the transport peer id where known.
     Union-find over the two collapse rules."""
-    parent: Dict[str, str] = {key: key for key in reports_by_key}
+    parent: dict[str, str] = {key: key for key in reports_by_key}
 
     def find(key: str) -> str:
         while parent[key] != key:
@@ -57,7 +57,7 @@ def collapse(reports_by_key: Mapping[str, AbstractSet[str]],
         if ra != rb:
             parent[max(ra, rb)] = min(ra, rb)
 
-    by_peer: Dict[str, str] = {}
+    by_peer: dict[str, str] = {}
     for key, peer in (peer_id_by_key or {}).items():
         if key in parent and peer:
             if peer in by_peer:
@@ -72,10 +72,10 @@ def collapse(reports_by_key: Mapping[str, AbstractSet[str]],
 
 
 def rings(reports_by_key: Mapping[str, AbstractSet[str]],
-          peer_id_by_key: Optional[Mapping[str, str]] = None) -> List[FrozenSet[str]]:
+          peer_id_by_key: Optional[Mapping[str, str]] = None) -> list[frozenset[str]]:
     """Groups of two or more keys that collapse together — for the curator's
     eyes, never a weight."""
-    groups: Dict[str, set] = {}
+    groups: dict[str, set] = {}
     for key, cluster in collapse(reports_by_key, peer_id_by_key).items():
         groups.setdefault(cluster, set()).add(key)
     return sorted((frozenset(g) for g in groups.values() if len(g) > 1), key=lambda g: min(g))

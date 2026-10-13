@@ -50,7 +50,7 @@ class VerifiedDigest:
     author: str
     reporter: str
     week: str
-    entries: Tuple[DigestEntry, ...]
+    entries: tuple[DigestEntry, ...]
 
 
 @dataclass(frozen=True)
@@ -97,9 +97,9 @@ def _verified(row: Mapping[str, Any], environment: str, graph: str) -> Optional[
     return VerifiedDigest(subject=subject, author=author, reporter=reporter, week=week, entries=entries)
 
 
-def verified_digests(rows: Iterable[Mapping[str, Any]], environment: str, graph: str) -> List[VerifiedDigest]:
+def verified_digests(rows: Iterable[Mapping[str, Any]], environment: str, graph: str) -> list[VerifiedDigest]:
     """Every digest row that verifies; the rest are dropped and counted in the log."""
-    found: List[VerifiedDigest] = []
+    found: list[VerifiedDigest] = []
     dropped = 0
     for row in rows:
         digest = _verified(row, environment, graph)
@@ -113,9 +113,9 @@ def verified_digests(rows: Iterable[Mapping[str, Any]], environment: str, graph:
 
 
 
-def one_per_author_week(digests: Iterable[VerifiedDigest], first_seen: Mapping[str, float]) -> List[VerifiedDigest]:
+def one_per_author_week(digests: Iterable[VerifiedDigest], first_seen: Mapping[str, float]) -> list[VerifiedDigest]:
     """At most one digest per (author, week): the first this node observed."""
-    chosen: Dict[Tuple[str, str], VerifiedDigest] = {}
+    chosen: dict[tuple[str, str], VerifiedDigest] = {}
     ignored = 0
     for digest in sorted(digests, key=lambda d: (first_seen.get(d.subject, float("inf")), d.subject)):
         if chosen.setdefault((digest.author, digest.week), digest) is not digest:
@@ -130,11 +130,11 @@ def latest_week(digests: Iterable[VerifiedDigest]) -> str:
     return max((d.week for d in digests), default="")
 
 
-def heat_for_week(digests: Iterable[VerifiedDigest], view: CuratorView, week: str) -> Dict[str, HeatEstimate]:
+def heat_for_week(digests: Iterable[VerifiedDigest], view: CuratorView, week: str) -> dict[str, HeatEstimate]:
     """Per threat, the heat estimate for *week* from COUNTED authors' digests
     (already reduced to one per author and week)."""
-    agents: Dict[str, int] = {}
-    count: Dict[str, int] = {}
+    agents: dict[str, int] = {}
+    count: dict[str, int] = {}
     for digest in digests:
         if digest.week != week or not view.is_counted(digest.author):
             continue

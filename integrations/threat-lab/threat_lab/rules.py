@@ -57,11 +57,11 @@ class ReadReport:
     artifact_sha256: str
     files_read: int = 0
     truncated: bool = False
-    install_hooks: List[Dict[str, str]] = field(default_factory=list)
-    obfuscated: List[Dict[str, str]] = field(default_factory=list)
-    suspicious_iocs: List[Dict[str, str]] = field(default_factory=list)
-    hosts: List[str] = field(default_factory=list)
-    wallets: List[str] = field(default_factory=list)
+    install_hooks: list[dict[str, str]] = field(default_factory=list)
+    obfuscated: list[dict[str, str]] = field(default_factory=list)
+    suspicious_iocs: list[dict[str, str]] = field(default_factory=list)
+    hosts: list[str] = field(default_factory=list)
+    wallets: list[str] = field(default_factory=list)
 
     def to_json(self) -> str:
         return json.dumps(self.__dict__, sort_keys=True, separators=(",", ":"))
@@ -115,7 +115,7 @@ def has_suspicious_ioc(content: bytes) -> bool:
     return bool(_IP_URL.search(content) or _EXFIL_ENDPOINTS.search(content))
 
 
-def _members(data: bytes, report: ReadReport) -> Iterator[Tuple[str, bytes]]:
+def _members(data: bytes, report: ReadReport) -> Iterator[tuple[str, bytes]]:
     """(path, bytes) of each regular file, never touching the disk. Over a cap
     stops the walk and sets ``report.truncated``."""
     total = 0

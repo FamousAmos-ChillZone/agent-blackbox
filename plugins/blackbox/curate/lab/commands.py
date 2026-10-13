@@ -109,4 +109,4 @@ def status_command(*, store: Optional[LabJobStore] = None, requests: Optional[La
     return 0
 
 
-__all__ = ["add_lab_parser", "cmd_lab", "request_command", "status_command", "REQUEST_CONTENT", "STATUS"]
+__all__ = ["REQUEST_CONTENT", "STATUS", "add_lab_parser", "cmd_lab", "request_command", "status_command"]

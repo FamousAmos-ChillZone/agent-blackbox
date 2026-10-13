@@ -87,4 +87,4 @@ class BrowserBoundary:
         return bool(expected) and secrets.compare_digest(presented, expected)
 
 
-__all__ = ["BrowserBoundary", "TokenLookup", "TOKEN_HEADER", "SAFE_METHODS"]
+__all__ = ["SAFE_METHODS", "TOKEN_HEADER", "BrowserBoundary", "TokenLookup"]

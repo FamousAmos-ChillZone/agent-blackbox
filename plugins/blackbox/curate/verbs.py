@@ -16,7 +16,7 @@ Numbering, the quorum check, consent and the write itself live in
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -103,7 +103,7 @@ def record_outcome(key: str, *, confirmed: bool, day: str, novel: bool = False, 
 
 
 def graduation_candidates(today: str, ledger: Optional[reputation.ReputationLedger] = None
-                          ) -> List[Tuple[reputation.ReporterStanding, float, str]]:
+                          ) -> list[tuple[reputation.ReporterStanding, float, str]]:
     """R4: every ledgered reporter with its reputation and what today calls for:
     'graduate', 'demote', or '' (nothing). Read-only."""
     book = ledger or reputation.ReputationLedger()
@@ -140,15 +140,15 @@ def propose_graduation(ctx: CurateContext, store: ProposalStore, *, key: str, ad
 
 
 def curator_alarms(ctx: CurateContext, compiled: Optional[Any], *, today: str, now: float,
-                   ledger: Optional[reputation.ReputationLedger] = None) -> List[health.HealthItem]:
+                   ledger: Optional[reputation.ReputationLedger] = None) -> list[health.HealthItem]:
     """R10b: the curator-audience alarms from this node's own facts — the queue
     (depth and lane ages against the SLA), the private ledger (drift), the
     reader's first-seen trail (report velocity), the share retries and the
     counted list's expiries. Never shown to operators."""
     from . import queue as queue_mod
     from .context import verified_identifiers
-    lane_depth: Dict[int, int] = {}
-    lane_over: Dict[int, int] = {}
+    lane_depth: dict[int, int] = {}
+    lane_over: dict[int, int] = {}
     if compiled is not None:
         view = queue_mod.delta_view(compiled.community, verified_identifiers(compiled, compiled.community))
         for item in view.new:
@@ -176,7 +176,7 @@ def _days_until(day: str, today: str) -> int:
         return 10**6
 
 
-def _report_velocity(now: float, days: int = 14) -> Tuple[int, float, float]:
+def _report_velocity(now: float, days: int = 14) -> tuple[int, float, float]:
     """(statements first seen today, mean per day, σ) over the last *days* days,
     from the reader's first-seen trail (``community_first_seen.json``)."""
     first_seen, _ = community.first_seen_trail()
@@ -198,14 +198,14 @@ def _stored(store: ProposalStore, kind: str, identifier: str, envelope: signing.
     return proposal
 
 
-def send(ctx: CurateContext, proposal: Proposal, peer: str) -> Dict[str, object]:
+def send(ctx: CurateContext, proposal: Proposal, peer: str) -> dict[str, object]:
     return transport.send_proposal(ctx.client, peer, proposal)
 
 
 # -- approve (second key) ----------------------------------------------------------
 
 
-def propose_kill_list(ctx: CurateContext, store: ProposalStore, *, entries: List[Dict[str, str]]) -> Proposal:
+def propose_kill_list(ctx: CurateContext, store: ProposalStore, *, entries: list[dict[str, str]]) -> Proposal:
     """R14: first signature on a kill list (the next version); wide or popular
     kills still need the root to co-sign at approval (`approve --root`)."""
     _require_manifest(ctx)
@@ -214,7 +214,7 @@ def propose_kill_list(ctx: CurateContext, store: ProposalStore, *, entries: List
     if not parsed or any(e is None for e in parsed):
         raise VerbError("every kill-list entry needs registry (skill|mcp), identifier, action (disable|warn) and a closed reason")
     version = next_sequence(ctx, store, "kill-list")
-    kill_list = killlist.KillList(version=version, day=datetime.now(timezone.utc).date().isoformat(),
+    kill_list = killlist.KillList(version=version, day=datetime.now(UTC).date().isoformat(),
                                   entries=tuple(e for e in parsed if e is not None))
     key = keys.curator_key_store().load_or_create()
     try:
@@ -226,7 +226,7 @@ def propose_kill_list(ctx: CurateContext, store: ProposalStore, *, entries: List
 
 
 def approve(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, evidence: str,
-            typed_code: Optional[str], yes: bool, root: bool = False, standing: str = "") -> Tuple[Proposal, str]:
+            typed_code: Optional[str], yes: bool, root: bool = False, standing: str = "") -> tuple[Proposal, str]:
     """Second signature + consent + publish. Returns (proposal, what happened).
     *root* (SANDBOX, kill lists): also add the root key's signature — the third
     signature a wide or popular kill needs (R14). *standing* — the curator
@@ -276,8 +276,8 @@ def _check_first_signer(ctx: CurateContext, envelope: signing.SignedEnvelope, pr
 # -- manifest (sandbox) --------------------------------------------------------
 
 
-def manifest_proposal(ctx: CurateContext, store: ProposalStore, *, curator_keys: List[str],
-                      curator_operators: List[str], threshold: int, promotion_author: str, root_epoch: int, version: int, legacy_uals: Iterable[str],
+def manifest_proposal(ctx: CurateContext, store: ProposalStore, *, curator_keys: list[str],
+                      curator_operators: list[str], threshold: int, promotion_author: str, root_epoch: int, version: int, legacy_uals: Iterable[str],
                       issued_day: str = "") -> Proposal:
     """SANDBOX: a root-signed key manifest for the ACTING authority, bound to
     the graph that authority's manifest lives in (the community graph for the
@@ -320,7 +320,7 @@ def listing_days(ctx: CurateContext) -> int:
 
 def default_expiry(ctx: CurateContext, today: Optional[date] = None) -> str:
     """The expiry day a new listing gets when none is given."""
-    return ((today or datetime.now(timezone.utc).date()) + timedelta(days=listing_days(ctx))).isoformat()
+    return ((today or datetime.now(UTC).date()) + timedelta(days=listing_days(ctx))).isoformat()
 
 
 def _require_manifest(ctx: CurateContext) -> None:

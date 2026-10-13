@@ -71,7 +71,7 @@ class FallbackIndex:
             self._db.execute(statement)
 
     @classmethod
-    def for_scope(cls, scope: Optional[VerifiedScope], path: Optional[Path] = None) -> Optional["FallbackIndex"]:
+    def for_scope(cls, scope: Optional[VerifiedScope], path: Optional[Path] = None) -> Optional[FallbackIndex]:
         """The index when the scope enables the fallback, else None (the default)."""
         if scope is None or scope.fallback != FALLBACK_INDEX:
             return None
@@ -88,7 +88,7 @@ class FallbackIndex:
         indexed = {row[0] for row in self._db.execute("SELECT graph FROM asset")}
         return bool(self.scope.assertion_graphs) and self.scope.assertion_graphs <= indexed
 
-    def dependencies(self, candidates: Sequence[Tuple[str, str, str]]) -> LookupAnswer:
+    def dependencies(self, candidates: Sequence[tuple[str, str, str]]) -> LookupAnswer:
         keys = [threat_ids.dependency_key(ecosystem, name, version) for ecosystem, name, version in candidates]
         return self._answer("dependency", keys)
 
@@ -99,13 +99,13 @@ class FallbackIndex:
         """IOC rules by VALUE (what the live lookup asks the store by), keyed by identifier."""
         return self._answer("ioc", list(values), column="value")
 
-    def _answer(self, table: str, keys: List[str], column: str = "key") -> LookupAnswer:
-        rules: Dict[str, Dict[str, Any]] = {}
+    def _answer(self, table: str, keys: list[str], column: str = "key") -> LookupAnswer:
+        rules: dict[str, dict[str, Any]] = {}
         for start in range(0, len(keys), 500):
             chunk = keys[start:start + 500]
             marks = ",".join("?" * len(chunk))
             for key, graph, rule in self._db.execute(
-                    f"SELECT key, graph, rule FROM {table} WHERE {column} IN ({marks})", chunk):   # noqa: S608 — ours
+                    f"SELECT key, graph, rule FROM {table} WHERE {column} IN ({marks})", chunk):
                 if graph in self.scope.assertion_graphs:
                     loaded = json.loads(rule)
                     allowed = self.scope.as_tier_allows(graph, table, key, loaded)   # same tier rule as the store lookup
@@ -132,10 +132,10 @@ class FallbackIndex:
             done += 1
         return done
 
-    def _store(self, graph: str, triples: List[Tuple[str, str, str]]) -> None:
+    def _store(self, graph: str, triples: list[tuple[str, str, str]]) -> None:
         kept = [triple for triple in triples if triple[0] not in self.scope.suppressed_subjects]
-        dependencies: List[Tuple[str, str, str]] = []
-        iocs: List[Tuple[str, str, str, str]] = []
+        dependencies: list[tuple[str, str, str]] = []
+        iocs: list[tuple[str, str, str, str]] = []
         for built in rows_from_triples(graph, kept):
             mapped = row_adapters._row_to_rule(built, "public")
             if mapped is None:
@@ -154,10 +154,10 @@ class FallbackIndex:
         self._db.close()
 
 
-def _read_asset(client: DkgClient, cg_id: str, graph: str) -> Optional[List[Tuple[str, str, str]]]:
+def _read_asset(client: DkgClient, cg_id: str, graph: str) -> Optional[list[tuple[str, str, str]]]:
     """Every triple of one asset's graph, cursor-paged by subject; None on failure."""
     failure = object()
-    triples: List[Tuple[str, str, str]] = []
+    triples: list[tuple[str, str, str]] = []
     after = ""
     while True:
         cursor = f'FILTER(STR(?threat) > {json.dumps(after)})' if after else ""

@@ -27,9 +27,6 @@ def test_fixture_exists():
 
 
 def test_identifier_parity():
-    action_parsing = load_blackbox("detection.action_parsing")
-    report_builder = load_blackbox("community.report_builder")
-    shell_shapes = load_blackbox("detection.shell_shapes")
     threat_ids = load_blackbox("kernel.threat_ids")
     for case in _fixture()["identifiers"]:
         kind, args = case["kind"], case["in"]
@@ -50,9 +47,6 @@ def test_identifier_parity():
 
 
 def test_report_uri_parity():
-    action_parsing = load_blackbox("detection.action_parsing")
-    report_builder = load_blackbox("community.report_builder")
-    shell_shapes = load_blackbox("detection.shell_shapes")
     threat_ids = load_blackbox("kernel.threat_ids")
     for case in _fixture()["reportUris"]:
         if not case["reporter"].strip():
@@ -67,10 +61,7 @@ def test_report_uri_parity():
 
 
 def test_arg_shape_parity():
-    action_parsing = load_blackbox("detection.action_parsing")
-    report_builder = load_blackbox("community.report_builder")
     shell_shapes = load_blackbox("detection.shell_shapes")
-    threat_ids = load_blackbox("kernel.threat_ids")
     for case in _fixture()["argShapes"]:
         assert (
             shell_shapes.normalize_arg_shape(case["tool"], case["args"]) == case["shape"]
@@ -79,9 +70,6 @@ def test_arg_shape_parity():
 
 def test_dependency_parse_parity():
     action_parsing = load_blackbox("detection.action_parsing")
-    report_builder = load_blackbox("community.report_builder")
-    shell_shapes = load_blackbox("detection.shell_shapes")
-    threat_ids = load_blackbox("kernel.threat_ids")
     for case in _fixture()["dependencyParses"]:
         assert (
             action_parsing.parse_dependency_installs(case["command"]) == case["packages"]
@@ -89,10 +77,7 @@ def test_dependency_parse_parity():
 
 
 def test_report_quads_parity():
-    action_parsing = load_blackbox("detection.action_parsing")
     report_builder = load_blackbox("community.report_builder")
-    shell_shapes = load_blackbox("detection.shell_shapes")
-    threat_ids = load_blackbox("kernel.threat_ids")
     report_schema = load_blackbox("community.report_schema")
     compared, refused = 0, set()
     for case in _fixture()["reportQuads"]:

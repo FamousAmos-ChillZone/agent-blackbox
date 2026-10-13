@@ -37,7 +37,7 @@ from ...kernel.signing.graph_migration import GraphMigration, MigrationVerdict
 from ...kernel.signing import key_manifest
 from ...kernel.signing.trust_anchors import RootPins
 
-Order = Tuple[int, int]
+Order = tuple[int, int]
 
 
 def graph_migrations_sparql(after: str) -> str:
@@ -61,7 +61,7 @@ def verify_row(row: Mapping[str, Any], environment: str, graph: str, roots: Root
 
 
 def trusted_migrations(rows: Iterable[Mapping[str, Any]], environment: str, graph: str,
-                       roots: RootPins) -> List[MigrationVerdict]:
+                       roots: RootPins) -> list[MigrationVerdict]:
     """The verdict on every migration in *rows* a trusted root signed away from
     *graph* in *environment* — freeze-only ones included (they may conflict,
     never be followed)."""
@@ -80,12 +80,12 @@ def is_pending(migration: GraphMigration, today: str) -> bool:
     return today < effective.isoformat()
 
 
-def conflict_orders(verdicts: Iterable[MigrationVerdict]) -> Set[Order]:
+def conflict_orders(verdicts: Iterable[MigrationVerdict]) -> set[Order]:
     """The orders at which trusted migrations conflict: two different contents
     at one order (pending ones included — a counter-statement freezes at once),
     or any freeze-only verdict."""
-    contents: Dict[Order, Set[str]] = {}
-    conflicts: Set[Order] = set()
+    contents: dict[Order, set[str]] = {}
+    conflicts: set[Order] = set()
     for verdict in verdicts:
         contents.setdefault(verdict.migration.order, set()).add(content_hash(verdict.migration))
         if verdict.freeze_only:
@@ -93,7 +93,7 @@ def conflict_orders(verdicts: Iterable[MigrationVerdict]) -> Set[Order]:
     return conflicts | {order for order, hashes in contents.items() if len(hashes) > 1}
 
 
-def _freezing(conflicts: Set[Order], sticky_order: Optional[Order]) -> Set[Order]:
+def _freezing(conflicts: set[Order], sticky_order: Optional[Order]) -> set[Order]:
     """The conflicts that move the reader: those ABOVE its sticky order."""
     return {order for order in conflicts if sticky_order is None or order > sticky_order}
 

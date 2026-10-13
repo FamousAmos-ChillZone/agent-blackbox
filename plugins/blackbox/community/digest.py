@@ -34,7 +34,7 @@ import os
 import secrets
 import threading
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, UTC
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Optional, Tuple
@@ -104,7 +104,7 @@ class DigestEntry:
     bucket: Bucket
 
 
-def build_digest(counts: Mapping[str, int]) -> Tuple[DigestEntry, ...]:
+def build_digest(counts: Mapping[str, int]) -> tuple[DigestEntry, ...]:
     """The entries for one week's ``{identifier: count}``: the most-seen
     :data:`MAX_DIGEST_ENTRIES` threats, bucketed; ties by identifier."""
     ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:MAX_DIGEST_ENTRIES]
@@ -119,7 +119,7 @@ class SightingTally:
     pruned. Nothing per event is stored: only the week's counts.
     """
 
-    def __init__(self, path: Optional[Path] = None, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
+    def __init__(self, path: Optional[Path] = None, clock: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
         self._path = path or (constants.blackbox_home() / _TALLY_FILE)
         self._clock = clock
         self._lock = threading.Lock()
@@ -135,11 +135,11 @@ class SightingTally:
             counts[identifier] = int(counts.get(identifier, 0)) + 1
             self._save(state)
 
-    def counts(self, week: str) -> Dict[str, int]:
+    def counts(self, week: str) -> dict[str, int]:
         with self._lock:
             return dict(self._load()["weeks"].get(week, {}))
 
-    def due_weeks(self) -> List[str]:
+    def due_weeks(self) -> list[str]:
         """Completed weeks with sightings that have not been published yet."""
         with self._lock:
             state = self._load()
@@ -154,7 +154,7 @@ class SightingTally:
                 state["published"].append(week)
             self._save(state)
 
-    def weeks(self) -> List[str]:
+    def weeks(self) -> list[str]:
         """Every ISO week the tally currently holds counts for (export / inspection)."""
         with self._lock:
             return sorted(str(week) for week in (self._load().get("weeks") or {}))
@@ -169,16 +169,16 @@ class SightingTally:
             except FileNotFoundError:
                 return False
 
-    def _load(self) -> Dict[str, object]:
+    def _load(self) -> dict[str, object]:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
             weeks = {str(w): {str(k): int(v) for k, v in dict(c).items()} for w, c in dict(data["weeks"]).items()}
             return {"weeks": weeks, "published": [str(w) for w in data.get("published", [])]}
         except (OSError, ValueError, KeyError, TypeError):
             return {"weeks": {}, "published": []}
 
-    def _save(self, state: Dict[str, object]) -> None:
-        weeks: Dict[str, Dict[str, int]] = state["weeks"]  # type: ignore[assignment]
+    def _save(self, state: dict[str, object]) -> None:
+        weeks: dict[str, dict[str, int]] = state["weeks"]  # type: ignore[assignment]
         for week in sorted(weeks)[:-_KEEP_WEEKS]:
             weeks.pop(week, None)
         state["published"] = [w for w in state["published"] if w in weeks]  # type: ignore[index]
@@ -205,12 +205,12 @@ def digest_subject(reporter: str, week: str) -> str:
     return f"urn:guardian:digest:{reporter.strip().lower()}:{week}"
 
 
-def entries_text(entries: Tuple[DigestEntry, ...]) -> str:
+def entries_text(entries: tuple[DigestEntry, ...]) -> str:
     """The entries as the signed payload carries them."""
     return _ENTRY_SEPARATOR.join(f"{e.identifier} {e.bucket.value}" for e in entries)
 
 
-def parse_entries(text: str) -> Optional[Tuple[DigestEntry, ...]]:
+def parse_entries(text: str) -> Optional[tuple[DigestEntry, ...]]:
     """Entries from :func:`entries_text`; None for anything malformed."""
     entries = []
     for line in text.split(_ENTRY_SEPARATOR) if text else []:
@@ -224,8 +224,8 @@ def parse_entries(text: str) -> Optional[Tuple[DigestEntry, ...]]:
     return tuple(entries) if len(entries) <= MAX_DIGEST_ENTRIES else None
 
 
-def build_digest_quads(*, reporter_address: str, week: str, entries: Tuple[DigestEntry, ...],
-                       signer: ReportSigner, framework: str = sharing.HOST_FRAMEWORK) -> List[rdf_terms.Quad]:
+def build_digest_quads(*, reporter_address: str, week: str, entries: tuple[DigestEntry, ...],
+                       signer: ReportSigner, framework: str = sharing.HOST_FRAMEWORK) -> list[rdf_terms.Quad]:
     """The signed digest as graph quads: type, reporter, ISO week, one
     ``g:reportsThreat`` per entry, and the envelope. The week is the only
     time it carries."""
