@@ -14,6 +14,7 @@ import pytest
 
 from plugins.blackbox.detection import detect_all
 from plugins.blackbox.detection.transactions import amounts
+from plugins.blackbox.detection.transactions.chains import chain_named
 from plugins.blackbox.detection.transactions.approval_calls import APPROVAL_CALLS, signature_key
 from plugins.blackbox.detection.transactions.approvals import Approval, approvals_in, detect_token_approvals
 from plugins.blackbox.guard import hooks
@@ -89,6 +90,9 @@ def test_approvals_run_with_every_detector_under_trader_shield():
 
 ROUTERS = {"0x7a250d5630b4cf539739df2c5dacb4c659f2488d": "Uniswap V2 Router 02",
            "0x10ed43c718714eb63d5aa57b78b54704e256024e": "PancakeSwap V2 Router"}
+#: How a trading call names each router's chain (KI-388: the exemption holds on that chain).
+ROUTER_CHAIN = {"0x7a250d5630b4cf539739df2c5dacb4c659f2488d": "--chain mainnet",
+                "0x10ed43c718714eb63d5aa57b78b54704e256024e": "--rpc-url https://bsc-dataseed.binance.org"}
 
 
 class _GraphListingTheRouters:
@@ -100,12 +104,13 @@ class _GraphListingTheRouters:
 
 @pytest.mark.parametrize("router", sorted(ROUTERS))
 def test_approving_an_exchange_router_is_ordinary_trading_even_when_a_feed_lists_it(router):
-    command = f"cast send {USDC} 'approve(address,uint256)' {router} {MAX}"
+    command = f"cast send {USDC} 'approve(address,uint256)' {router} {MAX} {ROUTER_CHAIN[router]}"
     assert detect_token_approvals("terminal", {"command": command}, _GraphListingTheRouters()) == []
 
 
 def test_a_real_drainer_beside_a_router_is_still_caught():
-    command = f"cast send {USDC} 'approve(address,uint256)' {SPENDER} 5 && cast send {USDC} 'approve(address,uint256)' 0x7a250d5630b4cf539739df2c5dacb4c659f2488d {MAX}"
+    command = (f"cast send {USDC} 'approve(address,uint256)' {SPENDER} 5 --chain 1 && "
+               f"cast send {USDC} 'approve(address,uint256)' 0x7a250d5630b4cf539739df2c5dacb4c659f2488d {MAX} --chain 1")
     [finding] = detect_token_approvals("terminal", {"command": command}, _Graph("public"))
     assert finding.identifier == "secret:token-approval-drainer"
 
@@ -303,3 +308,55 @@ def test_an_unlimited_approval_to_an_untraceable_variable_is_still_flagged():
 def test_a_huge_call_is_read_in_bounded_time():
     text = "token.approve(s, 5);\n" * 20_000 + f"s = '{SPENDER}'\n"
     assert approvals_in(text) == []
+
+
+# KI-388: the router exemption is chain-aware.
+
+PANCAKE = "0x10ed43c718714eb63d5aa57b78b54704e256024e"
+ONEINCH = "0x1111111254eeb25477b68fb85ed929f73a960582"
+
+
+def _approve(spender: str, amount: str, chain: str = "") -> dict:
+    return {"command": f"cast send {USDC} 'approve(address,uint256)' {spender} {amount} {chain}".strip()}
+
+
+def test_a_router_on_another_chain_is_treated_like_any_spender():
+    [finding] = detect_token_approvals("terminal", _approve(PANCAKE, "5", "--chain mainnet"), _GraphListingTheRouters())
+    assert (finding.identifier, finding.severity, finding.kind) == ("secret:token-approval-drainer", "critical", None)
+
+
+@pytest.mark.parametrize("block_severity", constants.SEVERITY_ORDER)
+def test_a_listed_router_on_an_unnamed_chain_is_flagged_never_blocked(block_severity):
+    [finding] = detect_token_approvals("terminal", _approve(PANCAKE, "5"), _GraphListingTheRouters())
+    assert (finding.identifier, finding.severity) == ("secret:token-approval-unchecked-spender", "medium")
+    assert hooks._would_block(BlackboxConfig(mode="block", block_severity=block_severity), [finding]) == []
+
+
+def test_an_unlimited_approval_to_a_router_on_an_unnamed_chain_is_flagged_as_unlimited():
+    [finding] = detect_token_approvals("terminal", _approve(PANCAKE, MAX), Ruleset())
+    assert (finding.identifier, finding.kind) == ("secret:token-approval-unlimited", "flag-only")
+
+
+def test_a_limited_approval_to_a_router_on_an_unnamed_chain_is_left_alone():
+    assert detect_token_approvals("terminal", _approve(PANCAKE, "25000000"), Ruleset()) == []
+
+
+def test_a_router_at_the_same_address_everywhere_stays_exempt_without_a_chain():
+    class Listed:
+        ioc = {threat_ids.ioc_identifier("wallet", ONEINCH): {"source": "public"}}
+
+    assert detect_token_approvals("terminal", _approve(ONEINCH, MAX), Listed()) == []
+
+
+@pytest.mark.parametrize("text, chain", [
+    ("cast send x --chain mainnet", 1), ("cast send x --chain 56", 56), ("cast send x --chain-id=137", 137),
+    ("cast send x --chain bsc", 56), ("cast send x --rpc-url https://bsc-dataseed.binance.org", 56),
+    ("cast send x --rpc-url https://eth-mainnet.g.alchemy.com/v2/k", 1), ("cast send x --rpc-url https://mainnet.optimism.io", 10),
+    ("cast send x --rpc-url https://mainnet.base.org", 8453), ("cast send x --rpc-url https://arb1.arbitrum.io/rpc", 42161),
+    ("ETH_RPC_URL=https://polygon-rpc.com cast send x", 137), ('{"domain":{"chainId":56}}', 56), ("{ chainId: '0x38' }", 56),
+    ("cast send x", None), ("cast send x --rpc-url http://127.0.0.1:8545", None), ("cast send x --rpc-url $RPC", None),
+    ("cast send x --chain mainnet --rpc-url https://bsc-dataseed.binance.org", None),   # two chains: could not tell
+    ("cast send x --rpc-url https://database.example.com", None),
+])
+def test_the_chain_a_call_names_is_read_or_left_unknown(text, chain):
+    assert chain_named(text) == chain

@@ -1,12 +1,19 @@
 {
- "about": "Well-known exchange contracts an agent legitimately approves and trades through. Read by the token-approval rule, the indicator rule and scripts/blackbox-trader-graph-counts.py. Each entry was checked on 2026-10-13: routers answered factory() on-chain with their exchange's published factory (Foundry cast 1.8.5, read-only), the others by their published address. Lower-case addresses; they are the same on every EVM network where deployed.",
+ "about": "Well-known exchange contracts an agent legitimately approves and trades through. Read by the token-approval rule, the indicator rule and scripts/blackbox-trader-graph-counts.py. Each entry was checked on 2026-10-13: routers answered factory() on-chain with their exchange's published factory (Foundry cast 1.8.5, read-only), the others by their published address. Lower-case addresses. 'chains' (EIP-155 chain ids) lists where the exchange publishes THIS address as its router, from the source in 'chains_source' (published deployment lists, read 2026-10-13; not re-checked on-chain per chain): a call that names another chain gets no exemption. 'any_chain' marks an address deployed at the same address on every major chain the exchange supports, so a call that names no chain is still exempt; for the others such a call is flagged at most, never blocked (KI-388).",
  "contracts": {
-  "0x7a250d5630b4cf539739df2c5dacb4c659f2488d": {"name": "Uniswap V2 Router 02", "checked": "factory() = Uniswap V2 factory 0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f"},
-  "0xe592427a0aece92de3edee1f18e0157c05861564": {"name": "Uniswap V3 SwapRouter", "checked": "factory() = Uniswap V3 factory 0x1f98431c8ad98523631ae4a59f267346ea31f984"},
-  "0x66a9893cc07d91d95644aedd05d03f95e1dba8af": {"name": "Uniswap Universal Router (v4)", "checked": "Uniswap v4 deployments, Etherscan label"},
-  "0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f": {"name": "SushiSwap Router", "checked": "factory() = SushiSwap factory 0xc0aee478e3658e2610c5f7a4a2e1777ce9e4f2ac"},
-  "0x10ed43c718714eb63d5aa57b78b54704e256024e": {"name": "PancakeSwap V2 Router", "checked": "factory() = PancakeSwap factory 0xca143ce32fe78f1f7019d7d551a6402fc5350c73 (BNB Chain)"},
-  "0x13f4ea83d0bd40e75c8222255bc855a974568dd4": {"name": "PancakeSwap V3 Smart Router", "checked": "factory() = PancakeSwap V3 factory 0x0bfbcf9fa4f9c56b0f40a671ad40e0805a091865 (BNB Chain)"},
-  "0x1111111254eeb25477b68fb85ed929f73a960582": {"name": "1inch Aggregation Router v5", "checked": "1inch Router v5 release notes, Consensys audit"}
+  "0x7a250d5630b4cf539739df2c5dacb4c659f2488d": {"name": "Uniswap V2 Router 02", "checked": "factory() = Uniswap V2 factory 0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f",
+   "chains": [1], "any_chain": false, "chains_source": "Uniswap docs, V2 deployment addresses (docs.uniswap.org/contracts/v2/reference/smart-contracts/v2-deployments): this router address is Ethereum mainnet; other chains have their own V2 router address"},
+  "0xe592427a0aece92de3edee1f18e0157c05861564": {"name": "Uniswap V3 SwapRouter", "checked": "factory() = Uniswap V3 factory 0x1f98431c8ad98523631ae4a59f267346ea31f984",
+   "chains": [1, 10, 137, 42161], "any_chain": true, "chains_source": "Uniswap docs, V3 deployment addresses (docs.uniswap.org/contracts/v3/reference/deployments): the same SwapRouter address on Ethereum, Optimism, Polygon and Arbitrum"},
+  "0x66a9893cc07d91d95644aedd05d03f95e1dba8af": {"name": "Uniswap Universal Router (v4)", "checked": "Uniswap v4 deployments, Etherscan label",
+   "chains": [1], "any_chain": false, "chains_source": "Uniswap docs, v4 deployments (docs.uniswap.org/contracts/v4/deployments): this Universal Router address is Ethereum mainnet; each chain has its own"},
+  "0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f": {"name": "SushiSwap Router", "checked": "factory() = SushiSwap factory 0xc0aee478e3658e2610c5f7a4a2e1777ce9e4f2ac",
+   "chains": [1], "any_chain": false, "chains_source": "SushiSwap docs, V2 deployment addresses (docs.sushi.com): this router address is Ethereum mainnet; other chains use a different V2 router address"},
+  "0x10ed43c718714eb63d5aa57b78b54704e256024e": {"name": "PancakeSwap V2 Router", "checked": "factory() = PancakeSwap factory 0xca143ce32fe78f1f7019d7d551a6402fc5350c73 (BNB Chain)",
+   "chains": [56], "any_chain": false, "chains_source": "PancakeSwap docs, V2 smart contracts (docs.pancakeswap.finance/developers/smart-contracts): BNB Chain; the factory check above was run on BNB Chain"},
+  "0x13f4ea83d0bd40e75c8222255bc855a974568dd4": {"name": "PancakeSwap V3 Smart Router", "checked": "factory() = PancakeSwap V3 factory 0x0bfbcf9fa4f9c56b0f40a671ad40e0805a091865 (BNB Chain)",
+   "chains": [56], "any_chain": false, "chains_source": "PancakeSwap docs, V3 smart contracts (docs.pancakeswap.finance/developers/smart-contracts): BNB Chain, where the factory check above was run. The docs list the same address on further chains; until each is checked only BNB Chain is listed (a call naming another chain is treated as an unknown spender)"},
+  "0x1111111254eeb25477b68fb85ed929f73a960582": {"name": "1inch Aggregation Router v5", "checked": "1inch Router v5 release notes, Consensys audit",
+   "chains": [1, 10, 56, 100, 137, 250, 8453, 42161, 43114], "any_chain": true, "chains_source": "1inch docs, Aggregation Router v5 deployments (portal.1inch.dev/documentation): one address on Ethereum, Optimism, BNB Chain, Gnosis, Polygon, Fantom, Base, Arbitrum and Avalanche (zkSync Era differs and is not listed)"}
  }
 }

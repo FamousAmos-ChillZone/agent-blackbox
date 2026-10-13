@@ -42,6 +42,8 @@ def test_the_list_is_checked_lower_case_and_says_how_each_was_checked():
     data = json.loads(known_contracts.KNOWN_CONTRACTS_FILE.read_text(encoding="utf-8"))
     for address, entry in data["contracts"].items():
         assert address == address.lower() and len(address) == 42 and entry["name"] and entry["checked"]
+        assert entry["chains"] and entry["chains_source"] and isinstance(entry["any_chain"], bool)   # KI-388
+    assert len(known_contracts.known_protocol_contracts()) == len(data["contracts"])                 # none skipped
     assert protocol_contract("0x7A250D5630B4CF539739DF2C5DACB4C659F2488D") == "Uniswap V2 Router 02"
     assert protocol_contract(DRAINER) is None
 
@@ -65,6 +67,10 @@ def contracts_file(tmp_path, monkeypatch):
     known_contracts.known_protocol_contracts.cache_clear()
 
 
+def _names() -> dict[str, str]:
+    return {address: known.name for address, known in known_contracts.known_protocol_contracts().items()}
+
+
 def _approve_everything(spender: str) -> list[str]:
     command = f"cast send 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 'approve(address,uint256)' {spender} {UNLIMITED}"
     return [f.identifier for f in detect_all("terminal", {"command": command}, Ruleset())]
@@ -72,8 +78,9 @@ def _approve_everything(spender: str) -> list[str]:
 
 def test_an_entry_without_a_name_is_skipped_and_detection_keeps_running(contracts_file, caplog):
     router, nameless = "0x" + "1" * 40, "0x" + "2" * 40
-    contracts_file.write_text(json.dumps({"contracts": {router: {"name": "Router"}, nameless: {"checked": "x"}}}), encoding="utf-8")
-    assert known_contracts.known_protocol_contracts() == {router: "Router"}
+    contracts_file.write_text(json.dumps({"contracts": {router: {"name": "Router", "chains": [1], "any_chain": True},
+                                                        nameless: {"checked": "x", "chains": [1]}}}), encoding="utf-8")
+    assert _names() == {router: "Router"}
     assert "has no name" in caplog.text
     assert "secret:token-approval-unlimited" in _approve_everything(nameless)
     assert "secret:token-approval-unlimited" not in _approve_everything(router)
@@ -81,13 +88,13 @@ def test_an_entry_without_a_name_is_skipped_and_detection_keeps_running(contract
 
 @pytest.mark.parametrize("address", ["", "0x1234", "0x" + "g" * 40, "1" * 42])
 def test_an_address_that_is_not_0x_and_40_hex_is_skipped(contracts_file, address):
-    contracts_file.write_text(json.dumps({"contracts": {address: {"name": "Bad"}}}), encoding="utf-8")
+    contracts_file.write_text(json.dumps({"contracts": {address: {"name": "Bad", "chains": [1]}}}), encoding="utf-8")
     assert known_contracts.known_protocol_contracts() == {}
 
 
 def test_a_mixed_case_address_is_kept_lower_case(contracts_file):
-    contracts_file.write_text(json.dumps({"contracts": {"0x" + "AB" * 20: {"name": "Router"}}}), encoding="utf-8")
-    assert known_contracts.known_protocol_contracts() == {"0x" + "ab" * 20: "Router"}
+    contracts_file.write_text(json.dumps({"contracts": {"0x" + "AB" * 20: {"name": "Router", "chains": [1]}}}), encoding="utf-8")
+    assert _names() == {"0x" + "ab" * 20: "Router"}
 
 
 @pytest.mark.parametrize("text", ["{not json", "[]", '{"contracts": []}', '{"about": "no contracts"}'])
@@ -110,3 +117,37 @@ def test_the_list_is_read_once(contracts_file, monkeypatch):
     for _ in range(3):
         protocol_contract("0x" + "1" * 40)
     assert reads == [contracts_file]
+
+
+@pytest.mark.parametrize("chains", [None, [], ["1"], [0], "1"])
+def test_an_entry_without_valid_chain_ids_is_skipped(contracts_file, chains, caplog):
+    entry = {"name": "Router"} if chains is None else {"name": "Router", "chains": chains}
+    contracts_file.write_text(json.dumps({"contracts": {"0x" + "1" * 40: entry}}), encoding="utf-8")
+    assert known_contracts.known_protocol_contracts() == {}
+    assert "lists no chain ids" in caplog.text
+
+
+# KI-388: a router is a router on its own chains. PancakeSwap's V2 router is BNB Chain only.
+
+PANCAKE = "0x10ed43c718714eb63d5aa57b78b54704e256024e"
+ONEINCH = "0x1111111254eeb25477b68fb85ed929f73a960582"
+
+
+@pytest.mark.parametrize("address, chain, match", [
+    (PANCAKE, 56, known_contracts.RouterMatch.ON_ITS_CHAIN),
+    (PANCAKE, 1, known_contracts.RouterMatch.OTHER_CHAIN),
+    (PANCAKE, None, known_contracts.RouterMatch.CHAIN_UNKNOWN),
+    (ONEINCH, None, known_contracts.RouterMatch.ON_ITS_CHAIN),   # the same address on every major chain
+    (ONEINCH, 324, known_contracts.RouterMatch.OTHER_CHAIN),     # zkSync Era has its own
+    (DRAINER, 56, known_contracts.RouterMatch.NOT_A_ROUTER),
+])
+def test_a_router_is_exempt_only_on_its_chains(address, chain, match):
+    assert known_contracts.router_match(address, chain) is match
+
+
+def test_a_router_named_on_another_chain_is_looked_up_like_any_address():
+    graph = _Graph()
+    on_its_chain = detect_ioc("terminal", {"command": f"cast send {PANCAKE} --rpc-url https://bsc-dataseed.binance.org 'f()'"}, graph)
+    elsewhere = detect_ioc("terminal", {"command": f"cast send {PANCAKE} --chain mainnet 'f()'"}, graph)
+    assert on_its_chain == []
+    assert [f.identifier for f in elsewhere] == [threat_ids.ioc_identifier("wallet", PANCAKE)]
