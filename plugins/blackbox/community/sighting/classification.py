@@ -59,6 +59,9 @@ _SECRET: Dict[str, Classification] = {
     "solana-private-key": Classification("wallet-drain", "wallet-keys", "T1552.001"),
     # An exchange's API key sent to a host that is not the exchange: it trades and withdraws as the account.
     "exchange-api-key": Classification("wallet-drain", "api-keys", "T1552.001"),
+    # A token approval: the signature a drainer needs to move the tokens (ATT&CK: Financial Theft).
+    "token-approval-drainer": Classification("wallet-drain", "funds", "T1657"),
+    "token-approval-unlimited": Classification("wallet-drain", "funds", "T1657"),
 }
 #: Dangerous command shape -> what running it does.
 _COMMAND: Dict[str, Classification] = {

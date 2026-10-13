@@ -309,11 +309,13 @@
       <div class="set"><div class="name"><span class="switch" aria-hidden="true"></span>Engage Trader Shield<small>off by default</small></div>
         <div class="what"><p>Turns the wallet protections on. While it's off, Blackbox doesn't flag or block anything wallet-related and the Trader Shield panel stays hidden. Seed phrases and keys are still kept out of Blackbox's logs either way.</p></div></div>
       <div class="set"><div class="name">Wallets to protect<small>pick the ones you use</small></div>
-        <div class="what"><p>Only the wallets you tick are guarded. Blackbox finds them by checking which folders exist in your browser profiles; it never opens a wallet. The dashboard panel lists what it found.</p></div></div>
+        <div class="what"><p>Only the wallets you tick are guarded. Blackbox finds them by checking which folders exist in your browser profiles and app folders; it never opens a wallet. The dashboard panel lists what it found.</p></div></div>
+      <div class="set"><div class="name">Your wallet addresses<small>optional</small></div>
+        <div class="what"><p>A raw private key looks exactly like a transaction hash. List your own public addresses and Trader Shield recognises a raw key that opens one of them. Addresses stay on this machine — never logged, reported or shared.</p></div></div>
       <div class="set"><div class="name">Protection mode: Audit or Block<small>Blackbox-wide setting</small></div>
         <div class="what"><p><b>Audit</b> records and flags. <b>Block</b> stops the action before it runs. For real protection, use Block once you've seen a day of flags.</p></div></div>
       <div class="set"><div class="name">Protected files<small>.env · ~/.ssh · *.pem …</small></div>
-        <div class="what"><p>Your own list of sensitive files, such as the config where your exchange API keys live. Reads through file tools are flagged critical and blocked in block mode.</p></div></div>
+        <div class="what"><p>Your own list of sensitive files, such as the config where your exchange API keys live. Reads through file tools and the terminal are flagged critical and blocked in block mode; setting a project up from its template (cp .env.example .env) keeps working.</p></div></div>
     </div>
   </section>
 
@@ -343,7 +345,7 @@
     <div class="start">
       <span class="beta"><i aria-hidden="true"></i>Beta</span>
       <h2>Get started with Trader Shield</h2>
-      <p class="muted">Turns Trader Shield on for MetaMask and Phantom on this machine. You can change or switch it off any time in Settings.</p>
+      <p class="muted">Turns Trader Shield on for every wallet it supports on this machine. You can choose wallets, or switch it off, any time in Settings.</p>
       <label class="opt"><input type="checkbox" id="opt-block" checked /> <span><b>Also switch Blackbox to block mode</b>, so wallet threats are stopped, not just flagged. Your agent's own trading tools keep working.</span></label>
       <div class="cta-row">
         <button class="btn primary" id="engage" type="button">Engage Trader Shield</button>
@@ -361,24 +363,25 @@
   var SHIELD = {
     version: "Beta · updated 2026-10-13",
     can: [
-      ["Keep your agent out of MetaMask's and Phantom's vaults", "in Chrome, Brave, Edge, Opera, Vivaldi, Arc and Firefox; through file tools, the terminal, copies and archives"],
-      ["Recognise a Solana secret key", "Phantom's exported key or a Solana CLI key file, proven by its own signature check, so transaction signatures never trigger it"],
-      ["Recognise real seed phrases", "12 to 24 words, checked with the phrase's own checksum, so ordinary text doesn't trigger it"],
-      ["Stop a seed phrase or wallet key leaving", "when the agent sends it from the terminal (curl, wget, nc) — to a website, a webhook or a chat bot, in block mode"],
+      ["Keep your agent out of your wallets", "MetaMask and Phantom in Chrome, Brave, Edge, Opera, Vivaldi, Arc and Firefox; Exodus and Electrum on the desktop; the Solana CLI key file — through file tools, the terminal, find, one-line scripts, copies and archives"],
+      ["Recognise real seed phrases", "12 to 24 words, checked with the phrase's own checksum, so ordinary text doesn't trigger it — even written into a web address"],
+      ["Stop a seed phrase or wallet key leaving", "however it goes: curl, wget or nc, a web address the agent opens, or a script that posts it — in block mode"],
+      ["Recognise your own raw private key", "list your public addresses in Settings and a bare 64-character key that opens one is caught; transaction hashes are left alone"],
       ["Spot a labelled private key or a Solana key", "PRIVATE_KEY=, pk:, \"privateKey\": and similar, and any real Solana key; flagged, because your own trading config may hold one, and blocked when sent"],
+      ["Keep exchange API keys with their exchange", "a Binance, OKX, Bybit, Coinbase Exchange or KuCoin key header sent anywhere but that exchange is blocked"],
+      ["Catch the approval a drainer needs", "an approval to a wallet the verified threat graph lists as a drainer is blocked; any unlimited approval is flagged so you see it"],
+      ["Guard your other secrets", ".env files, SSH keys, key files and the macOS keychain (its file and the security tool), through file tools and the terminal"],
       ["Keep secrets out of Blackbox's logs", "phrases and keys are scrubbed before anything is recorded"],
       ["Explain every event", "what the agent reached for, why it matters, and what led to it"]
     ],
     cannot: [
-      ["Other wallets yet", "Rabby, Coinbase Wallet, Solflare and others are coming"],
-      ["Exchange API keys", "Binance, Coinbase, Bybit and OKX keys aren't recognised yet"],
-      ["Solana CLI key file and desktop wallets", "reading ~/.config/solana/id.json, Electrum, Exodus, Bitcoin Core"],
-      ["Block reading .env through the terminal", "it's flagged and logged; file tools are already covered"],
+      ["Other wallets yet", "Rabby, Coinbase Wallet, Solflare, Bitcoin Core and others are coming"],
+      ["Every exchange", "Kraken and Bitget use header names many other services share, so their keys are not matched yet"],
       ["Stop malware outside your agent", "Trader Shield guards what your AI agent does, not other programs"],
-      ["Block links or addresses", "known scam sites and wallets are flagged, never blocked"],
-      ["Catch every way out", "a phrase hidden in a web address, or posted by a script, isn't stopped yet — see the tested list"]
+      ["Block links or addresses on their own", "known scam sites and wallets are flagged; only an approval to a known drainer is blocked"],
+      ["Read a path a script builds piece by piece", "quoted paths and the usual home-folder joins are read; a path assembled character by character is not"]
     ],
-    coming: ["Rabby", "Coinbase Wallet", "Solflare", "Exchange API keys", "Solana CLI key file", "Electrum & Bitcoin Core", "Terminal reads of protected files"],
+    coming: ["Rabby", "Coinbase Wallet", "Solflare", "Bitcoin Core", "More exchanges", "Safari wallets"],
     // Set to {text: "...", who: "<name> · <role>", link: "https://…"} once a write-up is published.
     testimonial: null
   };

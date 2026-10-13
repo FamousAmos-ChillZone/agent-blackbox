@@ -27,6 +27,7 @@ from .finding import ANSWERED_BY_FALLBACK, FALLBACK_REASON, Finding, _rule_sourc
 from .injection_detection import detect_injection, discover_injection, injection_scan_text
 from .ioc_detection import detect_ioc, ioc_context
 from .skill_detection import detect_skill
+from .transactions.approvals import detect_token_approvals
 from .paths.protected import detect_custom_fileaccess  # noqa: F401 — re-exported for callers
 from .secrets_handled.exposure import detect_exchange_key_misdirection, detect_own_wallet_keys, detect_secret_exposure  # noqa: F401 — re-exported
 from .wallet_files import detect_wallet_files
@@ -294,6 +295,7 @@ def detect_all(tool_name: str, args: Any, ruleset: Any, discover: bool = True) -
     # Secret exposure and wallet key stores always run (not gated by discovery): personal, never shared.
     findings.extend(detect_secret_exposure(tool_name, args))
     findings.extend(detect_exchange_key_misdirection(tool_name, args))
+    findings.extend(detect_token_approvals(tool_name, args, ruleset))
     findings.extend(detect_wallet_files(tool_name, args))
     if not discover:
         findings = [f for f in findings if f.source != "heuristic"]

@@ -5513,6 +5513,7 @@
     vault: "The vault holds your seed phrase and private keys, encrypted with your wallet password. Copied off this machine it can be cracked offline, and whoever cracks it can empty the wallet.",
     seed: "A seed phrase IS the wallet: anyone who has the words controls every account in it, on any device, forever.",
     key: "A private key signs transactions for its account. Whoever holds it can move the funds.",
+    approval: "A token approval lets the spender move your tokens whenever it likes, without asking again. An unlimited one covers every token you will ever hold of that kind — it is how most wallets are drained.",
     exchange: "An exchange API key trades — and, if withdrawals are allowed, withdraws — as your account. A key sent anywhere but its own exchange has been handed to someone else."
   };
   // The wallet an event is about, recognisable at a glance: a vault event shows that wallet's
@@ -5538,6 +5539,7 @@
     if (id === "secret:seed-phrase") return "seed";
     if (id === "secret:wallet-private-key" || id === "secret:solana-private-key") return "key";
     if (id === "secret:exchange-api-key") return "exchange";
+    if (id === "secret:token-approval-drainer" || id === "secret:token-approval-unlimited") return "approval";
     return "";
   }
   function walletRows(f) {
@@ -5548,6 +5550,8 @@
     var how = /^copy/.test(String(f.evidence || "")) ? "by copying or archiving a folder that contains it" : "by reading it directly";
     if (kind === "vault") rows.push(["Reached for", wallet + "'s vault (the wallet's key store), " + how]);
     if (kind === "seed") rows.push(["Reached for", "a seed phrase (wallet recovery words) in what the agent was handling or sending"]);
+    if (kind === "approval") rows.push(["Reached for", String(f.identifier || "") === "secret:token-approval-drainer"
+      ? "a token approval to an address listed as a wallet drainer" : "an unlimited token approval (approve MAX or approve-all)"]);
     if (kind === "exchange") rows.push(["Reached for", "an exchange API key, in the header only that exchange uses, sent to " +
       "a different site (" + ((/\(([^)]+)\)/.exec(String(f.title || "")) || [])[1] || "an exchange") + ")"]);
     if (kind === "key") rows.push(["Reached for", String(f.identifier || "") === "secret:solana-private-key"
