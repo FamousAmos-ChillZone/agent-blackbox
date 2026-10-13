@@ -16,10 +16,10 @@ from plugins.blackbox.ruleset import compiler, live
 class FakeLookup:
     """Stands in for VerifiedLookup: answers from a dict, records the questions."""
 
-    def __init__(self, rules: Dict[str, dict], outcome: str = live.HIT, reason: str = "") -> None:
+    def __init__(self, rules: dict[str, dict], outcome: str = live.HIT, reason: str = "") -> None:
         self.rules, self.outcome, self.reason = rules, outcome, reason
-        self.dependency_questions: List[Sequence[Tuple[str, str, str]]] = []
-        self.ioc_questions: List[Sequence[str]] = []
+        self.dependency_questions: list[Sequence[tuple[str, str, str]]] = []
+        self.ioc_questions: list[Sequence[str]] = []
 
     def _answer(self, keys):
         found = {k: self.rules[k] for k in keys if k in self.rules}

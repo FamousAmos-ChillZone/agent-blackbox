@@ -28,7 +28,7 @@ def _openclaw_config_path(target: Path) -> Path:
     return target / "openclaw.json"
 
 
-def discover_openclaw_workspaces() -> List[Path]:
+def discover_openclaw_workspaces() -> list[Path]:
     """Return existing local OpenClaw config targets.
 
     Candidate roots come from ``$OPENCLAW_CONFIG_PATH``,
@@ -38,7 +38,7 @@ def discover_openclaw_workspaces() -> List[Path]:
     is represented by the file itself.  Results are de-duplicated by config
     path, preserving order.
     """
-    candidates: List[Path] = []
+    candidates: list[Path] = []
 
     def _add(path: Optional[Path]) -> None:
         if path is None:
@@ -80,7 +80,7 @@ def discover_openclaw_workspaces() -> List[Path]:
     except Exception:  # pragma: no cover - defensive
         pass
 
-    out: List[Path] = []
+    out: list[Path] = []
     seen_configs: set = set()
     for candidate in candidates:
         config = _openclaw_config_path(candidate)
@@ -97,9 +97,9 @@ def discover_openclaw_workspaces() -> List[Path]:
     return out
 
 
-def _load_openclaw_config(path: Path) -> Dict[str, Any]:
+def _load_openclaw_config(path: Path) -> dict[str, Any]:
     """Load an OpenClaw JSON/JSON5 config or raise without modifying it."""
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8-sig")
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
@@ -116,6 +116,6 @@ def _calendar_version(value: Any) -> Optional[tuple]:
     return tuple(int(part) for part in match.groups())
 
 
-def _openclaw_version(data: Dict[str, Any]) -> Optional[tuple]:
+def _openclaw_version(data: dict[str, Any]) -> Optional[tuple]:
     meta = data.get("meta")
     return _calendar_version(meta.get("lastTouchedVersion")) if isinstance(meta, dict) else None

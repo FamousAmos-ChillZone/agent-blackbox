@@ -52,11 +52,11 @@ class Admission:
     not acted on today. ``admitted`` — every admitted raising statement's key
     and the reader-day it was admitted (what the trust store keeps)."""
 
-    held: FrozenSet[str] = frozenset()
+    held: frozenset[str] = frozenset()
     admitted: Mapping[str, str] = field(default_factory=dict)
 
 
-def bucket(row: Mapping[str, str]) -> Optional[Tuple[str, str, int]]:
+def bucket(row: Mapping[str, str]) -> Optional[tuple[str, str, int]]:
     """``(bucket, signed day, sequence)`` when *row* RAISES enforcement — a
     confirmation or attestation (``confirm``) or a listing with ``listed: yes``
     (``list``) — else None: reductions and notices are never held."""
@@ -79,8 +79,8 @@ def admit(rows: Iterable[Mapping[str, str]], already: Mapping[str, str], *, firs
     *today* — the reader's UTC day."""
     classified = [(statement_key(row), bucket(row)) for row in rows]
     bucket_of = {key: raising[0] for key, raising in classified if raising is not None}
-    admitted: Dict[str, str] = {}
-    pending: Dict[str, List[Tuple[str, int, str]]] = {name: [] for name in _LIMITS}
+    admitted: dict[str, str] = {}
+    pending: dict[str, list[tuple[str, int, str]]] = {name: [] for name in _LIMITS}
     for key, raising in classified:
         if raising is None or key in admitted:
             continue

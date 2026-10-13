@@ -180,7 +180,7 @@ def _propose(args: argparse.Namespace) -> int:
         fields = {"reason": args.reason} if args.reason else {}
         proposal = verbs.propose_statement(ctx, store, kind=kind, identifier=args.verdict[1], fields=fields, evidence=args.evidence)
     elif args.kill_list:
-        with open(args.kill_list, encoding="utf-8") as handle:
+        with open(args.kill_list, encoding="utf-8-sig") as handle:
             proposal = verbs.propose_kill_list(ctx, store, entries=json.load(handle))
     elif args.attest:
         proposal = verbs.propose_statement(ctx, store, kind=CuratorStatement.ATTESTATION, identifier=args.attest[1],
@@ -359,7 +359,7 @@ def _metrics(args: argparse.Namespace) -> int:
     return 0
 
 
-_VERBS: Dict[str, Callable[[argparse.Namespace], int]] = {
+_VERBS: dict[str, Callable[[argparse.Namespace], int]] = {
     "keys": _keys, "manifest": _manifest, "queue": _queue, "show": _show, "propose": _propose, "inbox": _inbox,
     "approve": _approve, "publish": _publish, "reject": _reject, "list": _list, "watch": _watch, "views": _views,
     "heartbeat": _heartbeat, "upkeep": _upkeep, "pool": _pool, "export": _export, "verify-bundle": _verify_bundle,

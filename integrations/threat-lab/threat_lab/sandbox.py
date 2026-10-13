@@ -49,7 +49,7 @@ class SandboxSpec:
     network (a network name or :data:`NO_NETWORK`); the host folder mounted at
     ``/work`` and whether the probe may write it; the wall-clock cap."""
 
-    probe_args: Tuple[str, ...]
+    probe_args: tuple[str, ...]
     network: str
     work_dir: Path
     work_writable: bool
@@ -70,7 +70,7 @@ class SandboxResult:
     out_of_memory: bool = False
     oversized: bool = False
     scanning_killed: bool = False
-    recordings: Tuple[bytes, ...] = ()
+    recordings: tuple[bytes, ...] = ()
 
 
 class Sandbox(Protocol):
@@ -85,7 +85,7 @@ class GVisorSandbox:
         self._config = config
         self._egress = egress
 
-    def command(self, spec: SandboxSpec, name: str) -> List[str]:
+    def command(self, spec: SandboxSpec, name: str) -> list[str]:
         """The exact ``docker run`` argv for *spec* (tests read it)."""
         caps = self._config.caps
         mount_mode = "rw" if spec.work_writable else "ro"
@@ -111,7 +111,7 @@ class GVisorSandbox:
         name = f"threat-lab-{uuid.uuid4().hex}"
         process = subprocess.Popen(self.command(spec, name), stdout=subprocess.PIPE,
                                    stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
-        watched: List[str] = []
+        watched: list[str] = []
         try:
             if self._egress is not None and spec.network != NO_NETWORK:
                 report = watch(process, spec.timeout_seconds, self._egress, lambda: self._address(name), watched)
@@ -146,7 +146,7 @@ class GVisorSandbox:
         except ValueError:
             return None
 
-    def _kill(self, name: str, process: "subprocess.Popen[bytes]") -> None:
+    def _kill(self, name: str, process: subprocess.Popen[bytes]) -> None:
         # Killing the docker client alone would leave the container running:
         # kill the container by name, then reap the client.
         try:
@@ -154,5 +154,19 @@ class GVisorSandbox:
                            stderr=subprocess.DEVNULL, timeout=_KILL_TIMEOUT_SECONDS, check=False)
         except subprocess.TimeoutExpired:
             pass
-        process.kill()
-        process.communicate()
+        kill_and_reap(process)
+
+
+def kill_and_reap(process: subprocess.Popen[bytes]) -> None:
+    """Kill *process* and reap it, never waiting forever.
+
+    ``communicate()`` drains the pipes so the child does not linger as a zombie, but a
+    grandchild that inherited the pipes can keep them open after the kill; then the
+    drain gives up after ``_KILL_TIMEOUT_SECONDS`` and only the killed process itself is
+    reaped (``wait`` returns at once for a killed process).
+    """
+    process.kill()
+    try:
+        process.communicate(timeout=_KILL_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        process.wait(timeout=_KILL_TIMEOUT_SECONDS)

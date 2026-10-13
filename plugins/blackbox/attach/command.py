@@ -49,7 +49,7 @@ def cmd_detach(args: argparse.Namespace) -> int:
     return 0
 
 
-def print_hermes_attach_row(row: Dict[str, Any], prefix: str) -> None:
+def print_hermes_attach_row(row: dict[str, Any], prefix: str) -> None:
     if row.get("error"):
         print(f"  ! {row['target']} (hermes): {row['error']}")
         return
@@ -67,7 +67,7 @@ def print_hermes_attach_row(row: Dict[str, Any], prefix: str) -> None:
     print(f"  {prefix} {row['target']} (hermes){detail}")
 
 
-def print_openclaw_attach_row(row: Dict[str, Any], prefix: str) -> None:
+def print_openclaw_attach_row(row: dict[str, Any], prefix: str) -> None:
     if row.get("error"):
         print(f"  ! {row['target']} (openclaw): {row['error']}")
         return

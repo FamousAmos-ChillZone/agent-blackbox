@@ -103,7 +103,7 @@ def test_more_growth_waits_out_the_trigger_gap(watch_parts):
 
 
 def test_the_wait_ends_early_when_woken():
-    wakes: List[int] = []
+    wakes: list[int] = []
 
     def wake() -> bool:
         wakes.append(1)

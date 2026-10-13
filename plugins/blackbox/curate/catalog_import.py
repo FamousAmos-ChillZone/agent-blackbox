@@ -31,9 +31,9 @@ def _is_bumblebee_catalog(catalog: Any) -> bool:
     )
 
 
-def _flatten_bumblebee(catalog: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _flatten_bumblebee(catalog: dict[str, Any]) -> list[dict[str, Any]]:
     """Fan out a bumblebee feed into one dependency per package version."""
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     comment = str(catalog.get("_comment") or "").strip()
     default_source = str(catalog.get("source") or "Socket").strip()
     contributor = str(catalog.get("contributor") or "").strip()
@@ -77,11 +77,11 @@ def _flatten_bumblebee(catalog: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
-def _catalog_provenance_defaults(catalog: Any) -> Dict[str, Any]:
+def _catalog_provenance_defaults(catalog: Any) -> dict[str, Any]:
     """Return catalog-level provenance inherited by individual entries."""
     if not isinstance(catalog, dict):
         return {}
-    defaults: Dict[str, Any] = {}
+    defaults: dict[str, Any] = {}
     source = catalog.get("sources") or catalog.get("source")
     if source:
         defaults["source"] = source
@@ -90,7 +90,7 @@ def _catalog_provenance_defaults(catalog: Any) -> Dict[str, Any]:
     return defaults
 
 
-def _apply_provenance_defaults(entry: Dict[str, Any], defaults: Dict[str, Any]) -> None:
+def _apply_provenance_defaults(entry: dict[str, Any], defaults: dict[str, Any]) -> None:
     """Fill missing per-entry provenance from catalog-level defaults."""
     if defaults.get("source") and not (entry.get("source") or entry.get("sources")):
         entry["source"] = defaults["source"]
@@ -98,7 +98,7 @@ def _apply_provenance_defaults(entry: Dict[str, Any], defaults: Dict[str, Any]) 
         entry["contributor"] = defaults["contributor"]
 
 
-def _entry_provenance(entry: Dict[str, Any]) -> Dict[str, Any]:
+def _entry_provenance(entry: dict[str, Any]) -> dict[str, Any]:
     """Extract named sources, references, and contributor from an entry."""
     raw_sources = entry.get("sources")
     if raw_sources is None:
@@ -123,11 +123,11 @@ def _entry_provenance(entry: Dict[str, Any]) -> Dict[str, Any]:
     return {"sources": sources, "references": references, "contributor": contributor}
 
 
-def _flatten_catalog(catalog: Any, forced_type: Optional[str]) -> List[Dict[str, Any]]:
+def _flatten_catalog(catalog: Any, forced_type: Optional[str]) -> list[dict[str, Any]]:
     """Flatten supported threat-catalog shapes into individual entries."""
     if _is_bumblebee_catalog(catalog):
         return _flatten_bumblebee(catalog)
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     if isinstance(catalog, list):
         for item in catalog:
             if isinstance(item, dict):
@@ -157,11 +157,11 @@ def _flatten_catalog(catalog: Any, forced_type: Optional[str]) -> List[Dict[str,
     return out
 
 
-def _flatten_backlog(backlog: Any) -> List[Dict[str, Any]]:
+def _flatten_backlog(backlog: Any) -> list[dict[str, Any]]:
     """Flatten grouped backlog indicators into importable IOC entries."""
     if not isinstance(backlog, dict):
         return []
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for group in backlog.values():
         if not isinstance(group, list):
             continue
@@ -179,7 +179,7 @@ def _flatten_backlog(backlog: Any) -> List[Dict[str, Any]]:
     return out
 
 
-def _entry_to_threat(entry: Dict[str, Any]) -> tuple:
+def _entry_to_threat(entry: dict[str, Any]) -> tuple:
     """Return ``(category, identifier, fields)`` for a catalog entry."""
     category = str(entry.get("type") or "").lower()
     if category == "ioc":

@@ -119,7 +119,7 @@ EMPTY_READ_WITNESS_SECONDS = 1800.0
 
 
 def _empty_read_not_believed(rs: compiler.Ruleset, prior: Optional[compiler.Ruleset], read: Any,
-                             previous: Dict[str, Dict[str, Any]], client: DkgClient, cfg: BlackboxConfig) -> bool:
+                             previous: dict[str, dict[str, Any]], client: DkgClient, cfg: BlackboxConfig) -> bool:
     """KI-210 / KI-262: a read with no reports while this node still holds some is not
     believed at once — a replay window or a timed-out store looks exactly like an empty
     graph. True = keep last-good: the graph still counts reports, or the emptiness has
@@ -146,7 +146,7 @@ KEPT_LOCALLY_DAYS = 90
 _DAY_SECONDS = 86_400.0
 
 
-def _withdrawn(read: Any) -> Set[str]:
+def _withdrawn(read: Any) -> set[str]:
     """Threats the read itself says are gone on purpose: a curator rejection
     or revocation, or a retraction this reader honoured. Their reports are
     left out of the read, so they "vanish" — and a vanished threat must not be
@@ -157,7 +157,7 @@ def _withdrawn(read: Any) -> Set[str]:
     return terminal | {retraction.identifier for retraction in read.retractions}
 
 
-def _carry_kept_locally(rs: compiler.Ruleset, previous: Dict[str, Dict[str, Any]], now: float, *,
+def _carry_kept_locally(rs: compiler.Ruleset, previous: dict[str, dict[str, Any]], now: float, *,
                         withdrawn: AbstractSet[str] = frozenset()) -> None:
     """Carry over entries the fresh read no longer has — only threats with at
     least one counted cluster, within their type's lifetime (decay on this
@@ -196,14 +196,14 @@ def reapply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: Blackbo
     rs._graph_entries_cache.clear()
 
 
-def _is_community_entry(rule: Dict[str, Any]) -> bool:
+def _is_community_entry(rule: dict[str, Any]) -> bool:
     """True for a rule the community tier materialized — NOT a verified rule
     served flag-only (R4: it shares the ``community`` source but carries
     ``asset_tier: flag``, and only the next full refresh may drop it)."""
     return rule.get("source") == "community" and rule.get("asset_tier") != row_adapters.FLAG_TIER
 
 
-def _stage_fields(rule: community.CommunityRule, read: community.CommunityRead) -> Dict[str, str]:
+def _stage_fields(rule: community.CommunityRule, read: community.CommunityRead) -> dict[str, str]:
     """R3: the threat's local stage, from the same inputs every node has —
     its signers, the curator view, counted disputes and the current verdict."""
     dispute_weight = community.counted_dispute_weight(read.disputes, read.curator).get(rule.identifier, 0)
@@ -217,7 +217,7 @@ def _stage_fields(rule: community.CommunityRule, read: community.CommunityRead) 
     return {**result.as_fields(), "unlistedReporters": str(unlisted)}
 
 
-def _first_seen_history(prior: Optional[compiler.Ruleset]) -> Dict[str, float]:
+def _first_seen_history(prior: Optional[compiler.Ruleset]) -> dict[str, float]:
     """identifier -> when THIS node first saw it (KI-012: our observation,
     never a reporter-supplied date), carried over from the previous generation."""
     if prior is None:
@@ -281,7 +281,7 @@ def materialize_community_rules(rs: compiler.Ruleset) -> None:
             _materialize_skill(rs, identifier, rule)
 
 
-def _materialize_skill(rs: compiler.Ruleset, identifier: str, rule: Dict[str, Any]) -> None:
+def _materialize_skill(rs: compiler.Ruleset, identifier: str, rule: dict[str, Any]) -> None:
     """A FLAG-stage community skill report as a skill rule matched by EXACT
     identifier: a registry skill by its name and version, a local one by its
     code hash and danger shape (the same identifier every node derives from

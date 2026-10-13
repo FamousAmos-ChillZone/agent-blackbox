@@ -85,7 +85,7 @@ class LookupResult:
     """Every source's verdict on one looked-up item, in registry order."""
 
     item: LookupItem
-    verdicts: Tuple[SourceVerdict, ...]
+    verdicts: tuple[SourceVerdict, ...]
 
 
 class SourceRegistry:
@@ -98,13 +98,13 @@ class SourceRegistry:
     """
 
     def __init__(self, sources: Sequence[Source], *, cache: Optional[NotListedCache] = None,
-                 buckets: Optional[Dict[str, TokenBucket]] = None) -> None:
+                 buckets: Optional[dict[str, TokenBucket]] = None) -> None:
         self._sources = tuple(sources)
         self._cache = cache if cache is not None else NotListedCache()
         self._buckets = buckets if buckets is not None else {
             source.name: TokenBucket(source.terms.limit_requests, source.terms.limit_seconds) for source in self._sources}
 
-    def lookup(self, items: Sequence[LookupItem], budget: LookupBudget, *, today: str) -> Tuple[LookupResult, ...]:
+    def lookup(self, items: Sequence[LookupItem], budget: LookupBudget, *, today: str) -> tuple[LookupResult, ...]:
         """Ask every source about the items *budget* selects for *today*
         (at most ``budget.items_per_beat``, lane order, oldest first)."""
         return tuple(LookupResult(item, tuple(self._ask(source, item.identifier) for source in self._sources))
@@ -117,7 +117,7 @@ class SourceRegistry:
             return SourceVerdict(Lookup.UNAVAILABLE, source=source.name)
         try:
             verdict = source.check(identifier)
-        except Exception:  # noqa: BLE001 — a failing source is "could not tell", never clean
+        except Exception:
             return SourceVerdict(Lookup.UNAVAILABLE, source=source.name)
         if verdict.status is Lookup.CLEAN:
             self._cache.remember_not_listed(source.name, identifier)

@@ -85,12 +85,12 @@ class SelfTestReport:
     def passed(self) -> bool:
         return self.as_dict() == {"day": self.day, **SELF_TEST_FIXTURES}
 
-    def as_dict(self) -> Dict[str, object]:
+    def as_dict(self) -> dict[str, object]:
         return {"day": self.day, "threatsConfirmed": self.threats_confirmed, "cleanRejected": self.clean_rejected,
                 "unprovenLeft": self.unproven_left}
 
     @classmethod
-    def from_mapping(cls, data: Mapping[str, object]) -> "SelfTestReport":
+    def from_mapping(cls, data: Mapping[str, object]) -> SelfTestReport:
         """Validated; :class:`RosterError` on a bad day or a count outside its fixture group."""
         day = str(data.get("day") or "")
         if not _DAY.fullmatch(day):
@@ -123,7 +123,7 @@ class JoinRequest:
     state: JoinState = JoinState.PENDING
 
     @classmethod
-    def new(cls, curator_key: str, operator: str, self_test: SelfTestReport, now: float) -> "JoinRequest":
+    def new(cls, curator_key: str, operator: str, self_test: SelfTestReport, now: float) -> JoinRequest:
         """Bounded at the boundary (:class:`RosterError`); the full K2 operator
         rules run when the list naming it is built (:func:`with_curator`)."""
         if not _KEY_HEX.fullmatch(curator_key):
@@ -132,12 +132,12 @@ class JoinRequest:
             raise RosterError(f"the operator must be a name of 1-{key_manifest.MAX_OPERATOR_LENGTH} characters")
         return cls(curator_key, operator, self_test, now)
 
-    def as_dict(self) -> Dict[str, object]:
+    def as_dict(self) -> dict[str, object]:
         return {"curatorKey": self.curator_key, "operator": self.operator, "selfTest": self.self_test.as_dict(),
                 "selfTestPassed": self.self_test.passed, "receivedAt": self.received_at, "state": self.state.value}
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, object]) -> "JoinRequest":
+    def from_dict(cls, data: Mapping[str, object]) -> JoinRequest:
         return cls(str(data["curatorKey"]), str(data["operator"]),
                    SelfTestReport.from_mapping(data["selfTest"]),   # type: ignore[arg-type]
                    float(data["receivedAt"]), JoinState(data["state"]))   # type: ignore[arg-type]
@@ -166,7 +166,7 @@ class ConsoleState:
         self._path = path or (keys.curate_home() / STATE_FILE)
         self._lock = threading.Lock()
 
-    def joins(self) -> List[JoinRequest]:
+    def joins(self) -> list[JoinRequest]:
         with self._lock:
             return list(self._read()[0].values())
 
@@ -224,7 +224,7 @@ class ConsoleState:
         return (f"version {max(s.version for s in waiting)} signed here is still in its waiting period; "
                 "approve again after readers act on it") if waiting else ""
 
-    def _signed_lists(self) -> List[SignedList]:
+    def _signed_lists(self) -> list[SignedList]:
         """The lists signed here; :class:`RosterError` when the state is unreadable — a
         version or a 24 h check made from a damaged record could repeat an order and
         freeze every reader, so the console signs nothing until it is repaired."""
@@ -234,9 +234,9 @@ class ConsoleState:
             raise RosterError(f"the console state {self._path.name} is unreadable; nothing is signed until it is repaired")
         return lists
 
-    def _read(self) -> Tuple[Dict[str, JoinRequest], Optional[List[SignedList]]]:
+    def _read(self) -> tuple[dict[str, JoinRequest], Optional[list[SignedList]]]:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
         except FileNotFoundError:
             return {}, []
         except (OSError, ValueError):
@@ -249,7 +249,7 @@ class ConsoleState:
             return {}, None
         return joins, lists
 
-    def _write(self, joins: Dict[str, JoinRequest], lists: Optional[List[SignedList]]) -> None:
+    def _write(self, joins: dict[str, JoinRequest], lists: Optional[list[SignedList]]) -> None:
         if lists is None:   # never overwrite a damaged record: it holds the 24 h and version history
             raise RosterError(f"the console state {self._path.name} is unreadable; repair it before any change")
         pending = [j for j in joins.values() if j.state is JoinState.PENDING]
@@ -258,7 +258,7 @@ class ConsoleState:
                 "signedLists": [dataclasses.asdict(s) for s in lists[-MAX_SIGNED_LISTS:]]}
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(8)}")
-        with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as handle:
+        with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as handle:  # windows-footgun: ok — a WRITE (mode "w"/"a"); writes stay utf-8
             json.dump(rows, handle, sort_keys=True)
             handle.flush()
             os.fsync(handle.fileno())
@@ -276,7 +276,7 @@ def _next(effective: KeyManifest, curators: Mapping[str, str], **changes: object
         raise RosterError(f"the console refuses this list: {exc}") from None
 
 
-def _curators(manifest: KeyManifest) -> Dict[str, str]:
+def _curators(manifest: KeyManifest) -> dict[str, str]:
     return dict(zip(manifest.curator_keys, manifest.curator_operators))
 
 
@@ -309,7 +309,7 @@ def renewed(effective: KeyManifest, *, version: int, today: str) -> KeyManifest:
     return _next(effective, _curators(effective), version=version, issued_day=today)
 
 
-def diff(effective: KeyManifest, proposed: KeyManifest) -> Dict[str, object]:
+def diff(effective: KeyManifest, proposed: KeyManifest) -> dict[str, object]:
     """What signing *proposed* changes against the effective list (shown before signing)."""
     before, after = _curators(effective), _curators(proposed)
     return {
@@ -340,7 +340,7 @@ class RenewalStatus:
     days_left: int
     expires: str
 
-    def as_dict(self) -> Dict[str, object]:
+    def as_dict(self) -> dict[str, object]:
         return {"stage": self.stage, "milestone": self.milestone, "daysLeft": self.days_left, "expires": self.expires}
 
 
@@ -363,6 +363,21 @@ def renewal_status(manifest: KeyManifest, today: str) -> RenewalStatus:
     return RenewalStatus("reminder" if milestone else "ok", milestone, days_left, expires)
 
 
-__all__ = ["ConsoleState", "JoinRequest", "JoinState", "RenewalStatus", "RosterError", "SelfTestReport",
-           "SignedList", "diff", "renewal_status", "renewed", "with_curator", "without_curator",
-           "SELF_TEST_FIXTURES", "NARROWING_INTERVAL_SECONDS", "REMINDER_DAYS", "ALARM_DAYS_LEFT"]
+__all__ = [
+    "ALARM_DAYS_LEFT",
+    "NARROWING_INTERVAL_SECONDS",
+    "REMINDER_DAYS",
+    "SELF_TEST_FIXTURES",
+    "ConsoleState",
+    "JoinRequest",
+    "JoinState",
+    "RenewalStatus",
+    "RosterError",
+    "SelfTestReport",
+    "SignedList",
+    "diff",
+    "renewal_status",
+    "renewed",
+    "with_curator",
+    "without_curator",
+]

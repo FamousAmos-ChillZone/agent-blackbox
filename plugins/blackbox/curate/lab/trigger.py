@@ -167,7 +167,7 @@ def _applies(level: int, identifier: str) -> bool:
     return level == 4 and identifier.startswith(_RUN_PREFIXES)
 
 
-def due_levels(identifier: str, setup: LabSetup, settled: AbstractSet[int], *, scan_ready: bool) -> Tuple[int, ...]:
+def due_levels(identifier: str, setup: LabSetup, settled: AbstractSet[int], *, scan_ready: bool) -> tuple[int, ...]:
     """The levels to request now for *identifier*, in order. *settled* — the
     levels whose jobs are DONE or COULD_NOT_TELL; *scan_ready* — the registry's
     urlscan instance holds a finished scan of it."""
@@ -193,7 +193,7 @@ class LabSubmission:
     item: QueueItem
     status: SubmissionStatus
     why: str
-    records: Tuple[LabJobRecord, ...] = ()
+    records: tuple[LabJobRecord, ...] = ()
 
 
 class JobRequest(Protocol):
@@ -230,7 +230,7 @@ def submit_candidate(candidate: LabCandidate, store: LabJobStore, setup: LabSetu
     return LabSubmission(item, SubmissionStatus.SUBMITTED, decision.why, tuple(records))
 
 
-def _settled_levels(identifier: str, store: LabJobStore, setup: LabSetup) -> FrozenSet[int]:
+def _settled_levels(identifier: str, store: LabJobStore, setup: LabSetup) -> frozenset[int]:
     digest = threat_digest(identifier)
     settled = set()
     for level, image in setup.images.items():
@@ -260,12 +260,12 @@ class LabRequests:
             with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
                 handle.write(json.dumps(row, sort_keys=True) + "\n")
 
-    def requested_digests(self) -> FrozenSet[str]:
+    def requested_digests(self) -> frozenset[str]:
         """Threat digests a curator has requested (unreadable lines are skipped)."""
         digests = set()
         with self._lock:
             try:
-                lines = self._path.read_text(encoding="utf-8").splitlines()
+                lines = self._path.read_text(encoding="utf-8-sig").splitlines()
             except FileNotFoundError:
                 return frozenset()
         for line in lines:

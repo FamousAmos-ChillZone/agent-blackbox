@@ -35,9 +35,9 @@ import logging
 import time
 from collections import Counter
 from dataclasses import dataclass, fields
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, UTC
 from decimal import Decimal
-from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple, TypeVar, Union
+from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple, TypeVar
 
 from ...kernel.health.manifest_watch import key_fingerprint
 from ...kernel.signing.statement_order import CuratorStatement
@@ -61,7 +61,7 @@ UPTAKE_AFTER_SECONDS = 7 * 86_400
 _WAITING_LAB_STATES = (LabJobState.QUEUED, LabJobState.RUNNING)
 
 #: A reading of an age that may be "never" (a readable store that has no such event yet).
-Age = Union[int, str]
+Age = int | str
 _T = TypeVar("_T")
 
 
@@ -113,7 +113,7 @@ class PipelineMetrics:
 
     queue_depth_by_lane: Optional[Mapping[str, int]] = None
     queue_oldest_age_days: Optional[int] = None
-    proposals_awaiting_cosign: Optional[Tuple[Mapping[str, object], ...]] = None   # > 3 beats undelivered
+    proposals_awaiting_cosign: Optional[tuple[Mapping[str, object], ...]] = None   # > 3 beats undelivered
     publish_failures: Optional[int] = None
     publish_207s: Optional[int] = None
     seconds_since_last_batch: Optional[Age] = None
@@ -132,22 +132,22 @@ class PipelineMetrics:
     reader_newest_release: Optional[str] = None
     reader_update_uptake: Optional[float] = None   # share 0..1, seven days after the release shipped
 
-    def as_dict(self) -> Dict[str, object]:
+    def as_dict(self) -> dict[str, object]:
         """``{metric name: value or "unavailable"}``, in :data:`METRIC_NAMES` order."""
         return {name: UNAVAILABLE if getattr(self, name) is None else _plain(getattr(self, name))
                 for name in METRIC_NAMES}
 
-    def as_payload(self) -> Dict[str, object]:
+    def as_payload(self) -> dict[str, object]:
         """The JSON body a webhook receives (W3's ``WebhookSink.notify_metrics``):
         ``{"kind": "metrics", "metrics": {name: value}}``."""
         return {"kind": "metrics", "metrics": self.as_dict()}
 
-    def lines(self) -> List[str]:
+    def lines(self) -> list[str]:
         """One ``name: value`` line per metric, for chat sinks (Slack, Telegram)."""
         return [f"{name}: {value}" for name, value in self.as_dict().items()]
 
 
-METRIC_NAMES: Tuple[str, ...] = tuple(f.name for f in fields(PipelineMetrics))
+METRIC_NAMES: tuple[str, ...] = tuple(f.name for f in fields(PipelineMetrics))
 
 
 def collect_metrics(sources: MetricsSources, context: Optional[Callable[[], CurateContext]],
@@ -157,8 +157,8 @@ def collect_metrics(sources: MetricsSources, context: Optional[Callable[[], Cura
     unavailable."""
     ctx = _read("context", context)
     ledger = _read("publish ledger", sources.publish_ledger)
-    today = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
-    values: Dict[str, object] = {}
+    today = datetime.fromtimestamp(now, UTC).date().isoformat()
+    values: dict[str, object] = {}
     if ledger is not None:
         _merge(values, "publish ledger", lambda: _publish_values(ledger, now))
     if sources.wallet:
@@ -194,7 +194,7 @@ def open_queue_items(ctx: CurateContext, today: str) -> Sequence[LookupItem]:
 # -- one reader each ---------------------------------------------------------------------------
 
 
-def _publish_values(ledger: PublishLedger, now: float) -> Dict[str, object]:
+def _publish_values(ledger: PublishLedger, now: float) -> dict[str, object]:
     published = ledger.metrics(now)
     month = published.monthly.get(time.strftime("%Y-%m", time.gmtime(now)))
     return {
@@ -215,7 +215,7 @@ def _largest_batch_trac(ledger: Optional[PublishLedger]) -> Optional[Decimal]:
     return max(costs, default=None) if costs else None
 
 
-def _wallet_values(balance: WalletBalance, largest_batch_trac: Optional[Decimal]) -> Dict[str, object]:
+def _wallet_values(balance: WalletBalance, largest_batch_trac: Optional[Decimal]) -> dict[str, object]:
     """Balances against the two-batch floor; a floor with no batch cost to size it is unavailable."""
     trac_floor = None if largest_batch_trac is None else FLOOR_BATCHES * largest_batch_trac
     gas_floor = None if balance.gas_per_batch is None else FLOOR_BATCHES * balance.gas_per_batch
@@ -228,14 +228,14 @@ def _wallet_values(balance: WalletBalance, largest_batch_trac: Optional[Decimal]
 
 
 def _queue_values(items_of: Callable[[CurateContext, str], Sequence[LookupItem]], ctx: CurateContext,
-                  today: str) -> Dict[str, object]:
+                  today: str) -> dict[str, object]:
     items = items_of(ctx, today)
     depth = Counter(item.lane for item in items)
     return {"queue_depth_by_lane": {lane.name.lower(): depth[lane] for lane in queue.Lane},
             "queue_oldest_age_days": queue_metrics(items, today).oldest_age_days}
 
 
-def _key_list_values(ctx: CurateContext, today: str) -> Dict[str, object]:
+def _key_list_values(ctx: CurateContext, today: str) -> dict[str, object]:
     """Days since each listed curator's newest heartbeat, and the list's days to expiry."""
     manifest = ctx.manifest
     if manifest is None:
@@ -248,7 +248,7 @@ def _key_list_values(ctx: CurateContext, today: str) -> Dict[str, object]:
             "manifest_days_to_expiry": None if renewal.stage == "undated" else renewal.days_left}
 
 
-def _lab_values(store: LabJobStore, now: float) -> Dict[str, object]:
+def _lab_values(store: LabJobStore, now: float) -> dict[str, object]:
     waiting = [record for record in store.records() if record.state in _WAITING_LAB_STATES]
     oldest = min((record.job.requested_at for record in waiting), default=now)
     return {"lab_queue_depth": len(waiting), "lab_oldest_job_age_seconds": int(max(0.0, now - oldest))}
@@ -259,7 +259,7 @@ def _own_heartbeat(log: SigningLog, now: float) -> Age:
     return int(max(0.0, now - max(beats))) if beats else NEVER
 
 
-def _uptake_values(uptake: UpdateUptake, now: float) -> Dict[str, object]:
+def _uptake_values(uptake: UpdateUptake, now: float) -> dict[str, object]:
     """The share counts only once the release is seven days old and some install reported."""
     measured = now - uptake.shipped_at >= UPTAKE_AFTER_SECONDS and uptake.installs_total > 0
     return {"reader_newest_release": uptake.release,
@@ -281,7 +281,7 @@ def _read(what: str, reader: Optional[Callable[[], _T]]) -> Optional[_T]:
         return None
 
 
-def _merge(values: Dict[str, object], what: str, reader: Callable[[], Dict[str, object]]) -> None:
+def _merge(values: dict[str, object], what: str, reader: Callable[[], dict[str, object]]) -> None:
     """Add *reader*'s metrics to *values*; when it fails they stay unavailable."""
     values.update(_read(what, reader) or {})
 
@@ -289,7 +289,7 @@ def _merge(values: Dict[str, object], what: str, reader: Callable[[], Dict[str, 
 def _day(first_seen: object, today: str) -> str:
     """The UTC day of a ``firstSeen`` epoch; *today* when it is absent or unreadable."""
     try:
-        return datetime.fromtimestamp(float(first_seen), timezone.utc).date().isoformat() if first_seen else today
+        return datetime.fromtimestamp(float(first_seen), UTC).date().isoformat() if first_seen else today
     except (TypeError, ValueError, OverflowError, OSError):
         return today
 

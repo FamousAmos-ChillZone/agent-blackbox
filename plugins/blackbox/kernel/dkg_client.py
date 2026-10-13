@@ -34,7 +34,7 @@ _TIMEOUT = 3.0
 # background refresh and the dashboard hit it, never the cached hot hook path.
 _QUERY_TIMEOUT = 30.0
 _STORE_TIMEOUT = 150.0
-Quad = Dict[str, str]
+Quad = dict[str, str]
 
 
 class DkgError(RuntimeError):
@@ -45,7 +45,7 @@ class DkgError(RuntimeError):
         self.status_code = status_code
 
 
-def _validate_quads_literal_sizes(quads: List[Quad]) -> None:
+def _validate_quads_literal_sizes(quads: list[Quad]) -> None:
     """Mirror DKG's writable-literal preflight before sending write payloads."""
     try:
         from . import rdf_terms
@@ -116,7 +116,7 @@ def load_token(dkg_home: Optional[str] = None) -> Optional[str]:
     token_path = _dkg_home(dkg_home) / "auth.token"
     try:
         if token_path.exists():
-            for line in token_path.read_text(encoding="utf-8").splitlines():
+            for line in token_path.read_text(encoding="utf-8-sig").splitlines():
                 line = line.strip()
                 if line and not line.startswith("#"):
                     return line
@@ -125,7 +125,7 @@ def load_token(dkg_home: Optional[str] = None) -> Optional[str]:
     return None
 
 
-def signed_request_headers(token: str, method: str, path: str, body: Optional[bytes]) -> Dict[str, str]:
+def signed_request_headers(token: str, method: str, path: str, body: Optional[bytes]) -> dict[str, str]:
     """Signed-request headers required by DKG >= 10.0.19 (daemon spec §18).
 
     The daemon rejects any protected route without them (empty HTTP 400 —
@@ -170,7 +170,7 @@ class DkgClient:
         self.token = token if token is not None else load_token(self.dkg_home)
 
     @classmethod
-    def from_env(cls) -> "DkgClient":
+    def from_env(cls) -> DkgClient:
         return cls()
 
     # -- transport ---------------------------------------------------------
@@ -179,9 +179,9 @@ class DkgClient:
         self,
         method: str,
         path: str,
-        body: Optional[Dict[str, Any]] = None,
+        body: Optional[dict[str, Any]] = None,
         timeout: Optional[float] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         data = json.dumps(body).encode("utf-8") if body is not None else None
         headers = {"Accept": "application/json"}
         if data is not None:
@@ -212,7 +212,7 @@ class DkgClient:
 
     # -- status ------------------------------------------------------------
 
-    def status(self, timeout: Optional[float] = None) -> Dict[str, Any]:
+    def status(self, timeout: Optional[float] = None) -> dict[str, Any]:
         """Return node status; raises :class:`DkgError` if unreachable.
 
         ``GET /api/status`` is the public (no-auth) liveness endpoint; older
@@ -228,7 +228,7 @@ class DkgClient:
                 continue
         raise DkgError("node unreachable on /api/status, /api/info")
 
-    def agent_identity(self) -> Dict[str, Any]:
+    def agent_identity(self) -> dict[str, Any]:
         """Resolve the calling token to its agent identity.
 
         ``GET /api/agent/identity`` → ``{agentAddress, agentDid, name, ...}`` —
@@ -245,19 +245,19 @@ class DkgClient:
 
     # -- context graph -----------------------------------------------------
 
-    def connect_peer(self, peer_id: str) -> Dict[str, Any]:
+    def connect_peer(self, peer_id: str) -> dict[str, Any]:
         """Ask DKG to resolve and connect to one graph source peer."""
         return self.request(
             "POST", "/api/connect", {"peerId": peer_id}, timeout=15.0
         )
 
-    def connect_multiaddr(self, multiaddr: str) -> Dict[str, Any]:
+    def connect_multiaddr(self, multiaddr: str) -> dict[str, Any]:
         """Connect through one explicit address when cold DHT lookup is pending."""
         return self.request(
             "POST", "/api/connect", {"multiaddr": multiaddr}, timeout=15.0
         )
 
-    def subscribe_context_graph(self, cg_id: str, *, include_shared_memory: bool = False) -> Dict[str, Any]:
+    def subscribe_context_graph(self, cg_id: str, *, include_shared_memory: bool = False) -> dict[str, Any]:
         """Subscribe the node to a context graph and catch up its durable VM.
 
         What a *consumer* node needs: a fresh install that only set
@@ -272,7 +272,7 @@ class DkgClient:
             timeout=_STORE_TIMEOUT,
         )
 
-    def unsubscribe_context_graph(self, cg_id: str) -> Dict[str, Any]:
+    def unsubscribe_context_graph(self, cg_id: str) -> dict[str, Any]:
         """Drop live gossip/sync scope without deleting local VM/SWM data."""
         return self.request(
             "POST",
@@ -286,7 +286,7 @@ class DkgClient:
         cg_id: str,
         *,
         include_shared_memory: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Force a fresh official catch-up without deleting local graph data."""
         self.unsubscribe_context_graph(cg_id)
         return self.subscribe_context_graph(
@@ -299,7 +299,7 @@ class DkgClient:
         cg_id: str,
         *,
         job_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Return an asynchronous catch-up job for ``cg_id``.
 
         The daemon applies a recovered graph snapshot atomically, so consumers
@@ -317,7 +317,7 @@ class DkgClient:
             f"/api/sync/catchup-status?{query}",
         )
 
-    def context_graphs(self) -> List[Dict[str, Any]]:
+    def context_graphs(self) -> list[dict[str, Any]]:
         """Return the daemon's native context-graph registry projection."""
         result = self.request(
             "GET",
@@ -333,7 +333,7 @@ class DkgClient:
         peer_id: str,
         *,
         budget_ms: int = 300_000,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Recover the graph's durable VM from one configured source peer.
 
         DKG's route retains its historical ``shared-memory`` name, but the
@@ -363,7 +363,7 @@ class DkgClient:
             ),
         )
 
-    def context_graph_participants(self, cg_id: str) -> Dict[str, Any]:
+    def context_graph_participants(self, cg_id: str) -> dict[str, Any]:
         encoded = urllib.parse.quote(cg_id, safe="")
         return self.request(
             "GET",
@@ -380,7 +380,7 @@ class DkgClient:
         expected = agent_address.lower()
         return any(str(address).lower() == expected for address in allowed)
 
-    def publish_agent_profile(self) -> Dict[str, Any]:
+    def publish_agent_profile(self) -> dict[str, Any]:
         """Publish this node's default agent profile and encryption keys."""
         return self.request(
             "POST",
@@ -390,7 +390,7 @@ class DkgClient:
         )
 
     def request_join(self, cg_id: str, graph_peer_id: str,
-                     agent_name: str = "agent-blackbox") -> Dict[str, Any]:
+                     agent_name: str = "agent-blackbox") -> dict[str, Any]:
         """Sign a join request and forward it to the graph's bootstrap peer.
 
         Publish the default profile first so the curator has the requester's
@@ -417,8 +417,8 @@ class DkgClient:
 
     # -- knowledge assets --------------------------------------------------
 
-    def share_knowledge_asset(self, cg_id: str, name: str, quads: List[Quad],
-                              create_timeout: Optional[float] = None) -> Dict[str, Any]:   # community statements only
+    def share_knowledge_asset(self, cg_id: str, name: str, quads: list[Quad],
+                              create_timeout: Optional[float] = None) -> dict[str, Any]:   # community statements only
         """Create/finalize a KA, then explicitly share its sealed assertion to SWM.
 
         Private/agent-gated context graphs require the node's sender-key SWM
@@ -458,17 +458,17 @@ class DkgClient:
         *,
         on_conflict: Optional[str] = None,
         sub_graph: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Pull the latest KA assertion from another layer into local WM (of *sub_graph*, "" = root).
 
         Used to repair stale local finalized state before re-sharing old assets.
         """
-        body: Dict[str, Any] = {"contextGraphId": cg_id, "layer": layer, **({"subGraphName": sub_graph} if sub_graph else {})}
+        body: dict[str, Any] = {"contextGraphId": cg_id, "layer": layer, **({"subGraphName": sub_graph} if sub_graph else {})}
         if on_conflict:
             body["onConflict"] = on_conflict
         return self.request("POST", self._ka_path(name, "/wm/pull-from"), body, timeout=_STORE_TIMEOUT)
 
-    def share_async(self, cg_id: str, name: str, sub_graph: str = "") -> Dict[str, Any]:
+    def share_async(self, cg_id: str, name: str, sub_graph: str = "") -> dict[str, Any]:
         """Queue an async SWM share job for an already-finalized WM KA (in *sub_graph*; "" = root)."""
         body = {"contextGraphId": cg_id, "entities": "all", **({"subGraphName": sub_graph} if sub_graph else {})}
         try:
@@ -479,13 +479,13 @@ class DkgClient:
                 return {"jobId": job_id, "state": "existing"}
             raise
 
-    def share_job(self, job_id: str) -> Dict[str, Any]:
+    def share_job(self, job_id: str) -> dict[str, Any]:
         """Fetch one async SWM share job by id."""
         enc = urllib.parse.quote(job_id, safe="")
         return self.request("GET", f"/api/knowledge-assets/swm/share-jobs/{enc}", timeout=_STORE_TIMEOUT)
 
     @staticmethod
-    def _share_job_id(result: Dict[str, Any]) -> Optional[str]:
+    def _share_job_id(result: dict[str, Any]) -> Optional[str]:
         if not isinstance(result, dict):
             return None
         job = result.get("job") if isinstance(result.get("job"), dict) else result
@@ -501,11 +501,11 @@ class DkgClient:
         *,
         timeout_s: float = 600.0,
         poll_s: float = 5.0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Poll an async SWM share job until it succeeds or fails."""
         deadline = time.monotonic() + max(1.0, float(timeout_s))
         last_state = "unknown"
-        last_job: Dict[str, Any] = {}
+        last_job: dict[str, Any] = {}
         while True:
             job = self.share_job(job_id)
             last_job = job if isinstance(job, dict) else {}
@@ -533,7 +533,7 @@ class DkgClient:
         timeout_s: float = 600.0,
         poll_s: float = 5.0,
         sub_graph: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Queue async SWM share (into *sub_graph*; "" = root) and poll the job to completion."""
         result = self.share_async(cg_id, name, sub_graph)
         job_id = self._share_job_id(result)
@@ -541,7 +541,7 @@ class DkgClient:
             return result
         return self.wait_for_share_job(job_id, timeout_s=timeout_s, poll_s=poll_s)
 
-    def share_finalized_knowledge_asset(self, cg_id: str, name: str, sub_graph: str = "") -> Dict[str, Any]:
+    def share_finalized_knowledge_asset(self, cg_id: str, name: str, sub_graph: str = "") -> dict[str, Any]:
         """Share an already-finalized WM KA to SWM via async job polling. *sub_graph*
         "" is the root (the verified-graph publish path); community statements pass
         ``constants.COMMUNITY_SUB_GRAPH``."""
@@ -555,7 +555,7 @@ class DkgClient:
                 return self.share_async_and_wait(cg_id, name, sub_graph=sub_graph)
             raise
 
-    def write_private_knowledge_asset(self, cg_id: str, name: str, quads: List[Quad]) -> Dict[str, Any]:
+    def write_private_knowledge_asset(self, cg_id: str, name: str, quads: list[Quad]) -> dict[str, Any]:
         """Create+write+seal a KA in WM WITHOUT sharing to SWM (private audit)."""
         _validate_quads_literal_sizes(quads)
         return self.request(
@@ -575,7 +575,7 @@ class DkgClient:
         on_error: Any = None,
         agent_address: Optional[str] = None,
         timeout: Optional[float] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Run a SPARQL SELECT and return normalized bindings.
 
         Each binding is a ``{var: value}`` dict of plain strings (literals and
@@ -634,6 +634,6 @@ SELECT (COUNT(DISTINCT ?threat) AS ?n) WHERE {
         except (TypeError, ValueError):
             return 0
 
-    def register_agent(self, name: str, framework: str = "hermes") -> Dict[str, Any]:
+    def register_agent(self, name: str, framework: str = "hermes") -> dict[str, Any]:
         """Register a new agent on the node → ``{agentAddress, authToken, ...}``."""
         return self.request("POST", "/api/agent/register", {"name": name, "framework": framework})

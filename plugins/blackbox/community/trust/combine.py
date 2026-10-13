@@ -49,7 +49,7 @@ def combine(verified: CuratorView, community: CuratorView, *, today: str) -> Cur
     """The view readers act on: *verified* with the community authority's
     statements merged in under the most-restrictive-wins rule."""
     delisted = verified.delisted | community.delisted
-    counted: Dict[str, CountedAuthor] = {**community.counted, **verified.counted}
+    counted: dict[str, CountedAuthor] = {**community.counted, **verified.counted}
     for key in delisted:
         counted.pop(key, None)
     return replace(
@@ -84,8 +84,8 @@ def _days_since(day: str, today: str) -> int:
         return 0   # an unreadable day never ends a hold early
 
 
-def _verdicts(verified: CuratorView, community: CuratorView, today: str) -> Dict[str, CuratorRecord]:
-    merged: Dict[str, CuratorRecord] = dict(community.verdicts)
+def _verdicts(verified: CuratorView, community: CuratorView, today: str) -> dict[str, CuratorRecord]:
+    merged: dict[str, CuratorRecord] = dict(community.verdicts)
     for identifier, record in verified.verdicts.items():
         other: Optional[CuratorRecord] = merged.get(identifier)
         if other is None or _holds_down(record, today) >= _holds_down(other, today):
@@ -93,8 +93,8 @@ def _verdicts(verified: CuratorView, community: CuratorView, today: str) -> Dict
     return merged
 
 
-def _attestations(verified: CuratorView, community: CuratorView) -> Dict[str, CuratorRecord]:
-    merged: Dict[str, CuratorRecord] = dict(community.attestations)
+def _attestations(verified: CuratorView, community: CuratorView) -> dict[str, CuratorRecord]:
+    merged: dict[str, CuratorRecord] = dict(community.attestations)
     for identifier, record in verified.attestations.items():
         other = merged.get(identifier)
         if other is None or _enforces(record) <= _enforces(other):

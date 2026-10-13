@@ -50,7 +50,7 @@ ROW_LIMIT = 20_000
 _DP = "urn:defender:p:"
 _BP = "urn:blackbox:p:"
 
-DependencyCandidate = Tuple[str, str, str]   # (ecosystem, package name, version or "*")
+DependencyCandidate = tuple[str, str, str]   # (ecosystem, package name, version or "*")
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,7 @@ class LookupAnswer:
     ``outcome`` — ``HIT`` / ``CLEAN`` / ``COULD_NOT_TELL``; ``reason`` — the
     store's reason when it could not tell."""
 
-    rules: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    rules: dict[str, dict[str, Any]] = field(default_factory=dict)
     outcome: str = CLEAN
     reason: str = ""
 
@@ -84,7 +84,7 @@ class VerifiedLookup:
     def dependencies(self, candidates: Sequence[DependencyCandidate]) -> LookupAnswer:
         """Public dependency rules for exactly these ``(ecosystem, name, version)``
         triples; pass ``"*"`` as the version for a whole-package rule."""
-        tuples: List[Tuple[str, str, str]] = []
+        tuples: list[tuple[str, str, str]] = []
         for ecosystem, name, version in candidates[:MAX_VALUES]:
             ecosystem = ecosystem.strip().lower()
             for spelling in self.scope.spellings(ecosystem, name):
@@ -122,7 +122,7 @@ class VerifiedLookup:
     def _ask(self, items: Sequence[Any], build_query: Any, category: str) -> LookupAnswer:
         if not self.scope.ready:
             return LookupAnswer({}, COULD_NOT_TELL, "verified scope not ready")
-        rules: Dict[str, Dict[str, Any]] = {}
+        rules: dict[str, dict[str, Any]] = {}
         for start in range(0, len(items), CHUNK):
             answer = self.store.select(build_query(items[start:start + CHUNK]))
             if not answer.known:
@@ -130,18 +130,18 @@ class VerifiedLookup:
             rules.update(self._rules_from(answer.rows or [], category))
         return LookupAnswer(rules, HIT if rules else CLEAN)
 
-    def _rules_from(self, rows: Iterable[Dict[str, str]], category: str) -> Dict[str, Dict[str, Any]]:
+    def _rules_from(self, rows: Iterable[dict[str, str]], category: str) -> dict[str, dict[str, Any]]:
         """Triples → rules through the compiler's own builders, scope applied
         (a FLAG-tier asset's rules capped at flag, a signed asset's served from
         their signed payload, a transplanted row dropped — :meth:`VerifiedScope.as_tier_allows`)."""
-        by_graph: Dict[str, List[Tuple[str, str, str]]] = {}
+        by_graph: dict[str, list[tuple[str, str, str]]] = {}
         for row in rows:
             graph = extract_binding(row.get("g"))
             subject = extract_binding(row.get("t"))
             if graph not in self.scope.assertion_graphs or subject in self.scope.suppressed_subjects:
                 continue
             by_graph.setdefault(graph, []).append((subject, extract_binding(row.get("p")), row.get("o") or ""))
-        rules: Dict[str, Dict[str, Any]] = {}
+        rules: dict[str, dict[str, Any]] = {}
         for graph, triples in by_graph.items():
             for built_row in rows_from_triples(graph, triples):
                 mapped = row_adapters._row_to_rule(built_row, "public")
@@ -156,7 +156,7 @@ class VerifiedLookup:
         return rules
 
 
-def _dependency_sparql(tuples: Sequence[Tuple[str, str, str]]) -> str:
+def _dependency_sparql(tuples: Sequence[tuple[str, str, str]]) -> str:
     values = " ".join(f"({literal(pkg)} {literal(eco)} {literal(ver)})" for pkg, eco, ver in tuples)
     return f"""SELECT ?g ?t ?p ?o WHERE {{
   VALUES (?pkg ?eco ?ver) {{ {values} }}

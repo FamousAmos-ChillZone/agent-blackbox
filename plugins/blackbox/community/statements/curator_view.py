@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 from typing import Any, AbstractSet, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
 from ...kernel.signing import key_manifest, statement_order
@@ -88,7 +88,7 @@ class CuratorView:
     verdicts: Mapping[str, CuratorRecord] = field(default_factory=dict)
     counted: Mapping[str, CountedAuthor] = field(default_factory=dict)
     backlog: Optional[CuratorRecord] = None
-    away: Tuple[CuratorRecord, ...] = ()
+    away: tuple[CuratorRecord, ...] = ()
     attestations: Mapping[str, CuratorRecord] = field(default_factory=dict)
     #: R10b: newest heartbeat day per curator key; the newest day any curator statement carries;
     #: True when two trusted manifests share an order with different content (SECURITY).
@@ -114,8 +114,8 @@ class CuratorView:
     #: Community Curation: which authority this view speaks for; the reporter keys it
     #: explicitly delisted; and, on a combined view, the community authority's own view.
     authority: Authority = Authority.VERIFIED
-    delisted: FrozenSet[str] = frozenset()
-    community: Optional["CuratorView"] = None
+    delisted: frozenset[str] = frozenset()
+    community: Optional[CuratorView] = None
     #: How many enforcement-raising statements this reader is holding back
     #: today under its daily cap (``community.trust.raising_budget``); they are
     #: admitted on the following days. Reductions are never held.
@@ -143,14 +143,14 @@ class CuratorView:
         return self.verdict(identifier) is CuratorStatement.REJECTION
 
     @property
-    def revoked(self) -> FrozenSet[str]:
+    def revoked(self) -> frozenset[str]:
         """Threats whose current verdict is a revocation."""
         return frozenset(i for i, r in self.verdicts.items() if r.kind is CuratorStatement.REVOCATION)
 
 
 def _records(rows: Iterable[Mapping[str, Any]], manifest: key_manifest.KeyManifest, graph: str,
              allowed: AbstractSet[CuratorStatement], *, root_keys: AbstractSet[str] = frozenset(),
-             curators_silent: bool = False) -> List[CuratorRecord]:
+             curators_silent: bool = False) -> list[CuratorRecord]:
     """Verified records from one graph, keeping only the kinds this authority
     may publish there (*allowed*, from ``kernel.signing.authority``)."""
     records = []
@@ -192,7 +192,7 @@ def _curators_silent(records: Iterable[CuratorRecord], today: str, community_rea
         return False
 
 
-def _frozen_out(records: Iterable[CuratorRecord], state: str, since: str) -> List[CuratorRecord]:
+def _frozen_out(records: Iterable[CuratorRecord], state: str, since: str) -> list[CuratorRecord]:
     """While the manifest is STALE, enforcement-raising statements dated after its
     expiry are frozen out; reductions always apply (LES-016)."""
     if state != "stale":
@@ -242,17 +242,17 @@ def _evidenced(record: CuratorRecord) -> bool:
     return record.kind is not CuratorStatement.CONFIRMATION or bool(record.field("evidence"))
 
 
-def _heartbeats(records: Iterable[CuratorRecord]) -> Dict[str, str]:
+def _heartbeats(records: Iterable[CuratorRecord]) -> dict[str, str]:
     """Newest heartbeat day per curator key (only a key beating for ITSELF counts)."""
-    newest: Dict[str, str] = {}
+    newest: dict[str, str] = {}
     for record in records:
         if record.kind is CuratorStatement.HEARTBEAT and record.field("key") in record.signers:
             newest[record.field("key")] = max(newest.get(record.field("key"), ""), record.day)
     return newest
 
 
-def _current_verdicts(records: Iterable[CuratorRecord]) -> Dict[str, CuratorRecord]:
-    by_order: Dict[statement_order.OrderedStatement, CuratorRecord] = {}
+def _current_verdicts(records: Iterable[CuratorRecord]) -> dict[str, CuratorRecord]:
+    by_order: dict[statement_order.OrderedStatement, CuratorRecord] = {}
     for record in records:
         if record.kind in _VERDICT_KINDS:
             by_order[statement_order.OrderedStatement(record.identifier, record.kind, record.sequence)] = record
@@ -265,15 +265,15 @@ def _current_verdicts(records: Iterable[CuratorRecord]) -> Dict[str, CuratorReco
 STAGE_ENFORCEMENT_RANK: Mapping[str, int] = {"held": 0, "deferred": 0, "reported": 1, "corroborated": 2}
 
 
-def _attestation_order(record: CuratorRecord) -> Tuple[int, int]:
+def _attestation_order(record: CuratorRecord) -> tuple[int, int]:
     """Sort key: higher sequence first; at a tie the stage that enforces LESS
     wins, so the outcome never depends on which row was read first (KI-245)."""
     return record.sequence, -STAGE_ENFORCEMENT_RANK.get(record.field("stage"), 0)
 
 
-def _current_attestations(records: Iterable[CuratorRecord]) -> Dict[str, CuratorRecord]:
+def _current_attestations(records: Iterable[CuratorRecord]) -> dict[str, CuratorRecord]:
     """The highest-sequence attestation per threat: a replayed older one loses."""
-    current: Dict[str, CuratorRecord] = {}
+    current: dict[str, CuratorRecord] = {}
     for record in records:
         if record.kind is CuratorStatement.ATTESTATION:
             held = current.get(record.identifier)
@@ -301,7 +301,7 @@ def _effective_expiry(record: CuratorRecord, max_days: Optional[int]) -> str:
     return min(stated, capped)
 
 
-def _listing_order(record: CuratorRecord) -> Tuple[int, bool]:
+def _listing_order(record: CuratorRecord) -> tuple[int, bool]:
     """Sort key: higher sequence first; at a tie a DELISTING wins, whichever
     row was read first (KI-245 — a delisting must never lose to a listing)."""
     return record.sequence, record.field("listed") == "no"
@@ -319,12 +319,12 @@ def _delisting_in_force(record: CuratorRecord, today: str) -> bool:
 
 
 def _counted_authors(records: Iterable[CuratorRecord], today: str,
-                     max_days: Optional[int] = None) -> Tuple[Dict[str, CountedAuthor], FrozenSet[str]]:
+                     max_days: Optional[int] = None) -> tuple[dict[str, CountedAuthor], frozenset[str]]:
     """(counted, delisted) from the latest entry per author key: *counted* —
     listed and unexpired (a listing also ends *max_days* after its signed day
     when given); *delisted* — keys whose latest entry says "not listed" and is
     still in force (it also removes the other authority's listing)."""
-    latest: Dict[str, CuratorRecord] = {}
+    latest: dict[str, CuratorRecord] = {}
     for record in records:
         if record.kind is CuratorStatement.COUNTED_AUTHORS:
             held = latest.get(record.identifier)
@@ -363,7 +363,7 @@ def _latest(records: Iterable[CuratorRecord]) -> Optional[CuratorRecord]:
 
 
 def _today() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(UTC).date().isoformat()
 
 
 def today_utc() -> str:
@@ -371,10 +371,10 @@ def today_utc() -> str:
     return _today()
 
 
-def counted_dispute_weight(disputes: Iterable[VerifiedDispute], view: CuratorView) -> Dict[str, int]:
+def counted_dispute_weight(disputes: Iterable[VerifiedDispute], view: CuratorView) -> dict[str, int]:
     """Per threat, how many COUNTED authors dispute it. An unlisted author's
     dispute weighs 0 (plan §04): it is shown, never counted toward decay."""
-    disputers: Dict[str, set] = {}
+    disputers: dict[str, set] = {}
     for dispute in disputes:
         if view.is_counted(dispute.author):
             disputers.setdefault(dispute.identifier, set()).add(dispute.author)

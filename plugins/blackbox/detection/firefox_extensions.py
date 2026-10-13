@@ -35,12 +35,12 @@ _MAX_PREFS_BYTES = 8 * 1024 * 1024
 _UUIDS_PREF = re.compile(r'user_pref\("extensions\.webextensions\.uuids",\s*"((?:[^"\\]|\\.)*)"\);')
 
 
-def _read_map(prefs_path: str) -> Optional[Dict[str, str]]:
+def _read_map(prefs_path: str) -> Optional[dict[str, str]]:
     """``{uuid: add-on id}`` from one prefs.js, or None when it cannot be read."""
     try:
         if os.path.getsize(prefs_path) > _MAX_PREFS_BYTES:
             return None
-        with open(prefs_path, encoding="utf-8", errors="replace") as handle:
+        with open(prefs_path, encoding="utf-8-sig", errors="replace") as handle:
             match = _UUIDS_PREF.search(handle.read())
         if not match:
             return None
@@ -58,9 +58,9 @@ class _PrefsMaps:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._cache: Dict[str, Tuple[float, Optional[Dict[str, str]]]] = {}
+        self._cache: dict[str, tuple[float, Optional[dict[str, str]]]] = {}
 
-    def get(self, profile_dir: str) -> Optional[Dict[str, str]]:
+    def get(self, profile_dir: str) -> Optional[dict[str, str]]:
         prefs_path = os.path.join(profile_dir, "prefs.js")
         try:
             mtime = os.path.getmtime(prefs_path)

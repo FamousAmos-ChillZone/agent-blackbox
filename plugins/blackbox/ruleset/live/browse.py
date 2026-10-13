@@ -49,7 +49,7 @@ _TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 _DP = "urn:defender:p:"
 _BP = "urn:blackbox:p:"
 #: The live kinds in page order, and the category each answers to.
-KINDS: Tuple[str, ...] = ("dependency", "ioc")
+KINDS: tuple[str, ...] = ("dependency", "ioc")
 
 
 @dataclass(frozen=True)
@@ -60,10 +60,10 @@ class LivePage:
     dependency entries per ecosystem; ``known`` — False when the store could not
     answer (``reason`` says why); what was gathered before is still in the page."""
 
-    entries: List[Dict[str, Any]] = field(default_factory=list)
+    entries: list[dict[str, Any]] = field(default_factory=list)
     total: int = 0
-    kind_totals: Dict[str, int] = field(default_factory=dict)
-    ecosystem_totals: Dict[str, int] = field(default_factory=dict)
+    kind_totals: dict[str, int] = field(default_factory=dict)
+    ecosystem_totals: dict[str, int] = field(default_factory=dict)
     known: bool = True
     reason: str = ""
     #: True when a search found more matches than this page reaches ("N or more").
@@ -80,7 +80,7 @@ def public_page(scope: VerifiedScope, store: StoreClient, *, category: str = "",
         return LivePage(known=False, reason=f"pages past {MAX_DEPTH:,} are not browsable; search or filter instead")
     browser = _Browser(scope, store, ecosystem=ecosystem.strip().lower(), needle=needle.strip().lower(),
                        depth=offset + limit)
-    totals: Dict[str, int] = {}
+    totals: dict[str, int] = {}
     for kind in kinds:
         total = browser.total(kind)
         if total is None:
@@ -89,7 +89,7 @@ def public_page(scope: VerifiedScope, store: StoreClient, *, category: str = "",
     ecosystems = browser.ecosystems() if "dependency" in kinds else {}
     if ecosystems is None:
         return LivePage(kind_totals=totals, total=sum(totals.values()), known=False, reason=browser.reason)
-    entries: List[Dict[str, Any]] = []
+    entries: list[dict[str, Any]] = []
     for kind in kinds:                      # the window runs across the kinds in order
         if offset >= totals[kind]:
             offset -= totals[kind]
@@ -121,7 +121,7 @@ class _Browser:
         self.ecosystem, self.needle = ecosystem, needle
         #: A search reads its matches ONCE, up to the page's end + 1, and pages from that.
         self.depth = depth
-        self._matches: Dict[str, List[Tuple[str, str]]] = {}
+        self._matches: dict[str, list[tuple[str, str]]] = {}
         self.prefix = f"did:dkg:context-graph:{scope.context_graph_id}/_verifiable_memory/"
         self.reason = ""
         self.capped = False
@@ -142,7 +142,7 @@ class _Browser:
         clause = " ".join(f"FILTER({f})" for f in filters)
         return f"GRAPH ?g {{ {pattern} {clause} }} FILTER(STRSTARTS(STR(?g), {literal(self.prefix)}))"
 
-    def _select(self, sparql: str) -> Optional[List[Dict[str, str]]]:
+    def _select(self, sparql: str) -> Optional[list[dict[str, str]]]:
         answer = self.store.select(sparql, timeout=BROWSE_TIMEOUT_SECONDS)
         if not answer.known:
             self.reason = answer.reason
@@ -167,7 +167,7 @@ class _Browser:
             self.capped = True
         return len(matches)
 
-    def _search(self, kind: str) -> Optional[List[Tuple[str, str]]]:
+    def _search(self, kind: str) -> Optional[list[tuple[str, str]]]:
         """The search's matches of *kind*, read once: up to the page's end + 1 (a full
         CONTAINS count took 19.6 s on bench A; a page's worth, ~1.5 s)."""
         if kind not in self._matches:
@@ -177,7 +177,7 @@ class _Browser:
             self._matches[kind] = [(extract_binding(r.get("g")), extract_binding(r.get("t"))) for r in rows]
         return self._matches[kind]
 
-    def ecosystems(self) -> Optional[Dict[str, int]]:
+    def ecosystems(self) -> Optional[dict[str, int]]:
         """Dependency entries per ecosystem: the scope's refresh-time counts ({} during
         a search — a per-ecosystem search count would be another full scan)."""
         if self.needle:
@@ -187,7 +187,7 @@ class _Browser:
                if key.startswith(ECOSYSTEM_COUNT_PREFIX)}
         return {self.ecosystem: per.get(self.ecosystem, 0)} if self.ecosystem else per
 
-    def window(self, kind: str, offset: int, limit: int) -> Optional[List[Dict[str, Any]]]:
+    def window(self, kind: str, offset: int, limit: int) -> Optional[list[dict[str, Any]]]:
         """Graph entries for *limit* subjects of *kind* after *offset* — TWO queries.
 
         One query that windows the subjects and joins their triples ran > 120 s on
@@ -213,13 +213,13 @@ class _Browser:
                             f"LIMIT {len(pairs) * _TRIPLES_PER_SUBJECT}")
         return None if rows is None else self._entries(rows)
 
-    def _entries(self, rows: Sequence[Dict[str, str]]) -> List[Dict[str, Any]]:
-        by_graph: Dict[str, List[Tuple[str, str, str]]] = {}
+    def _entries(self, rows: Sequence[dict[str, str]]) -> list[dict[str, Any]]:
+        by_graph: dict[str, list[tuple[str, str, str]]] = {}
         for row in rows:
             graph, subject = extract_binding(row.get("g")), extract_binding(row.get("t"))
             if graph in self.scope.assertion_graphs and subject not in self.scope.suppressed_subjects:
                 by_graph.setdefault(graph, []).append((subject, extract_binding(row.get("p")), row.get("o") or ""))
-        entries: List[Dict[str, Any]] = []
+        entries: list[dict[str, Any]] = []
         for graph, triples in by_graph.items():
             for built in rows_from_triples(graph, triples):
                 entry = row_adapters._row_to_graph_entry(built, "public")

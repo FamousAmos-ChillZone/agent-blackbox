@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, UTC
 from typing import AbstractSet, Any, Callable, Dict, FrozenSet, List, Mapping, Optional, Tuple
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -78,8 +78,8 @@ class CuratorRecord:
     identifier: str
     sequence: int
     day: str
-    fields: Tuple[Tuple[str, str], ...]
-    signers: FrozenSet[str]
+    fields: tuple[tuple[str, str], ...]
+    signers: frozenset[str]
 
     def field(self, name: str) -> str:
         return dict(self.fields).get(name, "")
@@ -88,14 +88,14 @@ class CuratorRecord:
 # -- per-type payload validators (Strategy table): extras in -> extras out, or None
 
 
-def _reason_from(allowed: Tuple[str, ...]) -> Callable[[Mapping[str, str]], Optional[Dict[str, str]]]:
-    def check(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
+def _reason_from(allowed: tuple[str, ...]) -> Callable[[Mapping[str, str]], Optional[dict[str, str]]]:
+    def check(extras: Mapping[str, str]) -> Optional[dict[str, str]]:
         reason = extras.get("reason", "")
         return {"reason": reason} if set(extras) == {"reason"} and reason in allowed else None
     return check
 
 
-def _no_extras(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
+def _no_extras(extras: Mapping[str, str]) -> Optional[dict[str, str]]:
     return {} if not extras else None
 
 
@@ -109,7 +109,7 @@ EVIDENCE_REFERENCE = re.compile(
     r"|reproduced:[0-9a-f]{64})")
 
 
-def _confirmation(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
+def _confirmation(extras: Mapping[str, str]) -> Optional[dict[str, str]]:
     """No extras, or exactly one signed evidence reference. The COMMUNITY
     authority's confirmations count only with one (``curator_view``); the
     verified authority's stay as shipped, so every reader version accepts them."""
@@ -119,8 +119,8 @@ def _confirmation(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
     return dict(extras) if ok else None
 
 
-def _days(*names: str) -> Callable[[Mapping[str, str]], Optional[Dict[str, str]]]:
-    def check(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
+def _days(*names: str) -> Callable[[Mapping[str, str]], Optional[dict[str, str]]]:
+    def check(extras: Mapping[str, str]) -> Optional[dict[str, str]]:
         ok = set(extras) == set(names) and all(_DAY.fullmatch(extras[n]) for n in names)
         return dict(extras) if ok else None
     return check
@@ -133,7 +133,7 @@ def _days(*names: str) -> Callable[[Mapping[str, str]], Optional[Dict[str, str]]
 ATTESTABLE_STAGES = frozenset({"reported", "held", "corroborated", "deferred"})
 
 
-def _attested_stage(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
+def _attested_stage(extras: Mapping[str, str]) -> Optional[dict[str, str]]:
     return dict(extras) if set(extras) == {"stage"} and extras["stage"] in ATTESTABLE_STAGES else None
 
 
@@ -141,7 +141,7 @@ def _attested_stage(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
 PAUSE_MAX_DAYS = 7
 
 
-def _pause(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
+def _pause(extras: Mapping[str, str]) -> Optional[dict[str, str]]:
     return _days("until")(extras)
 
 
@@ -163,23 +163,23 @@ def _pause_within_limit(day: str, until: str) -> bool:
         return False
 
 
-def _backlog(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
+def _backlog(extras: Mapping[str, str]) -> Optional[dict[str, str]]:
     lanes = extras.get("lanes", "").split(",")
     ok = set(extras) == {"lanes", "until"} and bool(lanes) and set(lanes) <= _LANES and _DAY.fullmatch(extras["until"])
     return dict(extras) if ok else None
 
 
-def _heartbeat(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
+def _heartbeat(extras: Mapping[str, str]) -> Optional[dict[str, str]]:
     return dict(extras) if set(extras) == {"key"} and _KEY_HEX.fullmatch(extras["key"]) else None
 
 
-def _away(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
+def _away(extras: Mapping[str, str]) -> Optional[dict[str, str]]:
     ok = (set(extras) == {"key", "from", "until"} and _KEY_HEX.fullmatch(extras["key"])
           and _DAY.fullmatch(extras["from"]) and _DAY.fullmatch(extras["until"]))
     return dict(extras) if ok else None
 
 
-def _counted_author(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
+def _counted_author(extras: Mapping[str, str]) -> Optional[dict[str, str]]:
     """One counted-author entry: listed yes/no, class, org (partners), expiry,
     and the agent address the key belongs to (display only — the identity is
     the reporter KEY in the identifier, LES-014)."""
@@ -195,7 +195,7 @@ def _counted_author(extras: Mapping[str, str]) -> Optional[Dict[str, str]]:
     return dict(extras)
 
 
-_VALIDATORS: Dict[CuratorStatement, Callable[[Mapping[str, str]], Optional[Dict[str, str]]]] = {
+_VALIDATORS: dict[CuratorStatement, Callable[[Mapping[str, str]], Optional[dict[str, str]]]] = {
     CuratorStatement.REVOCATION: _reason_from(constants.REVOCATION_REASONS),
     CuratorStatement.REJECTION: _reason_from(constants.REJECTION_REASONS),
     CuratorStatement.CONFIRMATION: _confirmation,
@@ -222,7 +222,7 @@ def _identifier_ok(kind: CuratorStatement, identifier: str) -> bool:
         return False
 
 
-def _validated_payload(kind: CuratorStatement, payload: Mapping[str, str]) -> Optional[Tuple[str, str, Dict[str, str]]]:
+def _validated_payload(kind: CuratorStatement, payload: Mapping[str, str]) -> Optional[tuple[str, str, dict[str, str]]]:
     """(identifier, day, extras) when *payload* meets its type's closed schema."""
     if kind is CuratorStatement.PROMOTION:
         return None   # promotions are written in the verified-rule vocabulary (R6), not here
@@ -246,7 +246,7 @@ def sign_statement(kind: CuratorStatement, identifier: str, *, sequence: int, fi
     """The first signature on a curator statement (co-sign with
     :func:`..kernel.signing.cosign`). Raises ``ValueError`` for a payload that
     does not meet the type's closed schema."""
-    when = (day or datetime.now(timezone.utc).date()).isoformat()
+    when = (day or datetime.now(UTC).date()).isoformat()
     payload = {"identifier": identifier, "day": when, **dict(fields)}
     if _validated_payload(kind, payload) is None:
         raise ValueError(f"not a valid {kind.value} statement")
@@ -260,7 +260,7 @@ def statement_subject(kind: CuratorStatement, identifier: str, sequence: int) ->
     return f"urn:guardian:curator:{kind.value.split('.', 1)[1]}:{threat_ids.stable_hash(identifier, 24)}:{sequence}"
 
 
-def statement_quads(envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
+def statement_quads(envelope: signing.SignedEnvelope) -> list[rdf_terms.Quad]:
     """The graph quads for a signed curator statement."""
     kind = CuratorStatement(envelope.statement_type)
     identifier = envelope.payload["identifier"]
@@ -272,7 +272,7 @@ def statement_quads(envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
     ]
 
 
-def row_for_signed(text: str) -> Optional[Dict[str, str]]:
+def row_for_signed(text: str) -> Optional[dict[str, str]]:
     """The graph row a signed curator statement is published as, rebuilt from
     its TEXT alone (an export bundle holds texts, not rows) — None unless the
     text is a statement in the exact canonical form :func:`statement_quads`
@@ -289,7 +289,7 @@ def row_for_signed(text: str) -> Optional[Dict[str, str]]:
             SIGNED_STATEMENT_VAR: text}
 
 
-def manifest_quads(envelope: signing.SignedEnvelope) -> List[rdf_terms.Quad]:
+def manifest_quads(envelope: signing.SignedEnvelope) -> list[rdf_terms.Quad]:
     """The graph quads for a root-signed key manifest (published in the
     verified graph): subject ``urn:guardian:key-manifest:<root epoch>:<version>``,
     a new asset per manifest."""

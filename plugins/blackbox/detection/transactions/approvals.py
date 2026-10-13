@@ -82,8 +82,8 @@ def _amount_unlimited(text: str) -> bool:
         return False
 
 
-def _from_cast(words: List[str]) -> List[Approval]:
-    out: List[Approval] = []
+def _from_cast(words: list[str]) -> list[Approval]:
+    out: list[Approval] = []
     for index, word in enumerate(words):
         kind = _SIGNATURES.get(word.replace(" ", "").lower())
         if not kind or index + 2 >= len(words) or not re.fullmatch(_ADDRESS, words[index + 1]):
@@ -96,7 +96,7 @@ def _from_cast(words: List[str]) -> List[Approval]:
     return out
 
 
-def approvals_in(text: str) -> List[Approval]:
+def approvals_in(text: str) -> list[Approval]:
     """Every token approval *text* would send (see the module doc), each once."""
     if not text:
         return []
@@ -124,7 +124,7 @@ def _listed_by(ruleset: Any, address: str) -> str:
     return "public" if "public" in sources else (next(iter(sources)) if sources else "")
 
 
-def detect_token_approvals(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
+def detect_token_approvals(tool_name: str, args: Any, ruleset: Any) -> list[Finding]:
     """One finding for the riskiest approval in this call (see the module doc)."""
     approvals = [approval for approval in approvals_in(injection_scan_text(args))
                  if not crypto_secrets.protocol_contract(approval.spender)]   # STOPGAP KI-370, see known_contracts

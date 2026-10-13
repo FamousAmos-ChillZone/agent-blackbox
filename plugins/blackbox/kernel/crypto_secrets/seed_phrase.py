@@ -82,7 +82,7 @@ class SeedPhraseRun:
 
 
 @lru_cache(maxsize=1)
-def _wordlist() -> Optional[Dict[str, int]]:
+def _wordlist() -> Optional[dict[str, int]]:
     """``{word: index}`` from the pinned list, or ``None`` when the file is
     missing or not the pinned list (logged once at WARNING)."""
     try:
@@ -102,7 +102,7 @@ def wordlist_ready() -> bool:
     return _wordlist() is not None
 
 
-def checksum_entropy(indices: List[int]) -> Optional[bytes]:
+def checksum_entropy(indices: list[int]) -> Optional[bytes]:
     """The entropy behind word *indices* when their BIP-39 checksum holds,
     else ``None``. ``len(indices)`` must be a standard phrase length."""
     total_bits = len(indices) * 11
@@ -116,10 +116,10 @@ def checksum_entropy(indices: List[int]) -> Optional[bytes]:
     return entropy if (value & ((1 << checksum_bits) - 1)) == expected else None
 
 
-def _runs(text: str, words: Dict[str, int]) -> List[List[Tuple[int, int, int]]]:
+def _runs(text: str, words: dict[str, int]) -> list[list[tuple[int, int, int]]]:
     """Runs of consecutive list words as ``[(start, end, index), ...]``."""
-    runs: List[List[Tuple[int, int, int]]] = []
-    current: List[Tuple[int, int, int]] = []
+    runs: list[list[tuple[int, int, int]]] = []
+    current: list[tuple[int, int, int]] = []
     for match in _WORD.finditer(text):
         index = words.get(match.group(0).lower())
         joined = current and _GAP.fullmatch(text[current[-1][1]:match.start()])
@@ -134,7 +134,7 @@ def _runs(text: str, words: Dict[str, int]) -> List[List[Tuple[int, int, int]]]:
     return runs
 
 
-def _longest_valid(run: List[Tuple[int, int, int]]) -> Tuple[int, List[int], Optional[bytes]]:
+def _longest_valid(run: list[tuple[int, int, int]]) -> tuple[int, list[int], Optional[bytes]]:
     """``(length, offsets, entropy)`` for the longest standard length at which
     *run* holds a checksum-valid phrase: EVERY offset that is valid at that
     length (a label word such as "seed" joins the run, and the window that
@@ -143,7 +143,7 @@ def _longest_valid(run: List[Tuple[int, int, int]]) -> Tuple[int, List[int], Opt
     indices = [index for _start, _end, index in run]
     for length in PHRASE_LENGTHS:
         found = [(offset, checksum_entropy(indices[offset:offset + length]))
-                 for offset in range(0, len(indices) - length + 1)]
+                 for offset in range(len(indices) - length + 1)]
         valid = [(offset, entropy) for offset, entropy in found if entropy is not None]
         if valid:
             return length, [offset for offset, _entropy in valid], valid[0][1]
@@ -159,12 +159,12 @@ def _has_cue(text: str, span_start: int, span_end: int) -> bool:
     return bool(_CUE.search(nearby)) or numbered
 
 
-def find_seed_phrase_runs(text: str) -> List[SeedPhraseRun]:
+def find_seed_phrase_runs(text: str) -> list[SeedPhraseRun]:
     """Every run of 12+ consecutive wordlist words in *text* (see module doc)."""
     words = _wordlist()
     if not text or words is None:
         return []
-    out: List[SeedPhraseRun] = []
+    out: list[SeedPhraseRun] = []
     for run in _runs(text, words):
         valid_words, offsets, entropy = _longest_valid(run)
         windows = [run[offset:offset + valid_words] for offset in offsets] or [run]

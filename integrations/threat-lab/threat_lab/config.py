@@ -34,7 +34,7 @@ RETENTION_DAYS = 90
 #: Wall-clock cap for a whole job. Below the curator's deadline (jobs.DEADLINE_SECONDS: 120 s for
 #: levels 1–2, 300 s for level 4), so the lab reports the cap (deadline-reached) before the
 #: curator gives up on it; level 4 is the proposal's 5-minute microVM deadline less that margin.
-DEFAULT_DEADLINE_SECONDS: Dict[int, float] = {1: 60.0, 2: 90.0, 4: 280.0}
+DEFAULT_DEADLINE_SECONDS: dict[int, float] = {1: 60.0, 2: 90.0, 4: 280.0}
 _PINNED_IMAGE = re.compile(r"^[a-z0-9][a-z0-9._/:-]*@sha256:([0-9a-f]{64})$")
 
 
@@ -98,7 +98,7 @@ class LabConfig:
     runtime: str = "runsc"
     docker: str = "docker"
     caps: SandboxCaps = field(default_factory=SandboxCaps)
-    deadline_seconds: Dict[int, float] = field(default_factory=lambda: dict(DEFAULT_DEADLINE_SECONDS))
+    deadline_seconds: dict[int, float] = field(default_factory=lambda: dict(DEFAULT_DEADLINE_SECONDS))
     microvm: Optional[MicroVMSettings] = None
 
     def __post_init__(self) -> None:
@@ -108,7 +108,7 @@ class LabConfig:
             raise LabConfigError("network names the level-1 network; level 2 turns it off itself")
 
     @property
-    def served_levels(self) -> Tuple[int, ...]:
+    def served_levels(self) -> tuple[int, ...]:
         """The levels this lab runs: 4 on a Firecracker lab, 1–2 otherwise."""
         return MICROVM_LEVELS if self.microvm is not None else GVISOR_LEVELS
 

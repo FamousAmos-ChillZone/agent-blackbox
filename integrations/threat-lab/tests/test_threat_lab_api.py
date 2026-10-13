@@ -23,7 +23,7 @@ URL = "url:https://phish.example.test/login"
 class _FakeRunner:
     """Answers each run with a level-1 output; *fail_first* runs come back FAILED."""
 
-    def __init__(self, release: threading.Event = None, fail_first: int = 0) -> None:
+    def __init__(self, release: threading.Event | None = None, fail_first: int = 0) -> None:
         self.release = release
         self.fail_first = fail_first
         self.runs = []
@@ -95,7 +95,7 @@ def _quoted(key):
 
 def _wait_state(port, key, want):
     for _ in range(250):
-        status, record = _call(port, "GET", f"/jobs/{_quoted(key)}")
+        _status, record = _call(port, "GET", f"/jobs/{_quoted(key)}")
         if record.get("state") == want:
             return record
         time.sleep(0.02)
@@ -103,7 +103,7 @@ def _wait_state(port, key, want):
 
 
 def test_a_job_round_trips_to_its_raw_output(live):
-    port, runner, release = live
+    port, _runner, release = live
     body = _body()
     status, answer = _call(port, "POST", "/jobs", body)
     assert (status, answer) == (202, {"key": body["key"]})

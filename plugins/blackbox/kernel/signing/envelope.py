@@ -95,13 +95,13 @@ class SignedEnvelope:
     graph: str
     schema_version: int
     payload: Mapping[str, str]
-    signatures: Tuple[Signature, ...]
+    signatures: tuple[Signature, ...]
     chain: str = ""
     root_epoch: int = 0
     sequence: int = 0
 
     @property
-    def signers(self) -> Tuple[str, ...]:
+    def signers(self) -> tuple[str, ...]:
         """The CLAIMED signers, in order (unverified)."""
         return tuple(signature.signer for signature in self.signatures)
 
@@ -112,7 +112,7 @@ class SignedEnvelope:
         return json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
-def _domain_document(envelope: SignedEnvelope) -> Dict[str, Any]:
+def _domain_document(envelope: SignedEnvelope) -> dict[str, Any]:
     return {
         "v": ENVELOPE_VERSION,
         "type": envelope.statement_type,
@@ -148,7 +148,7 @@ def canonical_text(envelope: SignedEnvelope) -> str:
     signer. A copy that differs from a statement only in how it is written
     comes back as the statement's original text. The result is as UNVERIFIED
     as any text — verify it before relying on it."""
-    first: Dict[str, Signature] = {}
+    first: dict[str, Signature] = {}
     for signature in envelope.signatures:
         first.setdefault(signature.signer.lower(), Signature(signature.signer.lower(), signature.value.lower()))
     return replace(envelope, signatures=tuple(first[signer] for signer in sorted(first))).to_text()
@@ -250,7 +250,7 @@ def _valid(signature: Signature, message: bytes) -> bool:
 
 
 def verified_signers(envelope: Optional[SignedEnvelope], *, statement_type: str, environment: str, graph: str,
-                     chain: Optional[str] = None, root_epoch: Optional[int] = None) -> FrozenSet[str]:
+                     chain: Optional[str] = None, root_epoch: Optional[int] = None) -> frozenset[str]:
     """Every distinct signer (hex, lower-case) whose signature is valid for
     exactly this statement type, environment and graph — and this chain /
     root epoch when given. Empty when nothing verifies. Never raises."""

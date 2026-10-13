@@ -61,7 +61,7 @@ class PolicyConsent:
     def acceptance(self) -> Optional[Acceptance]:
         """The stored acceptance, or None (never given, withdrawn, or unreadable)."""
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
             return Acceptance(policy_hash=str(data["policy_hash"]), day=str(data["day"]), key=str(data["key"]))
         except (OSError, ValueError, KeyError, TypeError):
             return None

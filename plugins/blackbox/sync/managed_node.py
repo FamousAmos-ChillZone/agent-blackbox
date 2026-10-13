@@ -24,7 +24,7 @@ from . import node_process, process_limits
 # The node's sync profile lives in node_profile. These names stay reachable as
 # managed_node.<name>: sync/command.py calls them through this module and tests
 # patch them here.
-from .node_profile import (  # noqa: F401 - re-exported, see above
+from .node_profile import (
     _DKG_CONFIG_SYNC_SETTINGS,
     _DKG_ENV_ONLY_SETTINGS,
     _DKG_RECOVERY_SPEEDUPS,
@@ -91,7 +91,7 @@ def _managed_sync_lock():
         handle.close()
 
 
-def _dkg_sync_environment(cfg: BlackboxConfig) -> Dict[str, str]:
+def _dkg_sync_environment(cfg: BlackboxConfig) -> dict[str, str]:
     env = os.environ.copy()
     sync_settings = node_sync_settings(cfg)
     sync_settings.update(_persisted_dkg_sync_settings(cfg))
@@ -111,7 +111,7 @@ def _dkg_sync_environment(cfg: BlackboxConfig) -> Dict[str, str]:
     return env
 
 
-def _apply_process_limits(cfg: BlackboxConfig, env: Dict[str, str]) -> None:
+def _apply_process_limits(cfg: BlackboxConfig, env: dict[str, str]) -> None:
     """Give a restarted node the heap / queue / projection limits the installer
     chose (PR #21 runtime-safety gap): the recorded ones, else the installer's
     defaults for this host. Fail-open: an unsizeable host keeps Node's default."""
@@ -126,7 +126,7 @@ def _apply_process_limits(cfg: BlackboxConfig, env: Dict[str, str]) -> None:
 
 def _managed_dkg_node_executable(cfg: BlackboxConfig) -> Optional[Path]:
     """Find the Node executable whose ABI matches the installed DKG runtime."""
-    candidates: List[Path] = []
+    candidates: list[Path] = []
 
     def _candidate(value: object) -> None:
         if value:
@@ -144,7 +144,7 @@ def _managed_dkg_node_executable(cfg: BlackboxConfig) -> Optional[Path]:
 
     marker = Path(cfg.dkg_home) / ".blackbox-node-path"
     try:
-        _candidate(marker.read_text(encoding="utf-8").strip())
+        _candidate(marker.read_text(encoding="utf-8-sig").strip())
     except OSError:
         pass
     nvm_bin = os.environ.get("NVM_BIN")
@@ -179,7 +179,7 @@ def _node_runtime_matches_dkg(executable: Path, cfg: BlackboxConfig) -> bool:
     try:
         result = subprocess.run(
             [str(executable), "-e", probe, str(native_package)],
-            capture_output=True,
+            stdin=subprocess.DEVNULL, capture_output=True,
             text=True,
             timeout=10,
             check=False,
@@ -197,7 +197,7 @@ def _systemd_unit_of(pid: int, proc_root: Path = Path("/proc")) -> Optional[str]
     shell). Example cgroup-v2 line: ``0::/system.slice/blackbox-dkg.service``.
     """
     try:
-        lines = (proc_root / str(pid) / "cgroup").read_text(encoding="utf-8").splitlines()
+        lines = (proc_root / str(pid) / "cgroup").read_text(encoding="utf-8-sig").splitlines()
     except OSError:
         return None
     for line in lines:
@@ -207,7 +207,7 @@ def _systemd_unit_of(pid: int, proc_root: Path = Path("/proc")) -> Optional[str]
     return None
 
 
-def expected_node_settings(cfg: BlackboxConfig) -> Dict[str, str]:
+def expected_node_settings(cfg: BlackboxConfig) -> dict[str, str]:
     """The settings a running node must have for a sync to skip the restart.
 
     A node supervised by a service manager is restarted through it, with the
@@ -251,7 +251,7 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
         try:
             restarted = subprocess.run(
                 ["systemctl", "restart", unit],
-                capture_output=True,
+                stdin=subprocess.DEVNULL, capture_output=True,
                 text=True,
                 timeout=120,
                 check=False,
@@ -269,7 +269,7 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
         subprocess.run(
             [command, "stop"],
             env=env,
-            capture_output=True,
+            stdin=subprocess.DEVNULL, capture_output=True,
             text=True,
             timeout=60,
             check=False,
@@ -300,7 +300,7 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
         started = subprocess.run(
             [command, "start"],
             env=env,
-            capture_output=True,
+            stdin=subprocess.DEVNULL, capture_output=True,
             text=True,
             timeout=60,
             check=False,

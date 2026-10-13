@@ -61,14 +61,14 @@ class BeatReport:
     heartbeat: str = "not due"
     received: int = 0
     dropped: int = 0
-    cosigned: Tuple[str, ...] = ()
-    proposed: Tuple[str, ...] = ()
-    published: Tuple[str, ...] = ()
+    cosigned: tuple[str, ...] = ()
+    proposed: tuple[str, ...] = ()
+    published: tuple[str, ...] = ()
     credited: int = 0
     kept_alive: int = 0
     limited: int = 0
-    human: Tuple[HumanItem, ...] = ()
-    errors: Tuple[str, ...] = ()
+    human: tuple[HumanItem, ...] = ()
+    errors: tuple[str, ...] = ()
     looked_up: int = 0
     lab_jobs: int = 0
     batch: str = ""
@@ -101,20 +101,20 @@ class Run:
     kept_alive: int = 0
     limited: int = 0
     acknowledged: int = 0
-    cosigned: List[str] = field(default_factory=list)
-    proposed: List[str] = field(default_factory=list)
-    published: List[str] = field(default_factory=list)
-    human: List[HumanItem] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
-    addresses: Optional[Dict[str, str]] = None
+    cosigned: list[str] = field(default_factory=list)
+    proposed: list[str] = field(default_factory=list)
+    published: list[str] = field(default_factory=list)
+    human: list[HumanItem] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    addresses: Optional[dict[str, str]] = None
     #: Identifiers a step already acted on in THIS beat: the view was read when the beat
     #: began, so a later step must not act on what an earlier one just changed.
-    settled: Set[str] = field(default_factory=set)
+    settled: set[str] = field(default_factory=set)
     #: The admitted queue as this beat read it (:meth:`queue_view`), and what the sources said (look-up step).
     view: Optional[queue.DeltaView] = None
-    looked_up: Tuple["LookupResult", ...] = ()
-    checks: Dict[str, OwnCheck] = field(default_factory=dict)
-    lab: Optional["LabController"] = None
+    looked_up: tuple[LookupResult, ...] = ()
+    checks: dict[str, OwnCheck] = field(default_factory=dict)
+    lab: Optional[LabController] = None
     lab_jobs: int = 0
     batch: str = ""
     alarms: int = 0

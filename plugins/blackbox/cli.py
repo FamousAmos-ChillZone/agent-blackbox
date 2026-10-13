@@ -224,7 +224,7 @@ def _print_attached_targets() -> None:
             import json as _json
 
             cfg_path = ws / "openclaw.json"
-            data = _json.loads(cfg_path.read_text(encoding="utf-8")) if cfg_path.exists() else {}
+            data = _json.loads(cfg_path.read_text(encoding="utf-8-sig")) if cfg_path.exists() else {}
             allow = ((data.get("plugins") or {}).get("allow")) if isinstance(data, dict) else None
             if isinstance(allow, list) and "blackbox" in allow:
                 attached_openclaw.append(str(ws))

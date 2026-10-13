@@ -56,7 +56,7 @@ class ArtifactStore:
             raise ValueError("an artifact is named by its sha256")
         return self._root / digest
 
-    def sweep(self) -> List[str]:
+    def sweep(self) -> list[str]:
         """Delete artifacts older than the retention window; returns their names."""
         if not self._root.is_dir():
             return []

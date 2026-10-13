@@ -47,9 +47,9 @@ class ChainRecord:
     top_ups: Decimal = Decimal(0)
 
 
-def ledger_spend(transitions: Sequence["Transition"], since: float, until: float) -> Decimal:
+def ledger_spend(transitions: Sequence[Transition], since: float, until: float) -> Decimal:
     """TRAC the ledger says batches cost with the spend falling in ``[since, until)``."""
-    spent_at: Dict[str, "Transition"] = {}
+    spent_at: dict[str, Transition] = {}
     for step in transitions:
         record = step.record
         if record.cost_trac is not None and record.batch_id not in spent_at:
@@ -58,7 +58,7 @@ def ledger_spend(transitions: Sequence["Transition"], since: float, until: float
                 if since <= step.record.at < until and step.record.cost_trac is not None), Decimal(0))
 
 
-def wallet_drift(chain_record: ChainRecord, ledger: Sequence["Transition"]) -> List[HealthItem]:
+def wallet_drift(chain_record: ChainRecord, ledger: Sequence[Transition]) -> list[HealthItem]:
     """SECURITY when the balance dropped by more than the ledger's spend in the window."""
     dropped = chain_record.start_balance + chain_record.top_ups - chain_record.end_balance
     unexplained = dropped - ledger_spend(ledger, chain_record.since, chain_record.until)

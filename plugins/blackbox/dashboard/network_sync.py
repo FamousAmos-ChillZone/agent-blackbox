@@ -13,7 +13,7 @@ import sys
 from typing import List
 
 
-def network_sync_argv(timeout: int = 3600) -> List[str]:
+def network_sync_argv(timeout: int = 3600) -> list[str]:
     """Run the canonical verified graph sync in an isolated process."""
     return [
         sys.executable,

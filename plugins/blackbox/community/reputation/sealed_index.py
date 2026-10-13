@@ -56,14 +56,14 @@ def load_or_create_key(path: Path) -> Optional[bytes]:
         return None
 
 
-def seal(mapping: Dict[str, str], key: bytes) -> str:
+def seal(mapping: dict[str, str], key: bytes) -> str:
     """*mapping* (reporter key -> salt) as the text the index file holds: no reporter key is readable in it."""
     nonce = secrets.token_bytes(_NONCE_BYTES)
     sealed = AESGCM(key).encrypt(nonce, json.dumps(mapping, sort_keys=True).encode("utf-8"), None)
     return json.dumps({"v": FORMAT_VERSION, "sealed": (nonce + sealed).hex()})
 
 
-def open_sealed(text: str, key: Optional[bytes]) -> Optional[Dict[str, str]]:
+def open_sealed(text: str, key: Optional[bytes]) -> Optional[dict[str, str]]:
     """The mapping inside a sealed index, or None when *text* is not a sealed
     index or cannot be opened with *key* (the wrong key, no key, or a damaged file)."""
     try:

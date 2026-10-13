@@ -75,12 +75,12 @@ def is_solana_secret_key(material: Optional[bytes]) -> bool:
     return _public_key(material[:_SEED_BYTES]) == material[_SEED_BYTES:]
 
 
-def find_solana_secret_keys(text: str) -> List[Tuple[int, int]]:
+def find_solana_secret_keys(text: str) -> list[tuple[int, int]]:
     """Spans of every VERIFIED Solana secret key in *text* (base58 or JSON array), in order."""
     if not text:
         return []
-    spans: List[Tuple[int, int]] = []
-    candidates: List[Tuple["re.Match[str]", Callable[[str], Optional[bytes]]]] = []
+    spans: list[tuple[int, int]] = []
+    candidates: list[tuple[re.Match[str], Callable[[str], Optional[bytes]]]] = []
     candidates += [(m, _base58_decode) for m in _BASE58_KEY.finditer(text)]
     candidates += [(m, _json_bytes) for m in _JSON_KEY.finditer(text)]
     for match, decode in candidates[:_MAX_CANDIDATES]:

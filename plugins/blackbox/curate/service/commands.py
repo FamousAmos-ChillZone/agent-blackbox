@@ -103,7 +103,7 @@ def cmd_service(args: argparse.Namespace) -> int:
 
 
 def run_command(context: ContextFactory, *, peers: Sequence[str], interval: float, once: bool, publisher: bool = False,
-                steps: Optional["ServiceSteps"] = None) -> int:
+                steps: Optional[ServiceSteps] = None) -> int:
     """Run the curator service: beat, say what happened, sleep, repeat. With
     *once*, one beat; the exit code is 1 when a step of it failed. *publisher* —
     this node publishes the batches; *steps* — the trust-and-threat-lab steps

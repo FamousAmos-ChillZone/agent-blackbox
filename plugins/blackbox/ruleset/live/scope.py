@@ -30,7 +30,7 @@ from ...kernel.config import BlackboxConfig
 from ...kernel.dkg_client import DkgClient, DkgError
 from ...kernel.signing.graph_migration import GraphMigration
 from ...kernel.store import StoreClient, loopback_store_url
-from .asset_facts import (ECOSYSTEM_COUNT_PREFIX, AssetFacts, AssetTier,  # noqa: F401 — prefix re-exported
+from .asset_facts import (ECOSYSTEM_COUNT_PREFIX, AssetFacts, AssetTier,
                           read_new_asset_facts, tier_assets, totals)
 from .envelope_tier import decide_by_envelope, rule_disagrees
 from ... import community
@@ -64,10 +64,10 @@ class VerifiedScope:
 
     context_graph_id: str = ""
     store_url: str = ""
-    assertion_graphs: FrozenSet[str] = frozenset()
-    suppressed_subjects: FrozenSet[str] = frozenset()
-    revoked_identifiers: FrozenSet[str] = frozenset()
-    package_aliases: Mapping[str, Tuple[str, ...]] = field(default_factory=dict)
+    assertion_graphs: frozenset[str] = frozenset()
+    suppressed_subjects: frozenset[str] = frozenset()
+    revoked_identifiers: frozenset[str] = frozenset()
+    package_aliases: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     #: How many verified rules the live tiers hold (``dependency``, ``ioc``) — the
     #: counts the compile used to produce, now three aggregate queries per refresh.
     verified_counts: Mapping[str, int] = field(default_factory=dict)
@@ -85,7 +85,7 @@ class VerifiedScope:
         """True when lookups can run: a store to ask and assets to trust."""
         return bool(self.store_url and self.assertion_graphs)
 
-    def spellings(self, ecosystem: str, name: str) -> Tuple[str, ...]:
+    def spellings(self, ecosystem: str, name: str) -> tuple[str, ...]:
         """Every spelling of *name* the graph may store: the canonical one plus
         the aliases recorded for it."""
         canonical = threat_ids.canonical_package_name(ecosystem, name)
@@ -96,7 +96,7 @@ class VerifiedScope:
         fact = self.asset_facts.get(graph)
         return fact.tier if fact is not None else None
 
-    def as_tier_allows(self, graph: str, category: str, key: str, rule: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def as_tier_allows(self, graph: str, category: str, key: str, rule: dict[str, Any]) -> Optional[dict[str, Any]]:
         """*rule* (built from a row of *graph*, as ``row_adapters._row_to_rule``
         returned ``(category, key, rule)``) as its asset's tier allows — dict
         lookups only, the hot path's whole cost:
@@ -123,14 +123,14 @@ class VerifiedScope:
         return None if rule_disagrees(category, key, rule, signed) else signed.served(rule)
 
     @property
-    def refused_envelope_rows(self) -> Tuple[str, ...]:
+    def refused_envelope_rows(self) -> tuple[str, ...]:
         """SECURITY alarm input (R2): ``"<asset graph> <subject>"`` for every
         verified row ignored because its shown rule disagrees with its signed
         envelope — someone holding the publishing wallet copied a valid
         envelope onto another row. Empty = nothing to alarm on."""
         return tuple(sorted(f"{graph} {subject}" for graph, fact in self.asset_facts.items() for subject in fact.ignored))
 
-    def to_json(self) -> Dict[str, Any]:
+    def to_json(self) -> dict[str, Any]:
         return {
             "context_graph_id": self.context_graph_id,
             "store_url": self.store_url,
@@ -146,7 +146,7 @@ class VerifiedScope:
         }
 
     @classmethod
-    def from_json(cls, data: Any) -> "VerifiedScope":
+    def from_json(cls, data: Any) -> VerifiedScope:
         """A scope from :meth:`to_json` output; anything malformed is an empty scope."""
         if not isinstance(data, dict):
             return cls()
@@ -169,11 +169,11 @@ class VerifiedScope:
         )
 
 
-def _flag_only(rule: Dict[str, Any]) -> Dict[str, Any]:
+def _flag_only(rule: dict[str, Any]) -> dict[str, Any]:
     return {**rule, "source": FLAG_ONLY_SOURCE, "asset_tier": AssetTier.FLAG.value}
 
 
-def _strings(value: Any) -> FrozenSet[str]:
+def _strings(value: Any) -> frozenset[str]:
     return frozenset(str(item) for item in value) if isinstance(value, list) else frozenset()
 
 
@@ -230,9 +230,9 @@ def refresh_scope(
 
 
 def _scoped_assets(client: DkgClient, context_graph_id: str, store: Optional[StoreClient],
-                   old_graphs: FrozenSet[str], new_graphs: FrozenSet[str], facts: Dict[str, AssetFacts],
-                   legacy_uals: Optional[FrozenSet[str]],
-                   migration: Optional[GraphMigration]) -> Tuple[FrozenSet[str], Dict[str, AssetFacts]]:
+                   old_graphs: frozenset[str], new_graphs: frozenset[str], facts: dict[str, AssetFacts],
+                   legacy_uals: Optional[frozenset[str]],
+                   migration: Optional[GraphMigration]) -> tuple[frozenset[str], dict[str, AssetFacts]]:
     """(the assets in scope, the facts carried) for this refresh: the facts of
     the configured graph's *old_graphs* and the successor's *new_graphs* read
     (when a *store* is known), the cut-off applied (with a *migration*), and
@@ -253,7 +253,7 @@ def _scoped_assets(client: DkgClient, context_graph_id: str, store: Optional[Sto
 
 
 def _listed_assets(previous: VerifiedScope, confirmed: Optional[Sequence[str]], migration: Optional[GraphMigration],
-                   successor_confirmed: Optional[Sequence[str]]) -> Tuple[FrozenSet[str], FrozenSet[str]]:
+                   successor_confirmed: Optional[Sequence[str]]) -> tuple[frozenset[str], frozenset[str]]:
     """(the configured graph's listed assets, the successor's). A listing that
     could not be read (None) takes what the previous scope knew of: its
     in-scope assets — and, with a migration, also those it held facts for
@@ -264,15 +264,15 @@ def _listed_assets(previous: VerifiedScope, confirmed: Optional[Sequence[str]], 
             frozenset(successor_confirmed) if successor_confirmed is not None else new_graphs)
 
 
-def _by_graph(assets: FrozenSet[str], successor: str) -> Tuple[FrozenSet[str], FrozenSet[str]]:
+def _by_graph(assets: frozenset[str], successor: str) -> tuple[frozenset[str], frozenset[str]]:
     """*assets* split into (the configured graph's, the *successor*'s) by IRI prefix."""
     prefix = graph_queries.verifiable_memory_prefix(successor) if successor else ""
     in_successor = frozenset(asset for asset in assets if prefix and asset.startswith(prefix))
     return assets - in_successor, in_successor
 
 
-def _before_cut(assets: FrozenSet[str], facts: Mapping[str, AssetFacts], from_day: str,
-                legacy_uals: FrozenSet[str]) -> FrozenSet[str]:
+def _before_cut(assets: frozenset[str], facts: Mapping[str, AssetFacts], from_day: str,
+                legacy_uals: frozenset[str]) -> frozenset[str]:
     """The configured graph's *assets* still in scope once a successor is in
     effect: those in the verified legacy list, and those whose day is before
     *from_day*. Staying in scope needs a definite earlier day: an asset whose
@@ -288,8 +288,8 @@ def _before_cut(assets: FrozenSet[str], facts: Mapping[str, AssetFacts], from_da
 
 
 def _tier_new_assets(client: DkgClient, context_graph_id: str, store: StoreClient,
-                     facts: Dict[str, AssetFacts], legacy_uals: FrozenSet[str],
-                     successor: str = "") -> Dict[str, AssetFacts]:
+                     facts: dict[str, AssetFacts], legacy_uals: frozenset[str],
+                     successor: str = "") -> dict[str, AssetFacts]:
     """Decide every undecided asset once (§03.4): BLOCK when it is in the
     verified legacy list (R1), else from its signed envelopes against the
     manifest in force on its day (R2). The manifest history is read only when
@@ -313,7 +313,7 @@ def _tier_new_assets(client: DkgClient, context_graph_id: str, store: StoreClien
     return facts
 
 
-def _manifest_history(client: DkgClient, context_graph_id: str) -> Optional[Tuple[Any, ...]]:
+def _manifest_history(client: DkgClient, context_graph_id: str) -> Optional[tuple[Any, ...]]:
     """The verified graph's root-signed manifests (None = unreadable or none)."""
     try:
         environment = community.network_environment(client.status(timeout=5.0))

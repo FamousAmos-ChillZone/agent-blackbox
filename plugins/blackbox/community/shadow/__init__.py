@@ -21,7 +21,7 @@ from .metrics import MAX_SNAPSHOTS, Snapshot, build_snapshot, calibration_gap, l
 SHADOW_SUFFIX = " (shadow phase: monitor only)"
 
 
-def clamp_to_monitor(community: Mapping[str, Dict[str, Any]]) -> int:
+def clamp_to_monitor(community: Mapping[str, dict[str, Any]]) -> int:
     """Record the computed enforcement as ``shadowEnforcement`` and set every
     community rule to ``monitor`` (in place); returns how many were clamped
     from ``flag``. Idempotent."""

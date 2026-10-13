@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 _GEAR_KEYS = ("plugins", "entries", "blackbox")
 
 
-def read_settings() -> Dict[str, Any]:
+def read_settings() -> dict[str, Any]:
     """Return the current settings as a JSON-friendly, fully-defaulted dict."""
     cfg = load_blackbox_config()
     categories = {
@@ -63,7 +63,7 @@ def read_settings() -> Dict[str, Any]:
     }
 
 
-def _validate(payload: Dict[str, Any], *, sharing_consent: bool = False) -> Tuple[Dict[str, Any], List[str]]:
+def _validate(payload: dict[str, Any], *, sharing_consent: bool = False) -> tuple[dict[str, Any], list[str]]:
     """Coerce a settings *payload* into a validated ``blackbox`` config subtree.
 
     Returns ``(entry_updates, errors)``. Unknown keys and invalid values are
@@ -71,8 +71,8 @@ def _validate(payload: Dict[str, Any], *, sharing_consent: bool = False) -> Tupl
     can never corrupt the config. *sharing_consent* (R13, injected by the caller —
     the kernel never asks a feature): without it ``report: true`` is refused.
     """
-    errors: List[str] = []
-    updates: Dict[str, Any] = {}
+    errors: list[str] = []
+    updates: dict[str, Any] = {}
     if not isinstance(payload, dict):
         return {}, ["payload must be an object"]
 
@@ -101,13 +101,13 @@ def _validate(payload: Dict[str, Any], *, sharing_consent: bool = False) -> Tupl
 
     if "categories" in payload:
         cats = payload["categories"]
-        detection: Dict[str, Any] = {}
+        detection: dict[str, Any] = {}
         if isinstance(cats, dict):
             for cat in DETECTION_CATEGORIES:
                 item = cats.get(cat)
                 if not isinstance(item, dict):
                     continue
-                setting: Dict[str, Any] = {}
+                setting: dict[str, Any] = {}
                 if "enabled" in item:
                     if isinstance(item["enabled"], bool):
                         setting["enabled"] = item["enabled"]
@@ -128,7 +128,7 @@ def _validate(payload: Dict[str, Any], *, sharing_consent: bool = False) -> Tupl
     if "protected_paths" in payload:
         raw = payload["protected_paths"]
         if isinstance(raw, list):
-            paths: List[str] = []
+            paths: list[str] = []
             for item in raw:
                 text = str(item or "").strip()
                 if text and text not in paths:
@@ -139,7 +139,7 @@ def _validate(payload: Dict[str, Any], *, sharing_consent: bool = False) -> Tupl
 
     if "llm" in payload:
         raw = payload["llm"]
-        llm: Dict[str, Any] = {}
+        llm: dict[str, Any] = {}
         if isinstance(raw, dict):
             if "enabled" in raw:
                 if isinstance(raw["enabled"], bool):
@@ -164,7 +164,7 @@ def _validate(payload: Dict[str, Any], *, sharing_consent: bool = False) -> Tupl
     return updates, errors
 
 
-def write_settings(payload: Dict[str, Any], *, sharing_consent: bool = False) -> Dict[str, Any]:
+def write_settings(payload: dict[str, Any], *, sharing_consent: bool = False) -> dict[str, Any]:
     """Validate *payload* and persist it under ``plugins.entries.blackbox``.
 
     Returns ``{"ok": bool, "errors": [...], "settings": <new read_settings>}``.
@@ -189,7 +189,7 @@ def write_settings(payload: Dict[str, Any], *, sharing_consent: bool = False) ->
 _persist_lock = threading.Lock()
 
 
-def _persist(updates: Dict[str, Any]) -> bool:
+def _persist(updates: dict[str, Any]) -> bool:
     """Merge *updates* into the blackbox config entry. Prefer hermes' writer.
 
     Serialized under ``_persist_lock`` so concurrent saves can never lose
@@ -200,7 +200,7 @@ def _persist(updates: Dict[str, Any]) -> bool:
         return _persist_locked(updates)
 
 
-def _persist_locked(updates: Dict[str, Any]) -> bool:
+def _persist_locked(updates: dict[str, Any]) -> bool:
     try:
         from hermes_cli import config as hconfig
 
@@ -229,7 +229,7 @@ def _persist_locked(updates: Dict[str, Any]) -> bool:
         return False
 
 
-def _dig(root: Dict[str, Any], keys: Tuple[str, ...]) -> Dict[str, Any]:
+def _dig(root: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
     """Return the nested dict at *keys*, creating empty dicts along the way."""
     node = root
     for key in keys:
@@ -241,7 +241,7 @@ def _dig(root: Dict[str, Any], keys: Tuple[str, ...]) -> Dict[str, Any]:
     return node
 
 
-def _apply(entry: Dict[str, Any], updates: Dict[str, Any]) -> None:
+def _apply(entry: dict[str, Any], updates: dict[str, Any]) -> None:
     """Apply validated *updates* onto the blackbox config *entry* in place.
 
     ``detection`` and ``llm`` are deep-merged (so setting the model never drops

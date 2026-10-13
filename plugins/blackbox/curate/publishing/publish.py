@@ -66,7 +66,7 @@ class PublishOutcome(Enum):
 
 
 def publish(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, typed_code: Optional[str], yes: bool,
-            standing: str = "") -> Tuple[Proposal, str]:
+            standing: str = "") -> tuple[Proposal, str]:
     """Write an APPROVED proposal to its graph, behind content-bound consent.
     Returns (proposal, what happened); the text starts with "published" only
     when the statement was read back from the graph. *standing* — set ONLY by
@@ -127,7 +127,7 @@ def require_effective_manifest(ctx: CurateContext) -> None:
 TWINNED_STATEMENTS = frozenset({CuratorStatement.REVOCATION.value, CORRECTION_STATEMENT})
 
 
-def advisory_twin(envelope: signing.SignedEnvelope) -> Tuple[str, List[Dict[str, str]]]:
+def advisory_twin(envelope: signing.SignedEnvelope) -> tuple[str, list[dict[str, str]]]:
     """``(asset name, quads)`` of a revocation's or correction's advisory twin:
     the same signed text under a ``g:CuratorStatement`` subject, which changes
     the community graph's pulse fingerprint (``community.pulse``), so the pulse
@@ -197,7 +197,7 @@ def has_quorum(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedE
     return len(ctx.manifest.curator_signers(envelope, statement_type=kind.value, graph=proposal.graph)) >= needed
 
 
-def _write(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedEnvelope) -> Tuple[str, str, PublishOutcome]:
+def _write(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedEnvelope) -> tuple[str, str, PublishOutcome]:
     """Build the quads, write them to the graph the proposal was signed for and
     read them back; (asset name, graph, outcome)."""
     name, quads = _asset(proposal, envelope)
@@ -214,7 +214,7 @@ def _write(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedEnvel
     return name, graph, PublishOutcome.ALREADY_THERE if already else PublishOutcome.PUBLISHED
 
 
-def _asset(proposal: Proposal, envelope: signing.SignedEnvelope) -> Tuple[str, List[Dict[str, str]]]:
+def _asset(proposal: Proposal, envelope: signing.SignedEnvelope) -> tuple[str, list[dict[str, str]]]:
     """(asset name, quads) for a proposal, by its kind."""
     if proposal.kind == CuratorStatement.PROMOTION.value:
         _validated_promotion(envelope)
@@ -234,7 +234,7 @@ def _asset(proposal: Proposal, envelope: signing.SignedEnvelope) -> Tuple[str, L
     return name, community.curator_statement_quads(envelope)
 
 
-def _share(ctx: CurateContext, graph: str, name: str, quads: List[Dict[str, str]]) -> bool:
+def _share(ctx: CurateContext, graph: str, name: str, quads: list[dict[str, str]]) -> bool:
     """Share into the community graph; True when the node already held this
     asset (an earlier attempt got it there). Any other failure is raised."""
     try:
@@ -247,7 +247,7 @@ def _share(ctx: CurateContext, graph: str, name: str, quads: List[Dict[str, str]
     return bool(isinstance(result, dict) and result.get("idempotent"))
 
 
-def _readable(ctx: CurateContext, graph: str, view: str, quads: List[Dict[str, str]]) -> bool:
+def _readable(ctx: CurateContext, graph: str, view: str, quads: list[dict[str, str]]) -> bool:
     """True when the signed statement just written can be read from *graph*:
     an exact lookup of its subject AND its signed text (so another node's
     statement under the same subject does not count). Quads that carry no
@@ -320,7 +320,7 @@ class NodeBatchWriter:
         self._client = client
         self._graph = graph
 
-    def seal(self, name: str, quads: List[Dict[str, str]]) -> None:
+    def seal(self, name: str, quads: list[dict[str, str]]) -> None:
         """Write and seal the batch, then share it in full to shared memory — the
         node publishes only a complete share (KI-351). Both are free, so a
         failure here is a safe retry: nothing has been paid yet."""

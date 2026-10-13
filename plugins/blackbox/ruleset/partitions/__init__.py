@@ -25,10 +25,10 @@ from .rows import COLUMN_PREDICATES, THREAT_TYPES, rows_from_triples
 
 __all__ = [
     "COLUMN_PREDICATES",
+    "THREAT_TYPES",
     "DownloadTotals",
     "GrowthWatch",
     "PartitionRead",
-    "THREAT_TYPES",
     "catching_up",
     "forget_cached_assets",
     "progress",

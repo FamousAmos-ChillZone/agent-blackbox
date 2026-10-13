@@ -73,7 +73,7 @@ def _cache_path():
 
 def _read_cache() -> str:
     try:
-        data = json.loads(_cache_path().read_text(encoding="utf-8"))
+        data = json.loads(_cache_path().read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return ""
     graph = str(data.get("graph") or "") if isinstance(data, dict) else ""

@@ -51,7 +51,7 @@ def _epoch_days(cfg: Any) -> float:
 
 
 def remember_accepted_share(cfg: Any, *, name: str, identifier: str, subject: str, severity: str,
-                            quads: Iterable[Dict[str, str]], store: Optional[LiveReportStore] = None,
+                            quads: Iterable[dict[str, str]], store: Optional[LiveReportStore] = None,
                             now: Optional[float] = None) -> None:
     """Remember a report this node just got ACCEPTED, so it is kept alive. Fail-open."""
     days = _epoch_days(cfg)

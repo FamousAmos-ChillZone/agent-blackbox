@@ -90,7 +90,7 @@ def test_no_listed_address_means_nothing_is_derived():
     asked = []
     assert detect_own_wallet_keys("terminal", {"command": "echo hello"}, lambda: asked.append(1) or []) == []
     assert asked == []   # no 64-hex value: the address list is not even read
-    assert detect_own_wallet_keys("terminal", {"command": f"echo {secrets.token_hex(32)}"}, lambda: []) == []
+    assert detect_own_wallet_keys("terminal", {"command": f"echo {secrets.token_hex(32)}"}, list) == []
 
 
 def test_the_finding_names_neither_the_key_nor_the_address(mine):

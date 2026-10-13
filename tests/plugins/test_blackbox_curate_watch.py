@@ -31,7 +31,7 @@ from plugins.blackbox.curate.watch import (ChainRecord, CosignExpectation, Graph
                                            reconcile, unexpected_assets, wallet_drift)
 from plugins.blackbox.kernel import signing
 from plugins.blackbox.kernel.health import HealthClass, HealthItem
-from test_blackbox_curate import VM_GRAPH, FakeNode, _ctx, _machine, curators  # noqa: F401 - fixture
+from test_blackbox_curate import VM_GRAPH, FakeNode, _ctx, _machine, curators
 
 WATCH = Path(__file__).resolve().parents[2] / "plugins" / "blackbox" / "curate" / "watch"
 T0 = 1_790_000_000.0
@@ -206,18 +206,18 @@ def test_a_balance_drop_the_ledger_explains_is_nothing_and_one_it_does_not_is_se
     ledger = _bound_ledger(tmp_path)                           # spent 0.40 TRAC at T0 + 3
     window = dict(since=T0, until=T0 + 3600)
 
-    assert wallet_drift(ChainRecord(start_balance=Decimal("10"), end_balance=Decimal("9.60"), **window),
+    assert wallet_drift(ChainRecord(start_balance=Decimal(10), end_balance=Decimal("9.60"), **window),
                         ledger.transitions()) == []
-    assert wallet_drift(ChainRecord(start_balance=Decimal("10"), end_balance=Decimal("10.60"),
-                                    top_ups=Decimal("1"), **window), ledger.transitions()) == []
-    items = wallet_drift(ChainRecord(start_balance=Decimal("10"), end_balance=Decimal("4.60"), **window),
+    assert wallet_drift(ChainRecord(start_balance=Decimal(10), end_balance=Decimal("10.60"),
+                                    top_ups=Decimal(1), **window), ledger.transitions()) == []
+    items = wallet_drift(ChainRecord(start_balance=Decimal(10), end_balance=Decimal("4.60"), **window),
                          ledger.transitions())
     assert _classes(items) == [HealthClass.SECURITY] and "5.00 TRAC" in items[0].message
 
 
 def test_a_spend_outside_the_window_does_not_explain_a_drop(tmp_path):
     ledger = _bound_ledger(tmp_path)
-    later = ChainRecord(since=T0 + 60, until=T0 + 3600, start_balance=Decimal("10"), end_balance=Decimal("9.60"))
+    later = ChainRecord(since=T0 + 60, until=T0 + 3600, start_balance=Decimal(10), end_balance=Decimal("9.60"))
     assert _classes(wallet_drift(later, ledger.transitions())) == [HealthClass.SECURITY]
 
 
@@ -229,12 +229,12 @@ def test_a_minted_then_bound_batch_counts_its_cost_once(tmp_path):
     ledger.advance("b-1", PublishState.SUBMITTED)
     ledger.advance("b-1", PublishState.MINTED, ual="did:dkg:ours/1", cost_trac="0.40", cost_bytes=1000)
     ledger.reconcile_minted("b-1", readable_ual="did:dkg:ours/1")
-    record = ChainRecord(since=T0, until=T0 + 3600, start_balance=Decimal("10"), end_balance=Decimal("9.20"))
+    record = ChainRecord(since=T0, until=T0 + 3600, start_balance=Decimal(10), end_balance=Decimal("9.20"))
     assert _classes(wallet_drift(record, ledger.transitions())) == [HealthClass.SECURITY]   # 0.40 spent, not 0.80
     # The money left at MINTED, not at the later BOUND line that carries the same cost.
     minted_at, bound_at = (step.record.at for step in ledger.transitions()
                            if step.record.state in (PublishState.MINTED, PublishState.BOUND))
-    up_to_bound = ChainRecord(since=T0, until=bound_at, start_balance=Decimal("10"), end_balance=Decimal("9.60"))
+    up_to_bound = ChainRecord(since=T0, until=bound_at, start_balance=Decimal(10), end_balance=Decimal("9.60"))
     assert minted_at < bound_at and wallet_drift(up_to_bound, ledger.transitions()) == []
 
 
@@ -426,7 +426,7 @@ def test_the_metrics_payload_matches_the_shared_record_type(tmp_path, posts):
     """The sinks post C4's record (curate.console.PipelineMetrics) as it is — W3 keeps no copy of its own."""
     ledger = _bound_ledger(tmp_path)
     sources = MetricsSources(publish_ledger=lambda: ledger, lab_jobs=None, delivery=None, signing_log=None,
-                             wallet=lambda: WalletBalance(trac=Decimal("12.5"), gas=Decimal("3")))
+                             wallet=lambda: WalletBalance(trac=Decimal("12.5"), gas=Decimal(3)))
     record = console.collect_metrics(sources, context=None, now=T0 + 3600)
     assert type(record) is PipelineMetrics
 

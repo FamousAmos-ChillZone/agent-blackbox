@@ -24,7 +24,7 @@ _REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "tests" / "plugins"))
 
-from _blackbox_loader import load_blackbox  # noqa: E402
+from _blackbox_loader import load_blackbox
 
 action_parsing = load_blackbox("detection.action_parsing")
 report_builder = load_blackbox("community.report_builder")

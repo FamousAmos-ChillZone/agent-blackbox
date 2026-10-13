@@ -57,7 +57,7 @@ def _network(monkeypatch):
                 "signedStatement": heartbeat.to_text()}
     node = Store(
         verified=[theirs.manifest_row(), theirs.row(Kind.COUNTED_AUTHORS, f"author:{acme.author}",
-                                                    _entry(acme.author, **{"expires": "2027-01-01"}) | {"class": "partner", "org": "acme"})],
+                                                    _entry(acme.author, expires="2027-01-01") | {"class": "partner", "org": "acme"})],
         community=[ours.manifest_row(), ours.row(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _entry(alice.author, expires="2026-12-01")),
                    ours.row(Kind.CONFIRMATION, IP, CITED), beat_row],
         reports=[signed_row(IP, alice), signed_row(IP, newcomer), signed_row("ioc:ip:203.0.113.8", newcomer)])

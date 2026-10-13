@@ -22,12 +22,12 @@ from .store import MAX_LIVE, LiveReport, LiveReportStore
 
 __all__ = [
     "DEFAULT_EPOCH_DAYS",
-    "Epoch",
-    "LiveReport",
-    "LiveReportStore",
     "MAX_COPIES_PER_BEAT",
     "MAX_LIVE",
     "OUTCOME_KEPT_ALIVE",
+    "Epoch",
+    "LiveReport",
+    "LiveReportStore",
     "copy_name",
     "current_epoch",
     "forget_retracted",

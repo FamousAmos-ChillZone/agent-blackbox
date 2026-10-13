@@ -67,7 +67,7 @@ def _b64(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii")
 
 
-def _parse_hash(stored: str) -> Tuple[bytes, bytes]:
+def _parse_hash(stored: str) -> tuple[bytes, bytes]:
     """``(salt, digest)`` from a :func:`hash_login_passphrase` string; ValueError otherwise."""
     scheme, salt, digest = stored.split("$")
     if scheme != _HASH_SCHEME:
@@ -94,11 +94,11 @@ class ConsoleSessions:
         self._salt, self._digest = _parse_hash(passphrase_hash)
         self._clock = clock
         self._lock = threading.Lock()
-        self._sessions: Dict[str, _Session] = {}
+        self._sessions: dict[str, _Session] = {}
         self._failed_logins = 0
         self._locked_until = 0.0
 
-    def begin(self) -> Tuple[str, str]:
+    def begin(self) -> tuple[str, str]:
         """A new PENDING session for the login form: ``(session id, csrf token)``."""
         with self._lock:
             return self._create(authenticated=False)
@@ -152,7 +152,7 @@ class ConsoleSessions:
             return None
         return session
 
-    def _create(self, *, authenticated: bool) -> Tuple[str, str]:
+    def _create(self, *, authenticated: bool) -> tuple[str, str]:
         now = self._clock()
         for stale in [sid for sid, s in self._sessions.items() if now - s.last_seen >= IDLE_SECONDS]:
             del self._sessions[stale]
@@ -166,5 +166,11 @@ class ConsoleSessions:
         return session_id, csrf
 
 
-__all__ = ["ConsoleSessions", "hash_login_passphrase", "IDLE_SECONDS", "MAX_SESSIONS",
-           "MAX_FAILED_LOGINS", "LOCKOUT_SECONDS"]
+__all__ = [
+    "IDLE_SECONDS",
+    "LOCKOUT_SECONDS",
+    "MAX_FAILED_LOGINS",
+    "MAX_SESSIONS",
+    "ConsoleSessions",
+    "hash_login_passphrase",
+]

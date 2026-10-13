@@ -30,7 +30,7 @@ from ...kernel.sparql_text import page_rows
 from . import manifests
 
 
-def verified_manifest_history(client: Any, graph: str, environment: str) -> Optional[Tuple[key_manifest.ManifestVerdict, ...]]:
+def verified_manifest_history(client: Any, graph: str, environment: str) -> Optional[tuple[key_manifest.ManifestVerdict, ...]]:
     """Every manifest a pinned root signed for *environment* and the verified
     *graph*, freeze-only verdicts included (they can still conflict); () when
     no root is pinned for *environment*; None when the read failed (LES-011:

@@ -15,7 +15,7 @@ import json
 import stat
 import types
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from typing import List
 
 import pytest
@@ -33,7 +33,7 @@ from plugins.blackbox.curate.console.root_store import EncryptedRootStore, RootS
 from plugins.blackbox.curate.watch import SigningLog
 from plugins.blackbox.kernel import signing
 from plugins.blackbox.kernel.signing.key_manifest import KEY_MANIFEST_STATEMENT
-from test_blackbox_curate import FakeNode, _ctx, curators  # noqa: F401 - fixture
+from test_blackbox_curate import FakeNode, _ctx, curators
 
 PASSPHRASE = "correct horse battery staple"
 NOW = 1_800_000_000.0
@@ -153,7 +153,7 @@ def test_a_second_sign_without_a_fresh_factor_is_refused(console):
 @pytest.mark.parametrize("passphrase, use_valid_code", [("wrong passphrase entirely", True),
                                                          (PASSPHRASE, False)])
 def test_a_wrong_passphrase_or_a_wrong_factor_signs_nothing(console, monkeypatch, passphrase, use_valid_code):
-    opened: List[object] = []
+    opened: list[object] = []
     real_open = console.store.open
     monkeypatch.setattr(console.store, "open", lambda p: opened.append(p) or real_open(p))
     valid = console.code()
@@ -168,7 +168,7 @@ def test_a_wrong_passphrase_or_a_wrong_factor_signs_nothing(console, monkeypatch
         assert not console.factor.consume(code)              # the failed attempt still spent the code
 
 
-def _reaches_a_private_key(roots) -> List[str]:
+def _reaches_a_private_key(roots) -> list[str]:
     """Walk everything reachable from *roots* (skipping modules, classes and
     functions) and name any Ed25519PrivateKey found."""
     seen, found, frontier = set(), [], list(roots)
@@ -191,7 +191,7 @@ def _console_objects(console) -> list:
 
 @pytest.mark.parametrize("fails", [False, True])
 def test_no_console_object_references_the_root_after_sign_returns(console, monkeypatch, fails):
-    captured: List[Ed25519PrivateKey] = []
+    captured: list[Ed25519PrivateKey] = []
     real_open = console.store.open
 
     def spy_open(passphrase):
@@ -235,7 +235,7 @@ def test_two_factor_objects_on_one_state_file_accept_a_code_once(console):
 
     other = TotpSecondFactor(console.factor._path, clock=console.clock)
     code = console.code()
-    results: List[bool] = []
+    results: list[bool] = []
     real_write = console.factor._write
 
     def write_after_a_racing_consume(secret, step):
@@ -273,12 +273,12 @@ def test_an_unexpected_choke_point_failure_leaves_no_key_in_the_traceback(consol
 
 # -- the console app: three server-side gates (C2, §03.1) ------------------------
 
-from plugins.blackbox.curate.console.app import (  # noqa: E402
+from plugins.blackbox.curate.console.app import (
     SESSION_COOKIE,
     ConsoleSettings,
     create_console_app,
 )
-from plugins.blackbox.curate.console.session import (  # noqa: E402
+from plugins.blackbox.curate.console.session import (
     IDLE_SECONDS,
     LOCKOUT_SECONDS,
     MAX_FAILED_LOGINS,
@@ -455,16 +455,16 @@ def test_the_console_uses_the_kernel_boundary_and_the_dashboard_never_imports_cu
 
 # -- the console routes: join, approve/decline, removal, renewal (C3, §03.2) ------
 
-from plugins.blackbox.curate.console import ConsoleServices, add_console_routes  # noqa: E402
-from plugins.blackbox.curate.console.roster import (  # noqa: E402
+from plugins.blackbox.curate.console import ConsoleServices, add_console_routes
+from plugins.blackbox.curate.console.roster import (
     ConsoleState,
     RosterError,
     SignedList,
     renewal_status,
 )
-from plugins.blackbox.curate.proposal import ProposalState, ProposalStore  # noqa: E402
-from plugins.blackbox.kernel.signing import key_manifest as km  # noqa: E402
-from plugins.blackbox.kernel.signing.trust_anchors import RootPins  # noqa: E402
+from plugins.blackbox.curate.proposal import ProposalState, ProposalStore
+from plugins.blackbox.kernel.signing import key_manifest as km
+from plugins.blackbox.kernel.signing.trust_anchors import RootPins
 
 PASSING_SELF_TEST = {"day": "2027-01-14", "threatsConfirmed": 10, "cleanRejected": 10, "unprovenLeft": 2}
 ISSUED = "2027-01-01"   # NOW (1.8e9) is 2027-01-15 UTC
@@ -676,7 +676,7 @@ def test_renewal_reminders_at_40_50_55_and_the_alarm_inside_5_days(routed, today
     status = renewal_status(routed.effective[0], today)
     assert (status.stage, status.milestone, status.days_left, status.expires) == (stage, milestone, days_left,
                                                                                   "2027-03-02")
-    routed.console.clock.at = datetime.fromisoformat(today).replace(hour=12, tzinfo=timezone.utc).timestamp()
+    routed.console.clock.at = datetime.fromisoformat(today).replace(hour=12, tzinfo=UTC).timestamp()
     assert routed.http.get("/api/renewal", headers=TAILSCALE).json() == status.as_dict()
 
 
@@ -722,7 +722,7 @@ def test_another_epochs_narrowing_list_or_version_does_not_count(routed):
 
 
 def test_a_signature_on_an_unpinned_root_still_counts_toward_the_version_and_24_h(routed):
-    first, second = routed.effective[0].curator_keys[:2]
+    first, _second = routed.effective[0].curator_keys[:2]
     services = routed.app.state.console_services
     object.__setattr__(services, "roots", lambda environment: RootPins.unbound({"b" * 64}))
     res = routed.http.post(f"/api/curators/{first}/remove", headers=routed.headers, json=routed.sign_body())
@@ -774,7 +774,7 @@ def test_two_removals_racing_sign_one_list_never_two_at_one_order(routed):
         barrier.wait()
         try:
             outcomes.append(actions.remove(key, PASSPHRASE, "123456")["diff"]["version"])
-        except Exception as exc:  # noqa: BLE001 - the refusal is the expected outcome for one of them
+        except Exception as exc:
             outcomes.append(type(exc).__name__)
 
     first, second = routed.effective[0].curator_keys[:2]
@@ -801,7 +801,7 @@ def test_the_console_verb_parses_through_the_real_hermes_parser(tmp_path):
     env = {**os.environ, "HERMES_HOME": str(tmp_path / "hermes"), "PYTHONPATH": str(root)}
     probe = _REAL_PARSE + "print(json.dumps([args.func.__module__, args.func.__name__]))\n"
     done = subprocess.run([sys.executable, "-c", probe, json.dumps(["blackbox", "curate", "console", "--port", "9710"]),
-                           "port"], cwd=root, env=env, capture_output=True, text=True, timeout=120)
+                           "port"], cwd=root, env=env, capture_output=True, text=True, timeout=120, check=False)
     assert done.returncode == 0, done.stderr[-2000:]
     parsed, (module, name) = (json.loads(line) for line in done.stdout.strip().splitlines()[-2:])
     assert parsed == {"version": False, "command": "blackbox", "value": 9710}
@@ -827,10 +827,10 @@ def test_the_console_verb_refuses_to_start_without_its_settings(monkeypatch, tmp
 
 # -- the console metrics view (C4, §03.4, F-035) -------------------------------------
 
-from decimal import Decimal  # noqa: E402
+from decimal import Decimal
 
-from plugins.blackbox.community.statements import curator_view as metrics_cv  # noqa: E402
-from plugins.blackbox.curate.console import (  # noqa: E402
+from plugins.blackbox.community.statements import curator_view as metrics_cv
+from plugins.blackbox.curate.console import (
     METRIC_NAMES,
     MetricsSources,
     PipelineMetrics,
@@ -838,13 +838,13 @@ from plugins.blackbox.curate.console import (  # noqa: E402
     WalletBalance,
     collect_metrics,
 )
-from plugins.blackbox.curate.console.metrics import NEVER, UNAVAILABLE, open_queue_items  # noqa: E402
-from plugins.blackbox.curate.lab.jobs import LabJobStore  # noqa: E402
-from plugins.blackbox.curate.publishing.ledger import BatchEntry, PublishLedger, PublishState  # noqa: E402
-from plugins.blackbox.curate.queue import Lane  # noqa: E402
-from plugins.blackbox.curate.sources import LookupItem  # noqa: E402
-from plugins.blackbox.curate.transport import ALARM_AFTER_BEATS, DeliveryLedger  # noqa: E402
-from plugins.blackbox.kernel.health.manifest_watch import key_fingerprint  # noqa: E402
+from plugins.blackbox.curate.console.metrics import NEVER, UNAVAILABLE, open_queue_items
+from plugins.blackbox.curate.lab.jobs import LabJobStore
+from plugins.blackbox.curate.publishing.ledger import BatchEntry, PublishLedger, PublishState
+from plugins.blackbox.curate.queue import Lane
+from plugins.blackbox.curate.sources import LookupItem
+from plugins.blackbox.curate.transport import ALARM_AFTER_BEATS, DeliveryLedger
+from plugins.blackbox.kernel.health.manifest_watch import key_fingerprint
 
 _LAB_PEER = "12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyKndHXjZM"
 _DAY = 86_400
@@ -896,7 +896,7 @@ def stores(tmp_path, curators):
     sources = MetricsSources(
         publish_ledger=lambda: publish, lab_jobs=lambda: lab, delivery=lambda: delivery,
         signing_log=lambda: SigningLog(log_path), queue=lambda _ctx, _today: items,
-        wallet=lambda: WalletBalance(trac=Decimal("1.0"), gas=Decimal("5"), gas_per_batch=Decimal("1")),
+        wallet=lambda: WalletBalance(trac=Decimal("1.0"), gas=Decimal(5), gas_per_batch=Decimal(1)),
         uptake=lambda: UpdateUptake("0.9.0", NOW - 8 * _DAY, installs_on_release=30, installs_total=40))
     return types.SimpleNamespace(sources=sources, ctx=ctx, manifest=manifest, beating=beating)
 
@@ -965,7 +965,7 @@ def test_empty_readable_stores_say_never_or_zero_not_unavailable(tmp_path):
 def test_no_floor_without_a_batch_cost_and_uptake_waits_seven_days(tmp_path):
     sources = MetricsSources(publish_ledger=lambda: PublishLedger(tmp_path / "none.jsonl"), lab_jobs=None,
                              delivery=None, signing_log=None,
-                             wallet=lambda: WalletBalance(trac=Decimal("3"), gas=Decimal("1")),
+                             wallet=lambda: WalletBalance(trac=Decimal(3), gas=Decimal(1)),
                              uptake=lambda: UpdateUptake("0.9.1", NOW - 3 * _DAY, 5, 10))
     shown = collect_metrics(sources, None, NOW).as_dict()
     assert shown["wallet_trac"] == "3"

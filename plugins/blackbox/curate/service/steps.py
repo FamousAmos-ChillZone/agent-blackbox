@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from ... import community
@@ -64,7 +64,7 @@ from .report import SETTLED, HumanItem, Run
 ADVISORY_SOURCE = "osv"
 _ADVISORY = "advisory:"
 #: A ledger check (W2): this node's context and the time → the health items it raises.
-LedgerCheck = Callable[[CurateContext, float], List[HealthItem]]
+LedgerCheck = Callable[[CurateContext, float], list[HealthItem]]
 #: The batch outcomes that are an error of the step (the publisher keeps the batch and retries it).
 _BATCH_ERRORS = frozenset({"failed", "could-not-tell"})
 
@@ -102,7 +102,7 @@ class ServiceSteps:
         self._ledger_checks, self._clock = tuple(ledger_checks), clock
 
     @classmethod
-    def for_node(cls, *, publisher: bool, beat_seconds: float) -> "ServiceSteps":
+    def for_node(cls, *, publisher: bool, beat_seconds: float) -> ServiceSteps:
         """A curator node's steps: every source, the weekly withdrawal re-check and the
         alarms; the batch publisher only with *publisher*. No lab yet: a node has no lab
         configuration (URL, controller key, image hashes) to build a :class:`LabWiring` from."""
@@ -202,7 +202,7 @@ def own_check_from(verdicts: Sequence[OwnCheck]) -> OwnCheck:
     return advised if advised is not None else OwnCheck(sources_say(verdicts))
 
 
-def cited_confirmations(view: community.CuratorView) -> Tuple[CitedConfirmation, ...]:
+def cited_confirmations(view: community.CuratorView) -> tuple[CitedConfirmation, ...]:
     """The confirmations in *view* that cite an advisory, as the withdrawal watcher re-checks them."""
     return tuple(CitedConfirmation(record.identifier, ADVISORY_SOURCE, record.field("evidence")[len(_ADVISORY):],
                                    tested_day=record.day)
@@ -215,9 +215,9 @@ def _settled(run: Run, identifier: str) -> bool:
     return identifier in run.settled or (verdict is not None and verdict.kind in SETTLED)
 
 
-def _authors_by_identifier(ctx: CurateContext) -> Dict[str, Tuple[str, ...]]:
+def _authors_by_identifier(ctx: CurateContext) -> dict[str, tuple[str, ...]]:
     """The verified reporter keys behind each community threat (read once a beat, only when the lab may run)."""
-    authors: Dict[str, List[str]] = {}
+    authors: dict[str, list[str]] = {}
     for report in community.read_verified_reports(ctx.client, ctx.cfg).reports:
         authors.setdefault(report.identifier, []).append(report.author)
     return {identifier: tuple(keys) for identifier, keys in authors.items()}
@@ -226,7 +226,7 @@ def _authors_by_identifier(ctx: CurateContext) -> Dict[str, Tuple[str, ...]]:
 def _day(first_seen: object, today: str) -> str:
     """The UTC day of a ``firstSeen`` epoch; *today* when it is absent or unreadable."""
     try:
-        return datetime.fromtimestamp(float(first_seen), timezone.utc).date().isoformat() if first_seen else today
+        return datetime.fromtimestamp(float(first_seen), UTC).date().isoformat() if first_seen else today
     except (TypeError, ValueError, OverflowError, OSError):
         return today
 

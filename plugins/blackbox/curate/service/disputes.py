@@ -37,7 +37,7 @@ import os
 import secrets
 import threading
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from enum import Enum
 from pathlib import Path
 from typing import AbstractSet, Any, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
@@ -84,7 +84,7 @@ class DisputeRecord:
         """When the retraction is due (epoch seconds)."""
         return self.filed_at + RETRACT_WITHIN_SECONDS
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -99,17 +99,17 @@ class DisputeStore:
         home = home or keys.curate_home()
         self._path, self._contacts = home / _DISPUTES_FILE, home / _CONTACTS_FILE
 
-    def all(self) -> List[DisputeRecord]:
+    def all(self) -> list[DisputeRecord]:
         return [DisputeRecord(**entry) for entry in self._read(self._path).values()]
 
     def get(self, dispute_id: str) -> Optional[DisputeRecord]:
         entry = self._read(self._path).get(dispute_id)
         return DisputeRecord(**entry) if entry else None
 
-    def open_records(self) -> List[DisputeRecord]:
+    def open_records(self) -> list[DisputeRecord]:
         return sorted((record for record in self.all() if record.open), key=lambda record: record.filed_at)
 
-    def open_identifiers(self) -> FrozenSet[str]:
+    def open_identifiers(self) -> frozenset[str]:
         """What :func:`queue.delta_view` admits to lane ``dispute``."""
         return frozenset(record.identifier for record in self.open_records())
 
@@ -145,9 +145,9 @@ class DisputeStore:
             return DisputeRecord(**entry)
 
     @staticmethod
-    def _read(path: Path) -> Dict[str, Any]:
+    def _read(path: Path) -> dict[str, Any]:
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
         except (OSError, ValueError):
             return {}
         return data if isinstance(data, dict) else {}
@@ -204,11 +204,11 @@ class DisputeOutcome:
 def lookup_item(record: DisputeRecord) -> LookupItem:
     """The dispute as the look-up step sees it: lane ``dispute``, due every beat while open."""
     return LookupItem(identifier=record.identifier, lane=Lane.DISPUTE,
-                      first_seen=datetime.fromtimestamp(record.filed_at, timezone.utc).date().isoformat())
+                      first_seen=datetime.fromtimestamp(record.filed_at, UTC).date().isoformat())
 
 
 def facts_from_lookup(result: LookupResult, *, citable_sources: AbstractSet[str],
-                      lab: Tuple[Evidence, ...] = ()) -> VerdictFacts:
+                      lab: tuple[Evidence, ...] = ()) -> VerdictFacts:
     """This curator's facts from its own source answers and lab runs.
     ``citable_listing`` — the first FOUND answer from a citable source;
     ``sources_clean`` — at least one source answered "not listed" and none
@@ -233,7 +233,7 @@ def rerun(record: DisputeRecord, facts: VerdictFacts, never_flag: AbstractSet[st
 
 
 def settle(store: DisputeStore, ledger: reputation.ReputationLedger, outcome: DisputeOutcome, *,
-           reporters: Iterable[str], fabricated: bool, today: str, now: float) -> Tuple[str, ...]:
+           reporters: Iterable[str], fabricated: bool, today: str, now: float) -> tuple[str, ...]:
     """Close the dispute once its outcome is final (the correction published,
     or the listing upheld) and return the reporters given a strike: each
     reporter of a RETRACTED listing a person found *fabricated*, once — a
@@ -251,12 +251,12 @@ def settle(store: DisputeStore, ledger: reputation.ReputationLedger, outcome: Di
     return struck
 
 
-def overdue(store: DisputeStore, now: float) -> List[DisputeRecord]:
+def overdue(store: DisputeStore, now: float) -> list[DisputeRecord]:
     """Open disputes past their retraction deadline, oldest first."""
     return [record for record in store.open_records() if now > record.deadline]
 
 
-def dispute_health_items(now: float, store: Optional[DisputeStore] = None) -> List[HealthItem]:
+def dispute_health_items(now: float, store: Optional[DisputeStore] = None) -> list[HealthItem]:
     """One ACTION item per dispute open past the 72 h deadline (none on a node with no disputes)."""
     return [HealthItem("operator", HealthClass.ACTION,
                        f"dispute {record.dispute_id} on {record.identifier} is past its 72 h retraction deadline",

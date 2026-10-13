@@ -6,6 +6,8 @@ Three pure helpers, so the route body stays a wiring list:
 * ``_community_progress(cfg, rs, count)`` → ``{"count", "state", "label"}`` — the community
   tier's whole ``sync_progress`` entry. Its state is independent of the VM catch-up: the
   community tier is live on its own (a pulse can change it with no VM sync at all).
+* ``_is_hidden_swm_catchup_error`` / ``_is_retryable_durable_catchup_error`` — which recorded
+  catch-up errors the sync activity shows as a wait instead of a failure.
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ def _sync_label(tier: str, state: str) -> str:
     return f"{tier} {_SYNC_LABEL_SUFFIX.get(state, state)}"
 
 
-def _community_progress(cfg: Any, rs: Any, community: int) -> Dict[str, Any]:
+def _community_progress(cfg: Any, rs: Any, community: int) -> dict[str, Any]:
     """The ``sync_progress.community`` entry of /api/graph-status: ``{count, state, label}``.
     Its state is independent of the VM catch-up — the community tier is live on its own."""
     if not getattr(cfg, "community_graph_id", ""):
@@ -52,7 +54,7 @@ def _community_progress(cfg: Any, rs: Any, community: int) -> Dict[str, Any]:
 
 
 
-def not_subscribed_activity() -> Dict[str, Any]:
+def not_subscribed_activity() -> dict[str, Any]:
     """Sync-panel payload for a node with NO verified-graph subscription — says so,
     names the fix, and carries no clock (the pair showed '51 min elapsed' with nothing syncing)."""
     return {
@@ -63,3 +65,42 @@ def not_subscribed_activity() -> Dict[str, Any]:
         "started_at": None, "updated_at": None, "current": None, "expected": None,
         "percent": None, "indeterminate": True,
     }
+
+
+def _is_hidden_swm_catchup_error(value: Any) -> bool:
+    """Temporarily suppress the known DKG SWM catch-up UI failure."""
+    text = str(value or "").lower()
+    return "/api/shared-memory/catchup" in text and (
+        "transport error" in text or "timed out" in text or "timeout" in text
+    )
+
+
+def _is_retryable_durable_catchup_error(value: Any) -> bool:
+    """Recognize DKG's explicit transient durable-catchup response."""
+    text = str(value or "").lower()
+    compact = "".join(text.split())
+    return (
+        "/api/shared-memory/catchup" in text
+        and "durable_catchup_all_peers_failed" in text
+        and '"retryable":true' in compact
+    )
+
+
+
+def current_transfer_error(transfer: dict[str, Any], catchup: dict[str, Any]) -> str:
+    """The failed transfer's recorded error, or "" once a catch-up job started AFTER it.
+
+    A newer queued/running job supersedes the old failure: the sync activity shows the
+    live job ("Fetching graph snapshot"), not a stale "waiting for publisher" or error.
+    """
+    newer_job = (str(catchup.get("status") or "").lower() in {"queued", "running"}
+                 and _sync_time(catchup.get("startedAt")) > _sync_time(transfer.get("updated_at")))
+    return "" if newer_job else str(transfer.get("error") or "")
+
+
+def _sync_time(value: Any) -> float:
+    """A sync-state time as seconds (0.0 when missing or unreadable)."""
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0

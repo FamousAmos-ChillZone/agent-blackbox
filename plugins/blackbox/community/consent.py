@@ -32,7 +32,7 @@ import logging
 import os
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
@@ -60,7 +60,7 @@ class SharingConsentRecord:
 def terms_text() -> str:
     """The reporter terms as shipped ("" when the file is missing — then nothing can be consented to)."""
     try:
-        return TERMS_PATH.read_text(encoding="utf-8")
+        return TERMS_PATH.read_text(encoding="utf-8-sig")
     except OSError:
         return ""
 
@@ -82,7 +82,7 @@ def _record_path() -> Path:
 
 def current() -> Optional[SharingConsentRecord]:
     try:
-        data = json.loads(_record_path().read_text(encoding="utf-8"))
+        data = json.loads(_record_path().read_text(encoding="utf-8-sig"))
         return SharingConsentRecord(terms_hash=str(data.get("terms_hash", "")), terms_version=str(data.get("terms_version", "")),
                                     accepted_at=str(data.get("accepted_at", "")), withdrawn_at=str(data.get("withdrawn_at", "")))
     except (OSError, ValueError, KeyError, TypeError, AttributeError):   # a non-object JSON reads as no record
@@ -127,7 +127,7 @@ def record() -> Optional[SharingConsentRecord]:
     turning sharing back on must never depend on it. None when it could not be saved."""
     text = terms_text()
     entry = SharingConsentRecord(terms_hash=terms_hash(text) if text else "", terms_version=terms_version(text) if text else "",
-                                 accepted_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat())
+                                 accepted_at=datetime.now(UTC).replace(microsecond=0).isoformat())
     return entry if _save(entry) else None
 
 
@@ -156,7 +156,7 @@ def withdraw() -> bool:
     base = entry or SharingConsentRecord(terms_hash=terms_hash(text) if text else "", terms_version=terms_version(text) if text else "",
                                          accepted_at="")
     return _save(SharingConsentRecord(base.terms_hash, base.terms_version, base.accepted_at,
-                                      withdrawn_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat()))
+                                      withdrawn_at=datetime.now(UTC).replace(microsecond=0).isoformat()))
 
 
 def erase() -> bool:
@@ -166,7 +166,7 @@ def erase() -> bool:
     turns sharing back on deliberately. True when a record existed before."""
     existed = _record_path().exists()
     _save(SharingConsentRecord(terms_hash="", terms_version="", accepted_at="",
-                               withdrawn_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat()))
+                               withdrawn_at=datetime.now(UTC).replace(microsecond=0).isoformat()))
     return existed
 
 

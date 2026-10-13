@@ -46,7 +46,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from typing import TYPE_CHECKING, Callable, List, Mapping, Optional, Sequence
 
 from ... import community
@@ -131,7 +131,7 @@ class Beat:
                   *(f"author:{key}" for key in ledger.keys())]
         ctx = self._context(wanted)
         my_key = keys.curator_key_store().public_key_hex()
-        today = datetime.fromtimestamp(self._clock(), timezone.utc).date().isoformat()
+        today = datetime.fromtimestamp(self._clock(), UTC).date().isoformat()
         suspended = self_test.why_suspended(self._tester.check(today))   # a failed self-test signs nothing
         why_not = ""
         if ctx.manifest is None or my_key not in ctx.manifest.curator_keys:
@@ -252,7 +252,7 @@ class Beat:
         return True
 
     @staticmethod
-    def _record(run: Run, decision: PolicyDecision, done: List[str], what: str, outcome: str, identifier: str) -> None:
+    def _record(run: Run, decision: PolicyDecision, done: list[str], what: str, outcome: str, identifier: str) -> None:
         """A publish that was read back counts (and spends the daily limit); anything else is an error to retry."""
         run.settled.add(identifier)
         if not outcome.startswith("published"):
@@ -383,6 +383,6 @@ class Beat:
             run.kept_alive = published.publish_due(run.ctx.client, run.ctx.cfg, now=self._clock())
 
 
-def _no_steps() -> "ServiceSteps":
+def _no_steps() -> ServiceSteps:
     from .steps import ServiceSteps   # see the TYPE_CHECKING import above
     return ServiceSteps()

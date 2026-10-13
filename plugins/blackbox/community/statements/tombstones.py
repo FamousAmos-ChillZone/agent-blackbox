@@ -26,7 +26,7 @@ _DAY_SECONDS = 86_400
 
 
 def applicable_withdrawals(retractions: Iterable[VerifiedRetraction], reports: Iterable[VerifiedReport],
-                           first_seen: Mapping[str, float], now: float) -> Tuple[FrozenSet[Withdrawal], int]:
+                           first_seen: Mapping[str, float], now: float) -> tuple[frozenset[Withdrawal], int]:
     """(withdrawals to apply, number of pending tombstones kept).
 
     A retraction whose target report is present applies. One whose target is
@@ -36,7 +36,7 @@ def applicable_withdrawals(retractions: Iterable[VerifiedRetraction], reports: I
     """
     present = {(report.author, report.identifier) for report in reports}
     applicable = set()
-    pending: Dict[str, List[Tuple[float, Withdrawal]]] = {}
+    pending: dict[str, list[tuple[float, Withdrawal]]] = {}
     for retraction in retractions:
         withdrawal = (retraction.author, retraction.identifier)
         if withdrawal in present:
