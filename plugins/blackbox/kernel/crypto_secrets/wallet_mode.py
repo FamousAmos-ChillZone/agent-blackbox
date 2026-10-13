@@ -47,6 +47,15 @@ class WalletProtection:
     enabled: bool = False
     wallets: Tuple[str, ...] = tuple(SUPPORTED_WALLETS)
 
+    def protects(self, wallet_id: str) -> bool:
+        """Whether the wallet *wallet_id* is guarded under this mode — THE rule the gate
+        and the dashboard both use. ``ANY_EXTENSION_WALLET`` (a store no folder name ties
+        to one wallet) is guarded whenever any wallet is chosen."""
+        wallet_id = str(wallet_id or "").lower()
+        if wallet_id == ANY_EXTENSION_WALLET:
+            return self.enabled and bool(self.wallets)
+        return self.enabled and wallet_id in self.wallets
+
     def allows_finding(self, finding: Mapping[str, Any]) -> bool:
         """Whether a finding may flag or block under this mode. Findings that are
         not wallet findings are always allowed (this mode governs wallets only)."""
@@ -55,10 +64,7 @@ class WalletProtection:
             return self.enabled
         if identifier.endswith(WALLET_FILE_SUFFIX):
             fields = finding.get("fields")
-            wallet = str((fields.get("wallet") if isinstance(fields, Mapping) else None) or "").lower()
-            if wallet == ANY_EXTENSION_WALLET:
-                return self.enabled and bool(self.wallets)
-            return self.enabled and wallet in self.wallets
+            return self.protects(str((fields.get("wallet") if isinstance(fields, Mapping) else None) or ""))
         return True
 
     def as_json(self) -> Dict[str, Any]:

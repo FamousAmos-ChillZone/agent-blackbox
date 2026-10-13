@@ -184,3 +184,18 @@ def test_wallet_threats_show_their_wallet_logo_everywhere_they_appear():
     assert '$("tm-ico").innerHTML = walletLogoHTML(f, "big") ||' in html          # finding detail
     assert html.count("walletLogoHTML(e") >= 3                                   # panel row, window list + detail
     assert "walletLogoByName(w.wallet)" in html                                  # found on this machine
+
+
+def test_the_panel_calls_a_store_protected_exactly_when_the_gate_would_count_it(home, monkeypatch):
+    """The panel used its own copy of the rule and labelled a Firefox store "not protected"
+    while the gate (FIX-0100) protected it. Both now read WalletProtection.protects()."""
+    stores = [(wallet_files.normalize_path("~/.mozilla/firefox/a.default/storage/default/moz-extension+++x^usercontextid=4294967295"),
+               wallet_files.FIREFOX_EXTENSION),
+              (wallet_files.normalize_path(f"~/.config/google-chrome/Default/local extension settings/{METAMASK_CHROME}"), "MetaMask")]
+    monkeypatch.setattr(wallet_files.EXISTING_STORES, "get", lambda: stores)
+    for chosen, expected in ((["metamask"], {"a Firefox extension": True, "MetaMask": True}),
+                             ([], {"a Firefox extension": False, "MetaMask": False})):
+        monkeypatch.setattr(protection.crypto_secrets.wallet_mode, "current",
+                            lambda chosen=chosen: wallet_mode.WalletProtection(enabled=True, wallets=tuple(chosen)))
+        shown = {w["wallet"]: w["protected"] for w in protection.wallet_protection_payload()["wallets"]}
+        assert shown == expected

@@ -65,7 +65,7 @@ def wallet_protection_payload() -> Dict[str, Any]:
         "block_severity": safe_text(cfg.block_severity, 16),
         "wallets": [{**{key: (safe_text(value, 64) if isinstance(value, str) else [safe_text(a, 32) for a in value])
                         for key, value in wallet.items()},
-                     "protected": mode.enabled and str(wallet.get("wallet") or "").lower() in mode.wallets}
+                     "protected": mode.protects(str(wallet.get("id") or ""))}   # the gate's own rule
                     for wallet in wallets],
         "seed_checker": bool(crypto_secrets.wordlist_ready()),
         "private_keys": True,

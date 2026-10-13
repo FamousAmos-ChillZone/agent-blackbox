@@ -207,7 +207,7 @@ _AREAS = (("Local Extension Settings", "vault"), ("Sync Extension Settings", "sy
 
 def found_wallets() -> List[dict]:
     """The wallets whose key stores exist on this machine, for the dashboard:
-    ``[{wallet, browser, profile, areas: [...]}]``. Built from the folder NAMES
+    ``[{wallet, id, browser, profile, areas: [...]}]`` (``id`` is the settings id, see :func:`wallet_id`). Built from the folder NAMES
     the archive check already found (:data:`EXISTING_STORES`) — no file is opened,
     nothing is read inside a store."""
     grouped: dict = {}
@@ -219,7 +219,7 @@ def found_wallets() -> List[dict]:
         anchor = next((i for i, part in enumerate(parts) if part in ("local extension settings", "sync extension settings",
                                                                     "indexeddb", "storage")), len(parts))   # paths are lower-cased
         profile = parts[anchor - 1] if anchor > 0 else ""
-        entry = grouped.setdefault((wallet, browser, profile), {"wallet": wallet, "browser": browser,
+        entry = grouped.setdefault((wallet, browser, profile), {"wallet": wallet, "id": wallet_id(wallet), "browser": browser,
                                                                  "profile": profile, "areas": []})
         if area not in entry["areas"]:
             entry["areas"].append(area)
@@ -246,6 +246,12 @@ def wallets_inside_folder(path: str) -> List[str]:
 
 # -- the detector -------------------------------------------------------------
 
+def wallet_id(wallet: str) -> str:
+    """The settings id of a wallet display name: ``"MetaMask"`` → ``"metamask"``; a Firefox
+    extension store → ``wallet_mode.ANY_EXTENSION_WALLET`` (no folder name ties it to one)."""
+    return wallet_mode.ANY_EXTENSION_WALLET if wallet == FIREFOX_EXTENSION else wallet.lower()
+
+
 def _finding(tool: str, mode: str, wallet: str) -> Finding:
     return Finding(
         identifier=threat_ids.fileaccess_identifier(tool, WALLET_CATEGORY),
@@ -257,8 +263,7 @@ def _finding(tool: str, mode: str, wallet: str) -> Finding:
         evidence=f"{mode} {WALLET_CATEGORY} ({wallet})",
         confirmed=False,
         source="secret",   # built-in, local-only, blockable — never shared (it names this machine's wallet)
-        fields={"tool_name": tool, "file_category": WALLET_CATEGORY,
-                "wallet": wallet_mode.ANY_EXTENSION_WALLET if wallet == FIREFOX_EXTENSION else wallet.lower()},
+        fields={"tool_name": tool, "file_category": WALLET_CATEGORY, "wallet": wallet_id(wallet)},
     )
 
 
