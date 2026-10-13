@@ -227,10 +227,11 @@ def test_the_dashboard_renders_clean_at_desktop_and_phone_widths(served, tmp_pat
 def test_the_served_app_never_touches_the_real_hermes_home(served):
     """Guard for the fixture above: the app's auto-attach loop ran while the browser tests
     were up and installed the checkout into the developer's real ~/.hermes. With HOME moved,
-    discovery sees only the test folder — and the real home is left alone."""
-    real = _REAL_HOME / ".hermes" / "plugins" / "blackbox" / ".blackbox-install-stamp"
-    before = real.stat().st_mtime if real.exists() else None
-    import time as _time
-    _time.sleep(6)   # the rescan loop runs every few seconds
-    assert (real.stat().st_mtime if real.exists() else None) == before
+    discovery sees only the test folder, so the real home is never a target. (Checked from
+    the discovery side: since Hermes 0.21.7 tests/home_io_guard.py refuses ANY file access
+    to the real home in tests — a stat of it included — and catches a stray write there.)"""
+    from plugins.blackbox.attach import hermes_homes
+
     assert str(Path.home()) != str(_REAL_HOME)
+    homes = hermes_homes.discover_hermes_homes()
+    assert all(str(home).startswith(str(Path.home())) for home in homes), homes
