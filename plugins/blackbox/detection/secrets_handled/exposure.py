@@ -18,6 +18,7 @@ import re
 from typing import Any, Callable, Iterable, List
 
 from .. import content_scanners
+from . import sending
 from ..finding import Finding
 from ..injection_detection import injection_scan_text
 from ...kernel import crypto_secrets
@@ -32,8 +33,8 @@ def _wallet_secrets_sent(text: str) -> set:
     """Wallet secret types this call sends: those inside a web address it names, and every
     one present when it runs network-calling script code. (API keys are left to the
     command-shaped egress check — an agent legitimately sends an API key to its API.)"""
-    in_urls = {hit["type"] for hit in content_scanners.scan_secret_values(content_scanners.url_payloads(text))}
-    if content_scanners.looks_like_script_send(text):
+    in_urls = {hit["type"] for hit in content_scanners.scan_secret_values(sending.url_payloads(text))}
+    if sending.looks_like_script_send(text):
         in_urls |= {hit["type"] for hit in content_scanners.scan_secret_values(text)}
     return in_urls & _WALLET_SECRET_TYPES
 
@@ -54,7 +55,7 @@ def detect_secret_exposure(tool_name: str, args: Any) -> list[Finding]:
     hits = content_scanners.scan_secret_values(text)
     if not hits:
         return []
-    egress = content_scanners.looks_like_egress(text)
+    egress = sending.looks_like_egress(text)
     wallet_sent = _wallet_secrets_sent(text)
     out: list[Finding] = []
     for hit in hits:
@@ -110,8 +111,8 @@ def detect_own_wallet_keys(tool_name: str, args: Any, own_addresses: Callable[[]
     addresses = frozenset(own_addresses())
     if not crypto_secrets.own_keys_in(text, addresses):
         return []
-    sent = (content_scanners.looks_like_egress(text) or content_scanners.looks_like_script_send(text)
-            or bool(crypto_secrets.own_keys_in(content_scanners.url_payloads(text), addresses)))
+    sent = (sending.looks_like_egress(text) or sending.looks_like_script_send(text)
+            or bool(crypto_secrets.own_keys_in(sending.url_payloads(text), addresses)))
     return [Finding(
         identifier="secret:wallet-private-key",
         category="secret",
