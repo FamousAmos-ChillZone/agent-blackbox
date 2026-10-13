@@ -24,11 +24,11 @@ import logging
 import re
 from typing import Callable, List, Optional, Tuple
 
+from . import base58
+
 logger = logging.getLogger(__name__)
 
 MARKER = "[REDACTED_SOLANA_KEY]"
-_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-_INDEX = {char: value for value, char in enumerate(_ALPHABET)}
 #: 64 bytes in base58 are 86–88 characters (87–88 in practice); 89 allows one slack.
 _BASE58_KEY = re.compile(r"(?<![1-9A-HJ-NP-Za-km-z])[1-9A-HJ-NP-Za-km-z]{86,89}(?![1-9A-HJ-NP-Za-km-z])")
 #: The Solana CLI's keypair file: a JSON array of exactly 64 byte values.
@@ -41,15 +41,6 @@ _CUT_JSON = re.compile(r"\[\s*(?:\d{1,3}\s*,\s*){31,63}\d{0,3}\s*\Z")
 #: A text with more candidates than this is not a place keys hide; stop verifying.
 _MAX_CANDIDATES = 64
 _SEED_BYTES = 32
-
-
-def _base58_decode(text: str) -> bytes:
-    """Bitcoin-alphabet base58 to bytes (leading '1's are zero bytes)."""
-    number = 0
-    for char in text:
-        number = number * 58 + _INDEX[char]
-    body = number.to_bytes((number.bit_length() + 7) // 8, "big") if number else b""
-    return b"\x00" * (len(text) - len(text.lstrip("1"))) + body
 
 
 def _json_bytes(text: str) -> Optional[bytes]:
@@ -81,7 +72,7 @@ def find_solana_secret_keys(text: str) -> list[tuple[int, int]]:
         return []
     spans: list[tuple[int, int]] = []
     candidates: list[tuple[re.Match[str], Callable[[str], Optional[bytes]]]] = []
-    candidates += [(m, _base58_decode) for m in _BASE58_KEY.finditer(text)]
+    candidates += [(m, base58.decode) for m in _BASE58_KEY.finditer(text)]
     candidates += [(m, _json_bytes) for m in _JSON_KEY.finditer(text)]
     for match, decode in candidates[:_MAX_CANDIDATES]:
         if is_solana_secret_key(decode(match.group(0))):
