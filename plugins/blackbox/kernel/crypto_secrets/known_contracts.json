@@ -1,0 +1,12 @@
+{
+ "about": "Well-known exchange contracts an agent legitimately approves and trades through. Read by the token-approval rule, the indicator rule and scripts/blackbox-trader-graph-counts.py. Each entry was checked on 2026-10-13: routers answered factory() on-chain with their exchange's published factory (Foundry cast 1.8.5, read-only), the others by their published address. Lower-case addresses; they are the same on every EVM network where deployed.",
+ "contracts": {
+  "0x7a250d5630b4cf539739df2c5dacb4c659f2488d": {"name": "Uniswap V2 Router 02", "checked": "factory() = Uniswap V2 factory 0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f"},
+  "0xe592427a0aece92de3edee1f18e0157c05861564": {"name": "Uniswap V3 SwapRouter", "checked": "factory() = Uniswap V3 factory 0x1f98431c8ad98523631ae4a59f267346ea31f984"},
+  "0x66a9893cc07d91d95644aedd05d03f95e1dba8af": {"name": "Uniswap Universal Router (v4)", "checked": "Uniswap v4 deployments, Etherscan label"},
+  "0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f": {"name": "SushiSwap Router", "checked": "factory() = SushiSwap factory 0xc0aee478e3658e2610c5f7a4a2e1777ce9e4f2ac"},
+  "0x10ed43c718714eb63d5aa57b78b54704e256024e": {"name": "PancakeSwap V2 Router", "checked": "factory() = PancakeSwap factory 0xca143ce32fe78f1f7019d7d551a6402fc5350c73 (BNB Chain)"},
+  "0x13f4ea83d0bd40e75c8222255bc855a974568dd4": {"name": "PancakeSwap V3 Smart Router", "checked": "factory() = PancakeSwap V3 factory 0x0bfbcf9fa4f9c56b0f40a671ad40e0805a091865 (BNB Chain)"},
+  "0x1111111254eeb25477b68fb85ed929f73a960582": {"name": "1inch Aggregation Router v5", "checked": "1inch Router v5 release notes, Consensys audit"}
+ }
+}

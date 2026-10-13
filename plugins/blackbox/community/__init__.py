@@ -16,7 +16,9 @@ Public surface:
   :func:`spawn_community_share` sends an allowed finding. This node's
   reporting identity is resolved by ``kernel.identity.reporter_address``.
 * :func:`add_report_parser` + :func:`cmd_report` (``blackbox report``), :func:`print_community_status`
-  (the status block), :func:`ensure_community_subscription` (join on sync).
+  (the status block), :func:`ensure_community_subscription` (join on sync),
+  :func:`read_join_state` + :class:`JoinState` / ``JOIN_STATE_TEXT`` (is this node
+  connected to the community graph yet — the dashboard's community tile).
 * :func:`build_report_quads` / :func:`build_false_positive_quads` /
   :func:`build_retraction_quads` — the
   privacy-safe statements a report or dispute shares (write side).
@@ -27,8 +29,12 @@ Public surface:
   :data:`EVIDENCE_REFERENCE` (the closed format of the evidence a confirmation cites).
 * :func:`trust_panel` / :func:`trust_status_lines` — who curates, who is trusted, what is confirmed: one read
   model for the dashboard's trust panel and `blackbox status` (Community Curation C10).
+* :func:`verified_manifest_history` / :func:`manifest_on_day` — the verified authority's root-signed
+  manifests and which one was in force on a day: the verified scope tiers each new asset once against it
+  (trust-and-threat-lab R2, F-050).
 * :func:`stage_for` (+ :class:`Stage`, :class:`Enforcement`, :class:`StageResult`) —
-  a community threat's local stage from the counted-author list (R3).
+  a community threat's local stage from the counted-author list (R3); :func:`clusters_for`
+  (+ :class:`Clusters`) — the partner and established clusters behind it (the lab trigger reads them).
 * :func:`record_verified_sighting` / :func:`publish_due_digests` — the
   seen-again counter: tally verified matches, publish one weekly digest (R2b).
 * :mod:`shadow` — the shadow phase (R15): the MONITOR clamp and the §12 metrics log.
@@ -57,7 +63,8 @@ Usage::
 from __future__ import annotations
 
 from .report_builder import build_false_positive_quads, build_report_quads, build_retraction_quads
-from .membership import ensure_community_subscription
+from .sighting import injection_host_identifier, sighting_fields
+from .membership import JOIN_STATE_TEXT, JoinState, ensure_community_subscription, ensure_report_lane, read_join_state
 from .report_cli import add_report_parser, cmd_report, print_community_status
 from .sharing import ALREADY_SEALED_REPLY, NEVER_SHARED_SOURCES, CommunitySharePolicy, spawn_community_share
 from .graph_stats import community_agents, contributing_agent_count, most_reported_threats, reports_signed_by
@@ -74,7 +81,7 @@ from .pulse import fingerprint as community_fingerprint
 from .statements.lifetimes import lifetime_days
 from .statements.author_budget import FirstSeenStore as _FirstSeenStore
 from .share_retry import retry_due_shares, share_retry_stats
-from .stages import Enforcement, Stage, StageResult, stage_for
+from .stages import Clusters, Enforcement, Stage, StageResult, clusters_for, stage_for
 from .statements.curator_view import VERIFIED_GRAPH_KINDS, CuratorView, counted_dispute_weight
 from .statements.curator_statements import EVIDENCE_REFERENCE
 from .statements.curator_statements import manifest_quads as key_manifest_quads
@@ -89,9 +96,10 @@ from .reader import (
     ReadState,
     read_verified_reports,
 )
-from .trust import known_curator_statements, read_curator_view
+from .trust import ActiveGraph, active_verified_graph, known_curator_statements, read_curator_view
 from .trust import status_lines as trust_status_lines
 from .trust import trust_panel
+from .trust.manifest_history import manifest_on_day, verified_manifest_history
 from ..kernel.sparql_text import page_rows
 from ..kernel.signing.trust_anchors import trusted_roots as curator_trusted_roots
 from .statements.curator_view import today_utc as curator_today
@@ -104,6 +112,8 @@ def first_seen_trail():
 
 __all__ = [
     "ALREADY_SEALED_REPLY",
+    "injection_host_identifier",
+    "sighting_fields",
     "EVIDENCE_REFERENCE",
     "COMMUNITY_PAUSE_SUBJECT",
     "NEVER_SHARED_SOURCES",
@@ -120,6 +130,12 @@ __all__ = [
     "add_report_parser",
     "cmd_report",
     "ensure_community_subscription",
+    "ensure_report_lane",
+    "JOIN_STATE_TEXT",
+    "JoinState",
+    "read_join_state",
+    "ActiveGraph",
+    "active_verified_graph",
     "community_pause_active",
     "community_agents",
     "community_report_count",
@@ -153,6 +169,8 @@ __all__ = [
     "retry_due_shares",
     "share_retry_stats",
     "stage_for",
+    "clusters_for",
+    "Clusters",
     "read_curator_view",
     "known_curator_statements",
     "trust_panel",
@@ -160,6 +178,8 @@ __all__ = [
     "page_rows",
     "curator_trusted_roots",
     "curator_today",
+    "manifest_on_day",
+    "verified_manifest_history",
     "record_verified_sighting",
     "read_verified_reports",
     "reports_signed_by",

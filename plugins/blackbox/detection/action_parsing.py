@@ -12,6 +12,7 @@ import hashlib
 import re
 from typing import Any, Dict, List, Optional
 from . import shell_shapes
+from .paths import shell_files
 
 # ---------------------------------------------------------------------------
 # Sensitive file-access categories (discovery layer)
@@ -125,6 +126,8 @@ def sensitive_path_category(path: str, args: Any = None) -> Optional[Dict[str, s
 FETCH_TOOL_PREFIXES = ("web_", "browser_")
 
 _SKILL_TOOLS = {"skill_manage", "skill_install", "install_skill", "plugin_install", "install_plugin"}
+#: The host tool names above, public: a report may name these verbatim (threat-profiles D9).
+HOST_FILE_AND_SKILL_TOOLS = frozenset({*_FILE_ACCESS_TOOLS, *_SKILL_TOOLS})
 _SKILL_NAME_KEYS = ("name", "skill", "skill_name", "id", "plugin")
 _SKILL_VERSION_KEYS = ("version", "skill_version", "ver")
 _SKILL_CODE_KEYS = ("code", "content", "source", "body", "script")
@@ -268,37 +271,15 @@ _MANAGER_SPECS = {
 
 
 #: cat-family commands whose following path args are file reads.
-_SHELL_READ_CMDS = {"cat", "less", "more", "head", "tail", "bat", "xxd", "hexdump", "strings", "od", "nl"}
-
-
-def _looks_like_path(token: str) -> bool:
-    return "/" in token or token.startswith("~") or token.startswith(".") or "." in token
-
-
 def parse_shell_reads(command: str) -> List[str]:
-    """Best-effort list of file paths a cat-family command in *command* reads.
+    """Best-effort list of file paths the read, copy and archive commands in *command* touch.
 
     Completes the audit trail for the shell channel: ``cat ~/.ssh/id_rsa`` is a
     file read that the dedicated file tools would log, but a raw shell tool would
-    otherwise miss. Pure/deterministic; used for visibility logging only.
+    otherwise miss. The parsing lives in :mod:`.paths.shell_files` (quotes and escapes
+    respected); this keeps the paths only. Pure/deterministic.
     """
-    if not command or not any(f" {c} " in f" {command} " for c in _SHELL_READ_CMDS):
-        return []
-    tokens = _tokenize_shell(command)
-    out: List[str] = []
-    i = 0
-    while i < len(tokens):
-        if tokens[i].lower() in _SHELL_READ_CMDS:
-            j = i + 1
-            while j < len(tokens) and tokens[j] not in (";", "&&", "||", "|", ">", ">>", "<"):
-                tok = tokens[j]
-                if not tok.startswith("-") and _looks_like_path(tok):
-                    out.append(tok)
-                j += 1
-            i = j
-        else:
-            i += 1
-    return list(dict.fromkeys(out))
+    return [arg.path for arg in shell_files.shell_file_args(command)]
 
 
 def parse_downloads(command: str) -> List[str]:

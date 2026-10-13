@@ -279,7 +279,7 @@ def test_the_unsigned_pause_flag_is_ignored_once_a_trusted_manifest_exists(monke
     from plugins.blackbox.kernel.signing import key_manifest as km
 
     manifest = km.KeyManifest(environment="mainnet", graph=GRAPH, chain="base:8453", root_epoch=1, version=1,
-                              curator_keys=("a" * 64, "c" * 64), threshold=2,
+                              curator_keys=("a" * 64, "c" * 64), curator_operators=("operator-a", "operator-b"), threshold=2,
                               promotion_author="0x" + "1" * 40, legacy_assets_hash="0" * 64)
     view = dataclasses.replace(_view(partners=[("c" * 64, "acme")]), manifest=manifest)
     monkeypatch.setattr(community_tier.community, "read_verified_reports", lambda c, cfg, **kw: _read([], view))

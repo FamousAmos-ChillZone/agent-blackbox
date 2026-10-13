@@ -1,0 +1,120 @@
+#!/usr/sbin/nft -f
+# Threat lab host egress policy (proposal §03.5, F-011 / F-013; build item LR2).
+#
+# Loaded on the LAB HOST, never inside a sandbox: a sample owns everything in
+# its guest, so a rule it can reach is a rule it can remove. Every sandbox on the
+# lab network sits behind the bridge named below; these rules see all of its
+# traffic on the host side of that bridge.
+#
+#   out:  TCP 80/443 (a new connection must open with a plain SYN) and UDP 53, nothing else
+#   never: the lab host, another sandbox, private/reserved ranges, 169.254.169.254, IPv6
+#   caps:  10 new connections a second (burst 20) and 30 new destinations a minute (burst 30)
+#          per sandbox address; the first packet over either cap puts the address in
+#          @offenders — every later packet from it is dropped, and the runner, which
+#          watches @offenders, kills the sandbox and reports `scanning-killed`.
+#
+# ICMP, raw IP and every other protocol fall through to the final drop (the sandbox
+# also runs with --cap-drop=ALL, so it holds no NET_RAW).
+#
+# Sandbox to sandbox: frames between two ports of one bridge reach the inet
+# forward hook only with br_netfilter on (net.bridge.bridge-nf-call-iptables=1,
+# which Docker sets); the runner refuses to start without it. A bridge-family
+# `meta ibrname` table was tried and refused by kernels without nft_meta_bridge,
+# which would stop this whole file from loading.
+#
+# Load:   nft -f egress.nft        (replaces only the inet threat_lab table)
+# Check:  nft -c -f egress.nft     (the runner's test does this when nft is present)
+#
+# The runner reads LAB_BRIDGE and the table/set names below (threat_lab/egress.py);
+# change them here and nowhere else.
+
+define LAB_BRIDGE = "threatlab0"
+
+table inet threat_lab
+delete table inet threat_lab
+
+table inet threat_lab {
+	# RFC 6890 special-purpose IPv4 space a sandbox never needs: this network,
+	# RFC 1918, carrier-grade NAT, loopback, link-local (holds the cloud metadata
+	# address), protocol assignments, documentation, benchmarking, multicast,
+	# reserved and broadcast.
+	set private_ranges {
+		type ipv4_addr
+		flags interval
+		elements = {
+			0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8,
+			169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24,
+			192.168.0.0/16, 198.18.0.0/15, 198.51.100.0/24, 203.0.113.0/24,
+			224.0.0.0/4, 240.0.0.0/4
+		}
+	}
+
+	# Sandbox addresses over a cap. The runner reads this set while a probe runs
+	# and deletes an address once its sandbox is gone; it flushes the set at start-up.
+	set offenders {
+		type ipv4_addr
+		flags dynamic, timeout
+		timeout 1h
+		size 4096
+	}
+
+	# (sandbox, destination) pairs already counted toward the destination cap.
+	set seen_destinations {
+		type ipv4_addr . ipv4_addr
+		flags dynamic, timeout
+		timeout 5m
+		size 65536
+	}
+
+	set connection_rate {
+		type ipv4_addr
+		flags dynamic, timeout
+		timeout 1m
+		size 4096
+	}
+
+	set destination_rate {
+		type ipv4_addr
+		flags dynamic, timeout
+		timeout 5m
+		size 4096
+	}
+
+	# Nothing on the lab network may talk to the lab host itself, on any address.
+	chain host_input {
+		type filter hook input priority filter - 10; policy accept;
+		iifname $LAB_BRIDGE log prefix "threat-lab host " drop
+	}
+
+	chain lab_forward {
+		type filter hook forward priority filter - 10; policy accept;
+		iifname $LAB_BRIDGE jump from_lab
+		oifname $LAB_BRIDGE jump to_lab
+	}
+
+	chain from_lab {
+		meta nfproto ipv6 log prefix "threat-lab ipv6 " drop
+		ip saddr @offenders drop
+		ct state invalid drop
+		oifname $LAB_BRIDGE log prefix "threat-lab sandbox " drop
+		ip daddr 169.254.169.254 log prefix "threat-lab metadata " drop
+		ip daddr @private_ranges log prefix "threat-lab private " drop
+		ct state established,related accept
+		tcp dport { 80, 443 } tcp flags & (fin | syn | rst | ack) == syn ct state new jump new_connection
+		udp dport 53 ct state new jump new_connection
+		log prefix "threat-lab blocked " drop
+	}
+
+	# Replies only: nothing outside opens a connection to a sandbox.
+	chain to_lab {
+		ct state established,related accept
+		drop
+	}
+
+	chain new_connection {
+		update @connection_rate { ip saddr limit rate over 10/second burst 20 packets } add @offenders { ip saddr } log prefix "threat-lab scan " drop
+		ip saddr . ip daddr @seen_destinations accept
+		update @destination_rate { ip saddr limit rate over 30/minute burst 30 packets } add @offenders { ip saddr } log prefix "threat-lab scan " drop
+		add @seen_destinations { ip saddr . ip daddr } accept
+	}
+}

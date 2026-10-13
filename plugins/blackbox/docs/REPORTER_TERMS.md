@@ -1,6 +1,26 @@
 # Agent Blackbox — Reporter Terms (community graph)
 
-Version: 1.1 (draft for counsel review, 2026-10-03)
+Version: 1.3 (draft for counsel review, 2026-10-12)
+
+## What changed in version 1.3
+
+- Each statement now describes the sighting in closed words (section 1):
+  - the tool that met the threat (a tool you wrote yourself is only "other" or "mcp-tool");
+  - what the agent was doing;
+  - whether Blackbox blocked or only flagged it;
+  - how it was matched, and the Blackbox version;
+  - the verified rule it matched;
+  - what the threat goes after (a goal, a CLASS of resource such as "cloud credentials", and a MITRE technique id).
+- When a VERIFIED prompt-injection pattern is found in a page your agent fetched, the page's SITE is shared as a separate statement. Only the registrable domain is shared (`evil.example`), never the address, path or text. Popular and user-content platforms are never named.
+
+## What changed in version 1.2
+
+- Community sharing is now ON by default when Blackbox is installed, with an
+  easy opt-out (it was off until you opted in). The installer and the
+  dashboard say so; turning it off is one command or one toggle, and it stops
+  sharing on the next action (section 5).
+- Changing these terms no longer pauses sharing; this page always shows the
+  version in force.
 
 ## What changed in version 1.1
 
@@ -15,11 +35,11 @@ Version: 1.1 (draft for counsel review, 2026-10-03)
 - Erasure rotates your SIGNING key; your node's wallet address is not changed
   by it (section 5).
 
-These terms apply to the OPERATOR of a machine running Agent Blackbox who
-turns on community sharing (`report: true`) and records consent. Sharing is
-OFF by default; nothing described here happens until you consent, and you
-can withdraw at any time with `blackbox report --withdraw-consent` — sharing
-stops on the next action.
+These terms apply to the OPERATOR of a machine running Agent Blackbox.
+Community sharing is ON by default (`report: true`). You can turn it off at
+any time with `blackbox report --disable-sharing`, `blackbox report
+--withdraw-consent` or the dashboard's sharing toggle; sharing stops on the
+next action, and turning it back on is just as easy.
 
 ## 1. What you share
 
@@ -35,12 +55,23 @@ community graph of the OriginTrail Decentralized Knowledge Graph (DKG):
 - your node's REPORTER ADDRESS (the DKG agent address of your node's wallet)
   and a signature by your node's reporter key;
 - a weekly SIGHTING DIGEST: the verified threats your agents met that week,
-  with coarse buckets (1 / 2–9 / 10–99 / 100+), never exact counts or times.
+  with coarse buckets (1 / 2–9 / 10–99 / 100+), never exact counts or times;
+- the SIGHTING, in closed words only (version 1.3):
+  - the host tool (`web_fetch`, `terminal`, `read_file`…; any other tool is `mcp-tool` or `other`);
+  - what the agent was doing (fetch, install a package or skill, read or write a file, run a command, model input);
+  - blocked or flagged;
+  - how it was matched and the Blackbox version;
+  - the verified rule it matched;
+  - the threat's goal, the CLASS of resource at risk, and a MITRE ATT&CK / ATLAS technique id;
+- for a verified prompt injection in a fetched page, the site's registrable domain, as its own statement.
 
 Never shared, by construction: prompts, commands, file paths, file or skill
 source, secrets, LLM outputs, local-only or custom-rule findings,
-vulnerability findings, the names of locally authored skills, the source
-of an injection, exact times, your location, or any person's identity.
+vulnerability findings, the names of locally authored skills, the names of
+your own tools, the address, path or text of the page an injection came from
+(only a verified injection's registrable domain, as above), the actual file or
+resource at risk (only its class), exact times, your location, or any
+person's identity.
 
 ## 2. What you grant
 
@@ -110,13 +141,14 @@ stops counting it, but the record of the statement stays on the network.
   every statement also carries, is not changed by this command. Each group of
   curators deletes its ledger salt on request (crypto-shredding) and stops
   keeping your listing alive.
-- **Withdraw consent:** `blackbox report --withdraw-consent`.
+- **Turn sharing off (opt out):** `blackbox report --withdraw-consent` (or
+  `--disable-sharing`, or the dashboard toggle).
 - Requests that need a human: the contact points in the controller map
   (one for the community curators, one for Umanitek); either forwards a
   request it cannot serve to the other.
 
 ## 6. Changes
 
-These terms are bound to their content: your consent is recorded against
-the exact text you read. When the text changes, sharing stops until you
-read the new version and consent again.
+The version in force is the one shipped with your installation, and its
+"What changed" section lists every change. An opt-out stays in force across
+versions until you turn sharing back on.

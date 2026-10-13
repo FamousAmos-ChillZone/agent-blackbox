@@ -7,6 +7,9 @@ or the reporter says:
 * :func:`own_check` — this node's lookup of a dependency in the independent
   public advisory source: a malicious-package advisory for that exact
   version, nothing found, or "could not ask" (which is neither).
+* :func:`community_stage` / :func:`deferral_age_days` — what this node's own
+  compiled tier and curator view say about one threat (its stage; how many
+  days its deferral has run).
 * :func:`ledger_calls_for` — what this node's own private ledger calls for a
   reporter today: list (a graduation, or the renewal of a listing in good
   standing), delist (the reputation floor or strikes), or nothing.
@@ -19,11 +22,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import Enum
-from typing import Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from ...community import CuratorView, reputation
 from ...detection import osv
 from ...kernel import threat_ids
+from ...kernel.signing.statement_order import CuratorStatement
 
 #: A listing is proposed for renewal this many days before it expires (plan §13).
 RENEW_AHEAD_DAYS = 30
@@ -52,6 +56,10 @@ class OwnCheck:
         return f"advisory:{self.advisory}" if self.status is Lookup.FOUND else ""
 
 
+#: What the first-signature step reads for an item this beat did not look up: could not tell.
+NOT_LOOKED_UP = OwnCheck(Lookup.UNAVAILABLE)
+
+
 def own_check(identifier: str, status: AdvisoryStatus = osv.advisory_status) -> OwnCheck:
     """Look *identifier* up in the public advisory source. Only an
     exact-version dependency can be asked about; a vulnerability advisory is
@@ -65,6 +73,23 @@ def own_check(identifier: str, status: AdvisoryStatus = osv.advisory_status) -> 
     if finding is not None and finding.get("kind") == "malware" and finding.get("advisory_id"):
         return OwnCheck(Lookup.FOUND, advisory=str(finding["advisory_id"]))
     return OwnCheck(Lookup.CLEAN)
+
+
+def community_stage(compiled: Optional[Any], identifier: str) -> str:
+    """The local stage this node's compiled community tier gives *identifier* ("" when not in it)."""
+    rules = compiled.community if compiled is not None else {}
+    return str((rules.get(identifier) or {}).get("stage", ""))
+
+
+def deferral_age_days(own_view: CuratorView, identifier: str, today: str) -> int:
+    """Whole days since the acting authority deferred *identifier*; -1 when its verdict is not a deferral."""
+    record = own_view.verdicts.get(identifier)
+    if record is None or record.kind is not CuratorStatement.DEFERRAL:
+        return -1
+    try:
+        return (date.fromisoformat(today) - date.fromisoformat(record.day)).days
+    except ValueError:
+        return -1
 
 
 def renewal_due(expires: str, today: str) -> bool:

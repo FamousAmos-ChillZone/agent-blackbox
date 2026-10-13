@@ -45,6 +45,7 @@ from typing import AbstractSet, Any, Dict, List, Mapping, Optional, Tuple
 from ...kernel import signing
 from ...kernel.signing.key_manifest import KeyManifest
 from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing.trust_anchors import RootPins
 from ..statements import curator_statements, curator_view
 from ..trust import manifests as manifest_policy
 from ..verification import ReportVerifier, VerifiedReport
@@ -130,7 +131,7 @@ def verify_bundle(text: str, roots: AbstractSet[str], *, environment: str, graph
         return BundleReport(error="no root key was given: nothing in a bundle can be trusted without one")
     day = today or curator_view.today_utc()
     rows = [{"signedStatement": manifest} for manifest in document["manifests"]]
-    trusted = manifest_policy.trusted_manifests(rows, environment, graph, {root.lower() for root in roots})
+    trusted = manifest_policy.trusted_manifests(rows, environment, graph, RootPins.unbound(roots))
     if manifest_policy.manifests_conflict(trusted):
         return BundleReport(error="two root-signed key manifests of the same version disagree")
     manifest = manifest_policy.effective_manifest(trusted, day)

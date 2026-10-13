@@ -37,7 +37,8 @@ class CommunityAuthorityInputs:
     many have no heartbeat inside the silence window; ``last_heartbeat`` — the
     newest heartbeat day of any key ("" = never); ``manifest_state`` (""|
     "pending"|"stale"), ``manifest_state_day``, ``manifest_expires_day``,
-    ``manifest_conflict``; ``held_raising`` — raising statements this reader is
+    ``manifest_conflict``, ``manifest_conflict_ignored`` (T1: a conflict at or
+    below the sticky order, ignored); ``held_raising`` — raising statements this reader is
     holding under its daily cap; ``lookup_incomplete`` — the last trust lookup
     was cut short; ``today`` — the UTC day."""
 
@@ -49,6 +50,7 @@ class CommunityAuthorityInputs:
     manifest_state_day: str = ""
     manifest_expires_day: str = ""
     manifest_conflict: bool = False
+    manifest_conflict_ignored: bool = False
     held_raising: int = 0
     lookup_incomplete: bool = False
     today: str = ""
@@ -76,6 +78,7 @@ def gather(view: Optional[Any], today: str) -> CommunityAuthorityInputs:
         manifest_state_day=str(getattr(view, "manifest_state_day", "") or ""),
         manifest_expires_day=str(getattr(view, "manifest_expires_day", "") or ""),
         manifest_conflict=bool(getattr(view, "manifest_conflict", False)),
+        manifest_conflict_ignored=bool(getattr(view, "manifest_conflict_ignored", False)),
         held_raising=int(getattr(view, "held_raising", 0) or 0),
         lookup_incomplete=bool(getattr(view, "lookup_incomplete", False)), today=today)
 
@@ -86,6 +89,9 @@ def alarms(inputs: CommunityAuthorityInputs) -> List[Alarm]:
     if inputs.manifest_conflict:
         out.append(("security", "community curator key manifest CONFLICT: two root-signed manifests disagree",
                     "community trust is frozen at the last agreed version; verified rules are unaffected — tell the community curators"))
+    if inputs.manifest_conflict_ignored:
+        out.append(("security", "community curator key manifest conflict IGNORED: a root-signed list contradicts one this node already acts on",
+                    "nothing changes on this node — it keeps the list it acts on; tell the community curators a root key may be compromised"))
     if inputs.lookup_incomplete:
         out.append(("info", "the community trust lookup was cut short (the graph is flooded or the node is busy)",
                     "nothing to do — this node keeps acting on the trust statements it already verified; new ones may arrive late"))
@@ -106,7 +112,7 @@ def alarms(inputs: CommunityAuthorityInputs) -> List[Alarm]:
                     "nothing to do — community flags in force stay and reductions still apply; new confirmations and listings are "
                     "frozen until the community root publishes a fresh manifest"))
     elif inputs.manifest_state == "pending":
-        out.append(("info", f"a new community curator key manifest takes effect on {inputs.manifest_state_day} (72 h time-lock)",
+        out.append(("info", f"a new community curator key manifest takes effect on {inputs.manifest_state_day} (time-lock)",
                     "nothing to do — the previous manifest stays in force until then"))
     if (inputs.manifest_expires_day and inputs.today   # a stale manifest's expiry is in the past: never announced twice
             and 0 <= _days_between(inputs.today, inputs.manifest_expires_day) <= EXPIRY_NOTICE_DAYS):

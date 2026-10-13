@@ -140,7 +140,7 @@ def test_the_reviewer_sees_only_the_text_under_review(monkeypatch):
 @pytest.mark.parametrize("ioc_type, value", [
     ("domain", "evil.example"), ("domain", "xn--pypal-4ve.com"),
     ("url", "https://evil.example:8443/a/b?c=1#x"), ("url", "http://203.0.113.7/x"),
-    ("ip", "203.0.113.7"), ("hash", "a" * 64),
+    ("ip", "203.0.113.7"), ("hash", "a" * 64), ("hash", "sha256:" + "a" * 64), ("hash", "md5:" + "b" * 32),
     ("wallet", "0x" + "a" * 40), ("wallet", "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"),
     ("contract", "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"),
 ])
@@ -151,7 +151,7 @@ def test_ioc_grammar_accepts_well_formed_values(ioc_type, value):
 @pytest.mark.parametrize("ioc_type, value", [
     ("domain", CORPUS["xss-script"]), ("domain", "evil"), ("domain", "-evil.example"), ("domain", "evil.example."),
     ("domain", "a" * 300 + ".com"), ("url", CORPUS["js-url"]), ("url", "https://evil.example/<script>"),
-    ("url", "ftp://x.example"), ("ip", "2001"), ("hash", "zz"), ("wallet", "0x12 34"), ("bogus", "x"), ("domain", ""),
+    ("url", "ftp://x.example"), ("ip", "2001"), ("hash", "zz"), ("hash", "sha256:" + "a" * 32), ("hash", "md4:" + "a" * 32), ("wallet", "0x12 34"), ("bogus", "x"), ("domain", ""),
 ])
 def test_ioc_grammar_refuses_malformed_values(ioc_type, value):
     assert not threat_ids.ioc_value_is_well_formed(ioc_type, value)

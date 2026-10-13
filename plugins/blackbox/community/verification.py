@@ -34,8 +34,9 @@ from typing import Dict, Any, Iterable, List, Mapping, Optional, Tuple
 
 from ..kernel import constants, signing, threat_ids
 from ..kernel.dkg_client import extract_binding
-from . import report_schema
-from .report_signer import REPORT_STATEMENT
+from . import report_builder, report_schema
+from .sighting import vocab as sighting_vocab
+from .report_signer import REPORT_STATEMENT, STATEMENT_SCHEMA_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,10 @@ EVIDENCE_PAYLOAD_KEYS: Mapping[str, str] = {
     "skillRegistry": "registry",            # Refine R1 (§04)
     "iocContext": "ioc_context",            # Refine R1 (§04)
     "reportReason": "reason",               # Refine R1 (§04)
+    "matchedBy": "matched_by",              # trust-and-threat-lab §03.6 (common field)
+    "blackboxVersion": "blackbox_version",  # trust-and-threat-lab §03.6 (common field)
+    # threat-profiles §03.2: not in the reader's query — taken from the signed payload.
+    **sighting_vocab.SIGHTING_PAYLOAD_VARS,
 }
 
 #: The reader query variable that carries the envelope.
@@ -134,7 +139,7 @@ class ReportVerifier:
         fields = _agreed_evidence(row, payload)
         if fields is None:
             return None
-        if not _meets_the_schema(identifier, severity, payload):
+        if not _meets_the_schema(identifier, severity, payload, newer=envelope.schema_version > STATEMENT_SCHEMA_VERSION):
             self.drops["schema"] += 1
             return None
         return VerifiedReport(subject=payload["subject"], identifier=identifier, author=author,
@@ -165,7 +170,7 @@ def _tomorrow(today: str) -> str:
         return today
 
 
-def _meets_the_schema(identifier: str, severity: str, payload: Mapping[str, str]) -> bool:
+def _meets_the_schema(identifier: str, severity: str, payload: Mapping[str, str], *, newer: bool = False) -> bool:
     """True when the SIGNED report would be built by today's writer. A signature
     proves who said it, not that it fits the closed schema: a modified client,
     or a row written before a rule existed, can carry a value outside the
@@ -173,7 +178,12 @@ def _meets_the_schema(identifier: str, severity: str, payload: Mapping[str, str]
     locally named skill). Readers refuse those exactly as the writer would."""
     # EVERY signed field beside the core is evidence: a field the schema does
     # not know for this category is refused, exactly as the writer refuses it.
-    evidence = {key: value for key, value in payload.items() if key not in report_schema.REPORT_CORE_KEYS}
+    # One exception (threat-profiles R5): a statement signed under a NEWER
+    # schema than this reader's may carry fields added since — those are set
+    # aside unread (never shown, never counted), so a release that adds report
+    # fields does not make its reports vanish from the readers before it.
+    evidence = {key: value for key, value in payload.items() if key not in report_schema.REPORT_CORE_KEYS
+                and (not newer or key in report_builder.PAYLOAD_FIELD_KEYS)}
     try:
         report_schema.validate_report(identifier=identifier, category=threat_ids.category_for(identifier),
                                       severity=severity, framework=payload.get("framework") or "hermes",

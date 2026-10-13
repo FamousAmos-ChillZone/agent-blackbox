@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from .. import audit, detection
 from .. import community
 from ..kernel import threat_ids
-from . import consent, keep_alive, report_schema, report_signer, share_retry
+from . import consent, keep_alive, membership, report_schema, report_signer, share_retry
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, DkgError
 
@@ -107,16 +107,30 @@ class CommunitySharePolicy:
         return _schema_decision(finding)
 
 
+#: Finding fields that describe THIS machine's check, never the threat: they stay in the
+#: local audit and are never put into a shared report (``answered_by`` says the local
+#: fallback index answered because the graph store was down — DKG-lookup).
+LOCAL_ONLY_FIELDS = frozenset({"answered_by"})
+
+
+def shareable_fields(finding: Dict[str, Any]) -> Dict[str, Any]:
+    """The fields a report may carry: the finding's evidence plus the sighting
+    the guard attached (threat-profiles §03.2) — set, and not local-only."""
+    fields = finding.get("fields") if isinstance(finding.get("fields"), dict) else {}
+    sighting = finding.get("sighting") if isinstance(finding.get("sighting"), dict) else {}
+    return {k: v for k, v in {**fields, **sighting}.items() if v is not None and k not in LOCAL_ONLY_FIELDS}
+
+
 def _schema_decision(finding: Dict[str, Any]) -> "tuple[bool, str]":
     """Whether *finding* builds a valid report (the R1 schema), and why not."""
-    fields = finding.get("fields") if isinstance(finding.get("fields"), dict) else {}
+    fields = shareable_fields(finding)
     try:
         report_schema.validate_report(
             identifier=str(finding.get("identifier") or ""),
             category=str(finding.get("category") or ""),
             severity=str(finding.get("severity") or "info"),
             framework=HOST_FRAMEWORK,
-            evidence={k: v for k, v in fields.items() if v is not None},
+            evidence=fields,
         )
     except report_schema.ReportValidationError as exc:
         return False, f"not a valid report, stays local: {exc}"
@@ -154,6 +168,7 @@ def send_report(client: DkgClient, graph: str, name: str, quads: List[Dict[str, 
     if audit.previously_accepted(name):
         return ShareOutcome.REJECTED_SAME_VERSION, "already shared earlier; a same-version re-share is refused by peers"
     try:
+        membership.ensure_report_lane(client, graph)   # the community subgraph, registered once per process
         result = client.share_knowledge_asset(graph, name, quads)
     except Exception as exc:  # the outermost send boundary: any failure is FAILED, never raised
         if isinstance(exc, DkgError) and ALREADY_SEALED_REPLY in str(exc).lower():
@@ -204,7 +219,7 @@ def _share_sighting(
         return
     try:
         # Reports contain signatures, never raw prompts, paths, or source files.
-        fields = finding.get("fields") if isinstance(finding.get("fields"), dict) else {}
+        fields = shareable_fields(finding)
         q = community.build_report_quads(
             identifier=identifier,
             category=str(finding.get("category") or ""),
@@ -212,7 +227,7 @@ def _share_sighting(
             reporter_address=reporter,
             framework=HOST_FRAMEWORK,
             signer=signer,
-            **{k: v for k, v in fields.items() if v is not None},
+            **fields,
         )
         outcome, detail = send_report(client, cfg.community_graph_id, name, q)
     except Exception as exc:  # pragma: no cover - fail open (building the report failed)

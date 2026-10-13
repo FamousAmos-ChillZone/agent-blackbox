@@ -95,6 +95,9 @@ class CuratorView:
     heartbeats: Mapping[str, str] = field(default_factory=dict)
     last_statement_day: str = ""
     manifest_conflict: bool = False
+    #: T1 (D31): a conflict at or below the manifest this reader already acted on — ignored, it
+    #: cannot move the reader, but someone holding a root key signed an old order (SECURITY).
+    manifest_conflict_ignored: bool = False
     #: R7b: "" | "pending" | "stale" with the day it takes effect / expired; while STALE,
     #: enforcement-RAISING statements dated after the expiry are frozen out — reductions
     #: and already-verified rules keep working.

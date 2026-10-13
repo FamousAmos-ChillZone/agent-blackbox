@@ -44,8 +44,8 @@ from ...kernel import constants, threat_ids
 logger = logging.getLogger(__name__)
 
 #: Statements one author may add per reader-observed day. 2.5x the client's own
-#: cap (20/day): an honest node never reaches it; a flooding one is held back.
-MAX_STATEMENTS_PER_AUTHOR_PER_DAY = 50
+#: cap (100/day since 2026-10-12): an honest node never reaches it; a flooding one is held back.
+MAX_STATEMENTS_PER_AUTHOR_PER_DAY = 250
 #: The store keeps at most this many statements (the community pager reads 100,000 rows per type).
 _MAX_TRACKED = 400_000
 _STORE_FILE = "community_first_seen.json"

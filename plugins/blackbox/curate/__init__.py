@@ -7,7 +7,8 @@ cause FLAG. ``blackbox curate --authority community …`` selects it explicitly.
 
 The read side (queue, dossier, saved node-UI views) and the two-key write
 side (propose -> private message -> approve + consent -> publish) of the
-curator role. Public entry: :func:`add_curate_parser` (wired by cli.py).
+curator role. Public entry: :func:`add_curate_parser` (wired by cli.py) and
+:func:`status_health_items` (this machine's curator alarms on ``blackbox status``).
 
 * :mod:`.parser` — the `blackbox curate` argument parser; :mod:`.commands` — one Command per verb.
 * :mod:`.publishing` — numbering, quorum check, consent and the write of an approved proposal.
@@ -22,7 +23,19 @@ curator role. Public entry: :func:`add_curate_parser` (wired by cli.py).
 * :mod:`.catalog_import` — threat-catalog import helpers (unused; kept for adoption or deletion).
 """
 
+from typing import List
+
+from ..kernel.health import HealthItem
+from . import transport
 from .commands import cmd_curate
 from .parser import add_curate_parser
+from .service import self_test
 
-__all__ = ["add_curate_parser", "cmd_curate"]
+__all__ = ["add_curate_parser", "cmd_curate", "status_health_items"]
+
+
+def status_health_items(now: float) -> List[HealthItem]:
+    """This machine's curator alarms for ``blackbox status``: a suspended self-test
+    and proposals that reached no other curator for 3 beats. Read from local
+    files only; empty on a node that is not a curator."""
+    return [*self_test.health_items(self_test.SelfTestStore().read()), *transport.delivery_health_items(now)]

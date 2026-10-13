@@ -10,13 +10,17 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Sequence
+
+from ..kernel import constants
 
 _SELECT_COLUMNS = """?threat ?rdfType ?identifier ?severity ?name ?description
        ?pattern ?toolName ?argShape ?packageName ?packageVersion
        ?packageEcosystem ?advisoryId ?curated ?category ?skillName
        ?skillVersion ?dangerShape ?kind ?iocValue ?targetSubject
        ?correctionAction ?canonicalType ?observationCategory
-       ?lifecycleStatus ?normalizedValue ?provenanceJson ?sourceId"""
+       ?lifecycleStatus ?normalizedValue ?provenanceJson ?sourceId
+       ?signedStatement"""
 
 _DEFENDER_PREFIXES = """PREFIX defender: <urn:defender:>
 PREFIX dp: <urn:defender:p:>
@@ -24,10 +28,16 @@ PREFIX blackbox: <urn:blackbox:>
 PREFIX bp: <urn:blackbox:p:>
 PREFIX schema: <http://schema.org/>
 """
-_VM_PARTITION_QUERY_LIMIT = 50_000
 _FORBIDDEN_IRI_CHARS = frozenset('<>"{}|^`\\\r\n\t')
 #: A wallet-namespaced graph id starts with its owner's address (lowercased here).
 _WALLET_ADDRESS = re.compile(r"0x[0-9a-f]{40}")
+
+
+#: The correction lane: target and action, plus the curator envelope literal a
+#: post-pin correction must carry (trust-and-threat-lab R3, :mod:`.live.corrections`).
+CORRECTION_PROPERTIES = f"""    OPTIONAL {{ ?threat dp:targetSubject ?targetSubject . }}
+    OPTIONAL {{ ?threat dp:action ?correctionAction . }}
+    OPTIONAL {{ ?threat <{constants.SIGNED_STATEMENT_PRED}> ?signedStatement . }}"""
 
 
 def _threat_cursor_filter(after: str) -> str:
@@ -36,12 +46,27 @@ def _threat_cursor_filter(after: str) -> str:
     return f"FILTER(STR(?threat) > {json.dumps(after, ensure_ascii=True)})"
 
 
+def _scoped(body: str, graph_uri: str, graph_prefix: str) -> tuple:
+    """Wrap *body* in the graph it reads: ONE named graph (*graph_uri*), or every
+    graph under *graph_prefix* (``GRAPH ?g`` + a prefix filter, ``?g`` selected so
+    the caller can keep only the confirmed assets). Returns (body, select columns)."""
+    if graph_prefix:
+        body = (f"  GRAPH ?g {{\n{body}\n  }}\n"
+                f"  FILTER(STRSTARTS(STR(?g), {json.dumps(graph_prefix)}))")
+        return body, f"{_SELECT_COLUMNS} ?g"
+    if graph_uri:
+        body = f"  GRAPH <{graph_uri}> {{\n{body}\n  }}"
+    return body, _SELECT_COLUMNS
+
+
 def _defender_page_sparql(
     signal_type: str,
     properties: str,
     limit: int,
     after: str,
     graph_uri: str = "",
+    *,
+    graph_prefix: str = "",
 ) -> str:
     cursor_filter = _threat_cursor_filter(after)
     body = f"""    {{
@@ -54,10 +79,9 @@ def _defender_page_sparql(
     }}
     BIND(defender:{signal_type} AS ?rdfType)
 {properties}"""
-    if graph_uri:
-        body = f"  GRAPH <{graph_uri}> {{\n{body}\n  }}"
+    body, columns = _scoped(body, graph_uri, graph_prefix)
     return f"""{_DEFENDER_PREFIXES}
-SELECT DISTINCT {_SELECT_COLUMNS}
+SELECT DISTINCT {columns}
 WHERE {{
 {body}
 }}
@@ -157,8 +181,7 @@ def _defender_threats_sparql(
         ),
         _defender_page_sparql(
             "CorrectionSignal",
-            """    OPTIONAL { ?threat dp:targetSubject ?targetSubject . }
-    OPTIONAL { ?threat dp:action ?correctionAction . }""",
+            CORRECTION_PROPERTIES,
             limit,
             after,
             graph_uri,
@@ -167,10 +190,41 @@ def _defender_threats_sparql(
     )
 
 
+#: The verified tiers still COMPILED after DKG-lookup B6: scanned against text or
+#: shapes, so they must live in memory. Dependency / IOC rules (hundreds of
+#: thousands) are looked up live instead (:mod:`.live`).
+SMALL_TIER_SIGNALS = (
+    ("InjectionSignal", """    OPTIONAL { ?threat dp:kind ?kind . }
+    OPTIONAL { ?threat dp:severity ?severity . }
+    OPTIONAL { ?threat schema:name ?name . }
+    OPTIONAL { ?threat schema:description ?description . }
+    OPTIONAL { ?threat dp:pattern ?pattern . }"""),
+    ("SkillSignal", """    OPTIONAL { ?threat dp:kind ?kind . }
+    OPTIONAL { ?threat dp:severity ?severity . }
+    OPTIONAL { ?threat schema:name ?name . }
+    OPTIONAL { ?threat schema:description ?description . }"""),
+    ("CorrectionSignal", CORRECTION_PROPERTIES),
+)
+
+
+def _verified_small_tier_lanes(limit: int, after: str, vm_prefix: str) -> tuple:
+    """The cursor-paged lanes that read the small verified tiers from EVERY
+    assertion graph under *vm_prefix* at once (``?g`` in each row): the legacy
+    ``g:identifier`` rules (escalation, fileaccess), then the defender signal
+    types in :data:`SMALL_TIER_SIGNALS`. One read for 564 assets instead of 564."""
+    return (
+        _legacy_threats_sparql(limit, after, graph_prefix=vm_prefix),
+        *(_defender_page_sparql(signal, properties, limit, after, graph_prefix=vm_prefix)
+          for signal, properties in SMALL_TIER_SIGNALS),
+    )
+
+
 def _legacy_threats_sparql(
     limit: int,
     after: str = "",
     graph_uri: str = "",
+    *,
+    graph_prefix: str = "",
 ) -> str:
     cursor_filter = _threat_cursor_filter(after)
     body = f"""  {{
@@ -199,11 +253,10 @@ def _legacy_threats_sparql(
   OPTIONAL {{ ?threat g:skillName ?skillName . }}
   OPTIONAL {{ ?threat g:skillVersion ?skillVersion . }}
   OPTIONAL {{ ?threat g:dangerShape ?dangerShape . }}"""
-    if graph_uri:
-        body = f"  GRAPH <{graph_uri}> {{\n{body}\n  }}"
+    body, columns = _scoped(body, graph_uri, graph_prefix)
     return f"""PREFIX g: <http://umanitek.ai/ontology/guardian/>
 PREFIX schema: <http://schema.org/>
-SELECT DISTINCT {_SELECT_COLUMNS}
+SELECT DISTINCT {columns}
 WHERE {{
 {body}
 }}
@@ -216,6 +269,16 @@ def _context_graph_data_uri(cg_id: str) -> str:
     if not value or any(char in value for char in _FORBIDDEN_IRI_CHARS):
         return ""
     return f"did:dkg:context-graph:{value}"
+
+
+def verifiable_memory_prefix(cg_id: str) -> str:
+    """The IRI prefix every confirmed asset graph of verified graph *cg_id*
+    starts with (``did:dkg:context-graph:<cg_id>/_verifiable_memory/``); ""
+    for an id that is not safe to embed. Takes any verified graph — the
+    configured one or its successor (trust-and-threat-lab R5) — so a reader can
+    tell which graph an asset belongs to by its IRI alone."""
+    data_graph = _context_graph_data_uri(cg_id)
+    return f"{data_graph}/_verifiable_memory/" if data_graph else ""
 
 
 def _verified_partitions_sparql(cg_id: str) -> str:
@@ -233,7 +296,7 @@ def _verified_partitions_sparql(cg_id: str) -> str:
     data_graph = _context_graph_data_uri(cg_id)
     if not data_graph:
         return ""
-    vm_prefix = f"{data_graph}/_verifiable_memory/"
+    vm_prefix = verifiable_memory_prefix(cg_id)
     pin = _owner_pin(cg_id)
     return f"""PREFIX dkg: <http://dkg.io/ontology/>
 SELECT DISTINCT ?assertionGraph ?status WHERE {{
@@ -268,7 +331,7 @@ def _verified_partition_totals_sparql(cg_id: str) -> str:
     data_graph = _context_graph_data_uri(cg_id)
     if not data_graph:
         return ""
-    vm_prefix = f"{data_graph}/_verifiable_memory/"
+    vm_prefix = verifiable_memory_prefix(cg_id)
     return f"""PREFIX dkg: <http://dkg.io/ontology/>
 SELECT (COUNT(DISTINCT ?ka) AS ?assets) (SUM(?publicTriples) AS ?triples) WHERE {{
   GRAPH <{data_graph}/_meta> {{
@@ -282,34 +345,19 @@ SELECT (COUNT(DISTINCT ?ka) AS ?assets) (SUM(?publicTriples) AS ?triples) WHERE 
 """
 
 
-def _partition_triples_sparql(graph_uri: str, *, after: str = "", limit: int = _VM_PARTITION_QUERY_LIMIT) -> str:
-    """Every triple of ONE verified partition, in threat order, after a cursor.
-
-    A plain scan of one asset's named graph — no joins, no DISTINCT, no OFFSET.
-    The joined query this replaces (one row per threat with ~27 OPTIONAL
-    columns over five partitions) exceeded DKG 10.0.21's 30 s store deadline on
-    a single asset even on a calm node, while this read returns the largest
-    asset (15,032 triples) in 1.7 s (KI-288/KI-289, bench v21 2026-10-06).
-    :mod:`.partitions` rebuilds the same rows from the triples.
-    """
-    return f"""SELECT ?threat ?p ?o
-WHERE {{
-  GRAPH <{graph_uri}> {{ ?threat ?p ?o }}
-  {_threat_cursor_filter(after)}
-}}
-ORDER BY STR(?threat) ?p ?o
-LIMIT {int(limit)}
-"""
-
-
-def _partition_triple_count_sparql(graph_uri: str) -> str:
-    """How many triples ONE verified partition holds — the check a read is held to.
-
-    A DKG node whose store is restarting answers queries with zero rows rather
-    than an error (bench native-c, 2026-10-06), so a read alone cannot tell an
-    empty or cut-short answer from the real content.
-    """
-    return f"SELECT (COUNT(*) AS ?n) WHERE {{ GRAPH <{graph_uri}> {{ ?threat ?p ?o }} }}"
+def signed_rows_sparql(graphs: Sequence[str], limit: int) -> str:
+    """The facts lane's once-per-NEW-asset read (trust-and-threat-lab R2, §03.4):
+    every triple of every SIGNED subject — one carrying the promotion envelope
+    literal under ``SIGNED_STATEMENT_PRED`` — in *graphs*. VALUES-bound to the
+    named graphs (index lookups, never a scan; LES-013/LES-040) and LIMITed, so
+    a caller that gets *limit* rows back knows the answer may be cut short.
+    "" when no graph IRI is safe to embed."""
+    values = " ".join(f"<{graph}>" for graph in graphs
+                      if graph and not any(char in _FORBIDDEN_IRI_CHARS for char in graph))
+    if not values:
+        return ""
+    return (f"SELECT ?g ?t ?p ?o WHERE {{ VALUES ?g {{ {values} }} GRAPH ?g {{ "
+            f"?t <{constants.SIGNED_STATEMENT_PRED}> ?signed . ?t ?p ?o . }} }} LIMIT {int(limit)}")
 
 
 # ---------------------------------------------------------------------------

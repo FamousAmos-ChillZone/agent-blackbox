@@ -10,7 +10,7 @@ from typing import Any, List
 
 from . import action_parsing
 from . import content_scanners
-from .finding import Finding, _rule_source
+from .finding import Finding, _rule_source, rule_subject
 from ..kernel import threat_ids
 
 
@@ -58,7 +58,7 @@ def detect_skill(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
                         if historical else f"known-bad skill {name}"
                     ),
                     confirmed=src == "public",
-                    source=src,
+                    source=src, rule_subject=rule_subject(rule),
                     kind="historical" if historical else rule.get("kind"),
                     fields={"skill_name": name, "skill_version": version},
                 )
@@ -93,7 +93,7 @@ def _artifact_findings(skill: Any, tool_name: str, ruleset: Any, seen: set) -> L
                 matched=shape,
                 evidence=f"skill {name}: {shape}",
                 confirmed=src == "public",
-                source=src,
+                source=src, rule_subject=rule_subject(rule),
                 fields={"artifact_hash": skill["artifact_hash"], "danger_shape": shape},
             )
         )

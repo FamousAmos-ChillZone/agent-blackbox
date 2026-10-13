@@ -12,9 +12,14 @@ and serves it to the hot path. Callers use this surface only:
   compiled (assets compiled of assets confirmed), for status and health.
 * :func:`verified_download_totals` — assets + triples the node has downloaded
   and confirmed (one aggregate query), for the dashboard's sync meter.
+* :class:`GrowthWatch` + :func:`request_refresh_now` — refresh within ~30 s of new
+  verified assets reaching the node instead of at the next hourly sync.
+* :func:`fetch_local_records` — this node's private audit records (the Local tier).
 * :func:`build_from_rows`, :func:`verified_identifiers`, :func:`fetch_tier` —
   compile / proof / paging entry points used by the dashboard and tests.
 * ``RulesetRefresh*`` — refresh outcomes callers branch on.
+* :mod:`.live` — the live verified lookups (DKG-lookup): ``rs.live_lookup()``
+  asks the node's local store at check time instead of a compiled dict.
 
 Internals: :mod:`.graph_queries` (SPARQL) → :mod:`.fetching` (paging) →
 :mod:`.row_adapters` + :mod:`.compiler` (rows → rules) → :mod:`.disk_cache` /
@@ -30,10 +35,11 @@ from __future__ import annotations
 
 from .compiler import Ruleset, build_from_rows, verified_identifiers
 from .errors import RulesetRefreshIncomplete, RulesetRefreshLockUnavailable, RulesetRefreshUnavailable
-from .fetching import fetch_tier
-from .partitions import DownloadTotals, verified_download_totals
+from .fetching import fetch_local_records, fetch_tier
+from . import live
+from .partitions import DownloadTotals, GrowthWatch, verified_download_totals
 from .partitions import progress as verified_progress
-from .pulse_beat import pulse
+from .pulse_beat import pulse, request_refresh_now
 from .refresh_cycle import get, peek, refresh
 
 from .direct import DetectionRead, read_for_action, validate_config
@@ -48,16 +54,20 @@ __all__ = [
     "LocalGraphClient", "DetectionRead", "read_for_action", "validate_config", "GraphReadUnavailable",
     "ready_sample", "graph_page", "graph_lookup",
     "DownloadTotals",
+    "GrowthWatch",
     "Ruleset",
     "RulesetRefreshIncomplete",
     "RulesetRefreshLockUnavailable",
     "RulesetRefreshUnavailable",
     "build_from_rows",
+    "fetch_local_records",
     "fetch_tier",
     "get",
+    "live",
     "peek",
     "pulse",
     "refresh",
+    "request_refresh_now",
     "verified_download_totals",
     "verified_identifiers",
     "verified_progress",

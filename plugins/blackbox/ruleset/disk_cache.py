@@ -15,6 +15,7 @@ from ..kernel import constants
 from . import compiler
 from . import safe_regex
 from . import row_adapters
+from . import live
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,8 @@ def _serialize(rs: compiler.Ruleset) -> Dict[str, Any]:
         "kill_list": rs.kill_list,
         "kill_list_refused": rs.kill_list_refused,
         "curator_manifest_state": rs.curator_manifest_state,
+        "verified_scope": rs.verified_scope.to_json() if rs.verified_scope is not None else None,
+        "curator_revoked": sorted(rs.curator_revoked),
     }
 
 
@@ -102,7 +105,16 @@ def _deserialize(data: Dict[str, Any]) -> compiler.Ruleset:
     rs.kill_list = dict(data.get("kill_list") or {}) if isinstance(data.get("kill_list"), dict) else {}
     rs.kill_list_refused = str(data.get("kill_list_refused") or "")
     rs.curator_manifest_state = str(data.get("curator_manifest_state") or "")
+    _restore_live_scope(rs, data)
     return rs
+
+
+def _restore_live_scope(rs: compiler.Ruleset, data: Dict[str, Any]) -> None:
+    """The live verified scope and the curator's revocations (DKG-lookup B2)."""
+    scope = data.get("verified_scope")
+    rs.verified_scope = live.VerifiedScope.from_json(scope) if isinstance(scope, dict) else None
+    revoked = data.get("curator_revoked")
+    rs.curator_revoked = frozenset(str(i) for i in revoked) if isinstance(revoked, list) else frozenset()
 
 
 def _write_cache(rs: compiler.Ruleset) -> None:
