@@ -87,8 +87,9 @@
   .btn[disabled] { opacity: .55; cursor: default; }
 
   /* the 3D stack: agent → shield → wallet */
-  .stage { perspective: 1100px; height: 420px; display: grid; place-items: center; overflow: clip; }
-  .stack { position: relative; width: min(360px, 82vw); height: 300px; transform-style: preserve-3d; transform: rotateX(58deg) rotateZ(-38deg); animation: drift 14s ease-in-out infinite; }
+  /* Clip sideways only (no phone scroll); the tilted top layer must keep its corners on desktop. */
+  .stage { perspective: 1100px; height: 420px; display: grid; place-items: center; overflow-x: clip; overflow-y: visible; }
+  .stack { position: relative; width: min(360px, 57%);   /* of its column: tilted, it spans ~1.7x this */ aspect-ratio: 6 / 5;   /* keeps its shape as it shrinks: a fixed height widened the tilt on phones */ transform-style: preserve-3d; transform: rotateX(58deg) rotateZ(-38deg); animation: drift 14s ease-in-out infinite; }
   .plane { position: absolute; inset: 0; border-radius: 10px; display: grid; place-items: center; transform-style: preserve-3d; }
   .p-wallet { transform: translateZ(0); background: var(--elevated); border: 1px solid var(--border-strong); }
   .p-wallet::after { content: ""; position: absolute; width: 74px; height: 74px; border-radius: 14px; border: 2px solid var(--muted-strong); background:
@@ -182,7 +183,7 @@
   .tally span { font-family: var(--mono); font-size: 12px; letter-spacing: .06em; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); }
   .tally .blocked { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: var(--ok-soft); }
   .tally .flagged { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-soft); }
-  .tally .missed { color: var(--muted); }
+  .tally .missed { color: var(--signal); border-style: dashed; }
   .tally .allowed { color: var(--muted-strong); border-style: dashed; }
   .agroup { display: grid; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
   .agroup > header { padding: 16px 18px 12px; border-bottom: 1px solid var(--border); }
@@ -191,19 +192,20 @@
   .arow:last-child { border-bottom: 0; }
   .arow .o { justify-self: start; font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
   .arow .o.blocked { color: #fff; background: var(--ok); } .arow .o.flagged { color: #111; background: var(--warn); }
-  .arow .o.missed { color: var(--muted); border: 1px solid var(--border-strong); }
+  .arow .o.missed { color: var(--signal); border: 1px dashed color-mix(in srgb, var(--signal) 55%, transparent); }
   .arow .o.allowed { color: var(--muted-strong); border: 1px dashed var(--border-strong); }
   .arow .t { font-weight: 700; font-size: 14.5px; } .arow .h { font-size: 13.5px; color: var(--muted-strong); margin-top: 2px; }
   .arow .n { font-size: 12.5px; color: var(--muted); margin-top: 4px; } .arow .n b { color: var(--text); }
   .arow .proof { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-left: 6px; }
   .attacks { display: grid; gap: 16px; }
   @media (max-width: 900px) {
-    .hero { grid-template-columns: 1fr; } .stage { height: 360px; } .stack { width: min(360px, 58vw); }
+    .hero { grid-template-columns: 1fr; } .stage { height: 360px; }
     .flow { grid-template-columns: 1fr 1fr; } .fstep:not(:last-child)::after { display: none; }
     .grid3, .outcomes { grid-template-columns: 1fr; } .grid2 { grid-template-columns: 1fr; }
     .set { grid-template-columns: 1fr; gap: 8px; }
   }
-  @media (max-width: 480px) { .flow { grid-template-columns: 1fr; } .wrap { gap: 64px; } .arow { grid-template-columns: 1fr; } }
+  @media (max-width: 480px) { .flow { grid-template-columns: 1fr; } .wrap { gap: 64px; } .arow { grid-template-columns: 1fr; }
+    .stage { height: 290px; } .stack { width: min(360px, 50%); } }   /* a phone column: perspective enlarges the top layer and leans it right */
   @media (prefers-reduced-motion: reduce) {
     .stack, .bolt, .p-shield::before, .beta i { animation: none !important; }
     .bolt { display: none; } .fstep { transition: none; }
@@ -318,10 +320,10 @@
   <!-- Can / cannot -->
   <section aria-label="Can and can't">
     <div class="eyebrow">Straight answers</div>
-    <h2>What it can do, and what it can't yet</h2>
+    <h2>What it does today, and what's on the way</h2>
     <div class="grid2">
       <div class="card"><span class="k" style="color:var(--ok)">It can</span><ul class="list can" id="can"></ul></div>
-      <div class="card"><span class="k" style="color:var(--muted)">Not yet</span><ul class="list cannot" id="cannot"></ul></div>
+      <div class="card"><span class="k" style="color:var(--signal)">On the way</span><ul class="list cannot" id="cannot"></ul></div>
     </div>
     <div class="card"><span class="k">Coming soon</span><div class="chips" id="coming"></div>
       <p class="muted" style="font-size:13.5px">This page is updated as each one ships. <span class="mono" id="version"></span></p></div>
@@ -396,7 +398,7 @@
   }
 
   // ---- Tested, attack by attack (the file the test suite checks) ----
-  var OUTCOME_WORD = { blocked: "Blocked", flagged: "Flagged", missed: "Not yet", allowed: "Left alone" };
+  var OUTCOME_WORD = { blocked: "Blocked", flagged: "Flagged", missed: "Coming", allowed: "Left alone" };
   fetch("/trader-shield/attacks.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (t) {
     var count = { blocked: 0, flagged: 0, missed: 0, allowed: 0 };
     t.attacks.forEach(function (a) { count[a.outcome] += 1; });
@@ -410,7 +412,7 @@
       return '<div class="agroup"><header><b>' + esc(g.title) + "</b><p>" + esc(g.intro) + "</p></header>" + rows.map(function (a) {
         return '<div class="arow"><span class="o ' + esc(a.outcome) + '">' + esc(OUTCOME_WORD[a.outcome] || a.outcome) + "</span><div>" +
           '<div class="t">' + esc(a.title) + '<span class="proof">' + (a.proof === "bench" ? "proven on a bench node" : "checked by the tests") + "</span></div>" +
-          '<div class="h">' + esc(a.how) + "</div>" + (a.next ? '<div class="n"><b>What would close it:</b> ' + esc(a.next) + "</div>" : "") + "</div></div>";
+          '<div class="h">' + esc(a.how) + "</div>" + (a.next ? '<div class="n"><b>How we\'ll add it:</b> ' + esc(a.next) + "</div>" : "") + "</div></div>";
       }).join("") + "</div>";
     }).join("");
   }).catch(function () {

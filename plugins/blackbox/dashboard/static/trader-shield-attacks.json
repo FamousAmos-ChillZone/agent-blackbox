@@ -7,7 +7,7 @@
     {"id": "seed", "title": "Seed phrases", "intro": "The 12–24 recovery words ARE the wallet: whoever has them controls every account in it."},
     {"id": "key", "title": "Private keys", "intro": "A private key signs for one account: an Ethereum key next to a label, or a Solana key (Phantom's export, the Solana CLI file). Trading setups keep one in a config, so handling it is flagged; sending it out is blocked."},
     {"id": "chain", "title": "How the agent gets tricked", "intro": "Most wallet theft starts earlier: a poisoned page, file or package tells the agent what to do."},
-    {"id": "gap", "title": "Not covered yet", "intro": "Honest gaps, each with what would close it. These pass straight through today."}
+    {"id": "gap", "title": "Coming next", "intro": "What we're adding next. Each one is already written as a test, so the day it ships it moves into the lists above."}
   ],
   "attacks": [
     {"id": "vault-file-tool", "group": "vault", "proof": "test", "outcome": "blocked",
