@@ -23,6 +23,7 @@ from _blackbox_loader import load_blackbox
 
 cli_mod = load_blackbox("cli")
 reviewer_setup = load_blackbox("detection.reviewer_setup")
+reviewer_discovery = load_blackbox("detection.reviewer_setup.discovery")
 config_mod = load_blackbox("kernel.config")
 detection = load_blackbox("detection")
 hooks = load_blackbox("guard.hooks")
@@ -299,7 +300,7 @@ def test_setup_llm_reuses_hermes_model_config(monkeypatch):
     )
     monkeypatch.setattr(hconfig, "load_env", lambda: {"OPENAI_API_KEY": "sk-hermes"})
 
-    candidate = reviewer_setup._hermes_llm_candidate()
+    candidate = reviewer_discovery._hermes_llm_candidate()
     assert candidate == {
         "source": "Hermes",
         "provider": "openai",
@@ -324,9 +325,9 @@ def test_setup_llm_reuses_discovered_hermes_home_config(tmp_path, monkeypatch):
     (home / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-profile\n", encoding="utf-8")
     monkeypatch.setattr(hconfig, "load_config", dict)
     monkeypatch.setattr(hconfig, "load_env", dict)
-    monkeypatch.setattr(reviewer_setup.attach, "discover_hermes_homes", lambda: [home])
+    monkeypatch.setattr(reviewer_discovery.attach, "discover_hermes_homes", lambda: [home])
 
-    candidate = reviewer_setup._hermes_llm_candidate()
+    candidate = reviewer_discovery._hermes_llm_candidate()
     assert candidate == {
         "source": f"Hermes ({home.resolve()})",
         "provider": "anthropic",
@@ -350,9 +351,9 @@ def test_setup_llm_reuses_openclaw_json_config(tmp_path, monkeypatch):
         """,
         encoding="utf-8",
     )
-    monkeypatch.setattr(reviewer_setup.attach, "discover_openclaw_workspaces", lambda: [ws])
+    monkeypatch.setattr(reviewer_discovery.attach, "discover_openclaw_workspaces", lambda: [ws])
 
-    candidate = reviewer_setup._openclaw_llm_candidate()
+    candidate = reviewer_discovery._openclaw_llm_candidate()
     assert candidate["source"] == f"OpenClaw ({ws})"
     assert candidate["provider"] == "anthropic"
     assert candidate["model"] == "claude-haiku-4-5-20251001"
