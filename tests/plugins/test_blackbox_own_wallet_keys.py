@@ -112,3 +112,10 @@ def test_the_mode_carries_the_addresses_lower_cased_and_capped():
     many = ["0x" + secrets.token_hex(20) for _ in range(60)]
     mode = wallet_mode.from_entry({"wallet_protection": True, "wallet_addresses": [many[0].upper().replace("0X", "0x")] + many})
     assert mode.addresses[0] == many[0] and len(mode.addresses) == wallet_mode.MAX_WALLET_ADDRESSES
+
+
+def test_keccak_pads_a_message_one_byte_short_of_a_block():
+    # 135 bytes leaves one byte in the 136-byte block: 0x01 and 0x80 share it. Found by
+    # comparing with Foundry's `cast keccak` on the trader bench (the first version
+    # padded this length into a second block). Vector from `cast keccak` (Foundry 1.8.5).
+    assert keccak256(b"a" * 135).hex() == "34367dc248bbd832f4e3e69dfaac2f92638bd0bbd18f2912ba4ef454919cf446"

@@ -69,9 +69,9 @@ def _permute(state: list) -> None:
 
 def keccak256(data: bytes) -> bytes:
     """Ethereum's Keccak-256 of *data* (original Keccak padding 0x01…0x80)."""
-    padded = bytearray(data) + b"\x01" + b"\x00" * ((-len(data) - 2) % _RATE) + b"\x80"
-    if len(padded) % _RATE:   # data one byte short of a block: 0x01 and 0x80 share it
-        padded = bytearray(data) + b"\x81"
+    room = _RATE - len(data) % _RATE   # bytes left in the last block (1…136)
+    # One byte left: the opening 0x01 and the closing 0x80 share it (0x81).
+    padded = bytearray(data) + (b"\x81" if room == 1 else b"\x01" + b"\x00" * (room - 2) + b"\x80")
     state = [[0] * 5 for _ in range(5)]
     for block in range(0, len(padded), _RATE):
         for lane in range(_RATE // 8):
