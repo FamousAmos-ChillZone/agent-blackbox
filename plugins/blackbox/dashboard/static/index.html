@@ -5453,7 +5453,7 @@
     var id = String(f.identifier || "");
     if (/:crypto-wallet$/.test(id)) return "vault";
     if (id === "secret:seed-phrase") return "seed";
-    if (id === "secret:wallet-private-key") return "key";
+    if (id === "secret:wallet-private-key" || id === "secret:solana-private-key") return "key";
     return "";
   }
   function walletRows(f) {
@@ -5464,7 +5464,9 @@
     var how = /^copy/.test(String(f.evidence || "")) ? "by copying or archiving a folder that contains it" : "by reading it directly";
     if (kind === "vault") rows.push(["Reached for", wallet + "'s vault (the wallet's key store), " + how]);
     if (kind === "seed") rows.push(["Reached for", "a seed phrase (wallet recovery words) in what the agent was handling or sending"]);
-    if (kind === "key") rows.push(["Reached for", "a wallet private key, written next to a key label"]);
+    if (kind === "key") rows.push(["Reached for", String(f.identifier || "") === "secret:solana-private-key"
+      ? "a Solana secret key (what Phantom's \"Export private key\" shows, or a Solana CLI key file)"
+      : "a wallet private key, written next to a key label"]);
     rows.push(["Why it matters", WALLET_WHY[kind]]);
     var turns = (f.context && Array.isArray(f.context.turns)) ? f.context.turns : [];
     for (var i = turns.length - 1; i >= 0; i--) {

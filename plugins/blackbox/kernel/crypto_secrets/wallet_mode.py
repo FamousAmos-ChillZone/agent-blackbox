@@ -31,7 +31,7 @@ SUPPORTED_WALLETS: Dict[str, str] = {"metamask": "MetaMask"}
 #: Wallets on the way (key-store IDs verified, rules not written yet) — shown as "coming soon".
 PLANNED_WALLETS: Tuple[str, ...] = ("Phantom", "Rabby", "Coinbase Wallet", "Trust Wallet", "OKX Wallet", "Keplr")
 #: Findings that belong to the mode: seed phrases and labelled private keys (any wallet)…
-WALLET_SECRET_IDENTIFIERS = frozenset({"secret:seed-phrase", "secret:wallet-private-key"})
+WALLET_SECRET_IDENTIFIERS = frozenset({"secret:seed-phrase", "secret:wallet-private-key", "secret:solana-private-key"})
 #: …and key-store access, which names its wallet in ``fields["wallet"]``.
 WALLET_FILE_SUFFIX = ":crypto-wallet"
 
@@ -50,8 +50,9 @@ class WalletProtection:
         if identifier in WALLET_SECRET_IDENTIFIERS:
             return self.enabled
         if identifier.endswith(WALLET_FILE_SUFFIX):
-            fields = finding.get("fields") if isinstance(finding.get("fields"), Mapping) else {}
-            return self.enabled and str(fields.get("wallet") or "").lower() in self.wallets
+            fields = finding.get("fields")
+            wallet = fields.get("wallet") if isinstance(fields, Mapping) else None
+            return self.enabled and str(wallet or "").lower() in self.wallets
         return True
 
     def as_json(self) -> Dict[str, Any]:

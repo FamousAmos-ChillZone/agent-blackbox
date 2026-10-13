@@ -56,6 +56,7 @@ _FILE: Dict[str, Classification] = {
 _SECRET: Dict[str, Classification] = {
     "seed-phrase": Classification("wallet-drain", "wallet-keys", "T1552.001"),
     "wallet-private-key": Classification("wallet-drain", "wallet-keys", "T1552.001"),
+    "solana-private-key": Classification("wallet-drain", "wallet-keys", "T1552.001"),
 }
 #: Dangerous command shape -> what running it does.
 _COMMAND: Dict[str, Classification] = {
