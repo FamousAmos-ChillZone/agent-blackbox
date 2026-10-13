@@ -23,6 +23,7 @@ from _blackbox_loader import load_blackbox
 
 cli_mod = load_blackbox("cli")
 reviewer_setup = load_blackbox("detection.reviewer_setup")
+reviewer_discovery = load_blackbox("detection.reviewer_setup.discovery")
 config_mod = load_blackbox("kernel.config")
 detection = load_blackbox("detection")
 hooks = load_blackbox("guard.hooks")
@@ -261,7 +262,9 @@ def test_settings_validate_llm():
         {"llm": {"enabled": True, "provider": "openai", "model": "gpt-4o-mini", "api_key": "sk-x"}}
     )
     assert errors == []
-    assert updates["llm"] == {"enabled": True, "provider": "openai", "model": "gpt-4o-mini", "api_key": "sk-x"}
+    # a typed key is stored as itself and clears any variable name saved before (KI-371)
+    assert updates["llm"] == {"enabled": True, "provider": "openai", "model": "gpt-4o-mini", "api_key": "sk-x",
+                              "api_key_env": None}
 
 
 def test_settings_validate_rejects_bad_provider():
@@ -299,12 +302,13 @@ def test_setup_llm_reuses_hermes_model_config(monkeypatch):
     )
     monkeypatch.setattr(hconfig, "load_env", lambda: {"OPENAI_API_KEY": "sk-hermes"})
 
-    candidate = reviewer_setup._hermes_llm_candidate()
+    candidate = reviewer_discovery._hermes_llm_candidate()
     assert candidate == {
         "source": "Hermes",
         "provider": "openai",
         "model": "gpt-4o-mini",
         "api_key": "sk-hermes",
+        "api_key_env": "OPENAI_API_KEY",
     }
 
 
@@ -324,14 +328,15 @@ def test_setup_llm_reuses_discovered_hermes_home_config(tmp_path, monkeypatch):
     (home / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-profile\n", encoding="utf-8")
     monkeypatch.setattr(hconfig, "load_config", dict)
     monkeypatch.setattr(hconfig, "load_env", dict)
-    monkeypatch.setattr(reviewer_setup.attach, "discover_hermes_homes", lambda: [home])
+    monkeypatch.setattr(reviewer_discovery.attach, "discover_hermes_homes", lambda: [home])
 
-    candidate = reviewer_setup._hermes_llm_candidate()
+    candidate = reviewer_discovery._hermes_llm_candidate()
     assert candidate == {
         "source": f"Hermes ({home.resolve()})",
         "provider": "anthropic",
         "model": "claude-haiku-4-5-20251001",
         "api_key": "sk-ant-profile",
+        "api_key_env": "ANTHROPIC_API_KEY",
     }
 
 
@@ -350,34 +355,24 @@ def test_setup_llm_reuses_openclaw_json_config(tmp_path, monkeypatch):
         """,
         encoding="utf-8",
     )
-    monkeypatch.setattr(reviewer_setup.attach, "discover_openclaw_workspaces", lambda: [ws])
+    monkeypatch.setattr(reviewer_discovery.attach, "discover_openclaw_workspaces", lambda: [ws])
 
-    candidate = reviewer_setup._openclaw_llm_candidate()
+    candidate = reviewer_discovery._openclaw_llm_candidate()
     assert candidate["source"] == f"OpenClaw ({ws})"
     assert candidate["provider"] == "anthropic"
     assert candidate["model"] == "claude-haiku-4-5-20251001"
     assert candidate["api_key"] == "sk-ant-openclaw"
 
 
-def test_setup_llm_auto_persists_reused_config(monkeypatch):
+def test_setup_llm_auto_saves_the_variable_name_once_the_operator_agrees(monkeypatch):
     saved = []
-    monkeypatch.setattr(
-        reviewer_setup, "_auto_llm_candidate",
-        lambda: (
-            "Hermes",
-            {
-                "source": "Hermes",
-                "provider": "openai",
-                "model": "gpt-4o-mini",
-                "api_key": "sk-hermes",
-            },
-        ),
-    )
-    monkeypatch.setattr(
-        settings,
-        "write_settings",
-        lambda payload: saved.append(payload) or {"ok": True},
-    )
+    candidate = {"source": "Hermes", "provider": "openai", "model": "gpt-4o-mini", "api_key": "sk-hermes",
+                 "api_key_env": "OPENAI_API_KEY"}
+    monkeypatch.setattr(reviewer_setup, "_auto_llm_candidate", lambda: ("Hermes", candidate))
+    monkeypatch.setattr(reviewer_setup, "reachable_key_env", lambda found: found["api_key_env"])
+    monkeypatch.setattr(reviewer_setup, "_tty", lambda: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(reviewer_setup, "_ask", lambda prompt, tty: "y")
+    monkeypatch.setattr(settings, "write_settings", lambda payload: saved.append(payload) or {"ok": True})
     monkeypatch.setattr(reviewer_setup, "settings", settings)
 
     rc = reviewer_setup.cmd_setup_llm(
@@ -385,16 +380,9 @@ def test_setup_llm_auto_persists_reused_config(monkeypatch):
     )
 
     assert rc == 0
-    assert saved == [
-        {
-            "llm": {
-                "enabled": True,
-                "provider": "openai",
-                "model": "gpt-4o-mini",
-                "api_key": "sk-hermes",
-            }
-        }
-    ]
+    # KI-371: the name of the variable that holds the key, never a copy of the key
+    assert saved == [{"llm": {"enabled": True, "provider": "openai", "model": "gpt-4o-mini",
+                              "api_key_env": "OPENAI_API_KEY"}}]
 
 
 def test_setup_llm_configure_prompts_even_with_reusable_config(monkeypatch):

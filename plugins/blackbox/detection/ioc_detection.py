@@ -12,6 +12,7 @@ from . import action_parsing
 from . import content_scanners
 from .finding import Finding, _rule_source, mark_answered_by, rule_subject
 from .injection_detection import injection_scan_text
+from .transactions.chains import chain_named
 from ..kernel import crypto_secrets
 
 
@@ -44,12 +45,17 @@ def ioc_rules(ruleset: Any, identifiers: list[str]) -> dict[str, dict[str, Any]]
     return {ident: compiled[ident] for ident in identifiers if ident in compiled}
 
 
-def _known_protocol_contract(identifier: str) -> bool:
-    """A wallet/contract candidate that is a well-known exchange router (Uniswap, PancakeSwap…):
-    never looked up, never flagged. STOPGAP for KI-370 — the verified graph lists seven
-    routers as wallets; the root fix is a curator correction of those entries."""
+def _known_protocol_contract(identifier: str, chain: Optional[int]) -> bool:
+    """A wallet/contract candidate that is a well-known exchange router (Uniswap, PancakeSwap…)
+    on the call's chain, or on an unnamed one: never looked up, never flagged. STOPGAP for
+    KI-370 — the verified graph lists seven routers as wallets; the root fix is a curator
+    correction of those entries. A call that names a chain the router is NOT on looks the
+    address up like any other (KI-388)."""
     parts = identifier.split(":", 2)
-    return len(parts) == 3 and parts[1] in ("wallet", "contract") and bool(crypto_secrets.protocol_contract(parts[2]))
+    if len(parts) != 3 or parts[1] not in ("wallet", "contract"):
+        return False
+    return crypto_secrets.router_match(parts[2], chain) in (crypto_secrets.RouterMatch.ON_ITS_CHAIN,
+                                                           crypto_secrets.RouterMatch.CHAIN_UNKNOWN)
 
 
 def detect_ioc(tool_name: str, args: Any, ruleset: Any, context: Optional[str] = None) -> list[Finding]:
@@ -68,7 +74,8 @@ def detect_ioc(tool_name: str, args: Any, ruleset: Any, context: Optional[str] =
     text = injection_scan_text(args)
     if not text:
         return []
-    candidates = [ident for ident in content_scanners.iter_ioc_candidates(text) if not _known_protocol_contract(ident)]
+    chain = chain_named(text)
+    candidates = [ident for ident in content_scanners.iter_ioc_candidates(text) if not _known_protocol_contract(ident, chain)]
     rules = ioc_rules(ruleset, candidates)
     out: list[Finding] = []
     seen: set = set()

@@ -17,8 +17,10 @@ Public surface:
 * :func:`misdirected_exchange_keys` — an exchange's API key header sent to a
   site that is not that exchange;
 * :func:`own_keys_in` / :func:`address_of` — raw Ethereum private keys that open
-  one of the operator's listed addresses;
-* :func:`protocol_contract` — well-known exchange routers (never a drainer, never flagged).
+  one of the operator's listed addresses; :func:`checksum_address` — an address's
+  EIP-55 spelling;
+* :func:`protocol_contract` / :func:`router_match` / :class:`RouterMatch` — well-known
+  exchange routers and the chains they are routers on (never a drainer, never flagged there).
 """
 
 from .seed_phrase import MARKER as SEED_PHRASE_MARKER
@@ -26,16 +28,18 @@ from . import wallet_mode
 from .seed_phrase import SeedPhraseRun, find_seed_phrase_runs, redact_seed_phrases, wordlist_ready
 from .solana_key import MARKER as SOLANA_KEY_MARKER
 from .solana_key import find_solana_secret_keys, redact_solana_keys
-from .evm_key import address_of, own_keys_in
+from .evm_key import address_of, checksum_address, own_keys_in
 from . import exchange_keys
 from .exchange_keys import misdirected_exchange_keys
-from .known_contracts import protocol_contract
+from .known_contracts import RouterMatch, protocol_contract, router_match
 
 __all__ = [
            "SEED_PHRASE_MARKER",
            "SOLANA_KEY_MARKER",
+           "RouterMatch",
            "SeedPhraseRun",
            "address_of",
+           "checksum_address",
            "exchange_keys",
            "find_seed_phrase_runs",
            "find_solana_secret_keys",
@@ -44,6 +48,7 @@ __all__ = [
            "protocol_contract",
            "redact_seed_phrases",
            "redact_solana_keys",
+           "router_match",
            "wallet_mode",
            "wordlist_ready",
 ]

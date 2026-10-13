@@ -26,6 +26,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from ...kernel import crypto_secrets
 from ...kernel.dkg_client import extract_binding
 from ...kernel.sparql_text import sparql_string_literal as literal
 from ...kernel.store import StoreClient
@@ -46,6 +47,8 @@ CHUNK = 200
 MAX_VALUES = 4000
 #: Rows per query: candidates × ~15 triples each, with headroom.
 ROW_LIMIT = 20_000
+#: EVM addresses per call also asked for in their EIP-55 spelling (~0.3 ms each).
+CHECKSUM_SPELLINGS = 64
 
 _DP = "urn:defender:p:"
 _BP = "urn:blackbox:p:"
@@ -94,10 +97,10 @@ class VerifiedLookup:
     def iocs(self, identifiers: Sequence[str]) -> LookupAnswer:
         """Public IOC rules among these ``ioc:type:value`` identifiers (already
         normalised by ``threat_ids.ioc_identifier``). The store is asked by
-        value; the answer is keyed by the identifier the graph gives the rule."""
-        values = list(dict.fromkeys(
-            ident.split(":", 2)[2] for ident in identifiers[:MAX_VALUES] if ident.count(":") >= 2
-        ))
+        value — for an EVM wallet/contract by both spellings a feed may have
+        stored (:func:`_stored_spellings`); the answer is keyed by the
+        identifier the graph gives the rule, which the row builder normalises."""
+        values = list(dict.fromkeys(_stored_spellings(identifiers[:MAX_VALUES])))
         return self._run(values, _ioc_sparql, "ioc")
 
     def _run(self, items: Sequence[Any], build_query: Any, category: str) -> LookupAnswer:
@@ -154,6 +157,30 @@ class VerifiedLookup:
                 if allowed is not None:
                     rules.setdefault(key, allowed)
         return rules
+
+
+def _stored_spellings(identifiers: Sequence[str]) -> list[str]:
+    """The literal values to ask the store for these identifiers: each value as
+    normalised (lower-case for an EVM address) and, for the first
+    :data:`CHECKSUM_SPELLINGS` EVM wallets/contracts, its EIP-55 checksum spelling too.
+
+    WHY both (KI-387): the store compares literals exactly, and a feed may publish an
+    address checksummed. Asking for the two spellings in the VALUES list keeps the
+    query an exact, bounded lookup; a LCASE() comparison would scan the shared store
+    and can get it restarted (LES-040). Any other casing is not found."""
+    out: list[str] = []
+    checksummed = 0
+    for identifier in identifiers:
+        parts = identifier.split(":", 2)
+        if len(parts) != 3:
+            continue
+        out.append(parts[2])
+        if parts[1] in ("wallet", "contract") and checksummed < CHECKSUM_SPELLINGS:
+            spelling = crypto_secrets.checksum_address(parts[2])
+            if spelling and spelling != parts[2]:
+                out.append(spelling)
+                checksummed += 1
+    return out
 
 
 def _dependency_sparql(tuples: Sequence[tuple[str, str, str]]) -> str:

@@ -125,7 +125,8 @@ def _would_block(cfg: BlackboxConfig, findings: list[detection.Finding]) -> list
 
     Confirmed findings and custom rules block; community/heuristic ones only
     alert. ``vulnerability`` kind never blocks (a legit-but-vulnerable package
-    must keep working) — only ``malware`` is stopped. IOC findings alert but
+    must keep working), nor ``flag-only`` (a local rule's community-sourced or
+    routine finding, KI-385) — only ``malware`` is stopped. IOC findings alert but
     never auto-block in this rollout: network and crypto-address blocklists
     are higher-churn / higher-FP than pinned package versions, so they are
     validated in audit mode first.
@@ -135,7 +136,7 @@ def _would_block(cfg: BlackboxConfig, findings: list[detection.Finding]) -> list
     return [
         f for f in findings
         if (f.confirmed or f.source in ("custom", "secret"))
-        and getattr(f, "kind", None) not in (constants.KIND_VULNERABILITY, "historical")
+        and getattr(f, "kind", None) not in (constants.KIND_VULNERABILITY, "historical", detection.KIND_FLAG_ONLY)
         and f.category != "ioc"
         and cfg.meets_block_threshold(f.severity)
     ]

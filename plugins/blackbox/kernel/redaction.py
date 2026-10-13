@@ -66,9 +66,14 @@ _BEARER_RE = re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
 # A secret-named key followed by `:` or `=` and a value: `DB_PASSWORD=...`,
 # `"api_key": "..."`. The key name stays (it explains the log line); the value
 # goes. A value already replaced by a typed marker (`[REDACTED_...]`) is kept.
+# Linear time on hostile text: a bounded look-ahead finds the keyword inside the
+# name, then at most 64 name characters are taken possessively (`{1,64}+`, no
+# backtracking); a longer run cannot be one name, so it is not rescanned per position.
+# The earlier `\b[...]*(?:keyword)[...]*` re-split every long word run and took
+# seconds per KB on text like "tokens-tokens-..." — on every tool call (KI-373).
 _SECRET_ASSIGNMENT_RE = re.compile(
-    r"(?P<key>\b[A-Za-z0-9_-]*(?:api[_-]?key|token|secret|password|passwd|credential"
-    r"|private[_-]?key|client[_-]?secret|access[_-]?key)[A-Za-z0-9_-]*[\"']?)"
+    r"(?P<key>\b(?=[A-Za-z0-9_-]{0,64}?(?:api[_-]?key|token|secret|password|passwd|credential"
+    r"|private[_-]?key|client[_-]?secret|access[_-]?key))[A-Za-z0-9_-]{1,64}+[\"']?)"
     r"(?P<sep>\s*[:=]\s*[\"']?)"
     r"(?P<value>[^\s\"'\[\],;]{8,})",
     re.IGNORECASE,

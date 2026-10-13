@@ -37,7 +37,8 @@ PLANNED_WALLETS: tuple[str, ...] = ("Rabby", "Coinbase Wallet", "Trust Wallet", 
 #: Findings that belong to the mode: seed phrases, labelled private keys and Solana keys (any wallet)…
 WALLET_SECRET_IDENTIFIERS = frozenset({"secret:seed-phrase", "secret:wallet-private-key", "secret:solana-private-key",
                                        "secret:exchange-api-key",    # …an exchange key sent to a site not its own
-                                       "secret:token-approval-drainer", "secret:token-approval-unlimited"})   # …token approvals
+                                       "secret:token-approval-drainer", "secret:token-approval-unlimited",    # …token approvals
+                                       "secret:token-approval-unchecked-spender"})
 #: …and key-store access, which names its wallet in ``fields["wallet"]``.
 WALLET_FILE_SUFFIX = ":crypto-wallet"
 #: …and the macOS keychain (saved passwords, the browsers' Safe Storage keys), any wallet.
@@ -136,7 +137,8 @@ def current() -> WalletProtection:
 
 def validate(payload: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
     """``(config updates, errors)`` for the mode's keys in a settings *payload*.
-    Unknown wallets are refused, never stored."""
+    Unknown wallets are refused, never stored; ``protected_wallets`` holds at most
+    every supported wallet once, ``wallet_addresses`` at most :data:`MAX_WALLET_ADDRESSES`."""
     updates: dict[str, Any] = {}
     errors: list[str] = []
     if "wallet_protection" in payload:
@@ -146,16 +148,19 @@ def validate(payload: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
             errors.append("wallet_protection must be a boolean")
     if "protected_wallets" in payload:
         raw = payload["protected_wallets"]
-        unknown = [w for w in (raw if isinstance(raw, list) else [raw]) if str(w or "").lower() not in SUPPORTED_WALLETS]
-        if not isinstance(raw, list) or unknown:
+        # No list longer than the supported set: a valid one never repeats a wallet (KI-389).
+        too_long = isinstance(raw, list) and len(raw) > len(SUPPORTED_WALLETS)
+        unknown = [] if too_long else [w for w in (raw if isinstance(raw, list) else [raw])
+                                       if str(w or "").lower() not in SUPPORTED_WALLETS]
+        if not isinstance(raw, list) or too_long or unknown:
             errors.append(f"protected_wallets must be a list of: {', '.join(SUPPORTED_WALLETS)}")
         else:
             updates["protected_wallets"] = list(_wallet_list(raw))
     if "wallet_addresses" in payload:
         raw = payload["wallet_addresses"]
-        items = raw if isinstance(raw, list) else None
+        items = raw if isinstance(raw, list) and len(raw) <= MAX_WALLET_ADDRESSES else None
         bad = [a for a in items or [] if not _ADDRESS.match(str(a or "").strip())]
-        if items is None or bad or len(items) > MAX_WALLET_ADDRESSES:
+        if items is None or bad:
             errors.append(f"wallet_addresses must be a list of up to {MAX_WALLET_ADDRESSES} addresses like 0x followed by 40 hex characters")
         else:
             updates["wallet_addresses"] = list(_address_list(items))

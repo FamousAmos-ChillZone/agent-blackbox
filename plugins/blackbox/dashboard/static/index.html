@@ -3376,9 +3376,10 @@
   function $(id) { return document.getElementById(id); }
 
   function esc(s) {
+    // Every character that can end text or a quoted attribute, ' included (KI-390).
     return String(s == null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
   var SEV = { critical: 1, high: 1, medium: 1, low: 1, info: 1 };

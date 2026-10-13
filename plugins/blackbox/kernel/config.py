@@ -142,10 +142,10 @@ class BlackboxConfig:
     discover: bool = True
     osv_lookup: bool = True
     auto_attach: bool = True
-    #: Optional LLM reviewer (opt-in, off by default). When enabled with a key
-    #: present, an LLM gives a second opinion on prompt injection over the
-    #: observer path. Provider is ``openai`` or ``anthropic``. Config keys:
-    #: ``plugins.entries.blackbox.llm.{enabled,provider,model,api_key}``.
+    #: Optional LLM reviewer (opt-in, off by default): an LLM gives a second opinion on prompt
+    #: injection over the observer path. Provider ``openai`` or ``anthropic``. Config keys:
+    #: ``plugins.entries.blackbox.llm.{enabled,provider,model,api_key_env|api_key}`` — ``api_key_env``
+    #: names the variable holding the key (KI-371: Hermes loads ~/.hermes/.env), so no copy is kept.
     llm_enabled: bool = False
     llm_provider: str = ""
     llm_model: str = ""
@@ -276,16 +276,14 @@ def load_blackbox_config() -> BlackboxConfig:
     categories = _normalize_categories(entry.get("detection"))
     protected_paths = _normalize_protected_paths(entry.get("protected_paths"))
     llm_entry = entry.get("llm") if isinstance(entry.get("llm"), dict) else {}
-    llm_provider = str(
-        _env_or(llm_entry, env="BLACKBOX_LLM_PROVIDER", key="provider", default="")
-    ).strip().lower()
+    llm_provider = str(_env_or(llm_entry, env="BLACKBOX_LLM_PROVIDER", key="provider", default="")).strip().lower()
     if llm_provider not in ("openai", "anthropic", ""):
         llm_provider = ""
     llm_model = str(_env_or(llm_entry, env="BLACKBOX_LLM_MODEL", key="model", default="")).strip()
-    llm_api_key = str(_env_or(llm_entry, env="BLACKBOX_LLM_API_KEY", key="api_key", default="")).strip()
-    llm_enabled = _as_bool(
-        _env_or(llm_entry, env="BLACKBOX_LLM_ENABLED", key="enabled", default=False), False
-    )
+    key_env = str(llm_entry.get("api_key_env") or "").strip()
+    referenced_key = os.environ.get(key_env, "") if key_env.isascii() and key_env.isidentifier() else ""
+    llm_api_key = str(_env_or(llm_entry, env="BLACKBOX_LLM_API_KEY", key="api_key", default=referenced_key) or referenced_key).strip()
+    llm_enabled = _as_bool(_env_or(llm_entry, env="BLACKBOX_LLM_ENABLED", key="enabled", default=False), False)
     context_graph_id = str(
         _env_or(
             entry,
