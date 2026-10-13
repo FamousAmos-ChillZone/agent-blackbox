@@ -534,3 +534,56 @@ def test_settings_write_deep_merges_categories():
     read = settings.read_settings()
     assert read["categories"]["dependency"]["min_severity"] == "critical"
     assert read["categories"]["fileaccess"]["enabled"] is False
+
+
+# ---------------------------------------------------------------------------
+# 8. KI-389: a save is all-or-nothing, and every list has a ceiling
+# ---------------------------------------------------------------------------
+
+wallet_mode = load_blackbox("kernel.crypto_secrets.wallet_mode")
+
+
+def test_a_partly_valid_save_persists_nothing():
+    assert settings.write_settings({"wallet_protection": True, "mode": "block"})["ok"] is True
+    result = settings.write_settings({"wallet_protection": False, "wallet_addresses": "x", "mode": "audit"})
+    assert result["ok"] is False and any("wallet_addresses" in e for e in result["errors"])
+    assert result["settings"]["wallet_protection"]["enabled"] is True   # protection was NOT turned off
+    assert result["settings"]["mode"] == "block"
+
+
+@pytest.mark.parametrize("payload, field", [
+    ({"protected_wallets": ["metamask"] * (len(wallet_mode.SUPPORTED_WALLETS) + 1)}, "protected_wallets"),
+    ({"protected_wallets": list(wallet_mode.SUPPORTED_WALLETS) + ["metamask"]}, "protected_wallets"),
+    ({"wallet_addresses": ["0x" + "1" * 40] * (wallet_mode.MAX_WALLET_ADDRESSES + 1)}, "wallet_addresses"),
+    ({"protected_paths": [f"/p{i}" for i in range(settings.MAX_PROTECTED_PATHS + 1)]}, "protected_paths"),
+])
+def test_a_list_over_its_ceiling_is_refused(payload, field):
+    result = settings.write_settings(payload)
+    assert result["ok"] is False and any(field in e for e in result["errors"])
+
+
+def test_lists_at_their_ceiling_are_saved():
+    result = settings.write_settings({"protected_wallets": list(wallet_mode.SUPPORTED_WALLETS),
+                                      "protected_paths": [f"/p{i}" for i in range(settings.MAX_PROTECTED_PATHS)]})
+    assert result["ok"] is True and len(result["settings"]["protected_paths"]) == settings.MAX_PROTECTED_PATHS
+
+
+def test_the_dashboard_answers_400_and_saves_nothing_for_a_partly_valid_body(monkeypatch, tmp_path):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    server = load_blackbox("dashboard.server")
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
+    settings.write_settings({"wallet_protection": True})
+    with TestClient(server.create_app(), base_url="http://127.0.0.1:9700") as client:
+        token = client.get("/api/session").json()["token"]
+        res = client.post("/api/settings", json={"wallet_protection": False, "wallet_addresses": "x"},
+                          headers={"X-Blackbox-Token": token})
+    assert res.status_code == 400 and res.json()["ok"] is False
+    assert settings.read_settings()["wallet_protection"]["enabled"] is True
+
+
+def test_setup_llm_still_saves_through_the_writer():
+    result = settings.write_settings({"llm": {"enabled": True, "provider": "openai", "model": "gpt-4o-mini",
+                                              "api_key_env": "OPENAI_API_KEY"}})
+    assert result["ok"] is True and result["settings"]["llm"]["provider"] == "openai"

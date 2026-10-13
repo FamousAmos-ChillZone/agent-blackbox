@@ -8,7 +8,9 @@ the next :func:`config.load_blackbox_config`.
 Everything is best-effort and validated: :func:`read_settings` always returns a
 complete, defaulted view (even with no config file), and :func:`write_settings`
 only ever persists known keys with validated values, preserving every unrelated
-config key. Writing prefers the hermes config writer (comment/format-preserving)
+config key. A save is all-or-nothing (KI-389): one invalid value and NOTHING is
+persisted — a half-applied save once turned wallet protection off while reporting
+an error about an unrelated field. Writing prefers the hermes config writer (comment/format-preserving)
 and falls back to a plain YAML read-modify-write for standalone installs.
 """
 
@@ -25,6 +27,8 @@ from .config import DETECTION_CATEGORIES, load_blackbox_config
 logger = logging.getLogger(__name__)
 
 _GEAR_KEYS = ("plugins", "entries", "blackbox")
+#: Most protected paths a save may list (each is matched on every file-access call).
+MAX_PROTECTED_PATHS = 100
 
 
 def read_settings() -> dict[str, Any]:
@@ -66,9 +70,9 @@ def read_settings() -> dict[str, Any]:
 def _validate(payload: dict[str, Any], *, sharing_consent: bool = False) -> tuple[dict[str, Any], list[str]]:
     """Coerce a settings *payload* into a validated ``blackbox`` config subtree.
 
-    Returns ``(entry_updates, errors)``. Unknown keys and invalid values are
-    dropped (with an error note) rather than persisted, so a malformed request
-    can never corrupt the config. *sharing_consent* (R13, injected by the caller —
+    Returns ``(entry_updates, errors)``. Unknown keys are ignored; an invalid value
+    is an error (and :func:`write_settings` then persists nothing), so a malformed
+    request can never corrupt the config. *sharing_consent* (R13, injected by the caller —
     the kernel never asks a feature): without it ``report: true`` is refused.
     """
     errors: list[str] = []
@@ -127,15 +131,15 @@ def _validate(payload: dict[str, Any], *, sharing_consent: bool = False) -> tupl
 
     if "protected_paths" in payload:
         raw = payload["protected_paths"]
-        if isinstance(raw, list):
+        if isinstance(raw, list) and len(raw) <= MAX_PROTECTED_PATHS:
             paths: list[str] = []
             for item in raw:
                 text = str(item or "").strip()
                 if text and text not in paths:
                     paths.append(text)
-            updates["protected_paths"] = paths[:100]
+            updates["protected_paths"] = paths
         else:
-            errors.append("protected_paths must be a list")
+            errors.append(f"protected_paths must be a list of up to {MAX_PROTECTED_PATHS} paths")
 
     if "llm" in payload:
         llm = _validate_llm(payload["llm"], errors)
@@ -186,12 +190,15 @@ def write_settings(payload: dict[str, Any], *, sharing_consent: bool = False) ->
     """Validate *payload* and persist it under ``plugins.entries.blackbox``.
 
     Returns ``{"ok": bool, "errors": [...], "settings": <new read_settings>}``.
-    Never raises — a write failure is reported in the result.
+    All-or-nothing: with any error nothing is persisted and ``ok`` is False (the
+    dashboard answers 400). Never raises — a write failure is reported in the result.
     """
     updates, errors = _validate(payload, sharing_consent=sharing_consent)
     wallet_updates, wallet_errors = crypto_secrets.wallet_mode.validate(payload)   # Web3 wallet protection
     updates.update(wallet_updates)
     errors.extend(wallet_errors)
+    if errors:
+        return {"ok": False, "errors": errors, "settings": read_settings()}
     if not updates:
         return {"ok": False, "errors": errors or ["nothing to update"], "settings": read_settings()}
 
