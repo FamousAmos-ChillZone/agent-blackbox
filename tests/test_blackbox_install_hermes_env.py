@@ -97,3 +97,51 @@ def test_no_boot_service_is_registered_without_a_dkg_node(tmp_path: Path) -> Non
 
     assert "RC=0" in result.stdout and "not registering a boot service" in result.stdout
     assert not (home / "Library").exists()
+
+
+# --- an upgrade keeps the operator's protection mode (2026-10-13) ------------
+# configure_blackbox_mode wrote "audit" on every run, so re-running the installer
+# (an upgrade) quietly switched a block-mode install to audit.
+
+REPO_ROOT = INSTALL_SH.parents[1]
+
+
+def _saved_mode(tmp_path: Path, saved: str | None, requested_env: str | None) -> str:
+    """Run the real configure_blackbox_mode on a config holding *saved*; the mode it leaves."""
+    from plugins.blackbox.kernel import yaml_files
+
+    venv_bin = tmp_path / "venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    wrapper = venv_bin / "python"   # a wrapper, not a symlink: a symlinked venv python loses its packages
+    wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+    wrapper.chmod(0o755)
+    home = tmp_path / "hermes"
+    home.mkdir()
+    if saved is not None:
+        (home / "config.yaml").write_text(f"plugins:\n  entries:\n    blackbox:\n      mode: {saved}\n", encoding="utf-8")
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}
+    if requested_env is not None:
+        env["BLACKBOX_MODE"] = requested_env
+    body = (_function("write_blackbox_mode") + "\n" + _function("configure_blackbox_mode") + "\n"
+            + f'VENV_DIR="{tmp_path / "venv"}"; HERMES_HOME="{home}"\nconfigure_blackbox_mode')
+    result = subprocess.run(["bash", "-c", "set -uo pipefail\nok() { echo \"OK $*\"; }\nwarn() { echo \"WARN $*\"; }\nheading() { :; }\n" + body],
+                            capture_output=True, text=True, env=env, cwd=REPO_ROOT, check=False)
+    assert "WARN" not in result.stdout, result.stdout + result.stderr
+    return yaml_files.load_yaml(home / "config.yaml")["plugins"]["entries"]["blackbox"]["mode"]
+
+
+def test_a_rerun_keeps_block_mode(tmp_path: Path) -> None:
+    assert _saved_mode(tmp_path, saved="block", requested_env=None) == "block"
+
+
+def test_a_first_install_starts_in_audit(tmp_path: Path) -> None:
+    assert _saved_mode(tmp_path, saved=None, requested_env=None) == "audit"
+
+
+def test_an_explicit_mode_still_wins(tmp_path: Path) -> None:
+    assert _saved_mode(tmp_path, saved="block", requested_env="audit") == "audit"
+
+
+def test_a_pm_checkout_never_reuses_a_kept_venv() -> None:
+    body = _function("install_python_env")
+    assert '[ ! -x "$REPO_DIR/scripts/run-in-hermes-env" ]' in body.split("ensure_web_extra")[0]

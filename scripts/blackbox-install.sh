@@ -1081,9 +1081,14 @@ detect_os() {
 install_python_env() {
     heading "Installing Hermes + Blackbox (Python)"
     VENV_DIR="$REPO_DIR/venv"
-    # Fast idempotent re-run: if a working hermes venv already exists, don't let
-    # setup-hermes.sh (which `rm -rf venv`s on every run) rebuild it from scratch.
-    if [ -x "$VENV_DIR/bin/hermes" ] && "$VENV_DIR/bin/python" -c "import hermes_cli" >/dev/null 2>&1; then
+    # Fast idempotent re-run for an OLDER Hermes checkout: if a working venv/ exists,
+    # don't let its setup-hermes.sh (which `rm -rf venv`s on every run) rebuild it.
+    # Hermes 0.21.7+ (pm, scripts/run-in-hermes-env) never takes this shortcut: its
+    # setup is itself hash-checked and quick when nothing changed, and a kept venv/
+    # never learns the release's new dependencies or top-level modules — an upgraded
+    # bench could not import hermes_yaml from outside the checkout.
+    if [ ! -x "$REPO_DIR/scripts/run-in-hermes-env" ] && [ -x "$VENV_DIR/bin/hermes" ] \
+        && "$VENV_DIR/bin/python" -c "import hermes_cli" >/dev/null 2>&1; then
         ok "Existing Hermes environment detected — reusing it"
         ensure_web_extra
         HERMES_BIN="$VENV_DIR/bin/hermes"
@@ -1808,6 +1813,9 @@ print(mode if mode in ("audit", "block") else "audit")
 PYEOF
 }
 
+# Writes plugins.entries.blackbox.mode and prints the mode now in force. $1 is the
+# requested mode ("audit" or "block"); "" keeps the mode already saved (a first
+# install, with nothing saved, gets audit).
 write_blackbox_mode() {
     local mode="$1"
     "$VENV_DIR/bin/python" - "$HERMES_HOME/config.yaml" "$mode" <<'PYEOF'
@@ -1819,33 +1827,38 @@ try:
     except ImportError:
         import yaml  # older Hermes: PyYAML
 except Exception:
-    print("  (PyYAML unavailable — could not save protection mode)")
+    print("  (no YAML library — could not save protection mode)", file=sys.stderr)
     sys.exit(1)
-if mode not in ("audit", "block"):
+if mode not in ("audit", "block", ""):
     sys.exit(1)
 os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
 data = {}
 if os.path.exists(cfg_path):
-    with open(cfg_path) as f:
+    with open(cfg_path, encoding="utf-8-sig") as f:
         data = yaml.safe_load(f) or {}
 blackbox = data.setdefault("plugins", {}).setdefault("entries", {}).setdefault("blackbox", {})
-blackbox["mode"] = mode
+saved = str(blackbox.get("mode") or "").lower()
+blackbox["mode"] = mode or (saved if saved in ("audit", "block") else "audit")
 blackbox.setdefault("block_severity", "critical")
-with open(cfg_path, "w") as f:
+with open(cfg_path, "w", encoding="utf-8") as f:
     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+print(blackbox["mode"])
 PYEOF
 }
 
 configure_blackbox_mode() {
     heading "Blackbox mode"
-    local current="${BLACKBOX_MODE:-}"
-    current="$(printf '%s' "$current" | tr '[:upper:]' '[:lower:]')"
-    [ "$current" = "block" ] || current="audit"
-    BLACKBOX_SELECTED_MODE="$current"
-
-    if write_blackbox_mode "$BLACKBOX_SELECTED_MODE"; then
+    # An explicit BLACKBOX_MODE wins. Otherwise a re-run keeps the mode the operator
+    # saved — an upgrade must never turn blocking off — and a first install starts in
+    # audit. (Every re-run used to write audit, so upgrading switched block off.)
+    local requested
+    requested="$(printf '%s' "${BLACKBOX_MODE:-}" | tr '[:upper:]' '[:lower:]')"
+    case "$requested" in audit|block) ;; *) requested="" ;; esac
+    BLACKBOX_SELECTED_MODE="$(write_blackbox_mode "$requested")"
+    if [ -n "$BLACKBOX_SELECTED_MODE" ]; then
         ok "Blackbox runs in $BLACKBOX_SELECTED_MODE mode"
     else
+        BLACKBOX_SELECTED_MODE="audit"
         warn "Could not save Blackbox mode. Set plugins.entries.blackbox.mode in config.yaml."
     fi
 }
