@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 
-from .crypto_secrets import redact_seed_phrases
+from .crypto_secrets import redact_seed_phrases, redact_solana_keys
 
 # ---------------------------------------------------------------------------
 # Secret VALUE detection — an actual key/token/private-key present in tool args.
@@ -78,13 +78,15 @@ _SECRET_ASSIGNMENT_RE = re.compile(
 def redact_secret_values(text: str) -> str:
     """Replace every recognizable secret value in *text* with a marker.
 
-    Wallet seed phrases become ``[REDACTED_SEED_PHRASE]``; known secret
+    Wallet seed phrases become ``[REDACTED_SEED_PHRASE]`` and verified Solana
+    secret keys ``[REDACTED_SOLANA_KEY]``; known secret
     shapes become typed markers (``[REDACTED_PRIVATE_KEY]``);
     bearer tokens become ``Bearer [REDACTED]``; secret-named assignments keep
     their key and lose their value (``DB_PASSWORD=[REDACTED]``). Truncate
     AFTER calling this, never before — a secret cut in half no longer matches.
     """
     out = redact_seed_phrases(str(text))   # wallet seed phrases first: words no shape rule recognises
+    out = redact_solana_keys(out)           # then Solana keys: proven by their own Ed25519 self-check
     for typ, _severity, pattern in SECRET_VALUE_RULES:
         out = pattern.sub(f"[REDACTED_{typ.upper().replace('-', '_')}]", out)
     for typ, pattern in _REDACTION_ONLY_RULES:

@@ -15,6 +15,7 @@
  */
 
 import { redactSeedPhrases } from "./seedPhrase.js";
+import { redactSolanaKeys } from "./solanaKey.js";
 
 /** Known secret shapes → typed markers. Mirrors `redaction.SECRET_VALUE_RULES`. */
 const SECRET_VALUE_RULES: ReadonlyArray<readonly [string, RegExp]> = [
@@ -63,6 +64,7 @@ function marker(secretType: string): string {
  */
 export function redactSecretValues(text: string): string {
   let out = redactSeedPhrases(String(text)); // wallet seed phrases first, as in Python
+  out = redactSolanaKeys(out); // then verified Solana keys, as in Python
   for (const [secretType, pattern] of SECRET_VALUE_RULES) out = out.replace(pattern, marker(secretType));
   for (const [secretType, pattern] of REDACTION_ONLY_RULES) out = out.replace(pattern, marker(secretType));
   out = out.replace(BEARER_RE, "Bearer [REDACTED]");

@@ -42,8 +42,30 @@ def _phrase(count: int, start: int = 7, separator: str = " ") -> str:
     return separator.join(_WORDS[(start + 97 * i) % len(_WORDS)] for i in range(count))
 
 
+_BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def _base58(data: bytes) -> str:
+    number, out = int.from_bytes(data, "big"), ""
+    while number:
+        number, digit = divmod(number, 58)
+        out = _BASE58[digit] + out
+    return "1" * (len(data) - len(data.lstrip(b"\0"))) + out
+
+
+def _solana_key() -> bytes:
+    """A real Solana secret key, made at runtime: Ed25519 seed + its public key."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    private = Ed25519PrivateKey.generate()
+    return private.private_bytes_raw() + private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+
+
 def _cases() -> list[str]:
     private = "PRIVATE"
+    phantom, keyfile = _base58(_solana_key()), "[" + ", ".join(str(b) for b in _solana_key()) + "]"
+    lookalike = _base58(bytes(range(64)))   # signature-shaped, not seed + public key
     numbered = " ".join(f"{i + 1}. {word}" for i, word in enumerate(_phrase(12).split()))
     return [
         "seed: " + _phrase(12) + " done",
@@ -52,6 +74,9 @@ def _cases() -> list[str]:
         "elevenish " + _phrase(11) + " qzx",                         # too short: stays
         _phrase(6) + " notaword " + _phrase(6),                     # broken run: stays
         "Café " + _phrase(12) + " 😀 " + _phrase(13, start=99),      # non-ASCII around runs
+        "phantom export " + phantom + " then tx " + lookalike + " ok",  # the key goes, the signature stays
+        "id.json " + keyfile + " end",
+        "cut off " + _base58(_solana_key())[:60],                     # truncated at the end: still removed
         "word " * 3 + "the " + _phrase(12, start=3) + " and AKIA" + "ABCDEFGHIJKLMNOP",
         "PRIVATE" + "_KEY=0x" + _HEX + " and " + '{"privateKey": "' + _HEX + '"}',
         "PK=" + _HEX + " txHash: 0x" + _HEX + " apk_sha256: " + _HEX,          # only the labelled one goes
