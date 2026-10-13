@@ -47,9 +47,13 @@ const BEARER_RE = /Bearer\s+[A-Za-z0-9._~+/=-]+/gi;
 
 // A secret-named key followed by `:` or `=` and a value: `DB_PASSWORD=...`,
 // `"api_key": "..."`. The key name stays (it explains the log line); the
-// value goes. A value already replaced by a typed marker is kept.
+// value goes. A value already replaced by a typed marker is kept. Linear time,
+// as in Python (KI-373): a bounded look-ahead finds the keyword, then at most
+// 64 name characters are taken with no backtracking — JavaScript has no
+// possessive `{1,64}+`, so the capture-inside-a-look-ahead + back-reference
+// idiom stands in for it.
 const SECRET_ASSIGNMENT_RE =
-  /(\b[A-Za-z0-9_-]*(?:api[_-]?key|token|secret|password|passwd|credential|private[_-]?key|client[_-]?secret|access[_-]?key)[A-Za-z0-9_-]*["']?)(\s*[:=]\s*["']?)([^\s"'[\],;]{8,})/gi;
+  /(?<key>\b(?=[A-Za-z0-9_-]{0,64}?(?:api[_-]?key|token|secret|password|passwd|credential|private[_-]?key|client[_-]?secret|access[_-]?key))(?=(?<name>[A-Za-z0-9_-]{1,64}))\k<name>["']?)(?<sep>\s*[:=]\s*["']?)(?<value>[^\s"'[\],;]{8,})/gi;
 
 /** Object KEYS whose whole value is dropped. Mirrors `audit/redaction._SECRET_KEY_RE`. */
 const SECRET_KEY_RE =
@@ -69,7 +73,7 @@ export function redactSecretValues(text: string): string {
   for (const [secretType, pattern] of SECRET_VALUE_RULES) out = out.replace(pattern, marker(secretType));
   for (const [secretType, pattern] of REDACTION_ONLY_RULES) out = out.replace(pattern, marker(secretType));
   out = out.replace(BEARER_RE, "Bearer [REDACTED]");
-  return out.replace(SECRET_ASSIGNMENT_RE, "$1$2[REDACTED]");
+  return out.replace(SECRET_ASSIGNMENT_RE, "$<key>$<sep>[REDACTED]");
 }
 
 /** Redact, THEN clamp to `maxLength` (never the other way round). */

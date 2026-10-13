@@ -101,6 +101,8 @@ def _cases() -> list[str]:
         "token=" + "abc",                                   # too short to be a value
         "mixed " + "sk-" + _ALNUM[:20] + " Bearer " + _ALNUM[:8] + " PRIVATE_KEY=" + _ALNUM[:9],
         "",
+        "MY_API_TOKEN_" + "X" * 47 + "=" + "q" * 6 + "7" * 6,            # a 60-character name: redacted
+        "parity only: MY_API_TOKEN_" + "X" * 70 + "=" + "q" * 6 + "7" * 6,   # past the 64-character name bound (KI-373)
     ]
 
 
@@ -115,11 +117,13 @@ def test_both_runtimes_redact_identically(tmp_path):
     from_python = [redaction.redact_secret_values(text) for text in cases]
     assert from_typescript == from_python
     # And the pass did something: every secret-shaped input lost its material.
+    stays = {cases[3], cases[4], "the password policy requires 12 characters", "token=abc"}
     for text, out in zip(cases, from_python):
         assert _BODY not in out and "hunter2secret" not in out
-        if text and text not in (cases[-4], cases[-3], cases[3], cases[4]):
+        if text in stays:
+            assert out == text
+        elif text and not text.startswith("parity only: "):
             assert "[REDACTED" in out, text
-    assert from_python[3] == cases[3] and from_python[4] == cases[4]
 
 
 def test_both_runtimes_ship_the_same_pinned_wordlist():
