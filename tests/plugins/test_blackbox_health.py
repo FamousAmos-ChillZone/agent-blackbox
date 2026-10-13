@@ -67,7 +67,7 @@ def test_every_operator_state_has_a_class_and_a_what_to_do(over, klass, needle):
 
 def test_info_is_never_red_and_action_sorts_first():
     items = health.operator_health(_inputs(node_reachable=False, community_paused=True, held_back=2))
-    assert [i.klass for i in items][0] is health.HealthClass.ACTION
+    assert next(i.klass for i in items) is health.HealthClass.ACTION
     assert all(not health.red(i) for i in items if i.klass is health.HealthClass.INFO)
     assert health.red(items[0])
 

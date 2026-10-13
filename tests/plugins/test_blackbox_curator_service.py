@@ -1075,7 +1075,7 @@ def test_simultaneous_disputes_on_one_listing_open_it_once_and_keep_one_address(
     assert sorted(answer.body["state"] for answer in answers) == ["already open"] * 7 + ["open"]
     assert {answer.status for answer in answers} == {202} and len({answer.body["dispute_id"] for answer in answers}) == 1
     (record,) = lane.store.all()
-    opener = next(answer for answer in answers if answer.body["state"] == "open")
+    assert sum(answer.body["state"] == "open" for answer in answers) == 1
     kept = json.loads((lane.store._contacts).read_text())
     assert list(kept) == [record.dispute_id] and len(lane.log.rows()) == 1          # one address kept, one signature made
 

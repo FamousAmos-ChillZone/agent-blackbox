@@ -82,7 +82,7 @@ def load() -> SuffixRules:
     only widens matching (fail-open, never a crash)."""
     for path in (constants.blackbox_home() / _VENDORED.name, _VENDORED):
         try:
-            return _parse(path.read_text(encoding="utf-8"))
+            return _parse(path.read_text(encoding="utf-8-sig"))
         except OSError:
             continue
     logger.warning("blackbox: no public suffix list could be read; registrable-domain matching is widened")

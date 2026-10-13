@@ -99,7 +99,7 @@ def discover_openclaw_workspaces() -> list[Path]:
 
 def _load_openclaw_config(path: Path) -> dict[str, Any]:
     """Load an OpenClaw JSON/JSON5 config or raise without modifying it."""
-    text = path.read_text(encoding="utf-8")
+    text = path.read_text(encoding="utf-8-sig")
     try:
         data = json.loads(text)
     except json.JSONDecodeError:

@@ -88,7 +88,7 @@ class LegacyAssets:
 def load_legacy_assets(path: Optional[Path] = None) -> Optional[frozenset[str]]:
     """The UALs in the list file (default :data:`LEGACY_ASSETS_FILE`); None when it cannot be read."""
     try:
-        text = (path or LEGACY_ASSETS_FILE).read_text(encoding="utf-8")
+        text = (path or LEGACY_ASSETS_FILE).read_text(encoding="utf-8-sig")
     except (OSError, UnicodeDecodeError) as exc:
         logger.warning("blackbox: legacy asset list not readable: %s", exc)
         return None

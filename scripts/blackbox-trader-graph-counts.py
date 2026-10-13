@@ -98,7 +98,7 @@ def _known_routers() -> dict[str, str]:
     """The well-known exchange routers (plugins/blackbox/kernel/crypto_secrets/known_contracts.json)."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "plugins", "blackbox", "kernel",
                         "crypto_secrets", "known_contracts.json")
-    with open(path, encoding="utf-8") as handle:
+    with open(path, encoding="utf-8-sig") as handle:
         return {address.lower(): entry["name"] for address, entry in json.load(handle)["contracts"].items()}
 
 

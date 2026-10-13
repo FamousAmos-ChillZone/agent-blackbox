@@ -348,7 +348,7 @@ def test_unix_installer_opens_dashboard_before_fresh_sync_starts(
     events = tmp_path / "events"
     fake_hermes = tmp_path / "fake-hermes"
     fake_hermes.write_text(
-        "#!/bin/bash\n"
+        "#!/usr/bin/env bash\n"
         f"echo sync-started >> {shlex.quote(str(events))}\n"
         "echo 'starting fresh sync'\n"
         "sleep 0.2\n"
@@ -557,10 +557,9 @@ def test_unix_installer_rebinds_stale_dkg_paths_as_one_runtime(tmp_path: Path) -
   entries:
     blackbox:
       dkg_url: http://127.0.0.1:9320
-      dkg_home: %s
-      dkg_bin: %s
-"""
-        % (
+      dkg_home: {}
+      dkg_bin: {}
+""".format(
             stale_checkout / ".dkg",
             stale_checkout / "dkg" / "node_modules" / ".bin" / "dkg",
         ),
@@ -592,14 +591,13 @@ def test_unix_installer_rebinds_an_existing_previous_managed_checkout(tmp_path: 
     old_bin.parent.mkdir(parents=True)
     old_bin.write_text("old managed dkg", encoding="utf-8")
     config_path.write_text(
-        """plugins:
+        f"""plugins:
   entries:
     blackbox:
       dkg_url: http://127.0.0.1:9320
-      dkg_home: %s
-      dkg_bin: %s
-"""
-        % (old_home, old_bin),
+      dkg_home: {old_home}
+      dkg_bin: {old_bin}
+""",
         encoding="utf-8",
     )
     target_checkout = tmp_path / "current-agent-blackbox"
@@ -630,14 +628,13 @@ def test_unix_installer_rebinds_the_port_for_its_current_managed_checkout(
     target_bin.parent.mkdir(parents=True)
     target_bin.write_text("managed dkg", encoding="utf-8")
     config_path.write_text(
-        """plugins:
+        f"""plugins:
   entries:
     blackbox:
       dkg_url: http://127.0.0.1:9320
-      dkg_home: %s
-      dkg_bin: %s
-"""
-        % (target_home, target_bin),
+      dkg_home: {target_home}
+      dkg_bin: {target_bin}
+""",
         encoding="utf-8",
     )
 
@@ -662,14 +659,13 @@ def test_unix_installer_preserves_a_valid_custom_dkg_runtime(tmp_path: Path) -> 
     custom_bin.parent.mkdir()
     custom_bin.write_text("custom dkg", encoding="utf-8")
     config_path.write_text(
-        """plugins:
+        f"""plugins:
   entries:
     blackbox:
       dkg_url: http://127.0.0.1:9444
-      dkg_home: %s
-      dkg_bin: %s
-"""
-        % (custom_home, custom_bin),
+      dkg_home: {custom_home}
+      dkg_bin: {custom_bin}
+""",
         encoding="utf-8",
     )
 

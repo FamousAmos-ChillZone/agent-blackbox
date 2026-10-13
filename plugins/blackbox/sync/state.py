@@ -60,7 +60,7 @@ def write(status: str, **details: Any) -> dict[str, Any]:
 def read() -> dict[str, Any]:
     """Read current transfer state, rejecting abandoned running markers."""
     try:
-        state = json.loads(_path().read_text(encoding="utf-8"))
+        state = json.loads(_path().read_text(encoding="utf-8-sig"))
     except (OSError, ValueError, TypeError):
         return {}
     if not isinstance(state, dict):

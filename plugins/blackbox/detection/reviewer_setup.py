@@ -227,7 +227,7 @@ def _openclaw_llm_candidate() -> Optional[dict[str, str]]:
     for workspace in attach.discover_openclaw_workspaces():
         path = workspace / "openclaw.json"
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
         except Exception:
             continue
         for mapping in _iter_dicts(data):

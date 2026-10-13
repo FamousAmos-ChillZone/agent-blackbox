@@ -147,7 +147,7 @@ class ProposalStore:
         path = self._dir / f"{proposal_id}.json"
         if not path.is_file():
             return None
-        return Proposal.from_json(path.read_text(encoding="utf-8"))
+        return Proposal.from_json(path.read_text(encoding="utf-8-sig"))
 
     def all(self) -> list[Proposal]:
         if not self._dir.is_dir():
@@ -155,7 +155,7 @@ class ProposalStore:
         proposals = []
         for path in sorted(self._dir.glob("*.json")):
             try:
-                proposals.append(Proposal.from_json(path.read_text(encoding="utf-8")))
+                proposals.append(Proposal.from_json(path.read_text(encoding="utf-8-sig")))
             except (OSError, ProposalError):
                 continue
         return proposals

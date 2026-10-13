@@ -55,7 +55,7 @@ def test_the_ruleset_parses_with_nft():
     nft = shutil.which("nft")
     if nft is None:
         pytest.skip("nft is not installed here; CI and the lab host run this check")
-    checked = subprocess.run([nft, "-c", "-f", str(egress.RULESET_PATH)], capture_output=True, text=True)
+    checked = subprocess.run([nft, "-c", "-f", str(egress.RULESET_PATH)], capture_output=True, text=True, check=False)
     if checked.returncode != 0 and "Operation not permitted" in checked.stderr:
         pytest.skip("nft -c needs CAP_NET_ADMIN here; run the suite as root on the lab host or in CI")
     assert checked.returncode == 0, checked.stderr

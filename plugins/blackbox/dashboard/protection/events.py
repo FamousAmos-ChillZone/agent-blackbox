@@ -69,9 +69,9 @@ def _step(event: dict[str, Any], is_this: bool) -> dict[str, Any]:
     if kind == "api":
         label = "Asked the model " + str(event.get("model") or "")
     elif kind == "file":
-        label = "%s %s" % (event.get("mode") or "read", event.get("path") or "")
+        label = "{} {}".format(event.get("mode") or "read", event.get("path") or "")
     elif kind == "dependency":
-        label = "install %s:%s@%s" % (event.get("ecosystem"), event.get("name"), event.get("version"))
+        label = "install {}:{}@{}".format(event.get("ecosystem"), event.get("name"), event.get("version"))
     elif kind == "threat":   # met outside a tool call, e.g. an injection in a model request
         label = "Threat found in what the agent was given"
     else:

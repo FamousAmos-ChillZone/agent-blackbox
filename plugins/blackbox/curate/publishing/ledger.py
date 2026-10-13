@@ -43,7 +43,7 @@ from decimal import Decimal, InvalidOperation
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Callable, Dict, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 try:  # POSIX: curator nodes. Elsewhere the in-process lock below still holds.
     import fcntl
@@ -61,7 +61,7 @@ _MAX_IDENTIFIER_CHARS = 512
 _MAX_CATEGORY_CHARS = 64
 _MAX_NOTE_CHARS = 400
 
-TracAmount = Union[Decimal, str, int]
+TracAmount = Decimal | str | int
 
 #: One lock per ledger FILE, shared by every PublishLedger in the process: two
 #: instances on one file (the beat and a verb) must not both read SEALED and
@@ -353,7 +353,7 @@ class PublishLedger:
 
     def _load(self) -> list[Transition]:
         try:
-            with self._path.open("r", encoding="utf-8") as handle:
+            with self._path.open("r", encoding="utf-8-sig") as handle:
                 return _replay(handle, self._path)
         except FileNotFoundError:
             return []

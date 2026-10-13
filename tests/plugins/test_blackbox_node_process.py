@@ -30,7 +30,7 @@ def cfg(tmp_path):
     return BlackboxConfig(dkg_home=str(tmp_path), dkg_bin=str(cli), dkg_url="http://127.0.0.1:9320")
 
 
-def _processes(monkeypatch, cfg, table: dict[int, list[str]], env: dict[str, str] = None):
+def _processes(monkeypatch, cfg, table: dict[int, list[str]], env: dict[str, str] | None = None):
     """Fake the process table: pid -> command line. Pids not in it are dead."""
     psutil = node_process.psutil
 

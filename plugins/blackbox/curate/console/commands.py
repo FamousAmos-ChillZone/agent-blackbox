@@ -50,7 +50,7 @@ def load_settings(port: int) -> ConsoleSettings:
         raise ConsoleSetupError("--port must be between 1024 and 65535")
     path = keys.curate_home() / SETTINGS_FILE
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
         return ConsoleSettings(tailscale_login=str(data["tailscaleLogin"]), magic_dns_host=str(data["magicDnsHost"]),
                                login_passphrase_hash=str(data["loginPassphraseHash"]), port=port)
     except FileNotFoundError:

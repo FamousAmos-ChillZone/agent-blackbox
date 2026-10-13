@@ -184,7 +184,7 @@ class ReputationLedger:
         entries: dict[str, dict[str, Any]] = {}
         publishers: dict[str, int] = {}
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
             entries = {str(k): dict(v) for k, v in data.get("entries", {}).items() if isinstance(v, dict)}
             publishers = {str(k): int(v) for k, v in dict(data.get("publishers") or {}).items()}
         except (OSError, ValueError, AttributeError, TypeError):
@@ -201,7 +201,7 @@ class ReputationLedger:
         erasure. An index written before sealing (a clear map) is read once
         and sealed at once, so reporter keys do not stay readable on disk."""
         try:
-            text = self._salts_path.read_text(encoding="utf-8")
+            text = self._salts_path.read_text(encoding="utf-8-sig")
         except OSError:
             return {}
         if sealed_index.is_sealed(text):

@@ -236,7 +236,7 @@ class ConsoleState:
 
     def _read(self) -> tuple[dict[str, JoinRequest], Optional[list[SignedList]]]:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
         except FileNotFoundError:
             return {}, []
         except (OSError, ValueError):
@@ -258,7 +258,7 @@ class ConsoleState:
                 "signedLists": [dataclasses.asdict(s) for s in lists[-MAX_SIGNED_LISTS:]]}
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(8)}")
-        with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as handle:
+        with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8") as handle:  # windows-footgun: ok — a WRITE (mode "w"/"a"); writes stay utf-8
             json.dump(rows, handle, sort_keys=True)
             handle.flush()
             os.fsync(handle.fileno())

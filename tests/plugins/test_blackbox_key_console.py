@@ -722,7 +722,7 @@ def test_another_epochs_narrowing_list_or_version_does_not_count(routed):
 
 
 def test_a_signature_on_an_unpinned_root_still_counts_toward_the_version_and_24_h(routed):
-    first, second = routed.effective[0].curator_keys[:2]
+    first, _second = routed.effective[0].curator_keys[:2]
     services = routed.app.state.console_services
     object.__setattr__(services, "roots", lambda environment: RootPins.unbound({"b" * 64}))
     res = routed.http.post(f"/api/curators/{first}/remove", headers=routed.headers, json=routed.sign_body())
@@ -801,7 +801,7 @@ def test_the_console_verb_parses_through_the_real_hermes_parser(tmp_path):
     env = {**os.environ, "HERMES_HOME": str(tmp_path / "hermes"), "PYTHONPATH": str(root)}
     probe = _REAL_PARSE + "print(json.dumps([args.func.__module__, args.func.__name__]))\n"
     done = subprocess.run([sys.executable, "-c", probe, json.dumps(["blackbox", "curate", "console", "--port", "9710"]),
-                           "port"], cwd=root, env=env, capture_output=True, text=True, timeout=120)
+                           "port"], cwd=root, env=env, capture_output=True, text=True, timeout=120, check=False)
     assert done.returncode == 0, done.stderr[-2000:]
     parsed, (module, name) = (json.loads(line) for line in done.stdout.strip().splitlines()[-2:])
     assert parsed == {"version": False, "command": "blackbox", "value": 9710}

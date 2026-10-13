@@ -202,7 +202,7 @@ class LabJobStore:
         if record is None or record.evidence_sha256 is None:
             return None
         path = self._evidence_dir / f"{record.evidence_sha256}.json"
-        return evidence_schema.validate_evidence(json.loads(path.read_text(encoding="utf-8")))
+        return evidence_schema.validate_evidence(json.loads(path.read_text(encoding="utf-8-sig")))
 
     def forget_requester(self, peer_id: str) -> int:
         """Erase *peer_id* from every job (data-subject erasure); the count changed."""
@@ -251,7 +251,7 @@ class LabJobStore:
     def _load(self) -> dict[str, LabJobRecord]:
         records: dict[str, LabJobRecord] = {}
         try:
-            text = self._path.read_text(encoding="utf-8")
+            text = self._path.read_text(encoding="utf-8-sig")
         except FileNotFoundError:
             return records
         for number, line in enumerate(text.splitlines(), 1):

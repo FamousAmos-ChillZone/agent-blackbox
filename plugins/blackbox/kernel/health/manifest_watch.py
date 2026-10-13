@@ -119,7 +119,7 @@ class SeenOrderRecord:
 
     def read(self) -> Optional[Order]:
         try:
-            text = self._path.read_text(encoding="utf-8")
+            text = self._path.read_text(encoding="utf-8-sig")
         except FileNotFoundError:
             return None
         except OSError as exc:

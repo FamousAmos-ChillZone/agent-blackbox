@@ -261,7 +261,7 @@ class WithdrawalWatcher:
 
     def _last_run(self) -> Optional[date]:
         try:
-            return date.fromisoformat(json.loads(self._state_path.read_text(encoding="utf-8"))["last_run"])
+            return date.fromisoformat(json.loads(self._state_path.read_text(encoding="utf-8-sig"))["last_run"])
         except (OSError, ValueError, KeyError, TypeError):
             return None
 

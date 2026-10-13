@@ -60,7 +60,7 @@ class InboxCursor:
 
     def read(self) -> dict[str, int]:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
             return {"since": int(data.get("since", 0)), "since_id": int(data.get("since_id", 0))}
         except (OSError, ValueError, TypeError, AttributeError):
             return {"since": 0, "since_id": 0}
@@ -136,7 +136,7 @@ class DeliveryLedger:
 
     def _read(self) -> dict[str, dict[str, float]]:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
         except (OSError, ValueError):
             return {}
         return {str(key): value for key, value in data.items() if isinstance(value, dict)} if isinstance(data, dict) else {}

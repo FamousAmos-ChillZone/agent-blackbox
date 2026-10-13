@@ -61,7 +61,7 @@ def test_report_timestamp_is_rounded_to_the_day():
         identifier="ioc:domain:x.example", category="ioc", severity="high", reporter_address=REPORTER, ioc_type="domain", ioc_context="fetched-by-tool",
         ts=datetime(2026, 10, 1, 17, 42, 9, tzinfo=UTC),
     )
-    stamp = [q["object"] for q in quads if q["predicate"] == constants.SCHEMA_DATE_MODIFIED_PRED][0]
+    stamp = next(q["object"] for q in quads if q["predicate"] == constants.SCHEMA_DATE_MODIFIED_PRED)
     assert "2026-10-01T00:00:00" in stamp and "17:42" not in stamp
 
 

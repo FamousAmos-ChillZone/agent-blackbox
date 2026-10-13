@@ -78,7 +78,7 @@ BLACKBOX_SYSTEMD_DIR="{system_dir}"; BLACKBOX_PTRACE_SCOPE_FILE="{ptrace_file}"
 {call}
 """
     done = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
-                          env={"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin", **env})
+                          env={"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin", **env}, check=False)
     assert done.returncode == 0, done.stderr
 
     def read(folder: Path) -> dict[str, str]:

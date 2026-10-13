@@ -171,7 +171,7 @@ class SelfTestStore:
         """The stored result; None when no run is recorded. An unreadable file
         reads as a FAILED run, so a damaged file cannot lift a suspension."""
         try:
-            return SelfTestResult.from_dict(json.loads(self._file().read_text(encoding="utf-8")))
+            return SelfTestResult.from_dict(json.loads(self._file().read_text(encoding="utf-8-sig")))
         except FileNotFoundError:
             return None
         except (OSError, ValueError, KeyError, TypeError, AttributeError):

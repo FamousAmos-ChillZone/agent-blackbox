@@ -30,7 +30,7 @@ def test_every_type_and_threat_bubble_opens_a_window(served, tmp_path):
         pytest.skip("no Chromium build in Playwright's cache (npx playwright install chromium)")
     out = tmp_path / "graph-clicks.json"
     result = subprocess.run(["node", str(SCRIPT), served, str(out), "local", "community"], capture_output=True,
-                            text=True, timeout=400, cwd=str(REPO), env={**os.environ, "PW_EXEC": chromium})
+                            text=True, timeout=400, cwd=str(REPO), env={**os.environ, "PW_EXEC": chromium}, check=False)
     assert result.returncode == 0, result.stderr[-2000:]
     summary = json.loads(out.read_text(encoding="utf-8"))
     assert summary["pageErrors"] == []

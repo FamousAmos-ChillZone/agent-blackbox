@@ -62,7 +62,7 @@ def read_cgroup_memory_limit() -> int | None:
     """Return the active cgroup memory ceiling, if it is finite."""
     for path in _CGROUP_MEMORY_LIMIT_PATHS:
         try:
-            raw = path.read_text(encoding="utf-8").strip()
+            raw = path.read_text(encoding="utf-8-sig").strip()
         except (OSError, UnicodeError):
             continue
         if raw == "max":

@@ -40,7 +40,7 @@ def _read_map(prefs_path: str) -> Optional[dict[str, str]]:
     try:
         if os.path.getsize(prefs_path) > _MAX_PREFS_BYTES:
             return None
-        with open(prefs_path, encoding="utf-8", errors="replace") as handle:
+        with open(prefs_path, encoding="utf-8-sig", errors="replace") as handle:
             match = _UUIDS_PREF.search(handle.read())
         if not match:
             return None

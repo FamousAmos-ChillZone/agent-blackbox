@@ -105,7 +105,7 @@ class LookupHealth:
 
     def _read_file(self) -> LookupState:
         try:
-            data: dict[str, Any] = json.loads(self._file().read_text(encoding="utf-8"))
+            data: dict[str, Any] = json.loads(self._file().read_text(encoding="utf-8-sig"))
             return LookupState(str(data.get("state", UNKNOWN)), str(data.get("reason", "")),
                                float(data.get("since", 0.0)), int(data.get("failures", 0)),
                                float(data.get("last_at", 0.0)))

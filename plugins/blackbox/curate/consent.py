@@ -112,7 +112,7 @@ class ConsentLedger:
 
     def _entries(self):
         try:
-            with self._path.open("r", encoding="utf-8") as fh:
+            with self._path.open("r", encoding="utf-8-sig") as fh:
                 for line in fh:
                     try:
                         yield json.loads(line)
@@ -125,5 +125,5 @@ class ConsentLedger:
         entry = {"ts": self._clock(), **entry}
         with self._lock:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            with os.fdopen(os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), "a", encoding="utf-8") as fh:
+            with os.fdopen(os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), "a", encoding="utf-8") as fh:  # windows-footgun: ok — a WRITE (mode "w"/"a"); writes stay utf-8
                 fh.write(json.dumps(entry, sort_keys=True) + "\n")

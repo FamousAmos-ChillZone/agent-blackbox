@@ -228,7 +228,7 @@ def test_a_forced_207_is_reconciled_and_never_re_minted(world):
     assert len(world.writer.submitted) == 1 and len(world.ledger.batches()) == 1
     world.writer.readable_answer = True
     assert world.publisher.run(world.ctx).action == "published"   # the 207 is bound, then the waiting entry goes
-    first, second = world.ledger.batches()
+    first, _second = world.ledger.batches()
     assert (first.state, first.ual) == (PublishState.BOUND, UAL)
     assert len(world.writer.submitted) == 2 and world.writer.submitted[0] != world.writer.submitted[1]
     assert world.ledger.metrics().minted_207s == 1
@@ -941,7 +941,7 @@ def test_a_correction_is_published_at_once_and_followed_by_its_advisory_twin(mon
     """Amos's code on A; B's or the break-glass key's signature second (a reduction, K2)."""
     node = FakeNode()
     proposal, _ = _propose_correction(monkeypatch, tmp_path, capsys, curators, node)
-    published, outcome = _approve_on(monkeypatch, tmp_path, second, getattr(curators, second), node, curators.manifest, proposal)
+    _published, outcome = _approve_on(monkeypatch, tmp_path, second, getattr(curators, second), node, curators.manifest, proposal)
     assert outcome.startswith(f"published to {VM_GRAPH} as correction-") and "advisory twin posted to " + COMMUNITY in outcome
     (_g, _p, quads), = node.vm_published
     assert {q["object"] for q in quads if q["predicate"] == constants.DEFENDER_CORRECTION_TARGET_PRED} == {LEGACY_8888}
@@ -1058,7 +1058,7 @@ def test_both_verbs_parse_through_the_real_hermes_parser(tmp_path, argv, attribu
     env = {**os.environ, "HERMES_HOME": str(tmp_path / "hermes"), "PYTHONPATH": str(root)}
     probe = _REAL_PARSE + "print(json.dumps([args.func.__module__, args.func.__name__]))\n"
     done = subprocess.run([sys.executable, "-c", probe, json.dumps(argv), attribute], cwd=root, env=env,
-                          capture_output=True, text=True, timeout=120)
+                          capture_output=True, text=True, timeout=120, check=False)
     assert done.returncode == 0, done.stderr[-2000:]
     parsed, (module, name) = (json.loads(line) for line in done.stdout.strip().splitlines()[-2:])
     assert parsed == {"version": False, "command": "blackbox", "value": value}

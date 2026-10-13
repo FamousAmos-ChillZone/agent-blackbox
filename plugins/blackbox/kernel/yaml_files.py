@@ -37,7 +37,7 @@ def load_yaml(path: Path) -> dict[str, Any]:
     if yaml is None or not path.exists():
         return {}
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data = yaml.safe_load(path.read_text(encoding="utf-8-sig"))
     except Exception as exc:
         logger.debug("blackbox.attach: could not parse %s (%s)", path, exc)
         return {}

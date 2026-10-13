@@ -106,7 +106,7 @@ def write_snapshot(snapshot: Snapshot, path: Optional[Path] = None) -> None:
     """Append (bounded to MAX_SNAPSHOTS lines; fail-open on an unwritable home)."""
     target = path or _path()
     try:
-        lines = [line for line in target.read_text(encoding="utf-8").splitlines() if line.strip()] if target.exists() else []
+        lines = [line for line in target.read_text(encoding="utf-8-sig").splitlines() if line.strip()] if target.exists() else []
         lines = (lines + [json.dumps(asdict(snapshot))])[-MAX_SNAPSHOTS:]
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(f"{target.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
@@ -118,7 +118,7 @@ def write_snapshot(snapshot: Snapshot, path: Optional[Path] = None) -> None:
 
 def read_all(path: Optional[Path] = None) -> list[Snapshot]:
     try:
-        rows = [json.loads(line) for line in (path or _path()).read_text(encoding="utf-8").splitlines() if line.strip()]
+        rows = [json.loads(line) for line in (path or _path()).read_text(encoding="utf-8-sig").splitlines() if line.strip()]
         return [Snapshot(**{k: v for k, v in row.items() if k in Snapshot.__dataclass_fields__}) for row in rows]
     except (OSError, ValueError, TypeError):
         return []

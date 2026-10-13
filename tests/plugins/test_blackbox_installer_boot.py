@@ -154,7 +154,7 @@ def test_dashboard_service_is_written_and_enabled_on_a_systemd_machine(tmp_path)
         "register_dashboard_service",
     ])
     result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
-                            env={"PATH": f"{stubs}:/usr/bin:/bin"})
+                            env={"PATH": f"{stubs}:/usr/bin:/bin"}, check=False)
 
     assert result.returncode == 0, result.stderr
     unit = tmp_path / ".config" / "systemd" / "user" / "blackbox-dashboard.service"
@@ -177,7 +177,7 @@ def _start_dashboard_run(tmp_path, *, running: bool, marker: str | None):
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
     subprocess.run(["git", "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "v"],
                    cwd=repo, check=True)
-    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True).stdout.strip()
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=False).stdout.strip()
     home = tmp_path / ".hermes"
     if marker is not None:
         (home / "blackbox").mkdir(parents=True)
@@ -195,7 +195,7 @@ def _start_dashboard_run(tmp_path, *, running: bool, marker: str | None):
         func, "start_dashboard",
     ])
     result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
-                            env={"PATH": f"{stubs}:/usr/bin:/bin"})
+                            env={"PATH": f"{stubs}:/usr/bin:/bin"}, check=False)
     assert result.returncode == 0, result.stderr
     revision = (home / "blackbox" / ".dashboard-revision")
     return launched.exists(), (revision.read_text().strip() if revision.exists() else ""), head
@@ -264,7 +264,7 @@ def _register_boot_service(tmp_path, os_name: str):
         "register_boot_service",
     ])
     result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
-                            env={"PATH": f"{stubs}:/usr/bin:/bin"})
+                            env={"PATH": f"{stubs}:/usr/bin:/bin"}, check=False)
     assert result.returncode == 0, result.stderr
 
 

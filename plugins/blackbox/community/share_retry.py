@@ -192,7 +192,7 @@ class ShareRetryQueue:
 
     def _load(self) -> tuple[list[PendingShare], list[dict[str, Any]]]:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
             pending = [PendingShare.from_json(item) for item in data.get("pending", [])]
             given_up = [dict(item) for item in data.get("given_up", [])]
             return pending, given_up

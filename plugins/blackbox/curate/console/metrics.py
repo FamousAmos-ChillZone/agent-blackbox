@@ -37,7 +37,7 @@ from collections import Counter
 from dataclasses import dataclass, fields
 from datetime import date, datetime, timezone, UTC
 from decimal import Decimal
-from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple, TypeVar, Union
+from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple, TypeVar
 
 from ...kernel.health.manifest_watch import key_fingerprint
 from ...kernel.signing.statement_order import CuratorStatement
@@ -61,7 +61,7 @@ UPTAKE_AFTER_SECONDS = 7 * 86_400
 _WAITING_LAB_STATES = (LabJobState.QUEUED, LabJobState.RUNNING)
 
 #: A reading of an age that may be "never" (a readable store that has no such event yet).
-Age = Union[int, str]
+Age = int | str
 _T = TypeVar("_T")
 
 

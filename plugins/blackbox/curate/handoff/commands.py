@@ -86,7 +86,7 @@ def check(path: str, *, root: str, network: str, graph: str, today: Optional[str
     if not network:
         raise VerbError("pass --network <network id>: this node did not answer, and a bundle is only valid for one network")
     try:
-        text = Path(path).expanduser().read_text(encoding="utf-8")
+        text = Path(path).expanduser().read_text(encoding="utf-8-sig")
     except (OSError, UnicodeDecodeError) as exc:
         raise VerbError(f"cannot read the bundle: {exc}") from exc
     return community.pool.verify_bundle(text, roots, environment=network, graph=graph, today=today)

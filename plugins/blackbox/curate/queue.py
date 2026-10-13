@@ -37,7 +37,7 @@ class Lane(Enum):
 
     DISPUTES_AND_REVOCATIONS = 1
     #: The same lane by its short name — where a public-page dispute waits (an Enum alias, not a sixth lane).
-    DISPUTE = 1
+    DISPUTE = 1  # noqa: PIE796 — a deliberate alias of DISPUTES_AND_REVOCATIONS (see the comment above)
     BLOCKABLE_WITH_EVIDENCE = 2
     GRADUATION = 3
     BLOCKABLE_NEEDS_REPRODUCTION = 4

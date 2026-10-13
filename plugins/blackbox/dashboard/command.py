@@ -68,7 +68,7 @@ def _replace_existing_dashboard(port: int) -> None:
         import subprocess
         out = subprocess.run(
             [lsof, "-tiTCP:" + str(int(port)), "-sTCP:LISTEN"],
-            capture_output=True, text=True, timeout=3,
+            capture_output=True, text=True, timeout=3, check=False
         ).stdout
     except Exception as exc:
         logger.debug("dashboard auto-restart: lsof failed: %s", exc)

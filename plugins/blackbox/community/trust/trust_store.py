@@ -286,7 +286,7 @@ class TrustStore:
 
     def _read(self) -> dict[str, object]:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
             return data if isinstance(data, dict) else {}
         except (OSError, ValueError):
             return {}   # missing or unreadable: rebuilt from the network

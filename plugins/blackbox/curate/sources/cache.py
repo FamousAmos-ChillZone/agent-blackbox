@@ -62,7 +62,7 @@ class NotListedCache:
 
     def _read(self) -> Entries:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
         except (OSError, ValueError):
             return {}
         if not isinstance(data, dict):

@@ -112,7 +112,7 @@ def _auto_attach_due() -> bool:
         except Exception:
             targets = []
         try:
-            state = json.loads(path.read_text(encoding="utf-8"))
+            state = json.loads(path.read_text(encoding="utf-8-sig"))
             last = float(state.get("last_run", 0.0))
             previous_targets = sorted(str(item) for item in (state.get("targets") or []))
         except Exception:

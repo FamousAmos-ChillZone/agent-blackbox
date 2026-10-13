@@ -206,7 +206,7 @@ def _blackbox_chat_cwd() -> Optional[Path]:
     marker = Path(__file__).resolve().parents[1] / _BLACKBOX_SOURCE_ROOT_MARKER
     try:
         if marker.exists():
-            marked = Path(marker.read_text(encoding="utf-8").strip()).expanduser()
+            marked = Path(marker.read_text(encoding="utf-8-sig").strip()).expanduser()
             candidates.append(marked)
     except Exception:
         pass
@@ -229,7 +229,7 @@ def _write_blackbox_soul(profile_dir: Path) -> None:
     existing = ""
     if soul_path.exists():
         try:
-            existing = soul_path.read_text(encoding="utf-8")
+            existing = soul_path.read_text(encoding="utf-8-sig")
         except OSError:
             existing = ""
     if existing == _BLACKBOX_SOUL:

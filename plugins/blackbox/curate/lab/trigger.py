@@ -265,7 +265,7 @@ class LabRequests:
         digests = set()
         with self._lock:
             try:
-                lines = self._path.read_text(encoding="utf-8").splitlines()
+                lines = self._path.read_text(encoding="utf-8-sig").splitlines()
             except FileNotFoundError:
                 return frozenset()
         for line in lines:

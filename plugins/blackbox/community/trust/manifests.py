@@ -21,7 +21,7 @@ Usage::
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from ...kernel import signing, sparql_text
 from ...kernel.dkg_client import extract_binding
@@ -45,7 +45,7 @@ SELECT ?r ?signedStatement WHERE {{
 
 #: A trusted manifest as readers receive it: a verdict (it may be freeze-only),
 #: or a bare manifest (a full candidate — tests and stored copies).
-TrustedManifest = Union[key_manifest.ManifestVerdict, key_manifest.KeyManifest]
+TrustedManifest = key_manifest.ManifestVerdict | key_manifest.KeyManifest
 
 
 def _verdict(item: TrustedManifest) -> key_manifest.ManifestVerdict:

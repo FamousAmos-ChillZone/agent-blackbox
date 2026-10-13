@@ -107,7 +107,7 @@ def _port_is_listening(host: str, port: int) -> bool:
 def _recent_daemon_lines(dkg_home: str, *, max_lines: int = 400) -> list[str]:
     path = Path(dkg_home).expanduser() / "daemon.log"
     try:
-        with path.open("r", encoding="utf-8", errors="replace") as handle:
+        with path.open("r", encoding="utf-8-sig", errors="replace") as handle:
             return list(deque(handle, maxlen=max_lines))
     except Exception:
         return []
@@ -252,9 +252,6 @@ def _sync_ruleset_once(load_config: Any, dkg_client_cls: Any, ruleset_mod: Any) 
     except Exception:
         catchup = {}
     catchup_state = str(catchup.get("status") or "").lower()
-    catchup_job_id = str(
-        catchup.get("jobId") or catchup.get("job_id") or catchup.get("id") or ""
-    )
     if catchup_state in {"queued", "running"}:
         with _join_lock:
             _connection_states[cfg.context_graph_id] = {
@@ -1292,7 +1289,7 @@ def create_app(*, manage_blackbox: bool = False):
                 cwd=str(attach.repo_root()),
                 text=True,
                 capture_output=True,
-                timeout=120,
+                timeout=120, check=False
             )
         except subprocess.TimeoutExpired:
             return JSONResponse({"ok": False, "error": "Blackbox took too long to answer."}, status_code=504)
@@ -1790,7 +1787,7 @@ def create_app(*, manage_blackbox: bool = False):
         ecosystem: str = Query("", max_length=80),
     ) -> Any:
         """Threats from one graph tier: ``public`` | ``community`` | ``local``."""
-        tier, view = _tier_view(tier)
+        tier, _view = _tier_view(tier)
         cfg = load_blackbox_config()
 
         # The ruleset merges complete public VM threats with community SWM rows

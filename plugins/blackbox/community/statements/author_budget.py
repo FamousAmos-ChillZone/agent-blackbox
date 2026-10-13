@@ -109,7 +109,7 @@ class FirstSeenStore:
 
     def _load(self) -> tuple[dict[str, float], Optional[float]]:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
             seen = {str(k): float(v) for k, v in dict(data["seen"]).items()}
             return seen, float(data["baseline_until"])
         except (OSError, ValueError, KeyError, TypeError):

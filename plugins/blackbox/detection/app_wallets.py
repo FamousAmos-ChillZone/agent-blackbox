@@ -124,7 +124,7 @@ class _SolanaKeyFile:
         try:
             if os.path.getsize(config_path) > _MAX_CONFIG_BYTES:
                 return None
-            with open(config_path, encoding="utf-8", errors="replace") as handle:
+            with open(config_path, encoding="utf-8-sig", errors="replace") as handle:
                 match = _KEYPAIR_PATH.search(handle.read())
         except OSError:
             return None

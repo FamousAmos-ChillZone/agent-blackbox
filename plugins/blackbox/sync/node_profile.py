@@ -93,7 +93,7 @@ def _persisted_dkg_sync_settings(cfg: BlackboxConfig) -> dict[str, str]:
     """
     try:
         persisted = json.loads(
-            (Path(cfg.dkg_home) / "config.json").read_text(encoding="utf-8")
+            (Path(cfg.dkg_home) / "config.json").read_text(encoding="utf-8-sig")
         )
     except (OSError, ValueError, TypeError):
         return {}
@@ -153,7 +153,7 @@ def _set_persisted_dkg_sync_state(cfg: BlackboxConfig) -> bool:
     sync repairs that here without touching DKG's durable checkpoints.
     """
     path = Path(cfg.dkg_home) / "config.json"
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
     original = json.dumps(data, sort_keys=True)
     for env_name, value in node_sync_settings(cfg).items():
         key = _DKG_CONFIG_SYNC_SETTINGS.get(env_name)

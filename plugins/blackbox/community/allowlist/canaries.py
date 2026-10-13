@@ -79,7 +79,7 @@ class CanaryStore:
 
     def _load(self) -> list[str]:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
             return [str(i) for i in data.get("planted", []) if str(i).strip()]
         except (OSError, ValueError, AttributeError):
             return []

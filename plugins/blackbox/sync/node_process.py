@@ -32,7 +32,7 @@ DAEMON_ROLES = ("daemon-foreground-worker", "daemon-worker", "daemon-supervisor"
 
 def _recorded_pid(cfg: BlackboxConfig) -> Optional[int]:
     try:
-        return int((Path(cfg.dkg_home) / "daemon.pid").read_text(encoding="utf-8").strip())
+        return int((Path(cfg.dkg_home) / "daemon.pid").read_text(encoding="utf-8-sig").strip())
     except (OSError, TypeError, ValueError):
         return None
 

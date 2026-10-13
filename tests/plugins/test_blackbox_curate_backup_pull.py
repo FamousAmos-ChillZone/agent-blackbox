@@ -63,7 +63,7 @@ def _bash5() -> str | None:
         if not candidate or not Path(candidate).is_file():
             continue
         probe = subprocess.run([candidate, "-c", 'echo "${BASH_VERSINFO[0]}"'],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, check=False)
         if probe.returncode == 0 and probe.stdout.strip().isdigit() and int(probe.stdout) >= 5:
             return candidate
     return None
@@ -73,7 +73,7 @@ def _openssl3_dir() -> str | None:
     openssl = shutil.which("openssl")
     for candidate in [openssl, "/opt/homebrew/bin/openssl", "/usr/local/bin/openssl"]:
         if candidate and Path(candidate).is_file():
-            version = subprocess.run([candidate, "version"], capture_output=True, text=True).stdout
+            version = subprocess.run([candidate, "version"], capture_output=True, text=True, check=False).stdout
             if version.startswith("OpenSSL 3"):
                 return str(Path(candidate).parent)
     return None
@@ -143,7 +143,7 @@ class Bench:
         self.stubs.mkdir()
         stub = self.stubs / "ssh"
         stub.write_text(
-            "#!/bin/bash\n"
+            "#!/usr/bin/env bash\n"
             'printf "%s\\n" "$*" >> "$FAKE_SSH_LOG"\n'
             'command="${@: -1}"\n'
             'cd "$FAKE_NODE_HOME" && HOME="$FAKE_NODE_HOME" exec /bin/sh -c "$command"\n')
@@ -163,7 +163,7 @@ class Bench:
 
     def pull(self, *args: str, **extra_env: str) -> subprocess.CompletedProcess:
         return subprocess.run([SCRIPT_BASH, str(PULL), *args], capture_output=True, text=True,
-                              env=self.env(**extra_env), cwd=self.tmp)
+                              env=self.env(**extra_env), cwd=self.tmp, check=False)
 
     def restore(self, archive: Path, target: Path, key: Path | None = None,
                 **extra_env: str) -> subprocess.CompletedProcess:
@@ -172,7 +172,7 @@ class Bench:
             [SCRIPT_BASH, str(RESTORE), "--archive", str(archive),
              "--key", str(key or self.private_key), "--target", str(target)],
             capture_output=True, text=True, cwd=self.tmp,
-            env=self.env(BACKUP_TEST_PASSPHRASE=PASSPHRASE, **extra_env))
+            env=self.env(BACKUP_TEST_PASSPHRASE=PASSPHRASE, **extra_env), check=False)
 
     def archives(self, node: str = "node-a") -> list[Path]:
         return sorted((self.backup_dir / node).glob(f"{node}-*.tar.gz.cms"))
@@ -208,7 +208,7 @@ def test_script_parses_under_bash_5(script: Path) -> None:
     bash5 = _bash5()
     if bash5 is None:
         pytest.skip("no bash >= 5 here (macOS ships 3.2); set BLACKBOX_TEST_BASH5 or run in Linux CI")
-    result = subprocess.run([bash5, "-n", str(script)], capture_output=True, text=True)
+    result = subprocess.run([bash5, "-n", str(script)], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
 
 
@@ -216,7 +216,7 @@ def test_script_parses_under_bash_5(script: Path) -> None:
 def test_script_parses_under_the_system_bash(script: Path) -> None:
     if not Path("/bin/bash").is_file():
         pytest.skip("no /bin/bash")
-    result = subprocess.run(["/bin/bash", "-n", str(script)], capture_output=True, text=True)
+    result = subprocess.run(["/bin/bash", "-n", str(script)], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
 
 

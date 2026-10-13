@@ -60,7 +60,7 @@ class SharingConsentRecord:
 def terms_text() -> str:
     """The reporter terms as shipped ("" when the file is missing — then nothing can be consented to)."""
     try:
-        return TERMS_PATH.read_text(encoding="utf-8")
+        return TERMS_PATH.read_text(encoding="utf-8-sig")
     except OSError:
         return ""
 
@@ -82,7 +82,7 @@ def _record_path() -> Path:
 
 def current() -> Optional[SharingConsentRecord]:
     try:
-        data = json.loads(_record_path().read_text(encoding="utf-8"))
+        data = json.loads(_record_path().read_text(encoding="utf-8-sig"))
         return SharingConsentRecord(terms_hash=str(data.get("terms_hash", "")), terms_version=str(data.get("terms_version", "")),
                                     accepted_at=str(data.get("accepted_at", "")), withdrawn_at=str(data.get("withdrawn_at", "")))
     except (OSError, ValueError, KeyError, TypeError, AttributeError):   # a non-object JSON reads as no record

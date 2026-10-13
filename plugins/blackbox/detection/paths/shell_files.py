@@ -40,6 +40,7 @@ import re
 import shlex
 from dataclasses import dataclass
 from typing import List, Tuple
+import itertools
 
 #: Commands that read a file's contents.
 _READ_COMMANDS = frozenset({
@@ -193,7 +194,7 @@ def _destinations(name: str, arguments: list[str], paths: list[str]) -> set:
     creates (``c``/``r``/``u``; extracting or listing reads it), zip's
     and 7z's first path, Compress-Archive's ``-DestinationPath``."""
     if name in _COPY_COMMANDS:
-        for flag, value in zip(arguments, arguments[1:]):
+        for flag, value in itertools.pairwise(arguments):
             if flag in ("-t", "--target-directory"):
                 return {value}
         targets = [word for word in arguments if word.startswith("--target-directory=")]
@@ -206,7 +207,7 @@ def _destinations(name: str, arguments: list[str], paths: list[str]) -> set:
                     if (word.startswith("-") and not word.startswith("--")) or (position == 0 and word.isalpha())]
         if any(set(cluster) & {"x", "t"} for cluster in clusters) or {"--extract", "--list", "--get"} & set(arguments):
             return set()   # extracting or listing: the archive is READ
-        for flag, value in zip(arguments, arguments[1:]):
+        for flag, value in itertools.pairwise(arguments):
             if not flag.startswith("--") and "f" in flag.lstrip("-") and flag.lstrip("-").isalpha():
                 return {value}
         return set()

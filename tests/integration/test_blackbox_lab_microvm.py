@@ -154,5 +154,5 @@ def test_a_recorded_install_of_a_known_malicious_package_gives_valid_evidence(la
     key = _key(config, identifier)
     outcome = _runner(config, guard).run(JobRequest(key, identifier, 4))
     assert outcome.state == "done", outcome
-    evidence = validate_evidence(to_mapping(extract(LabJob(key, identifier, 4, list(Lane)[0], "", 0.0), outcome.output)))
+    evidence = validate_evidence(to_mapping(extract(LabJob(key, identifier, 4, next(iter(Lane)), "", 0.0), outcome.output)))
     assert evidence.level == 4 and evidence.contacted_hosts, outcome.output

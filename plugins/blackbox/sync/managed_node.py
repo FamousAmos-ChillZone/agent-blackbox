@@ -144,7 +144,7 @@ def _managed_dkg_node_executable(cfg: BlackboxConfig) -> Optional[Path]:
 
     marker = Path(cfg.dkg_home) / ".blackbox-node-path"
     try:
-        _candidate(marker.read_text(encoding="utf-8").strip())
+        _candidate(marker.read_text(encoding="utf-8-sig").strip())
     except OSError:
         pass
     nvm_bin = os.environ.get("NVM_BIN")
@@ -197,7 +197,7 @@ def _systemd_unit_of(pid: int, proc_root: Path = Path("/proc")) -> Optional[str]
     shell). Example cgroup-v2 line: ``0::/system.slice/blackbox-dkg.service``.
     """
     try:
-        lines = (proc_root / str(pid) / "cgroup").read_text(encoding="utf-8").splitlines()
+        lines = (proc_root / str(pid) / "cgroup").read_text(encoding="utf-8-sig").splitlines()
     except OSError:
         return None
     for line in lines:

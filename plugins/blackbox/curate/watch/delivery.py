@@ -179,7 +179,7 @@ def node_sink(home: Optional[Path] = None) -> IntakeSink:
     if os.name == "posix" and mode & 0o077:
         raise SinkCredentialError(f"{NODE_SINK_FILE} is readable by other users; run chmod 600 on it")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
         kind = str(data["kind"])
     except (OSError, ValueError, TypeError, KeyError) as exc:
         raise SinkCredentialError(f"{NODE_SINK_FILE} is damaged") from exc

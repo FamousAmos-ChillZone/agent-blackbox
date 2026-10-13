@@ -159,7 +159,7 @@ def installed_commit(cli_dir: Path) -> str:
         if not build_info.is_file():
             continue
         try:
-            payload = json.loads(build_info.read_text(encoding="utf-8"))
+            payload = json.loads(build_info.read_text(encoding="utf-8-sig"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise FingerprintError(f"could not read DKG build metadata: {exc}") from exc
         commit = str(payload.get("commit") or "").strip().lower()

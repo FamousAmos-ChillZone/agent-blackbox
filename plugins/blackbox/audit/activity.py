@@ -37,7 +37,7 @@ def _finding_event_rows() -> list[dict[str, Any]]:
         if not path.exists():
             continue
         try:
-            lines = path.read_text(encoding="utf-8").splitlines()
+            lines = path.read_text(encoding="utf-8-sig").splitlines()
         except Exception:
             continue
         for line in lines:
@@ -108,14 +108,14 @@ def count_audit() -> int:
         if not path.exists():
             continue
         try:
-            total += sum(1 for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip())
+            total += sum(1 for ln in path.read_text(encoding="utf-8-sig").splitlines() if ln.strip())
         except Exception:
             continue
     for path, _ in log_store._findings_files():
         if not path.exists():
             continue
         try:
-            total += sum(1 for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip())
+            total += sum(1 for ln in path.read_text(encoding="utf-8-sig").splitlines() if ln.strip())
         except Exception:
             continue
     return total
@@ -271,7 +271,7 @@ def read_local_activity(max_sessions: int = 60) -> dict[str, Any]:
                 s["model"] = det.get("model")
             s["events"].append({"type": "api", "ts": ts, "model": det.get("model"), "provider": det.get("provider")})
         elif ev == "pre_tool_call":
-            tcid = det.get("tool_call_id") or ("tc-%s" % ts)
+            tcid = det.get("tool_call_id") or (f"tc-{ts}")
             call = {
                 "type": "tool", "ts": ts, "tool": det.get("tool_name") or "tool",
                 "action": _tool_action(det.get("tool_name"), det.get("args")),

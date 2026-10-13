@@ -603,7 +603,7 @@ def test_extraction_is_identical_across_interpreter_runs():
     for seed in ("1", "2"):
         env = dict(os.environ, PYTHONHASHSEED=seed, PYTHONDONTWRITEBYTECODE="1")
         completed = subprocess.run([sys.executable, "-c", _EXTRACT_IN_A_FRESH_INTERPRETER, PAGE, "4", IMAGE],
-                                   input=raw, capture_output=True, text=True, env=env, cwd=repo_root, timeout=120)
+                                   input=raw, capture_output=True, text=True, env=env, cwd=repo_root, timeout=120, check=False)
         assert completed.returncode == 0, completed.stderr
         outputs.append(completed.stdout)
     assert outputs[0] == outputs[1]
@@ -646,7 +646,7 @@ def _fixture_job(fixtures, name: str):
     from plugins.blackbox.curate.queue import Lane
 
     identifier, level = fixtures.FIXTURE_JOBS[name]
-    return LabJob(fixtures.fixture_key(name), identifier, level, list(Lane)[0], "", 0.0)
+    return LabJob(fixtures.fixture_key(name), identifier, level, next(iter(Lane)), "", 0.0)
 
 
 def build_fixture_evidence(fixtures) -> dict:

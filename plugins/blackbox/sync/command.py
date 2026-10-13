@@ -1289,7 +1289,7 @@ def _configured_publisher_circuits(client: DkgClient, peer_id: str) -> list[str]
     """Build deterministic relay routes for a publisher on a cold peerstore."""
     try:
         config = json.loads(
-            (Path(client.dkg_home) / "config.json").read_text(encoding="utf-8")
+            (Path(client.dkg_home) / "config.json").read_text(encoding="utf-8-sig")
         )
     except (AttributeError, OSError, TypeError, ValueError, json.JSONDecodeError):
         return []

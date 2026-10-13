@@ -89,7 +89,7 @@ class OverrideStore:
 
     def _load(self) -> dict[str, LocalOverride]:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
             return {str(item["identifier"]): LocalOverride(str(item["identifier"]), str(item.get("reason", "")),
                                                            str(item.get("day", "")))
                     for item in data.get("overrides", []) if isinstance(item, dict) and item.get("identifier")}

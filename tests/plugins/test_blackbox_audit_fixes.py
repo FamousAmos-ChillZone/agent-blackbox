@@ -85,8 +85,6 @@ def test_pypi_name_is_separator_insensitive_but_others_are_not():
 
 def test_pypi_graph_threat_fires_for_underscore_variant():
     rid = threat_ids.dependency_identifier("pypi", "foo-bar", "1.0")
-    rule = {"identifier": rid, "packageEcosystem": "pypi", "packageName": "foo-bar",
-            "packageVersion": "1.0", "severity": "critical", "name": "malware", "source": "public"}
     rs = ruleset_mod.build_from_rows([({"identifier": {"value": rid}, "packageEcosystem": {"value": "pypi"},
         "packageName": {"value": "foo-bar"}, "packageVersion": {"value": "1.0"},
         "severity": {"value": "critical"}, "kind": {"value": "malware"}}, "public")])   # no kind = flag-only (R4)

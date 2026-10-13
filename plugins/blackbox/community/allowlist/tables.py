@@ -98,7 +98,7 @@ def load() -> AllowTables:
     domains, packages = set(SEED_DOMAINS), set(SEED_PACKAGES)
     path = constants.blackbox_home() / _OVERRIDE_FILE
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
         domains |= _lower(data.get("domains", []))
         packages |= _lower(data.get("packages", []))
     except FileNotFoundError:

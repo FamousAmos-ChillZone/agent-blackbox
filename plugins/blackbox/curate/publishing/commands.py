@@ -111,7 +111,7 @@ def cmd_never_flag(args: argparse.Namespace, *, context: Optional[CurateContext]
                    lookup: Optional[SubjectLookup] = None, store: Optional[ProposalStore] = None) -> int:
     """``curate never-flag``: review the file, then sign one correction per held address under one code."""
     try:
-        with open(args.file, encoding="utf-8") as handle:
+        with open(args.file, encoding="utf-8-sig") as handle:
             batch = never_flag.review(json.load(handle))
     except (OSError, ValueError) as exc:   # NeverFlagError is a ValueError
         raise VerbError(f"cannot use {args.file}: {exc}") from exc

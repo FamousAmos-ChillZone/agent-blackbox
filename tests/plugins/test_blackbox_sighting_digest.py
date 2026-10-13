@@ -168,7 +168,7 @@ def test_publishing_sends_one_digest_per_completed_week_and_never_twice(monkeypa
     clock.at = MONDAY_W41
     assert digest.publish_due_digests(node, CFG, tally) == 1
     assert digest.publish_due_digests(node, CFG, tally) == 0            # the week is marked published
-    cg, name, quads = node.shares[0]
+    cg, name, _quads = node.shares[0]
     assert cg == GRAPH and name.startswith("digest-") and len(node.shares) == 1
     assert audit.read_share_ledger()[0]["category"] == "digest"
 

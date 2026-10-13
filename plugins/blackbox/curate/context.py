@@ -35,7 +35,7 @@ Usage::
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterable, Mapping, Optional, Union
+from typing import Any, Callable, Iterable, Mapping, Optional
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -131,7 +131,7 @@ class DisputeDraft:
     payload: Mapping[str, str]
 
 
-Draft = Union[PromotionDraft, CorrectionDraft, StatementDraft, KillListDraft, ManifestDraft, EvidenceDraft, DisputeDraft]
+Draft = PromotionDraft | CorrectionDraft | StatementDraft | KillListDraft | ManifestDraft | EvidenceDraft | DisputeDraft
 #: The statement type of a signed correction (trust-and-threat-lab P5; a reduction, K2).
 CORRECTION_STATEMENT = "blackbox.correction"
 

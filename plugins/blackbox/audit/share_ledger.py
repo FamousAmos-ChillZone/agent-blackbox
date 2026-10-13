@@ -92,7 +92,7 @@ def read_share_ledger(limit: int = 100) -> list[dict[str, Any]]:
         return []
     rows: list[dict[str, Any]] = []
     try:
-        with path.open("r", encoding="utf-8") as fh:
+        with path.open("r", encoding="utf-8-sig") as fh:
             for line in fh:
                 line = line.strip()
                 if not line:
@@ -134,7 +134,7 @@ def _read_rate_state() -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        state = json.loads(path.read_text(encoding="utf-8"))
+        state = json.loads(path.read_text(encoding="utf-8-sig"))
         return state if isinstance(state, dict) else {}
     except Exception:
         return {}

@@ -196,7 +196,7 @@ def test_the_dashboard_renders_clean_at_desktop_and_phone_widths(served, tmp_pat
         pytest.skip("no Chromium build in Playwright's cache (npx playwright install chromium)")
     env = {**os.environ, "PW_EXEC": chromium}
     result = subprocess.run(["node", str(SCRIPT), served, str(tmp_path)], capture_output=True, text=True, timeout=240,
-                            cwd=str(REPO), env=env)
+                            cwd=str(REPO), env=env, check=False)
     assert result.returncode == 0, result.stderr[-2000:]
     summary = json.loads((tmp_path / "dashboard-browser-summary.json").read_text(encoding="utf-8"))
     assert [v["viewport"]["width"] for v in summary] == [1440, 390]

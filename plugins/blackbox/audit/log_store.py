@@ -97,7 +97,7 @@ def _load_jsonl(path: Path, default_event: str) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
     except Exception:
         return []
     out: list[dict[str, Any]] = []

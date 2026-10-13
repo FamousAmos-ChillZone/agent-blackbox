@@ -120,7 +120,7 @@ class AlarmWatcher:
 
 def _load_seen(path: Path) -> set[str]:
     try:
-        return set(str(x) for x in json.loads(path.read_text(encoding="utf-8")))
+        return set(str(x) for x in json.loads(path.read_text(encoding="utf-8-sig")))
     except (OSError, ValueError, TypeError):
         return set()
 

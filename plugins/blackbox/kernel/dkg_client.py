@@ -116,7 +116,7 @@ def load_token(dkg_home: Optional[str] = None) -> Optional[str]:
     token_path = _dkg_home(dkg_home) / "auth.token"
     try:
         if token_path.exists():
-            for line in token_path.read_text(encoding="utf-8").splitlines():
+            for line in token_path.read_text(encoding="utf-8-sig").splitlines():
                 line = line.strip()
                 if line and not line.startswith("#"):
                     return line

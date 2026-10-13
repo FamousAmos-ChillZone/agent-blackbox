@@ -26,7 +26,7 @@ import logging
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, List, Mapping, Optional, Protocol, Union
+from typing import Any, List, Mapping, Optional, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ USER_AGENT = "blackbox-curator/1 (+https://blackboxcommand.com)"
 
 JsonObject = Mapping[str, Any]
 #: What :meth:`HttpClient.get` may return: a JSON object or a JSON list.
-JsonValue = Union[JsonObject, list[Any]]
+JsonValue = JsonObject | list[Any]
 
 
 class HttpClient(Protocol):

@@ -161,7 +161,7 @@ class LiveReportStore:
 
     def _load(self) -> list[LiveReport]:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
             return [LiveReport.from_json(item) for item in data.get("live", [])]
         except (OSError, ValueError, KeyError, TypeError):
             return []   # missing or unreadable: nothing to keep alive

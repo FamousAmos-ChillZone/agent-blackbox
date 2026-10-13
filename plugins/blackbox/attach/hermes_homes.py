@@ -83,7 +83,7 @@ def is_managed_blackbox_chat_profile(path: Path) -> bool:
         if resolved.name != _BLACKBOX_CHAT_PROFILE or resolved.parent.name != "profiles":
             return False
         soul = resolved / "SOUL.md"
-        return soul.exists() and _BLACKBOX_CHAT_SOUL_MARKER in soul.read_text(encoding="utf-8")
+        return soul.exists() and _BLACKBOX_CHAT_SOUL_MARKER in soul.read_text(encoding="utf-8-sig")
     except Exception:
         return False
 

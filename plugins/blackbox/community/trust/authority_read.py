@@ -32,7 +32,7 @@ Usage (through the package)::
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from ...kernel import constants, signing
@@ -65,7 +65,7 @@ class _Resolved:
     the ``freeze_order`` whose rows the store must keep."""
 
     authority: Authority
-    roots: trust_anchors.RootPins = trust_anchors.RootPins()
+    roots: trust_anchors.RootPins = field(default_factory=trust_anchors.RootPins)
     manifest: Optional[key_manifest.KeyManifest] = None
     conflict: bool = False
     unavailable: bool = False

@@ -50,7 +50,7 @@ def _plugin_source_dir() -> Path:
     marker = own / _SOURCE_ROOT_MARKER
     try:
         if marker.exists():
-            root = Path(marker.read_text(encoding="utf-8").strip()).expanduser()
+            root = Path(marker.read_text(encoding="utf-8-sig").strip()).expanduser()
             candidate = (root / "plugins" / "blackbox").resolve()
             if candidate.is_dir() and candidate != own:
                 return candidate
@@ -79,7 +79,7 @@ def _installed_plugin_version(dest: Path) -> Optional[str]:
     if not const_path.exists():
         return None
     try:
-        for line in const_path.read_text(encoding="utf-8").splitlines():
+        for line in const_path.read_text(encoding="utf-8-sig").splitlines():
             stripped = line.strip()
             if stripped.startswith("__version__"):
                 _, _, rhs = stripped.partition("=")

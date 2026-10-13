@@ -84,7 +84,7 @@ class SigningLog:
     def rows(self) -> list[SigningRow]:
         """Every well-formed row, oldest first (a damaged line is skipped)."""
         try:
-            lines = self._path.read_text(encoding="utf-8").splitlines()
+            lines = self._path.read_text(encoding="utf-8-sig").splitlines()
         except OSError:
             return []
         parsed: list[SigningRow] = []

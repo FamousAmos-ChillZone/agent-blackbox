@@ -209,7 +209,7 @@ class LabController:
             return None
         envelope_path = self._lab_dir / "evidence" / f"{record.evidence_sha256}{_ENVELOPE_SUFFIX}"
         try:
-            envelope = signing.from_text(envelope_path.read_text(encoding="utf-8"))
+            envelope = signing.from_text(envelope_path.read_text(encoding="utf-8-sig"))
             evidence = self._store.evidence(record)
         except (OSError, ValueError) as exc:
             logger.warning("blackbox lab: evidence %s unreadable: %s", record.evidence_sha256, exc)
@@ -298,7 +298,7 @@ class LabController:
 
     def _load_attempts(self) -> dict[str, int]:
         try:
-            raw = json.loads((self._lab_dir / _ATTEMPTS_FILE).read_text(encoding="utf-8"))
+            raw = json.loads((self._lab_dir / _ATTEMPTS_FILE).read_text(encoding="utf-8-sig"))
             if not isinstance(raw, dict):
                 raise ValueError("not an object")
         except FileNotFoundError:

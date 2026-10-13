@@ -120,7 +120,7 @@ def test_a_scanning_sample_is_killed_logged_and_noted_in_the_evidence(lab, caplo
     assert any("egress caps" in message and "killed" in message for message in logged), logged
     assert any(key in message for message in logged), "the kill is logged against its job"
 
-    job = LabJob(key, SCANNING_IDENTIFIER, 1, list(Lane)[0], "", 0.0)
+    job = LabJob(key, SCANNING_IDENTIFIER, 1, next(iter(Lane)), "", 0.0)
     evidence = extract(job, outcome.output)
     assert NoteCode.SCANNING_KILLED in evidence.notes
     assert evidence.observations == ()

@@ -127,7 +127,7 @@ def read_findings(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         if not path.exists():
             continue
         try:
-            lines = path.read_text(encoding="utf-8").splitlines()
+            lines = path.read_text(encoding="utf-8-sig").splitlines()
         except Exception:
             continue
         for line in lines:
@@ -187,7 +187,7 @@ def local_active_frameworks() -> list[str]:
         if framework in out or not audit_path.exists():
             continue
         try:
-            if any(line.strip() for line in audit_path.read_text(encoding="utf-8").splitlines()):
+            if any(line.strip() for line in audit_path.read_text(encoding="utf-8-sig").splitlines()):
                 if framework == "hermes":
                     out.insert(0, framework)
                 else:
@@ -326,7 +326,7 @@ def read_file_access(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
     except Exception:
         return []
     out: list[dict[str, Any]] = []

@@ -611,7 +611,7 @@ def test_scamsniffer_terms_are_look_up_only_and_not_citable():
     ("ioc:contract:" + SCAM_WALLET, scamsniffer.ADDRESSES_FILE),
 ])
 def test_a_scamsniffer_listing_is_found_and_its_verdict_carries_the_list_and_date(identifier, list_file):
-    http, source = _scamsniffer()
+    _http, source = _scamsniffer()
     verdict = source.check(identifier)
     assert (verdict.status, verdict.source) == (Lookup.FOUND, "scamsniffer")
     assert verdict.reference_id == f"{list_file}@2026-10-11"

@@ -62,7 +62,7 @@ def _is_blackbox_openclaw_load_path(value: Any) -> bool:
     try:
         manifest = path / "openclaw.plugin.json"
         if manifest.is_file():
-            data = json.loads(manifest.read_text(encoding="utf-8"))
+            data = json.loads(manifest.read_text(encoding="utf-8-sig"))
             if isinstance(data, dict) and data.get("id") == "blackbox":
                 return True
     except Exception:

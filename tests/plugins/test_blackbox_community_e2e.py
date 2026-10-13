@@ -20,10 +20,10 @@ import time
 import pytest
 
 from plugins.blackbox import community
-from plugins.blackbox.community import report_builder as report_builder
+from plugins.blackbox.community import report_builder
 from plugins.blackbox.community.report_signer import ReportSigner, network_environment
 from plugins.blackbox.kernel import signing
-from plugins.blackbox.kernel import threat_ids as threat_ids
+from plugins.blackbox.kernel import threat_ids
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.kernel.dkg_client import DkgClient
 from plugins.blackbox.kernel.reporter_key import ReporterKeyStore

@@ -143,7 +143,7 @@ def test_the_shipped_root_pins_have_the_epoch_mapping_shape():
 def test_the_authority_read_stores_freeze_only_manifests(roots):
     # K1 review: the reader's store must keep a freeze-only manifest row, or the
     # conflict it raises (root A against root B) is forgotten on the next read.
-    root_a, root_b = roots
+    root_a, _root_b = roots
     pins = RootPins.for_environment(MAINNET, {})
     leapfrog = _manifest(root_epoch=2)                        # freeze-only: root A at epoch 2
     stranger = _manifest(root_epoch=1)                        # not signed by any trusted root

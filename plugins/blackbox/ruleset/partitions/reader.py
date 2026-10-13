@@ -105,7 +105,7 @@ def _total_grew_at(previous: Optional[dict[str, object]], total: int, now: float
 def progress(cg_id: str) -> Optional[dict[str, object]]:
     """The last recorded compile progress for *cg_id*, or None."""
     try:
-        record = json.loads(_progress_path().read_text(encoding="utf-8"))
+        record = json.loads(_progress_path().read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return None
     return record if isinstance(record, dict) and record.get("context_graph_id") == cg_id else None

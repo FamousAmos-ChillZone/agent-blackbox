@@ -44,7 +44,7 @@ class ServiceBudget:
 
     def _counts(self, today: str) -> dict[str, int]:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
             if data.get("day") == today:
                 return {kind: int(data.get(kind, 0)) for kind in _limits()}
         except (OSError, ValueError, TypeError, AttributeError):

@@ -133,7 +133,7 @@ def _read_cache() -> Optional[compiler.Ruleset]:
     if not path.exists():
         return None
     try:
-        return _deserialize(json.loads(path.read_text(encoding="utf-8")))
+        return _deserialize(json.loads(path.read_text(encoding="utf-8-sig")))
     except Exception as exc:  # pragma: no cover - fail open
         logger.debug("blackbox: ruleset cache read failed: %s", exc)
         return None

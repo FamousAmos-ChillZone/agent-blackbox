@@ -171,7 +171,7 @@ class SightingTally:
 
     def _load(self) -> dict[str, object]:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
             weeks = {str(w): {str(k): int(v) for k, v in dict(c).items()} for w, c in dict(data["weeks"]).items()}
             return {"weeks": weeks, "published": [str(w) for w in data.get("published", [])]}
         except (OSError, ValueError, KeyError, TypeError):

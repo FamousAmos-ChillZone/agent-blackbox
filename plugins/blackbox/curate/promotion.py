@@ -48,7 +48,7 @@ class ProvenanceMap:
         ids = []
         with self._lock:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            with os.fdopen(os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), "a", encoding="utf-8") as fh:
+            with os.fdopen(os.open(self._path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), "a", encoding="utf-8") as fh:  # windows-footgun: ok — a WRITE (mode "w"/"a"); writes stay utf-8
                 for subject in report_subjects:
                     random_id = secrets.token_hex(8)
                     fh.write(json.dumps({"id": random_id, "identifier": identifier, "subject": subject}) + "\n")
