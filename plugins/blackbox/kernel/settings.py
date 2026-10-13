@@ -18,7 +18,7 @@ import logging
 import threading
 from typing import Any, Dict, List, Tuple
 
-from . import constants
+from . import constants, crypto_secrets
 from . import yaml_files
 from .config import DETECTION_CATEGORIES, load_blackbox_config
 
@@ -42,6 +42,7 @@ def read_settings() -> Dict[str, Any]:
         "osv_lookup": cfg.osv_lookup,
         "categories": categories,
         "protected_paths": list(cfg.protected_paths),
+        "wallet_protection": crypto_secrets.wallet_mode.current().as_json(),   # Web3 wallet protection (trader rules)
         "llm": {
             "enabled": cfg.llm_enabled,
             "provider": cfg.llm_provider,
@@ -170,6 +171,9 @@ def write_settings(payload: Dict[str, Any], *, sharing_consent: bool = False) ->
     Never raises — a write failure is reported in the result.
     """
     updates, errors = _validate(payload, sharing_consent=sharing_consent)
+    wallet_updates, wallet_errors = crypto_secrets.wallet_mode.validate(payload)   # Web3 wallet protection
+    updates.update(wallet_updates)
+    errors.extend(wallet_errors)
     if not updates:
         return {"ok": False, "errors": errors or ["nothing to update"], "settings": read_settings()}
 

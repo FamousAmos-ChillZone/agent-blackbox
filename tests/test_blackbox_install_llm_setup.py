@@ -431,7 +431,7 @@ def test_unix_installer_fresh_config_turns_community_sharing_on(tmp_path: Path) 
     blackbox = _configure(tmp_path, tmp_path / "config.yaml", tmp_path / "fresh-home")
 
     assert blackbox["report"] is True and blackbox["sharing_default"] == "on-2026-10-12"
-    assert blackbox["daily_report_limit"] == 20   # the plugin default; 0 meant "no cap" (Refine R1)
+    assert blackbox["daily_report_limit"] == 100   # the plugin default; 0 meant "no cap" (Refine R1)
 
 
 def test_unix_installer_turns_sharing_on_once_for_an_install_from_before(tmp_path: Path) -> None:
@@ -455,7 +455,7 @@ def test_windows_installer_fresh_config_turns_community_sharing_on() -> None:
     writer = _extract_powershell_function_body("Enable-AndConfigure")
 
     assert '"report": True' in writer and '"report": False,' not in writer
-    assert '"daily_report_limit": 20' in writer
+    assert '"daily_report_limit": 100' in writer
     assert 'SHARING_DEFAULT_MARK = "on-2026-10-12"' in INSTALL_PS1.read_text(encoding="utf-8")
     assert '"daily_report_limit": 9999' not in writer
 
@@ -489,7 +489,7 @@ def test_windows_installer_migrates_stale_community_sharing_opt_in() -> None:
     # consenting node (the product's consent code decides), only 0 is repaired.
     assert 'for k, v in {"report": False, "daily_report_limit": 20}.items()' not in writer
     assert 'if blackbox.get("report") is True and not _consent_in_force(repo_dir):' in writer
-    assert 'if blackbox.get("daily_report_limit") in (0, "0")' in writer
+    assert 'if blackbox.get("daily_report_limit") in (0, "0", 20, "20")' in writer
     assert "$GraphPeerId $RepoDir" in writer
 
 
@@ -1954,4 +1954,19 @@ def test_unix_installer_turns_sharing_off_for_an_operator_who_opted_out(tmp_path
     )
     blackbox = configured["plugins"]["entries"]["blackbox"]
     assert blackbox["report"] is False
-    assert blackbox["daily_report_limit"] == 20   # the invalid pre-R1 "no cap" is repaired
+    assert blackbox["daily_report_limit"] == 100   # the invalid pre-R1 "no cap" is repaired
+
+
+def test_unix_installer_moves_the_old_default_cap_to_the_new_one(tmp_path: Path) -> None:
+    """2026-10-12: the daily report cap's default went 20 -> 100. A config still holding the
+    old installer-written 20 follows the default; any other operator-chosen cap is kept."""
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("plugins:\n  entries:\n    blackbox:\n      report: true\n      daily_report_limit: 20\n", encoding="utf-8")
+    configured = _run_unix_blackbox_config_writer(
+        config_path,
+        dkg_url="http://127.0.0.1:9320",
+        dkg_home=tmp_path / ".dkg",
+        dkg_bin=tmp_path / "dkg" / "node_modules" / ".bin" / "dkg",
+        repo_dir=str(Path(__file__).resolve().parents[1]),
+    )
+    assert configured["plugins"]["entries"]["blackbox"]["daily_report_limit"] == 100

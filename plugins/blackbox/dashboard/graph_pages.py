@@ -155,6 +155,27 @@ def rule_for(rs: Any, tier: str, identifier: str) -> Dict[str, Any]:
     return _live_rule(rs, identifier) or {}
 
 
+def verified_profile(rs: Any, identifier: str) -> Dict[str, Any]:
+    """What this node's OWN verified copy says a community threat is (threat profiles):
+    its name, description, kind and — for an injection — the pattern text. A community
+    report only names the threat; the reader supplies the rest from data it already
+    trusts, so nothing describing it ever has to travel. Empty when the verified graph
+    does not list the identifier."""
+    try:
+        rule = rule_for(rs, "public", identifier)
+    except Exception:   # fail open: a down store means "no verified description", never an error
+        rule = {}
+    if not rule:
+        return {}
+    out = {"verified": True}
+    for key in ("name", "description", "kind"):
+        if rule.get(key):
+            out[key] = str(rule[key])
+    if rule.get("pattern_src"):
+        out["pattern"] = str(rule["pattern_src"])
+    return out
+
+
 def _live_rule(rs: Any, identifier: str) -> Optional[Dict[str, Any]]:
     parsed = threat_ids.parse_dependency_identifier(identifier)
     if parsed is not None and callable(getattr(rs, "dependency_rules", None)):

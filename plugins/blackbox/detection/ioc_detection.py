@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from . import action_parsing
 from . import content_scanners
-from .finding import Finding, _rule_source, mark_answered_by
+from .finding import Finding, _rule_source, mark_answered_by, rule_subject
 from .injection_detection import injection_scan_text
 
 
@@ -81,7 +81,7 @@ def detect_ioc(tool_name: str, args: Any, ruleset: Any, context: Optional[str] =
                 matched=value[:200],
                 evidence=f"{ioc_type} {value}"[:200],
                 confirmed=src == "public",
-                source=src,
+                source=src, rule_subject=rule_subject(rule),
                 kind=rule.get("kind"),
                 fields={"ioc_type": ioc_type, "ioc_context": context,
                         **({"answered_by": rule["answered_by"]} if rule.get("answered_by") else {})},

@@ -13,7 +13,7 @@ import logging
 from typing import Any, Dict, List, Optional
 from .. import audit, detection
 from .. import community
-from ..kernel import identity
+from ..kernel import crypto_secrets, identity
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient
 
@@ -28,9 +28,14 @@ def _flag_worthy(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List
       ``report_min_severity`` — they are nominations, not confirmed threats.
 
     Custom rules (``source == "custom"``) bypass the category policy.
+    Wallet findings (key stores, seed phrases, labelled private keys) count only
+    while Web3 wallet protection is on, for the wallets the operator chose.
     """
     out: List[detection.Finding] = []
+    wallets = crypto_secrets.wallet_mode.current() if findings else None
     for f in findings:
+        if wallets is not None and not wallets.allows_finding({"identifier": f.identifier, "fields": f.fields}):
+            continue
         if f.source == "custom":
             out.append(f)
             continue
@@ -42,6 +47,16 @@ def _flag_worthy(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List
     return out
 
 
+def _attach_sightings(finding_dicts: List[Dict[str, Any]], detail: Dict[str, Any]) -> None:
+    """Give each finding the sighting a report carries (threat-profiles §03.2):
+    the tool, the action, blocked or flagged (from the hook's ``blocked`` list)
+    and what the threat goes after."""
+    blocked = set(detail.get("blocked") or ())
+    for finding in finding_dicts:
+        outcome = "blocked" if finding.get("identifier") in blocked else "flagged"
+        finding["sighting"] = community.sighting_fields(finding, outcome=outcome)
+
+
 def _report_and_audit(cfg: BlackboxConfig, event: str, findings: List[detection.Finding], detail: Dict[str, Any]) -> None:
     """Audit findings locally, then fan out (Observer-style) per finding:
     private WM audit KA always; community share when the policy allows.
@@ -51,6 +66,7 @@ def _report_and_audit(cfg: BlackboxConfig, event: str, findings: List[detection.
     policy decision (microseconds, no I/O) happens inline.
     """
     finding_dicts = [f.to_dict() for f in findings]
+    _attach_sightings(finding_dicts, detail)   # before recording, so the local record carries the profile too
     audit.record(event=event, findings=finding_dicts or None, detail=detail)
     if not findings:
         return

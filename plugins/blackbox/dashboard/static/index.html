@@ -806,6 +806,132 @@
     overflow: hidden;
   }
 
+  /* ---------- Trader Shield: announcement banner ---------- */
+  .ts-banner { position: relative; overflow: hidden; margin-top: 28px; border: 1px solid color-mix(in srgb, var(--signal) 55%, transparent);
+    border-radius: var(--radius); background: var(--panel); padding: 20px 56px 20px 22px; display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; }
+  .ts-banner[hidden] { display: none; }   /* display:flex above would otherwise override [hidden] */
+  .ts-glow { position: absolute; inset: -40% -10% auto auto; width: 340px; height: 340px; border-radius: 50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--signal) 22%, transparent), transparent 65%); pointer-events: none; animation: tsGlow 6s ease-in-out infinite; }
+  @keyframes tsGlow { 0%,100% { transform: translate(0,0); opacity: .8; } 50% { transform: translate(-30px,10px); opacity: 1; } }
+  .ts-copy { position: relative; display: grid; gap: 4px; flex: 1 1 380px; }
+  .ts-new { font-family: var(--mono-font); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--signal); }
+  .ts-title { font-size: 22px; font-weight: 850; font-stretch: 115%; text-transform: uppercase; letter-spacing: -.005em; }
+  .ts-sub { font-size: 13.5px; color: var(--muted-strong); max-width: 62ch; }
+  .ts-actions { position: relative; display: flex; flex-wrap: wrap; gap: 10px; }
+  .ts-btn { font: 700 13.5px var(--body-font); border-radius: var(--radius); padding: 10px 15px; border: 1px solid var(--border-strong); background: transparent;
+    color: var(--text); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+  .ts-btn.primary { background: var(--signal); border-color: var(--signal); color: #fff; }
+  .ts-btn:focus-visible, .ts-close:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  .ts-close { position: absolute; top: 12px; right: 12px; background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 14px; padding: 6px; }
+  .ts-beta { font-family: var(--mono-font); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--signal);
+    border: 1px solid color-mix(in srgb, var(--signal) 50%, transparent); border-radius: 999px; padding: 2px 8px; vertical-align: 4px; margin-left: 6px; }
+  .ts-link { color: var(--signal); text-decoration: none; } .ts-link:hover { text-decoration: underline; }
+  @media (prefers-reduced-motion: reduce) { .ts-glow { animation: none; } }
+
+  /* ---------- Wallet protection panel + settings (trader rules) ---------- */
+  .wallet-picks { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
+  .wallet-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+  .wallet-pick.soon { color: var(--muted); cursor: default; }
+  .wallet-pick.soon span { font-size: 11px; }
+  .wp-mode { font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 4px 10px; border-radius: 999px; }
+  .wp-mode.block { background: color-mix(in srgb, var(--mint) 18%, transparent); color: var(--mint); }
+  .wp-mode.audit { background: color-mix(in srgb, #d99a1e 20%, transparent); color: #b7791f; }
+  .wp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0; }
+  .wp-col { padding: 16px 20px; border-right: 1px solid var(--border); display: grid; gap: 10px; align-content: start; }
+  .wp-col:last-child { border-right: 0; }
+  .wp-h { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .wp-row { display: grid; grid-template-columns: 18px 1fr; gap: 8px; font-size: 13px; line-height: 1.45; align-items: start; }
+  .wp-ic { font-weight: 700; text-align: center; }
+  .wp-ic.ok { color: var(--mint); } .wp-ic.warn { color: #c9821a; } .wp-ic.none { color: var(--muted); }
+  .wp-sub { color: var(--muted); font-size: 12px; }
+  .wp-ev { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 12.5px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .wp-ev:last-child { border-bottom: 0; }
+  .wp-ev .o { font-weight: 700; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+  .wp-ev .o.blocked { color: #d0342c; } .wp-ev .o.flagged { color: #c9821a; }
+  @media (max-width: 700px) { .wp-col { border-right: 0; border-bottom: 1px solid var(--border); } .wp-col:last-child { border-bottom: 0; } }
+  button.wp-ev { width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--border); color: inherit; font: inherit;
+    font-size: 12.5px; cursor: pointer; border-radius: 0; }
+  button.wp-ev:hover { background: color-mix(in srgb, var(--signal) 6%, transparent); }
+  button.wp-ev:focus-visible, .wev-all:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+  .wev-all { background: none; border: 0; color: var(--signal); font: 600 11px var(--body-font); letter-spacing: 0; text-transform: none; cursor: pointer; padding: 0 0 0 6px; }
+
+  /* A local type's window: each threat row opens its detail */
+  button.ldx-open { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; background: none; border-left: 0; border-right: 0; border-top: 0; }
+  button.ldx-open:hover { background: color-mix(in srgb, var(--accent, var(--signal)) 7%, transparent); }
+  button.ldx-open:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+  .ldx-go { margin-left: auto; color: var(--muted); font-size: 18px; padding-left: 8px; }
+
+  /* Wallet logos (Trader Shield): the wallet an event is about, at a glance */
+  .wl { display: inline-block; width: 20px; height: 20px; vertical-align: -5px; margin-right: 8px; flex: 0 0 auto; object-fit: contain; }
+  .wl-mark { color: var(--signal); } .wl-mark svg { width: 100%; height: 100%; display: block; }
+  .wl.big { width: 28px; height: 28px; margin: 0; vertical-align: middle; }
+  .wl.huge { width: 40px; height: 40px; margin: 0 0 6px; }
+  .wp-ev .wl { width: 18px; height: 18px; vertical-align: -4px; }
+
+  /* ---------- Trader Shield: the full-screen wallet-events window (local only) ---------- */
+  .wev-overlay { position: fixed; inset: 0; z-index: 1000;   /* the modals' layer: above the sticky header */
+    background: var(--bg); display: flex; flex-direction: column; }
+  .wev-overlay[hidden] { display: none; }
+  .wev-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 24px 14px; border-bottom: 1px solid var(--border); }
+  .wev-kicker { font-family: var(--mono-font); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--signal); }
+  .wev-head h2 { margin: 4px 0 2px; font-size: 24px; font-weight: 850; font-stretch: 112%; text-transform: uppercase; }
+  .wev-note { color: var(--muted-strong); font-size: 13px; }
+  .wev-close { background: none; border: 1px solid var(--border-strong); border-radius: var(--radius); color: var(--text); width: 40px; height: 40px; cursor: pointer; flex: 0 0 auto; }
+  .wev-private { display: flex; gap: 10px; align-items: flex-start; margin: 12px 24px 0; padding: 10px 14px; font-size: 12.5px; line-height: 1.5;
+    border: 1px solid color-mix(in srgb, var(--mint) 45%, transparent); background: color-mix(in srgb, var(--mint) 8%, transparent); border-radius: var(--radius); }
+  .wev-private b { color: var(--mint); }
+  .wev-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 0; margin-top: 12px; border-top: 1px solid var(--border); }
+  .wev-list { overflow-y: auto; border-right: 1px solid var(--border); }
+  .wev-item { display: grid; gap: 3px; width: 100%; text-align: left; padding: 12px 18px; background: none; border: 0; border-bottom: 1px solid var(--border);
+    color: var(--text); font: inherit; cursor: pointer; border-left: 3px solid transparent; }
+  .wev-item:hover { background: color-mix(in srgb, var(--signal) 5%, transparent); }
+  .wev-item[aria-current="true"] { background: var(--panel); border-left-color: var(--signal); }
+  .wev-item:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+  .wev-item .t { font-size: 13.5px; font-weight: 650; }
+  .wev-item .m { font-size: 11.5px; color: var(--muted); }
+  .wev-item code { font-family: var(--mono-font); font-size: 11px; color: var(--muted-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+  .wev-chip { justify-self: start; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; border-radius: 999px; padding: 2px 8px; }
+  .wev-chip.blocked { color: #fff; background: #d0342c; } .wev-chip.flagged { color: #fff; background: #c9821a; }
+  .wev-detail { overflow-y: auto; padding: 22px 28px 40px; min-width: 0; }
+  .wev-detail h3 { margin: 8px 0 4px; font-size: 22px; line-height: 1.25; }
+  .wev-when { color: var(--muted); font-size: 12.5px; }
+  .wev-story { margin: 16px 0 0; font-size: 15px; line-height: 1.6; max-width: 72ch; }
+  .wev-story q { font-style: italic; }
+  .wev-sec { margin-top: 26px; }
+  .wev-sec > h4 { margin: 0 0 10px; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .wev-facts { display: grid; grid-template-columns: minmax(120px, 170px) 1fr; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+  .wev-facts > div { padding: 9px 14px; border-bottom: 1px solid var(--border); font-size: 13px; line-height: 1.5; min-width: 0; overflow-wrap: anywhere; }
+  .wev-facts > .k { color: var(--muted); }
+  .wev-facts > div:nth-last-child(-n+2) { border-bottom: 0; }
+  .wev-facts .mono { font-family: var(--mono-font); font-size: 12px; }
+  .wev-todo { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 13.5px; line-height: 1.5; max-width: 72ch; }
+  .wev-steps { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--border); }
+  .wev-step { position: relative; display: grid; grid-template-columns: 64px 1fr; gap: 10px; padding: 7px 0 7px 16px; font-size: 13px; }
+  .wev-step::before { content: ""; position: absolute; left: -6px; top: 13px; width: 10px; height: 10px; border-radius: 50%; background: var(--border-strong); }
+  .wev-step .off { font-family: var(--mono-font); font-size: 11.5px; color: var(--muted); padding-top: 1px; }
+  .wev-step .what { min-width: 0; overflow-wrap: anywhere; }
+  .wev-step .what code { font-family: var(--mono-font); font-size: 12px; }
+  .wev-step .kind { color: var(--muted); font-size: 11.5px; margin-right: 6px; }
+  .wev-step.this { background: color-mix(in srgb, var(--signal) 9%, transparent); border-radius: 0 var(--radius) var(--radius) 0; }
+  .wev-step.this::before { background: var(--signal); box-shadow: 0 0 0 4px color-mix(in srgb, var(--signal) 25%, transparent); }
+  .wev-step .here { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--signal); margin-left: 8px; }
+  .wev-empty { padding: 40px 24px; color: var(--muted); }
+  .wev-new { justify-self: start; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--signal); }
+  .wev-item.fresh { animation: wevFresh 2.4s ease-out 1; }
+  @keyframes wevFresh { from { background: color-mix(in srgb, var(--signal) 22%, transparent); } to { background: transparent; } }
+  @media (prefers-reduced-motion: reduce) { .wev-item.fresh { animation: none; } }
+  @media (max-width: 760px) {
+    .wev-head { padding: 14px 16px 10px; } .wev-head h2 { font-size: 20px; }
+    .wev-private { margin: 10px 16px 0; }
+    .wev-body { display: block; overflow-y: auto; }
+    .wev-list { max-height: 34vh; border-right: 0; border-bottom: 1px solid var(--border); }
+    .wev-detail { overflow: visible; padding: 18px 16px 32px; }
+    .wev-facts { grid-template-columns: 1fr; }
+    .wev-facts > .k { border-bottom: 0; padding-bottom: 0; }
+    .wev-facts > div:nth-last-child(2) { border-bottom: 0; }
+    .wev-step { grid-template-columns: 54px 1fr; }
+  }
+
   /* ---------- Connected agents strip ---------- */
   .agents-strip {
     display: flex;
@@ -1840,6 +1966,18 @@
   .modal-grid .cell { background: var(--panel); padding: 11px 13px; min-width: 0; }
   .modal-grid .cell.full { grid-column: 1 / -1; }
   .m-k { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--info); margin-bottom: 4px; }
+  /* Field explanations: a small (i) next to a label; hover or focus shows what the field means. */
+  .m-help { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px;
+    margin-left: 5px; border: 1px solid currentColor; border-radius: 50%; font-size: 9px; font-weight: 600; letter-spacing: 0;
+    text-transform: none; cursor: help; vertical-align: 1px; opacity: .75; }
+  .m-help:hover, .m-help:focus { opacity: 1; outline: none; }
+  .proof-sum { margin: 2px 0 10px; font-size: 13.5px; color: var(--ok, #2f7d4f); font-weight: 500; }
+  .m-help:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+  /* One floating bubble on <body>, positioned by script and kept inside the window —
+     an in-panel bubble was clipped by the detail panel's edges. */
+  .m-help-tip { position: fixed; z-index: 1000; max-width: min(280px, calc(100vw - 32px)); padding: 8px 10px;
+    border-radius: 6px; background: #1d1b19; color: #fff; font-size: 12px; line-height: 1.45; letter-spacing: 0;
+    text-transform: none; font-weight: 400; box-shadow: 0 6px 18px rgba(0,0,0,.2); pointer-events: none; }
   .m-v { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
   .m-v.mono { font-family: var(--mono-font); font-size: 12px; }
   .modal-refs { margin-top: 16px; }
@@ -2029,6 +2167,10 @@
 
   /* protected-paths list editor */
   .paths-list { display: flex; flex-direction: column; gap: 7px; margin-bottom: 12px; }
+  .paths-shield-note { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  .path-row.shield { border-style: dashed; border-color: color-mix(in srgb, var(--signal) 45%, transparent); }
+  .path-row.shield code { color: var(--text); }
+  .path-shield { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--signal); }
   .paths-empty {
     font-size: 12px; color: var(--muted); font-style: italic;
     padding: 10px 12px; border: 1px dashed var(--border); border-radius: 9px; text-align: center;
@@ -2799,6 +2941,21 @@
 
   <div class="wrap">
 
+    <!-- New product: Trader Shield (shown while not engaged, for a week from first sight, dismissible) -->
+    <div class="ts-banner" id="ts-banner" hidden role="region" aria-label="New: Trader Shield">
+      <div class="ts-glow" aria-hidden="true"></div>
+      <div class="ts-copy">
+        <span class="ts-new">New · Beta</span>
+        <div class="ts-title">Trader Shield</div>
+        <div class="ts-sub">Keep your AI agent away from your crypto wallets: no vault access, no seed phrases, no private keys leaving this machine. Your trading tools keep working.</div>
+      </div>
+      <div class="ts-actions">
+        <button type="button" class="ts-btn primary" id="ts-engage">Engage Trader Shield</button>
+        <a class="ts-btn" href="/trader-shield">Learn more →</a>
+      </div>
+      <button type="button" class="ts-close" id="ts-close" aria-label="Dismiss the Trader Shield announcement">&#10005;</button>
+    </div>
+
     <!-- Connected agents -->
     <section class="section" aria-label="Connected agents">
       <div class="section-head agents-head">
@@ -2817,6 +2974,18 @@
           <div class="empty" style="padding:28px 20px; width:100%;">Loading agents&hellip;</div>
         </div>
       </div>
+    </section>
+
+    <!-- Wallet protection (trader rules): what was found on this machine, and how it is protected -->
+    <section class="section" aria-label="Trader Shield" id="wallet-protection" hidden>
+      <div class="section-head">
+        <div class="section-htext">
+          <h2>Trader Shield <span class="ts-beta">Beta</span></h2>
+          <div class="section-note">What Blackbox found on this machine, and how it keeps your agent away from it. <a href="/trader-shield" class="ts-link">Learn more</a></div>
+        </div>
+        <div class="head-right"><span class="wp-mode" id="wp-mode">…</span><button type="button" class="ts-btn" id="wp-edit">Edit settings</button></div>
+      </div>
+      <div class="panel"><div class="wp-grid" id="wp-body"><div class="empty" style="padding:24px 20px;">Checking this machine&hellip;</div></div></div>
     </section>
 
     <!-- Threat graph (tabbed) -->
@@ -4251,7 +4420,8 @@
             color: CATS[ck].color, ring: SEV_COLOR[sev] || SEV_COLOR.info,
             severity: sev, identifier: t.identifier || "", name: t.name || "", val: 5,
             tier: tier, stage: t.stage || "", stageReason: t.stageReason || "", enforcement: t.enforcement || "",
-            networkLive: t.networkLive || "", stageSource: t.stageSource || "local"
+            networkLive: t.networkLive || "", stageSource: t.stageSource || "local",
+            profile: t.profile || {}
           });
           links.push({ source: nodes[nodes.length - 1].id, target: parentId, kind: "leaf" });
         });
@@ -4397,114 +4567,114 @@
       severity: t.severity || "info", title: t.title || t.identifier || "Threat",
       source: t.source, confirmed: !!t.confirmed,
       tool_name: t.tool || "", framework: (s && s.agent) || "hermes",
-      ts: t.ts || 0
+      ts: t.ts || 0, profile: t.profile || {}, decision: t.decision || "",
+      evidence: t.evidence || "", context: t.context || null, found_in: t.found_in || ""
     };
   }
 
-  // Build {nodes, links} for the local tier from its session activity.
+  // Build {nodes, links} for the local tier: the same shape as the community and
+  // verified graphs — Local at the centre, one hub per threat type, one leaf per
+  // distinct threat (repeats folded into a count). The session, tool and time of
+  // each sighting live in the leaf's hover card and its detail, not in the
+  // layout: a per-session timeline chain sprawled into long tails once an agent
+  // ran many calls (2026-10-12).
+  var LOCAL_LEAVES_PER_TYPE = 40;
+  // A threat seen more than once branches into one bubble per sighting (type → threat → each
+  // time it happened), each opening that exact event. Capped so a noisy threat stays readable.
+  var LOCAL_SIGHTINGS_PER_THREAT = 12;
   function buildLocalGraphData(data) {
     var nodes = [], links = [];
     var sessions = (data && data.sessions) || [];
     var centerId = "__local__";
-    // Machine root — carries run-wide totals + time span for its hover card.
-    var spanStart = null, spanEnd = null;
+    var spanStart = null, spanEnd = null, byId = {}, order = [];
     sessions.forEach(function (s) {
       if (s.start && (spanStart === null || s.start < spanStart)) spanStart = s.start;
       if (s.end && (spanEnd === null || s.end > spanEnd)) spanEnd = s.end;
+      (s.events || []).forEach(function (ev) {
+        (ev.threats || []).forEach(function (t) {
+          // The rule id AND its title: one wallet-vault rule serves every wallet and names it
+          // only in the title, so MetaMask and Phantom must not fold into one bubble.
+          var key = t.identifier ? t.identifier + "|" + (t.title || "") : ((t.title || "threat") + ":" + (t.ts || 0));
+          var item = byId[key];
+          if (!item) { item = byId[key] = { t: t, s: s, ev: ev, count: 0, first: t.ts || 0, all: [] }; order.push(key); }
+          item.count += 1;
+          item.all.push({ t: t, s: s, ev: ev });   // each time it was seen: its own bubble
+          if (t.ts && (!item.first || t.ts < item.first)) item.first = t.ts;
+          if ((t.ts || 0) >= (item.t.ts || 0)) { item.t = t; item.s = s; item.ev = ev; }   // keep the newest sighting
+        });
+      });
     });
     nodes.push({
       id: centerId, kind: "center", label: "Local", color: MINT, val: 26,
-      sessionCount: sessions.length, threatTotal: (data && data.threatCount) || 0,
+      sessionCount: sessions.length, threatTotal: order.length,   // different threats, not sightings
+      sightingTotal: (data && data.threatCount) || 0,
       start: spanStart, end: spanEnd
     });
-
-    sessions.forEach(function (s, si) {
-      var sid = "ls:" + (s.id || si);
-      var maxSev = s.maxSeverity ? sevClass(s.maxSeverity) : null;
-      var sessThreats = [];
-      (s.events || []).forEach(function (e) { (e.threats || []).forEach(function (t) { sessThreats.push(threatBrief(t)); }); });
-      var sessionNode = {
-        id: sid, kind: "session",
-        label: fwLabel(s.agent) + " · " + (s.shortId || "local"),
-        color: fwColor(s.agent),
-        ring: maxSev ? (SEV_COLOR[maxSev] || null) : null,
-        agent: s.agent, sessionId: s.id || "", shortId: s.shortId || "local",
-        status: s.status, model: s.model,
-        start: s.start || null, end: s.end || null, durationMs: s.durationMs,
-        maxSeverity: s.maxSeverity || null,
-        threatCount: s.threatCount || 0, toolCount: s.toolCount || 0,
-        threats: sessThreats,
-        val: 11 + Math.min((s.threatCount || 0) * 0.8, 8)
-      };
-      nodes.push(sessionNode);
-      links.push({ source: sid, target: centerId, kind: "hub" });
-
-      // Chain the session's tool/file/dependency calls in run order (skip pure
-      // model turns — the description is "tool calls", not API round-trips).
-      var acts = (s.events || []).filter(function (e) {
-        return e.type === "tool" || e.type === "file" || e.type === "dependency";
-      });
-      var CAP = 12, prev = sid;
-      acts.slice(0, CAP).forEach(function (ev, ei) {
-        var ck = catKey(localCallCat(ev));
-        var cid = sid + ":c" + ei;
-        var thr = ev.threats || [];
-        var cSev = callMaxSev(thr);
-        var ring = cSev ? SEV_COLOR[cSev] : (ev.resultStatus === "blocked" ? SEV_COLOR.critical : null);
-        nodes.push({
-          id: cid, kind: "call", cat: ck,
-          label: clip(localCallLabel(ev), 20),
-          color: CATS[ck].color, ring: ring,
-          blocked: ev.resultStatus === "blocked",
-          evType: ev.type,
-          tool: ev.tool, action: ev.action, path: ev.path, mode: ev.mode,
-          pkg: ev.type === "dependency" ? depCoord(ev) : "",
-          resultStatus: ev.resultStatus || null, durationMs: ev.durationMs,
-          ts: ev.ts || 0, agent: s.agent,
-          threats: thr.map(threatBrief),
-          val: 5
-        });
-        links.push({ source: cid, target: prev, kind: "step" });
-        prev = cid;
-        thr.forEach(function (t, ti) {
-          var tck = catKey(t.category), tsev = sevClass(t.severity);
-          nodes.push({
-            id: cid + ":t" + ti, kind: "lthreat", cat: tck,
-            label: clip(t.title || t.identifier || "Threat", 22),
-            color: CATS[tck].color, ring: SEV_COLOR[tsev] || SEV_COLOR.info,
-            severity: tsev, identifier: t.identifier || "", name: t.title || "",
-            tool: t.tool || ev.tool || "", ts: t.ts || ev.ts || 0,
-            finding: localFinding(t, s), val: 5
-          });
-          links.push({ source: cid + ":t" + ti, target: cid, kind: "threat" });
-        });
-      });
-      if (acts.length > CAP) {
-        var moreId = sid + ":more";
-        // Display-only truncation marker. Session details remain available from
-        // the parent session node without making this synthetic node modal-like.
-        nodes.push({ id: moreId, kind: "more", label: "+" + (acts.length - CAP) + " more", color: LABEL_MUTED, val: 4 });
-        links.push({ source: moreId, target: prev, kind: "step" });
-      }
-
-      // Loose threats (not tied to a specific call) hang straight off the session.
-      (s.events || []).filter(function (e) { return e.type === "threat"; }).forEach(function (ev, ei) {
-        (ev.threats || []).forEach(function (t, ti) {
-          var tck = catKey(t.category), tsev = sevClass(t.severity);
-          nodes.push({
-            id: sid + ":lt" + ei + "_" + ti, kind: "lthreat", cat: tck,
-            label: clip(t.title || t.identifier || "Threat", 22),
-            color: CATS[tck].color, ring: SEV_COLOR[tsev] || SEV_COLOR.info,
-            severity: tsev, identifier: t.identifier || "", name: t.title || "",
-            tool: t.tool || "", ts: t.ts || 0,
-            finding: localFinding(t, s), val: 5
-          });
-          links.push({ source: sid + ":lt" + ei + "_" + ti, target: sid, kind: "threat" });
-        });
-      });
+    var byCat = {};
+    order.forEach(function (key) {
+      var ck = catKey(byId[key].t.category);
+      (byCat[ck] = byCat[ck] || []).push(byId[key]);
     });
-
+    Object.keys(byCat).sort(function (a, b) { return byCat[b].length - byCat[a].length; }).forEach(function (ck) {
+      var items = byCat[ck].sort(function (a, b) { return (b.t.ts || 0) - (a.t.ts || 0); });
+      var sightings = items.reduce(function (n, it) { return n + it.count; }, 0);
+      var meta = CATS[ck] || { name: ck, color: "#858289" };
+      var hubId = "__lcat__:" + ck;
+      // count = different threats of this type (MetaMask and Phantom are two); how often each was
+      // seen belongs to that threat, so the total sightings only appear in the hover card.
+      nodes.push({ id: hubId, kind: "hub", cat: ck, label: meta.name, count: items.length, sightings: sightings, color: meta.color,
+                   val: 13 + Math.min(19, Math.log(items.length + 1) * 3.2),
+                   // Every local threat of this type (newest first), for the type's detail window.
+                   localItems: items.map(function (it) {
+                     var f = localFinding(it.t, it.s);
+                     f.sightings = it.count;
+                     f.firstSeen = it.first;
+                     return f;
+                   }) });
+      links.push({ source: hubId, target: centerId, kind: "hub" });
+      items.slice(0, LOCAL_LEAVES_PER_TYPE).forEach(function (it, i) {
+        var t = it.t, tsev = sevClass(t.severity), finding = localFinding(t, it.s);
+        finding.sightings = it.count;
+        finding.firstSeen = it.first;
+        nodes.push({
+          id: hubId + ":" + i, kind: "lthreat", cat: ck,
+          label: clip(t.title || t.identifier || "Threat", 22) + (it.count > 1 ? " ×" + it.count : ""),
+          color: meta.color, ring: SEV_COLOR[tsev] || SEV_COLOR.info,
+          severity: tsev, identifier: t.identifier || "", name: t.title || "",
+          tool: t.tool || it.ev.tool || "", ts: t.ts || it.ev.ts || 0,
+          sightings: it.count, profile: t.profile || {}, finding: finding, val: 5
+        });
+        links.push({ source: hubId + ":" + i, target: hubId, kind: "leaf" });
+        if (it.count > 1) addSightingBubbles(nodes, links, hubId + ":" + i, it, ck, meta);
+      });
+      if (items.length > LOCAL_LEAVES_PER_TYPE) {
+        nodes.push({ id: hubId + ":more", kind: "more", label: "+" + (items.length - LOCAL_LEAVES_PER_TYPE) + " more",
+                     color: LABEL_MUTED, val: 4 });
+        links.push({ source: hubId + ":more", target: hubId, kind: "leaf" });
+      }
+    });
     return { nodes: nodes, links: links };
+  }
+
+  function addSightingBubbles(nodes, links, threatId, it, ck, meta) {
+    var all = it.all.slice().sort(function (a, b) { return (b.t.ts || 0) - (a.t.ts || 0); });
+    all.slice(0, LOCAL_SIGHTINGS_PER_THREAT).forEach(function (one, j) {
+      var finding = localFinding(one.t, one.s);
+      finding.sightings = 1;
+      nodes.push({
+        id: threatId + ":s" + j, kind: "lsight", cat: ck, color: meta.color,
+        ring: SEV_COLOR[sevClass(one.t.severity)] || SEV_COLOR.info,
+        name: one.t.title || one.t.identifier || "Threat", ts: one.t.ts || one.ev.ts || 0,
+        outcome: one.t.decision === "block" ? "blocked" : "flagged",
+        session: (one.s && (one.s.shortId || one.s.id)) || "", finding: finding, val: 2.6
+      });
+      links.push({ source: threatId + ":s" + j, target: threatId, kind: "leaf" });
+    });
+    if (all.length > LOCAL_SIGHTINGS_PER_THREAT) {
+      nodes.push({ id: threatId + ":smore", kind: "more", label: "+" + (all.length - LOCAL_SIGHTINGS_PER_THREAT) + " more",
+                   color: LABEL_MUTED, val: 3 });
+      links.push({ source: threatId + ":smore", target: threatId, kind: "leaf" });
+    }
   }
 
   // Stable signature of the local activity — skip rebuilds when nothing changed.
@@ -4659,7 +4829,7 @@
       var isHub = kind === "hub";
       var isCall = kind === "call";
       var isMore = kind === "more" || kind === "gmore";
-      var isThreat = kind === "leaf" || kind === "lthreat";
+      var isThreat = kind === "leaf" || kind === "lthreat" || kind === "lsight";
       var r = Math.sqrt(Math.max(node.val || 1, 1)) * 1.9;
       ctx.save();
       if (node.dimmed) ctx.globalAlpha = 0.38;
@@ -4794,17 +4964,24 @@
           ? (node.sessionCount || 0) + ' session' + (node.sessionCount === 1 ? '' : 's') + ' · '
           : '';
         return '<div class="graph-tip"><div class="t-name">' + esc(node.label) + '</div>' +
-          '<div class="t-cat">' + sessionLine + focusLine + num(node.threatTotal || 0) + ' threat' + (node.threatTotal === 1 ? '' : 's') + '</div>' +
+          '<div class="t-cat">' + sessionLine + focusLine + num(node.threatTotal || 0) + ' threat' + (node.threatTotal === 1 ? '' : 's') +
+          (node.sightingTotal && node.sightingTotal !== node.threatTotal ? ' · seen ' + num(node.sightingTotal) + ' times in all' : '') + '</div>' +
           (span ? '<div class="t-id">' + esc(span) + '</div>' : '') + '</div>';
       }
 	      if (node.kind === "hub") {
 	        var action = graphDetailMode[activeTier] === "explore" ? "click to focus" : "click for details";
 	        var hc = node.count != null
-	          ? (node.count.toLocaleString() + ' threat' + (node.count === 1 ? '' : 's') + ' · ' + action)
+	          ? (node.count.toLocaleString() + ' threat' + (node.count === 1 ? '' : 's') +
+	             (node.sightings && node.sightings !== node.count ? ' · seen ' + num(node.sightings) + ' times in all' : '') + ' · ' + action)
 	          : 'category hub';
 	        return '<div class="graph-tip"><div class="t-name">' + esc(node.label) + '</div>' +
 	          '<div class="t-cat">' + hc + '</div></div>';
       }
+    if (node.kind === "lsight") {
+      return '<div class="graph-tip"><div class="t-name">' + esc(node.name) + '</div>' +
+        '<div class="t-cat">' + esc(node.outcome) + ' · ' + esc(fmtDateFull(node.ts)) + '</div>' +
+        '<div class="t-id">' + (node.session ? 'session ' + esc(node.session) + ' · ' : '') + 'click for this event</div></div>';
+    }
     if (node.kind === "session") {
       var line = (node.status || "session") + (node.threatCount ? ' · ' + node.threatCount + ' threat' + (node.threatCount === 1 ? '' : 's') + (node.maxSeverity ? ' · ' + node.maxSeverity : '') : ' · clean');
       var sub = [];
@@ -4844,6 +5021,7 @@
     var tmeta = [];
     if (node.tool) tmeta.push(node.tool);
     if (node.ts) tmeta.push(lclock(node.ts));
+    if (node.sightings > 1) tmeta.push("seen " + node.sightings + " times");
     return '<div class="graph-tip">' +
       '<div class="t-name">' + esc(title) + '</div>' +
       (node.identifier ? '<div class="t-id">' + esc(node.identifier) + '</div>' : '') +
@@ -4854,10 +5032,23 @@
       (tmeta.length ? '<div class="t-cat">' + esc(tmeta.join(" · ")) + '</div>' : '') +
       (node.stage ? '<div class="t-cat">stage: ' + esc(node.stage) + ' (' + esc(node.stageSource || "local") + ') · ' + esc(node.enforcement || "") +
         (node.stageReason ? ' — ' + esc(node.stageReason) : '') + '</div>' : '') +
+      (profileLine(node.profile) ? '<div class="t-cat">' + esc(profileLine(node.profile)) + '</div>' : '') +
       (node.networkLive === "no" ? '<div class="t-cat">kept locally — its network copies expired; this node keeps a counted threat up to 90 days</div>' : '') +
       (heatByIdentifier[node.identifier] ? '<div class="t-cat">seen by ~' + num(heatByIdentifier[node.identifier].agents) +
         ' agents this week (' + esc(heatByIdentifier[node.identifier].week) + ')</div>' : '') +
     '</div>';
+  }
+
+  // Threat profile in one line: goal · what is at risk · technique · blocked/flagged · tool (fields optional, LES-018).
+  function profileLine(p) {
+    if (!p) return "";
+    var parts = [];
+    if (p.threatGoal) parts.push(p.threatGoal.replace(/-/g, " "));
+    if (p.resourceAtRisk && p.resourceAtRisk !== "none-identified") parts.push("at risk: " + p.resourceAtRisk.replace(/-/g, " "));
+    if (p.attackTechnique) parts.push(p.attackTechnique);
+    if (p.outcome) parts.push(p.outcome);
+    if (p.agentTool) parts.push("via " + p.agentTool);
+    return parts.join(" · ");
   }
 
   // ---------- Threat detail modal ----------
@@ -4888,6 +5079,538 @@
     } catch (e) { return String(s); }
   }
 
+  // What every field in a threat's detail means, in plain words (shown on the (i) next to its label).
+  var FIELD_HELP = {
+    "Ecosystem": "The package registry the package comes from (npm, PyPI, crates…).",
+    "Package": "The package name, exactly as it is installed.",
+    "Version": "The exact version this record is about. Other versions may be fine.",
+    "Fixed in": "The first version without the problem, when one exists.",
+    "Threat type": "What this indicator is used for: a phishing site, malware infrastructure, a command-and-control server, a scam…",
+    "Indicator": "What kind of indicator it is: a domain, IP address, URL, file hash or wallet address.",
+    "Feed": "The public threat feed that listed it before Umanitek verified it into the graph (e.g. Phishing.Database, Maltrail).",
+    "OWASP": "The OWASP Top 10 for LLM applications category. LLM01 is prompt injection.",
+    "Pattern": "The text pattern Blackbox matches. For a prompt injection this is the attacker's wording it looks for — never your own prompt.",
+    "Tool": "The agent tool involved (web_fetch, terminal, read_file…).",
+    "Arg shape": "The dangerous shape of the command, e.g. a remote script piped into a shell.",
+    "File category": "The kind of sensitive file touched (credentials, SSH key, .env…) — never the actual path.",
+    "Skill": "The agent skill or plugin this record is about.",
+    "Danger shape": "What makes the skill's code dangerous, e.g. unrestricted shell access.",
+    "Source": "Who first reported this threat before Umanitek verified it into the graph — a security company, an open-source list or a research project. The line next to it says what that source is.",
+    "Contributor": "Who added this record to the graph.",
+    "Last updated": "When this record last changed in the graph.",
+    "Graph": "Where this record lives. Verifiable graph: Umanitek's curated threats (can block). Community graph: reports shared by other Blackbox nodes (flag only). Local: what happened on this machine.",
+    "Detected": "When Blackbox saw it on this machine.",
+    "Agent": "Which protected agent was involved.",
+    "Trigger": "Which check caught it: a tool call, a model request, or a file/package action.",
+    "Seen": "How many separate times Blackbox detected this threat on this machine, and when the first and the latest were.",
+    "What matched": "The exact words in what the agent was given that matched the injection pattern. Kept on this machine only.",
+    "Found in": "Where those words were: a file or command output the agent read, a web page it fetched, or the message typed to it. Injections usually hide in what the agent reads, not in what you type.",
+    "Rule from": "Where the rule that caught this lives: Umanitek's verified graph (curated), the community graph, or Blackbox's own built-in checks.",
+    "About this id": "The rule's name in plain words. The same rule has the same id on every machine, so reports of it can be counted together.",
+    "Reached for": "What the agent tried to get at. Blackbox checks the location only — it never opens the wallet.",
+    "Why it matters": "What someone could do with it if it left this machine.",
+    "What led to it": "The request in the conversation just before the agent acted (kept on this machine only). It shows whether you asked, or something the agent read pushed it there.",
+    "What it's after": "The threat's goal, from a fixed list (credential theft, wallet drain, agent hijack…).",
+    "At risk": "The KIND of resource the threat targets (cloud credentials, API keys, funds…) — never the actual file or account.",
+    "Technique": "The MITRE ATT&CK or ATLAS technique id — the industry's shared name for this attack method.",
+    "Outcome": "What Blackbox did: blocked the action, or flagged it and let it run (audit mode).",
+    "Agent action": "What the agent was doing when it met the threat (fetching a page, installing a package, reading a file…).",
+    "Seen via": "The tool that met the threat. A private or custom tool shows only as 'mcp-tool' or 'other'.",
+    "Found in": "Where the threat appeared: a fetched page, a tool's output, the prompt, a package or a skill.",
+    "Matched by": "How it was recognised: the verified graph, Blackbox's built-in checks, or a public advisory.",
+    "Verified rule": "The record in Umanitek's verified graph this matched. Every node can look it up in its own copy.",
+    "Blackbox version": "The Blackbox version that reported it.",
+    "Reporters": "How many different Blackbox nodes reported it — counted by signing key, so one node cannot pose as many.",
+    "Stage": "Where the community stands on it: reported, confirmed by curators, disputed or retracted.",
+    "Category": "The kind of threat (prompt injection, package, indicator, file access, skill, command).",
+    "Scope": "Which part of the graph this view covers.",
+    "Threats": "How many threats of this kind the graph holds.",
+    "Loaded sample": "How many of them the dashboard loaded to draw.",
+    "Sample severity mix": "How serious the loaded threats are, by severity.",
+    "Signed by": "The reporting node's own signing key (Ed25519). It is made when Blackbox is installed and never leaves that machine; only the holder of the key could have signed this report.",
+    "Reporter": "The reporting node's agent address. A label only: reporters are counted by signing key, so one node cannot pose as many.",
+    "Signature": "Every report is checked before it counts. A forged, altered or replayed report fails the check and never reaches this dashboard.",
+    "Fingerprint": "A hash of exactly what was signed. Change one letter of the report and the signature no longer matches; anyone can recompute it.",
+    "Network": "The DKG network the signature is bound to. A report signed on a test network cannot be replayed on this one.",
+    "Signed on": "The day the report was signed (reports carry the day, never the time).",
+    "Counts toward confirmation": "How many reporters are on the curators' trusted list. Until curators publish that list, every report still flags but none counts toward confirmation.",
+    "Shared": "Whether this machine shared this threat with the community graph, when, and whether the network accepted it.",
+    "Your signing key": "This machine's own signing key — the key every report it shares is signed with."
+  };
+
+  // The proof behind a threat, from GET /api/threat-proof: who signed each report,
+  // its fingerprint, what the signature is bound to, and (local) what this machine shared.
+  function shortKey(k) { k = String(k || ""); return k.length > 30 ? k.slice(0, 18) + "…" + k.slice(-8) : k; }
+  // One proof block: a summary line in plain words, then the details that back it.
+  function graphShort(g) { g = String(g || ""); var i = g.lastIndexOf("/"); return i >= 0 ? g.slice(i + 1) : g; }
+  function networkText(r) { return r.network_name ? r.network_name + (r.this_network ? " · this node's network" : "") : shortKey(r.network); }
+  function proofBlock(title, summary, r) {
+    var rows = [["Signed by", shortKey(r.signer), true], ["Fingerprint", r.fingerprint, true],
+                ["Network", networkText(r), false], ["Graph", graphShort(r.graph), true], ["Signed on", r.day, false]];
+    return '<div class="m-sech">' + esc(title) + '</div><div class="proof-sum">' + esc(summary) + '</div>' +
+      gridHTML(rows.filter(function (row) { return row[1]; }));
+  }
+  function proofHTML(p) {
+    if (!p) return "";
+    if (p.tier === "community") {
+      var reports = p.reports || [];
+      if (!reports.length) return '<div class="m-sech">Proof</div><div class="modal-empty">No signed report for this threat has reached this node yet.</div>';
+      var html = reports.map(function (r, i) {
+        var title = reports.length > 1 ? "Proof · report " + (i + 1) + " of " + reports.length : "Proof";
+        return proofBlock(title, (r.verified ? "✓ Signature valid" : "Signature not checked") + " · reported by " + shortKey(r.reporter), r);
+      }).join("");
+      var counted = (p.counted || "0") + " of " + reports.length + " reporter" + (reports.length === 1 ? "" : "s");
+      return html + gridHTML([["Counts toward confirmation", counted + (p.disputed === "yes" ? " · disputed" : ""), false]]);
+    }
+    var last = (p.shares || [])[0];
+    var when = last ? shortWhen(Date.parse(last.ts) / 1000) : "";
+    if (p.report && p.report.fingerprint) {
+      return proofBlock("Proof", "✓ You shared this · " + (last ? last.outcome + " " + when : "signed"), p.report);
+    }
+    var rows = [["Shared", last ? last.outcome + " · " + when : "not shared — this finding stayed on this machine", false]];
+    if (p.own_key) rows.push(["Your signing key", shortKey(p.own_key), true]);
+    return '<div class="m-sech">Proof</div>' + gridHTML(rows);
+  }
+  function loadProof(identifier, tier, onReady) {
+    if (!identifier) return;
+    getJSON("/api/threat-proof?tier=" + encodeURIComponent(tier) + "&identifier=" + encodeURIComponent(identifier))
+      .then(function (p) { onReady(proofHTML(p)); }).catch(function () {});
+  }
+
+  // The (i) explanations: one floating bubble, placed under (or above) the icon and
+  // clamped inside the window, so a panel's edges never cut it off.
+  (function () {
+    var tip = null;
+    function show(el) {
+      if (!tip) { tip = document.createElement("div"); tip.className = "m-help-tip"; tip.setAttribute("role", "tooltip"); document.body.appendChild(tip); }
+      tip.textContent = el.getAttribute("data-help") || "";
+      tip.hidden = false;
+      var r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight, m = 16;
+      var left = Math.min(Math.max(m, r.left + r.width / 2 - w / 2), window.innerWidth - w - m);
+      var top = r.bottom + 8;
+      if (top + h > window.innerHeight - m) top = Math.max(m, r.top - h - 8);
+      tip.style.left = left + "px";
+      tip.style.top = top + "px";
+    }
+    function hide() { if (tip) tip.hidden = true; }
+    function helpOf(e) { return e.target && e.target.closest ? e.target.closest(".m-help") : null; }
+    document.addEventListener("mouseover", function (e) { var el = helpOf(e); if (el) show(el); });
+    document.addEventListener("mouseout", function (e) { if (helpOf(e)) hide(); });
+    document.addEventListener("focusin", function (e) { var el = helpOf(e); if (el) show(el); });
+    document.addEventListener("focusout", function (e) { if (helpOf(e)) hide(); });
+    document.addEventListener("click", function (e) { var el = helpOf(e); if (el) { e.stopPropagation(); show(el); } }, true);
+    window.addEventListener("scroll", hide, true);
+  })();
+
+  // ---------- Wallet protection panel (GET /api/wallet-protection) ----------
+  function wpHelp(text) {
+    return '<span class="m-help" tabindex="0" role="note" aria-label="' + esc(text) + '" data-help="' + esc(text) + '">i</span>';
+  }
+  function wpRow(icon, cls, html) {
+    return '<div class="wp-row"><span class="wp-ic ' + cls + '">' + icon + '</span><div>' + html + '</div></div>';
+  }
+  // "New: Trader Shield" announcement — shown while Trader Shield is off, for a week from the
+  // first time this browser sees it, until dismissed. Per-browser convenience only (try/catch).
+  var TS_FIRST_SEEN_KEY = "blackbox.trader-shield.first-seen.v1", TS_DISMISSED_KEY = "blackbox.trader-shield.dismissed.v1";
+  var TS_BANNER_DAYS = 7;
+  function tsBannerDue() {
+    try {
+      if (localStorage.getItem(TS_DISMISSED_KEY)) return false;
+      var first = Number(localStorage.getItem(TS_FIRST_SEEN_KEY) || 0);
+      if (!first) { first = Date.now(); localStorage.setItem(TS_FIRST_SEEN_KEY, String(first)); }
+      return Date.now() - first < TS_BANNER_DAYS * 86400000;
+    } catch (_) { return true; }
+  }
+  function updateTraderShieldBanner(d) {
+    var banner = $("ts-banner");
+    if (banner) banner.hidden = !!(d && d.enabled) || !tsBannerDue();
+  }
+  (function wireTraderShieldBanner() {
+    var close = $("ts-close"), engage = $("ts-engage");
+    if (close) close.addEventListener("click", function () {
+      try { localStorage.setItem(TS_DISMISSED_KEY, String(Date.now())); } catch (_) {}
+      $("ts-banner").hidden = true;
+    });
+    if (engage) engage.addEventListener("click", function () {
+      engage.disabled = true; engage.textContent = "Engaging…";
+      // Only the switch: a first engage protects every supported wallet; an earlier choice of wallets is kept.
+      postJSON("/api/settings", { wallet_protection: true }).then(function (res) {
+        var ok = res && res.ok && res.body && res.body.ok;
+        engage.disabled = false;
+        engage.textContent = ok ? "Engaged ✓" : "Engage Trader Shield";
+        if (typeof showToast === "function") showToast(ok ? "Trader Shield is engaged." : "Couldn't engage Trader Shield.", ok ? "ok" : "err");
+        loadWalletProtection();
+        if (ok) setTimeout(function () { var el = $("wallet-protection"); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 400);
+      });
+    });
+  })();
+
+  var wpLast = null;   // the latest panel payload (the events window reads its mode)
+  // The wallets found on this machine, one entry per wallet: {id, wallet, browsers, areas,
+  // profiles, protected} — the panel and Settings both show wallets, not browser profiles.
+  function walletGroups(found) {
+    var groups = [], byId = {};
+    (found || []).forEach(function (w) {
+      var id = w.id || String(w.wallet || "").toLowerCase();
+      var g = byId[id];
+      if (!g) { g = byId[id] = { id: id, wallet: w.wallet, browsers: [], areas: [], profiles: 0, protected: false }; groups.push(g); }
+      if (g.browsers.indexOf(w.browser) < 0) g.browsers.push(w.browser);
+      (w.areas || []).forEach(function (a) { if (g.areas.indexOf(a) < 0) g.areas.push(a); });
+      g.profiles += 1;
+      g.protected = g.protected || !!w.protected;
+    });
+    return groups;
+  }
+  function renderWalletProtection(d) {
+    wpLast = d;
+    updateTraderShieldBanner(d);
+    var section = $("wallet-protection");
+    if (section) section.hidden = !d.enabled;   // only while Web3 wallet protection is on (Settings)
+    if (!d.enabled) return;
+    var block = d.mode === "block";
+    var mode = $("wp-mode");
+    if (mode) {
+      mode.className = "wp-mode " + (block ? "block" : "audit");
+      mode.textContent = block ? "● Blocking" : "Watching only · audit mode";
+      mode.title = block ? "Wallet threats are stopped before the action runs."
+                         : "Wallet threats are recorded and shown, but not stopped. Turn on Block in Settings to stop them.";
+    }
+    var guard = block ? "protected — blocked if the agent reaches for it" : "watched — flagged, not blocked (audit mode)";
+    // One row per WALLET (protected in every browser it is in), listing the browsers — not one
+    // row per browser profile.
+    var found = walletGroups(d.wallets).map(function (g) {
+      var name = g.id === "any-extension" ? "Firefox wallets" : g.wallet;
+      var where = g.id === "any-extension"
+        ? "every extension's storage in " + g.profiles + " Firefox profile" + (g.profiles === 1 ? "" : "s")
+        : g.areas.join(", ");
+      return wpRow(g.protected ? "✓" : "–", g.protected ? "ok" : "none", walletLogoByName(g.wallet) + "<b>" + esc(name) + "</b> · " +
+        esc(g.browsers.join(", ")) + '<div class="wp-sub">' + esc(where) + " — " +
+        (g.protected ? guard : "not selected in Settings, so not protected") + "</div>");
+    });
+    if (!found.length) found.push(wpRow("–", "none", "No browser wallet found on this machine." +
+      '<div class="wp-sub">Blackbox checks the usual browser folders by name every few minutes; it never opens a vault.</div>'));
+    var col1 = '<div class="wp-col"><div class="wp-h">Found on this machine ' +
+      wpHelp("Wallets whose key store (the encrypted vault holding your keys) exists in a browser profile here. Blackbox only checks that the folder exists — it never opens or reads it.") +
+      "</div>" + found.join("") + "</div>";
+    var watch = [
+      wpRow(d.seed_checker ? "✓" : "!", d.seed_checker ? "ok" : "warn", "<b>Seed phrases</b> " +
+        wpHelp("12–24 word recovery phrases are recognised by their built-in checksum. A phrase with a cue like 'seed:', or 18+ words, is blocked in block mode; any phrase sent off the machine is blocked.") +
+        '<div class="wp-sub">' + (d.seed_checker ? "checker on — 2,048-word list, checksum verified" : "checker OFF — the word list did not load") + "</div>"),
+      wpRow("✓", "ok", "<b>Private keys</b> " +
+        wpHelp("A key written next to a label like PRIVATE_KEY= or pk: is recognised. Handling it is only flagged, because trading configs legitimately hold one; sending it off the machine is blocked.") +
+        '<div class="wp-sub">labelled keys flagged · blocked if sent off the machine</div>'),
+      wpRow("✓", "ok", "<b>Protected files</b> " +
+        wpHelp("Your protected file patterns from Settings. Reading a matching file through a file tool is flagged critical and blocked in block mode.") +
+        '<div class="wp-sub">' + esc((d.protected_paths || []).slice(0, 6).join(" · ")) + ((d.protected_paths || []).length > 6 ? " …" : "") + "</div>"),
+      d.terminal_reads === "logged" ? wpRow("!", "warn", "<b>Not yet:</b> reading a protected file through the terminal (e.g. <code>cat .env</code>) is logged, not blocked " +
+        wpHelp("A known gap that is being fixed: the protected-files rule only checks file tools so far. Wallet vaults are already covered in the terminal.")) : ""
+    ];
+    var col2 = '<div class="wp-col"><div class="wp-h">Always watching</div>' + watch.join("") + "</div>";
+    var events = (d.events || []).slice(0, 6).map(function (e) {
+      return '<button type="button" class="wp-ev" data-wev-open="' + esc(e.identifier) + '" data-wev-ts="' + esc(String(e.ts || "")) +
+        '" title="Open the full report"><span class="o ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span><span>" + walletLogoHTML(e) + esc(e.title || e.identifier) +
+        '</span><span class="wp-sub">' + esc(shortWhen(e.ts)) + "</span><span class=\"wp-sub\">" + esc(e.tool ? "via " + e.tool : "") + "</span></button>";
+    });
+    var col3 = '<div class="wp-col"><div class="wp-h">Recent wallet events ' +
+      wpHelp("The latest times your agent reached for a wallet, a seed phrase or a private key, and what Blackbox did. Click one for the full story.") +
+      (events.length ? '<button type="button" class="wev-all" data-wev-open="">View all →</button>' : "") + "</div>" +
+      (events.length ? events.join("") : '<div class="wp-sub">Nothing yet — no agent has reached for a wallet or key.</div>') + "</div>";
+    $("wp-body").innerHTML = col1 + col2 + col3;
+  }
+  function loadWalletProtection() {
+    if (!$("wp-body")) return;
+    getJSON("/api/wallet-protection").then(renderWalletProtection).catch(function () {
+      $("wp-body").innerHTML = '<div class="empty" style="padding:24px 20px;">Wallet protection status is unavailable right now.</div>';
+    });
+  }
+  setTimeout(loadWalletProtection, 300);
+  setInterval(loadWalletProtection, 30000);
+
+  // ---------- Trader Shield: the full-screen wallet-events window (GET /api/wallet-protection/events) ----------
+  // Every wallet event with the story of what happened, read from THIS machine's logs only.
+  // Elements are looked up when the window opens (its markup sits after this script).
+  var wev = { events: [], selected: 0, lastFocus: null };
+  function wevWhen(ts) {
+    try { return new Date(ts * 1000).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" }); }
+    catch (_) { return ""; }
+  }
+  function wevOffset(ts, start) {
+    var s = Math.max(0, (ts || 0) - (start || 0));
+    return s < 60 ? "+" + s.toFixed(1) + "s" : "+" + Math.floor(s / 60) + "m " + Math.round(s % 60) + "s";
+  }
+  function wevWallet(e) { return (/\(([^)]+)\)/.exec(String(e.title || "")) || [])[1] || "a wallet"; }
+  function wevStory(e) {
+    var kind = walletKind(e), wallet = wevWallet(e), copying = /^copy/.test(String(e.evidence || ""));
+    var did = kind === "vault" ? (copying ? "copied " + wallet + "'s vault (the encrypted file that holds its keys) by archiving or copying a folder that contains it"
+                                          : "opened " + wallet + "'s vault (the encrypted file that holds its keys)")
+            : kind === "seed" ? "handled a seed phrase — the recovery words that control a whole wallet"
+            : "handled a wallet private key — the key that signs for an account";
+    var where = e.session && e.session.model ? "In a conversation with " + e.session.model : "In an agent session";
+    var asked = e.asked ? where + ", your agent was asked: <q>" + esc(e.asked) + "</q> " : where + ", ";
+    // A blocked action never ran, so the agent "tried to"; a flagged one did run.
+    var verb = e.outcome === "blocked" ? "tried to " : "";
+    var acted = (e.asked ? "It then " : "your agent ") + verb + (e.tool === "terminal" ? (verb ? "run" : "ran") + " a terminal command that would have "
+              : (verb ? "use" : "used") + " its " + esc(e.tool || "tool") + " tool in a way that would have ") + did + ".";
+    var outcome;
+    if (e.outcome === "blocked") outcome = " <b>Blackbox stopped it before it ran</b> — nothing was read, copied or sent, and the agent was told why.";
+    else if (wpLast && wpLast.mode === "audit") outcome = " <b>Blackbox let it run and recorded it</b>, because it is set to watch only (audit mode).";
+    else outcome = " <b>Blackbox flagged it and let it run</b>: handling a key on this machine is allowed (trading tools need it); sending it off the machine is what gets blocked.";
+    var warned = wevWarnings(e);
+    var before = warned.length ? " Just before, Blackbox had flagged <b>" + esc(warned.join("; ")) + "</b> in what the agent was given — " +
+      "a sign the agent was being steered there." : "";
+    return asked + acted + outcome + before;
+  }
+  // Threats met earlier in the same session (e.g. a prompt injection in a page the agent read):
+  // the warning signs that explain why the agent reached for the wallet.
+  function wevWarnings(e) {
+    var titles = [];
+    for (var i = 0; i < (e.timeline || []).length; i++) {
+      var step = e.timeline[i];
+      if (step.this) break;
+      (step.threat_titles || []).forEach(function (t) { if (t && titles.indexOf(t) < 0) titles.push(t); });
+    }
+    return titles.slice(0, 3);
+  }
+  function wevTodo(e) {
+    var kind = walletKind(e), blocked = e.outcome === "blocked", out = [];
+    if (blocked) out.push("Nothing left this machine. No action is needed for this event.");
+    if (kind === "vault" && blocked) out.push("If you asked for this on purpose (a browser backup, say), do it yourself outside the agent — Blackbox will keep agents away from the vault.");
+    if (kind === "vault" && !blocked) out.push("The action ran. Look for the copy it made (an archive or folder) and delete it, then turn on Block in Settings so it is stopped next time.");
+    if (kind !== "vault" && !blocked) out.push("If this " + (kind === "seed" ? "seed phrase" : "key") + " was ever pasted or sent somewhere you don't control, move the funds to a new wallet.");
+    out.push(e.asked ? "If you did not ask for this, check what the agent read just before (a web page, file or message) — it may have been told to." :
+                       "Check what the agent read just before (a web page, file or message) — it may have been told to do this.");
+    return out;
+  }
+  function wevFacts(e) {
+    var rows = walletRows({ identifier: e.identifier, title: e.title, evidence: e.evidence }).map(function (r) { return [r[0], r[1], false]; });
+    if (e.command) rows.push(["Command", e.command, true]);
+    rows.push(["Tool", e.tool || "—", false], ["Decision", e.outcome === "blocked" ? "Blocked before it ran" : "Flagged (it ran)", false],
+              ["Severity", e.severity || "—", false]);
+    var named = false;
+    profileRows(e.profile).forEach(function (r) {
+      if (r[0] === "Outcome" || r[0] === "Seen via" || String(r[1]) === "unknown") return;
+      if (r[0] === "What it's after") named = true;
+      rows.push(r);
+    });
+    if (!named && WEV_GOAL[walletKind(e)]) rows.splice(2, 0, ["What it's after", WEV_GOAL[walletKind(e)], false]);
+    var warned = wevWarnings(e);
+    if (warned.length) rows.splice(2, 0, ["Warning signs before it", warned.join("; "), false]);
+    rows.push(["Rule", e.identifier, true]);
+    var s = e.session || {};
+    rows.push(["Session", [s.agent, s.model, s.status, (s.steps || 0) + " steps", s.id ? "#" + s.id : ""].filter(Boolean).join(" · "), false]);
+    return '<div class="wev-facts">' + rows.map(function (r) {
+      return '<div class="k">' + esc(r[0]) + '</div><div' + (r[2] ? ' class="mono"' : "") + ">" + esc(r[1]) + "</div>";
+    }).join("") + "</div>";
+  }
+  var WEV_KIND = { api: "model", tool: "tool", file: "file", dependency: "install", threat: "threat", session: "session" };
+  // What a wallet event is after, for events recorded before threat profiles named it.
+  var WEV_GOAL = { vault: "the wallet's keys — to empty the wallet", seed: "the wallet itself — the recovery words control every account in it",
+                   key: "the account's signing key — to move its funds" };
+  function wevTimeline(e) {
+    var s = e.session || {}, steps = (e.timeline || []).slice();
+    var start = s.start || (steps[0] && steps[0].ts) || 0;
+    // The session's own edges, so the story has a beginning and an end.
+    if (s.start) steps.unshift({ type: "session", ts: s.start, label: "Session started" });
+    if (s.end && s.status && s.status !== "active") steps.push({ type: "session", ts: s.end, label: "Session ended (" + s.status + ")" });
+    return '<ol class="wev-steps">' + steps.map(function (step) {
+      var flags = (step.threats || []).filter(function (t) { return t !== step.result; });
+      flags = flags.length ? " · " + flags.join(", ") : "";
+      var label = step.type === "tool" ? (step.tool ? esc(step.tool) + ": " : "") + "<code>" + esc(step.label || "") + "</code>" : esc(step.label || "");
+      if (step.type === "threat" && (step.threat_titles || []).length) label += ": <b>" + esc(step.threat_titles.join("; ")) + "</b>";
+      return '<li class="wev-step' + (step.this ? " this" : "") + '"><span class="off">' + esc(wevOffset(step.ts, start)) + '</span><span class="what"><span class="kind">' +
+        esc(WEV_KIND[step.type] || step.type) + "</span>" + label + esc(step.result ? " → " + step.result : "") + esc(flags) +
+        (step.this ? '<span class="here">← this event</span>' : "") + "</span></li>";
+    }).join("") + "</ol>";
+  }
+  function wevRenderDetail() {
+    var e = wev.events[wev.selected], box = $("wev-detail");
+    if (!box) return;
+    if (!e) { box.innerHTML = '<div class="wev-empty">No wallet events yet — no agent has reached for a wallet, a seed phrase or a key.</div>'; return; }
+    box.innerHTML = walletLogoHTML(e, "huge") + '<div><span class="wev-chip ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span></div><h3>" + esc(e.title || e.identifier) + "</h3>" +
+      '<div class="wev-when">' + esc(wevWhen(e.ts)) + (e.tool ? " · via " + esc(e.tool) : "") + "</div>" +
+      '<p class="wev-story">' + wevStory(e) + "</p>" +
+      '<div class="wev-sec"><h4>What to do</h4><ul class="wev-todo">' + wevTodo(e).map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul></div>" +
+      '<div class="wev-sec"><h4>The details</h4>' + wevFacts(e) + "</div>" +
+      '<div class="wev-sec"><h4>What happened in that session</h4>' + wevTimeline(e) + "</div>";
+    box.scrollTop = 0;
+  }
+  function wevRenderList() {
+    var list = $("wev-list");
+    if (!list) return;
+    list.innerHTML = wev.events.map(function (e, i) {
+      return '<button type="button" class="wev-item' + (e.isNew ? " fresh" : "") + '" data-wev-index="' + i + '"' + (i === wev.selected ? ' aria-current="true"' : "") + '>' +
+        '<span class="wev-chip ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span>" + (e.isNew ? '<span class="wev-new">New</span>' : "") +
+        '<span class="t">' + walletLogoHTML(e) + esc(e.title || e.identifier) + "</span>" +
+        '<span class="m">' + esc(shortWhen(e.ts)) + (e.session && e.session.model ? " · " + esc(e.session.model) : "") + "</span>" +
+        (e.command ? "<code>" + esc(e.command) + "</code>" : "") + "</button>";
+    }).join("");
+  }
+  function wevSelect(i) {
+    wev.selected = Math.max(0, Math.min(i, wev.events.length - 1));
+    wevRenderList(); wevRenderDetail();
+  }
+  function wevPick(identifier, ts) {   // the event the panel row was clicked for (same rule, nearest time)
+    var best = 0, bestGap = Infinity;
+    wev.events.forEach(function (e, i) {
+      var gap = Math.abs((e.ts || 0) - ts);
+      if ((!identifier || e.identifier === identifier) && gap < bestGap) { best = i; bestGap = gap; }
+    });
+    return identifier ? best : 0;
+  }
+  function openWalletEvents(identifier, ts) {
+    var overlay = $("wallet-events");
+    if (!overlay) return;
+    wev.lastFocus = document.activeElement;
+    overlay.hidden = false;
+    lockSettingsPageScroll();
+    $("wev-detail").innerHTML = '<div class="wev-empty">Loading…</div>';
+    $("wev-close").focus();
+    getJSON("/api/wallet-protection/events").then(function (d) {
+      wev.events = (d && Array.isArray(d.events)) ? d.events : [];
+      wevSelect(wevPick(identifier, Number(ts) || 0));
+    }).catch(function () {
+      $("wev-detail").innerHTML = '<div class="wev-empty">The wallet events could not be read right now.</div>';
+    });
+  }
+  // A new wallet event arrived (the main poll saw it): refresh the panel, and the window if it is
+  // open — keeping the event being read selected, and marking the newly arrived ones.
+  function onWalletEvent() {
+    loadWalletProtection();
+    var overlay = $("wallet-events");
+    if (!overlay || overlay.hidden) return;
+    var current = wev.events[wev.selected], newestBefore = wev.events.length ? (wev.events[0].ts || 0) : 0;
+    getJSON("/api/wallet-protection/events").then(function (d) {
+      wev.events = (d && Array.isArray(d.events)) ? d.events : [];
+      wev.events.forEach(function (e) { e.isNew = (e.ts || 0) > newestBefore; });
+      wev.selected = current ? wevPick(current.identifier, current.ts) : 0;
+      wevRenderList();
+      if (!current) wevRenderDetail();
+    }).catch(function () { /* the next poll tries again */ });
+  }
+  function closeWalletEvents() {
+    var overlay = $("wallet-events");
+    if (!overlay || overlay.hidden) return;
+    overlay.hidden = true;
+    unlockSettingsPageScroll();
+    if (wev.lastFocus && wev.lastFocus.focus) wev.lastFocus.focus();
+  }
+  document.addEventListener("click", function (e) {
+    var opener = e.target && e.target.closest ? e.target.closest("[data-wev-open]") : null;
+    if (opener) { openWalletEvents(opener.getAttribute("data-wev-open"), opener.getAttribute("data-wev-ts")); return; }
+    var item = e.target && e.target.closest ? e.target.closest("[data-wev-index]") : null;
+    if (item) { wevSelect(Number(item.getAttribute("data-wev-index"))); return; }
+    if (e.target && e.target.closest && e.target.closest("#wev-close")) closeWalletEvents();
+  });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeWalletEvents(); });
+
+  // A wallet event explains itself: what the agent reached for, why that matters, and what asked for it.
+  var WALLET_WHY = {
+    vault: "The vault holds your seed phrase and private keys, encrypted with your wallet password. Copied off this machine it can be cracked offline, and whoever cracks it can empty the wallet.",
+    seed: "A seed phrase IS the wallet: anyone who has the words controls every account in it, on any device, forever.",
+    key: "A private key signs transactions for its account. Whoever holds it can move the funds."
+  };
+  // The wallet an event is about, recognisable at a glance: a vault event shows that wallet's
+  // logo (served from /wallets/<id>.svg, allowlisted); a seed phrase or key — which belongs to
+  // whichever wallet made it — shows a plain wallet mark.
+  var WALLET_LOGOS = { metamask: "MetaMask", phantom: "Phantom" };
+  var WALLET_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h14a2 2 0 0 1 2 2v3H17a2 2 0 0 0 0 4h4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5"/></svg>';
+  function walletLogoByName(name, cls) {
+    var id = String(name || "").toLowerCase().replace(/\s+/g, "");
+    return WALLET_LOGOS[id]
+      ? '<img class="wl ' + (cls || "") + '" src="/wallets/' + id + '.svg" alt="' + esc(WALLET_LOGOS[id]) + '" title="' + esc(WALLET_LOGOS[id]) + '" />'
+      : '<span class="wl wl-mark ' + (cls || "") + '" aria-hidden="true">' + WALLET_GLYPH + "</span>";
+  }
+  function walletLogoHTML(f, cls) {
+    var kind = walletKind(f);
+    if (!kind) return "";
+    return walletLogoByName(kind === "vault" ? (/\(([^)]+)\)/.exec(String(f.title || f.evidence || "")) || [])[1] : "", cls);
+  }
+  function walletKind(f) {
+    var id = String(f.identifier || "");
+    if (/:crypto-wallet$/.test(id)) return "vault";
+    if (id === "secret:seed-phrase") return "seed";
+    if (id === "secret:wallet-private-key" || id === "secret:solana-private-key") return "key";
+    return "";
+  }
+  function walletRows(f) {
+    var kind = walletKind(f);
+    if (!kind) return [];
+    var rows = [];
+    var wallet = (/\(([^)]+)\)/.exec(String(f.title || f.evidence || "")) || [])[1] || "a wallet";
+    var how = /^copy/.test(String(f.evidence || "")) ? "by copying or archiving a folder that contains it" : "by reading it directly";
+    if (kind === "vault") rows.push(["Reached for", wallet + "'s vault (the wallet's key store), " + how]);
+    if (kind === "seed") rows.push(["Reached for", "a seed phrase (wallet recovery words) in what the agent was handling or sending"]);
+    if (kind === "key") rows.push(["Reached for", String(f.identifier || "") === "secret:solana-private-key"
+      ? "a Solana secret key (what Phantom's \"Export private key\" shows, or a Solana CLI key file)"
+      : "a wallet private key, written next to a key label"]);
+    rows.push(["Why it matters", WALLET_WHY[kind]]);
+    var turns = (f.context && Array.isArray(f.context.turns)) ? f.context.turns : [];
+    for (var i = turns.length - 1; i >= 0; i--) {
+      if (turns[i] && String(turns[i].role || "").toLowerCase() === "user" && turns[i].text) {
+        rows.push(["What led to it", "Asked: “" + String(turns[i].text).slice(0, 280) + "”"]);
+        break;
+      }
+    }
+    return rows;
+  }
+
+  // The threat profile a report carries (closed words only), as detail rows. Accepts the
+  // community rule's camelCase keys or a local finding's snake_case sighting.
+  function profileRows(p) {
+    p = p || {};
+    function pick(a, b) { return p[a] || p[b] || ""; }
+    function words(v) { return String(v || "").replace(/-/g, " "); }
+    var rows = [];
+    function add(k, v, mono) { if (v) rows.push([k, String(v), !!mono]); }
+    add("What it's after", words(pick("threatGoal", "threat_goal")));
+    var risk = pick("resourceAtRisk", "resource_at_risk");
+    add("At risk", risk === "none-identified" ? "" : words(risk));
+    add("Technique", pick("attackTechnique", "attack_technique"), true);
+    add("Outcome", pick("outcome", "outcome"));
+    add("Agent action", words(pick("agentAction", "agent_action")));
+    add("Seen via", pick("agentTool", "agent_tool"), true);
+    add("Found in", words(pick("injectionContext", "context") || pick("iocContext", "ioc_context")));
+    add("Matched by", pick("matchedBy", "matched_by"));
+    add("Verified rule", pick("verifiedSubject", "verified_subject"), true);
+    add("Blackbox version", pick("blackboxVersion", "blackbox_version"), true);
+    return rows;
+  }
+
+  // Indicator records: what kind of threat, what kind of indicator, which feed listed it.
+  var IOC_KIND_LABEL = {
+    phishing: "Phishing", "credential-harvest": "Credential harvesting", scam: "Scam",
+    malicious_ioc: "Malware infrastructure", malware: "Malware", "malware-delivery": "Malware delivery",
+    c2: "Command & control", "command-and-control": "Command & control", "exfil-endpoint": "Data exfiltration endpoint",
+    "injection-host": "Hosted a prompt injection"
+  };
+  var IOC_TYPE_LABEL = { domain: "Domain", ip: "IP address", url: "URL", hash: "File hash", wallet: "Wallet address", contract: "Contract address" };
+  var FEED_LABEL = { phishing_database: "Phishing.Database", maltrail_static: "Maltrail (static trails)" };
+  // What each threat source is, in one line — matched by name, case-insensitive.
+  var SOURCE_INFO = [
+    [/socket/i, "Socket — a supply-chain security company that scans new npm and PyPI releases for malware"],
+    [/openssf|ossf|malicious.?packages|^mal-/i, "OpenSSF Malicious Packages — the open-source community's shared list of confirmed malicious packages"],
+    [/osv/i, "OSV.dev — Google's open database of vulnerabilities and malicious packages across ecosystems"],
+    [/ghsa|github.*advis/i, "GitHub Advisory Database — security advisories reviewed by GitHub"],
+    [/phishing.?database/i, "Phishing.Database — a public, continuously tested list of active phishing domains and IPs"],
+    [/maltrail/i, "Maltrail — an open-source list of known malware, command-and-control and attack infrastructure"],
+    [/urlhaus/i, "URLhaus (abuse.ch) — URLs used to spread malware"],
+    [/malwarebazaar/i, "MalwareBazaar (abuse.ch) — samples and file hashes of known malware"],
+    [/threatfox/i, "ThreatFox (abuse.ch) — indicators of compromise shared by researchers"],
+    [/abuse\.?ch/i, "abuse.ch — a non-profit that tracks malware, botnets and the infrastructure behind them"],
+    [/phishtank/i, "PhishTank — a community-verified database of phishing sites"],
+    [/urlscan/i, "urlscan.io — a service that scans and classifies suspicious websites"],
+    [/scamsniffer/i, "ScamSniffer — a Web3 security service that tracks crypto drainer sites and wallets"],
+    [/mcptox/i, "MCPTox — research on poisoned MCP servers and tools aimed at AI agents"],
+    [/umanitek/i, "Umanitek — curated directly into the verified graph by Umanitek's curators"]
+  ];
+  function sourceText(name) {
+    name = String(name || "");
+    for (var i = 0; i < SOURCE_INFO.length; i++) if (SOURCE_INFO[i][0].test(name)) return SOURCE_INFO[i][1];
+    return name;
+  }
+  function iocKindLabel(k) { k = String(k || ""); return IOC_KIND_LABEL[k] || IOC_KIND_LABEL[k.toLowerCase()] || ""; }
+
   // [label, value, mono?] rows for the details grid, by category, skipping empties.
   function detailRows(d) {
     var rows = [];
@@ -4907,15 +5630,23 @@
     } else if (cat === "fileaccess") {
       add("Tool", d.tool, true);
       add("File category", d.file_category);
+    } else if (cat === "ioc") {
+      add("Threat type", iocKindLabel(d.kind || d.reportReason));
+      add("Indicator", IOC_TYPE_LABEL[d.iocType || d.ioc_type] || d.iocType || d.ioc_type);
+      add("Feed", sourceText(FEED_LABEL[d.sourceId] || d.sourceId));
     } else if (cat === "skill") {
       add("Skill", d.skill, true);
       add("Version", d.skill_version, true);
       add("Danger shape", d.danger_shape, true);
     }
-    add("Source", (d.sources || []).join(", "));
+    add("Source", (d.sources || []).map(sourceText).join("; "));
     add("Contributor", d.contributor);
     add("Last updated", fmtDateFull(d.modified));
     add("Graph", { public: "Verifiable graph (VM)", community: "Community graph (SWM)", local: "Local graph (WM)" }[d.tier] || "Threat graph");
+    if (d.tier === "community") {
+      add("Stage", d.stage ? d.stage + (d.stageReason ? " — " + d.stageReason : "") : "");
+      rows = rows.concat(profileRows(d));
+    }
     return rows;
   }
 
@@ -4923,7 +5654,8 @@
     var meta = CATS[cat];
     var t = '<span class="pill ' + sev + '">' + esc(sev) + '</span>' +
       '<span class="m-tag" style="color:' + meta.color + '">' + esc(meta.name) + '</span>';
-    if (kind === "malware") t += '<span class="m-tag kind-malware">Malware</span>';
+    if (iocKindLabel(kind)) t += '<span class="m-tag kind-malware">' + esc(iocKindLabel(kind)) + '</span>';
+    else if (kind === "malware") t += '<span class="m-tag kind-malware">Malware</span>';
     else if (kind === "vulnerability") t += '<span class="m-tag kind-vuln">Vulnerable</span>';
     if (curated === "true" || curated === true) t += '<span class="m-tag curated">Verified</span>';
     return t;
@@ -4934,7 +5666,8 @@
     if (!rows.length) return "";
     var cells = rows.map(function (r) {
       return { k: r[0], v: r[1], mono: !!r[2],
-        full: (r[0] === "Pattern" || r[0] === "Description" || r[0] === "Evidence") };
+        full: (r[0] === "Pattern" || r[0] === "Description" || r[0] === "Evidence" || r[0] === "Source" || r[0] === "Feed" ||
+               r[0] === "Fingerprint" || r[0] === "Reached for" || r[0] === "Why it matters" || r[0] === "What led to it") };
     });
     // Fill the 2-col grid without gaps: a half cell that would sit alone in
     // its row (next cell is full-width, or it is the last) spans the row.
@@ -4947,7 +5680,9 @@
       col = c.full ? 0 : (col + 1) % 2;
     });
     return '<div class="modal-grid">' + cells.map(function (c) {
-      return '<div class="cell' + (c.full ? ' full' : '') + '"><div class="m-k">' + esc(c.k) + '</div>' +
+      var help = FIELD_HELP[c.k] ? '<span class="m-help" tabindex="0" role="note" aria-label="' + esc(FIELD_HELP[c.k]) +
+        '" data-help="' + esc(FIELD_HELP[c.k]) + '">i</span>' : '';
+      return '<div class="cell' + (c.full ? ' full' : '') + '"><div class="m-k">' + esc(c.k) + help + '</div>' +
         '<div class="m-v' + (c.mono ? ' mono' : '') + '">' + esc(c.v) + '</div></div>';
     }).join("") + '</div>';
   }
@@ -5099,6 +5834,48 @@
 	    overlay.setAttribute("aria-hidden", "false");
 	  }
 
+	  // A LOCAL threat type (the Local graph's type bubble): every threat of that type seen on this
+	  // machine, newest first; each row opens that threat's full local detail (openFindingModal).
+	  var LOCAL_CATEGORY_ROWS = 25;
+	  function openLocalCategoryModal(node) {
+	    var overlay = $("threat-modal");
+	    if (!overlay) return;
+	    var cat = catKey(node.cat);
+	    var meta = CATS[cat] || CATS.other;
+	    var items = node.localItems || [];
+	    var blocked = items.filter(function (f) { return f.decision === "block"; }).length;
+	    TM.node = { kind: "local-category", cat: cat };
+	    TM.finding = null;
+	    TM.localItems = items;
+	    overlay.style.setProperty("--accent", meta.color);
+	    $("tm-ico").innerHTML = catIconSVG(cat, meta.color);
+	    $("tm-title").textContent = meta.name;
+	    $("tm-tags").innerHTML = modalTags(cat, graphTopSeverity(items), false) + '<span class="m-tag">Local</span>';
+	    $("tm-id").textContent = "";
+	    var idrow = $("tm-idrow"); if (idrow) idrow.style.display = "none";
+	    var rows = [
+	      ["Graph", "Local · this machine only"],
+	      ["Threats of this type", num(items.length)],
+	      ["Blocked", num(blocked) + " of " + num(items.length)],
+	      ["Severity mix", severityMixText(items)]
+	    ];
+	    var list = items.slice(0, LOCAL_CATEGORY_ROWS).map(function (f, i) {
+	      var sev = sevClass(f.severity);
+	      var meta2 = [f.identifier, f.sightings > 1 ? "seen " + num(f.sightings) + " times" : "", fmtDateFull(f.ts || f.time)]
+	        .filter(Boolean).join(" · ");
+	      return '<button type="button" class="ldx-row ldx-open" data-local-idx="' + i + '">' +
+	        '<span class="pill ' + sev + '">' + esc(sev) + '</span>' +
+	        '<span class="ldx-title">' + walletLogoHTML(f) + esc(f.title || f.identifier || "Threat") +
+	        '<br><span class="ldx-time">' + esc(meta2) + '</span></span><span class="ldx-go" aria-hidden="true">›</span></button>';
+	    }).join("");
+	    var more = items.length > LOCAL_CATEGORY_ROWS ? '<div class="modal-empty">' + num(items.length - LOCAL_CATEGORY_ROWS) + ' more of this type.</div>' : "";
+	    $("tm-body").innerHTML =
+	      '<div class="modal-desc">' + esc(CAT_SUMMARY[cat] || CAT_SUMMARY.other) + '</div>' + gridHTML(rows) +
+	      '<div class="m-sech">Each threat, and how often it was seen · click one for the full story</div><div class="ldx-list">' + list + '</div>' + more;
+	    overlay.classList.add("open");
+	    overlay.setAttribute("aria-hidden", "false");
+	  }
+
 	  function renderThreatDetail(d, node) {
     var cat = catKey(d.category || (node && node.cat));
     var color = CATS[cat].color;
@@ -5122,7 +5899,14 @@
         ({ public: "verifiable", community: "community", local: "local" }[d.tier] || "local") + ' graph yet.</div>';
     }
 
-    $("tm-body").innerHTML = body;
+    $("tm-body").innerHTML = body + '<div id="tm-proof"></div>';
+    if (d.tier === "community") {
+      var shownFor = d.identifier;
+      loadProof(d.identifier, "community", function (html) {
+        var slot = $("tm-proof");
+        if ($("tm-id").textContent === shownFor && slot) slot.innerHTML = html;   // replaced, never appended
+      });
+    }
   }
 
   function openThreatModal(node) {
@@ -5171,7 +5955,9 @@
   }
 
   // ---------- Finding detail modal (rows in Live findings / Audit trail) ----------
-  var EVENT_LABEL = { pre_tool_call: "Pre-tool check", post_tool_call: "Post-tool check" };
+  var EVENT_LABEL = { pre_tool_call: "Pre-tool check", post_tool_call: "Post-tool check",
+                      pre_api_request: "Check of what the agent was about to send the model",
+                      osv_discovery: "Package advisory lookup (OSV)" };
   var SRC_LONG = {
     public: "Verifiable graph match. Confirmed threat.",
     community: "Locally recorded candidate. Community sharing is not active.",
@@ -5190,6 +5976,38 @@
   }
 
   // What Blackbox itself recorded for this row — painted instantly, no fetch.
+  // Where an injection was met (the closed constants.INJECTION_CONTEXTS words), in plain words.
+  var FOUND_IN = {
+    "in-tool-output": "Something a tool returned to the agent — a file it read or a command's output",
+    "in-fetched-page": "A web page the agent fetched",
+    "in-user-prompt": "The message typed to the agent",
+    "in-skill": "A skill the agent was installing"
+  };
+  // Where a finding's rule comes from, in plain words (by the finding's source).
+  var RULE_FROM = {
+    public: "Umanitek's verified threat graph",
+    community: "The community graph (other Blackbox users' signed reports)",
+    heuristic: "Blackbox's built-in checks (not in any graph yet)",
+    custom: "Your own protected files and folders",
+    llm: "The optional AI reviewer",
+    secret: "Blackbox's built-in secret and wallet checks, on this machine only"
+  };
+  // What the parts of a rule id mean, so a hash never stands unexplained. Ids are names, not
+  // versions: the same rule has the same id on every machine, which lets reports be counted together.
+  function ruleIdMeaning(id) {
+    var parts = String(id || "").split(":");
+    switch (parts[0]) {
+      case "injection": return "A fingerprint of the exact pattern that matched (the first 24 characters of its SHA-256 hash). " +
+        "Every machine names the same pattern the same way. It is a name, not a date or a version, so it never goes out of date.";
+      case "fileaccess": return "A file rule: " + (parts[2] || "a sensitive file") + ", reached through the " + (parts[1] || "agent's") + " tool.";
+      case "secret": return "A secret recognised by its own shape or proof: " + (parts.slice(1).join(":") || "a secret") + ". The value itself is never recorded.";
+      case "dep": return "A package rule: ecosystem " + (parts[1] || "?") + ", package and version " + (parts.slice(2).join(":") || "?") + ".";
+      case "ioc": return "An indicator rule: a known-bad " + (parts[1] || "value") + ".";
+      case "skill": return "A skill rule, named by the skill's fingerprint.";
+      default: return "";
+    }
+  }
+
   function findingBaseHTML(f) {
     var rows = [];
     function add(k, v, mono) { if (v !== undefined && v !== null && String(v) !== "") rows.push([k, String(v), !!mono]); }
@@ -5197,6 +6015,14 @@
     add("Agent", fwLabel(f.framework));
     add("Tool", f.tool_name || f.tool, true);
     add("Trigger", EVENT_LABEL[String(f.event || "")] || f.event);
+    // Every time this machine recorded the threat (each is a separate detection), with when.
+    add("Seen", f.sightings > 1 ? f.sightings + " times · first " + shortWhen(f.firstSeen) + " · last " + shortWhen(f.ts) : "");
+    if (catKey(f.category || f.type) === "injection" && f.evidence) add("What matched", "“" + f.evidence + "”");
+    add("Found in", FOUND_IN[f.found_in] || "");
+    add("Rule from", RULE_FROM[srcKey(f)]);
+    add("About this id", ruleIdMeaning(f.identifier));
+    rows = rows.concat(walletRows(f));
+    rows = rows.concat(profileRows(f.profile || f.sighting));
     var base = gridHTML(rows);
     var advRefs = findingAdvisoryRefs(f);
     if (advRefs.length) base += refsHTML(advRefs);
@@ -5236,6 +6062,9 @@
     if (!prompt && !response) return "";
     // Label the section by what's actually present.
     var label = (prompt && response) ? 'Prompt &amp; response' : (response ? 'Response' : 'Prompt');
+    // The injection sat in something the agent READ: the user's message shown here is context,
+    // not where the injection was — say so, so it never looks like the user typed it.
+    if (user && f.found_in && f.found_in !== "in-user-prompt") label = 'Your request (the injection was in what the agent read, not in this)';
     var out = '<div class="m-sech">' + label +
       (c.truncated ? '<span class="convo-note">truncated</span>' : '') + '</div><div class="convo-wrap">';
     if (prompt) {
@@ -5269,14 +6098,18 @@
     var cat = catKey(f.category || f.type);
     var color = CATS[cat].color;
     overlay.style.setProperty("--accent", color);
-    $("tm-ico").innerHTML = catIconSVG(cat, color);
+    $("tm-ico").innerHTML = walletLogoHTML(f, "big") || catIconSVG(cat, color);
     $("tm-title").textContent = f.title || f.evidence || f.identifier || "Finding";
     $("tm-tags").innerHTML = findingTags(f);
     var id = f.identifier || "";
     $("tm-id").textContent = id;
     var idrow = $("tm-idrow"); if (idrow) idrow.style.display = id ? "" : "none";
     var copyBtn = $("tm-copy"); if (copyBtn) { copyBtn.textContent = "Copy"; copyBtn.classList.remove("ok"); }
-    $("tm-body").innerHTML = findingBaseHTML(f);
+    // One paint from three parts, so re-renders replace the proof instead of stacking copies.
+    var parts = { intel: "", proof: "" };
+    var paint = function () { if (TM.finding === f) $("tm-body").innerHTML = findingBaseHTML(f) + parts.intel + parts.proof; };
+    paint();
+    loadProof(id, "local", function (html) { parts.proof = html; paint(); });
     overlay.classList.add("open");
     overlay.setAttribute("aria-hidden", "false");
 
@@ -5287,7 +6120,9 @@
     var apply = function (d) {
       if (TM.finding !== f) return;   // user moved on
       var intel = threatIntelHTML(d || {});
-      if (intel) $("tm-body").innerHTML = findingBaseHTML(f) + intel;
+      if (d && iocKindLabel(d.kind) && $("tm-tags").innerHTML.indexOf("kind-malware") < 0)
+        $("tm-tags").insertAdjacentHTML("beforeend", '<span class="m-tag kind-malware">' + esc(iocKindLabel(d.kind)) + '</span>');
+      if (intel) { parts.intel = intel; paint(); }
     };
     var lookup = function (i) {
       if (i >= tiers.length || TM.finding !== f) return;
@@ -5386,9 +6221,10 @@
     if (node.kind === "more") return;
     // Every local node opens a real detail panel; catalog leaves use the threat
     // modal; the machine root just reframes the whole graph.
-    if (node.kind === "lthreat") { if (node.finding) openFindingModal(node.finding); return; }
+    if (node.kind === "lthreat" || node.kind === "lsight") { if (node.finding) openFindingModal(node.finding); return; }
     if (node.kind === "leaf") { openThreatModal(node); return; }
     if (node.kind === "gmore") { loadMoreGraph(node.focus || null); return; }
+    if (node.kind === "hub" && activeTier === "local" && node.localItems) { openLocalCategoryModal(node); return; }
     if (node.kind === "hub" && activeTier !== "local" && node.focus) {
       if (graphDetailMode[activeTier] === "explore") {
         if (!graphSameFocus(graphFocus[activeTier], node.focus)) {
@@ -5412,7 +6248,7 @@
   function graphClickableNode(node) {
     return node && (
       node.kind === "hub" || node.kind === "gmore" || node.kind === "leaf" ||
-      node.kind === "lthreat" || node.kind === "session" || node.kind === "call"
+      node.kind === "lthreat" || node.kind === "lsight" || node.kind === "session" || node.kind === "call"
     );
   }
   function graphPriorityClickNode(node) {
@@ -5427,6 +6263,7 @@
     if (node.kind === "hub") return Math.max(base, 18);
     if (node.kind === "gmore") return Math.max(base, 15);
     if (node.kind === "leaf" || node.kind === "lthreat") return Math.max(base, 11);
+    if (node.kind === "lsight") return Math.max(base, 8);
     return Math.max(base, 13);
   }
 
@@ -5479,6 +6316,12 @@
     overlay.__wired = true;
     $("tm-close").addEventListener("click", closeThreatModal);
     overlay.addEventListener("click", function (e) { if (e.target === overlay) closeThreatModal(); });
+    // A row in a local type's window opens that threat's own detail.
+    $("tm-body").addEventListener("click", function (e) {
+      var row = e.target && e.target.closest ? e.target.closest("[data-local-idx]") : null;
+      var item = row && TM.localItems ? TM.localItems[Number(row.getAttribute("data-local-idx"))] : null;
+      if (item) openFindingModal(item);
+    });
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeThreatModal(); });
     var copyBtn = $("tm-copy");
     if (copyBtn) copyBtn.addEventListener("click", function () {
@@ -5521,7 +6364,7 @@
       .onNodeClick(onNodeClick)
         .onNodeHover(function (node) {
           var c = $("graph-canvas");
-          if (c) c.style.cursor = (node && (node.kind === "leaf" || node.kind === "lthreat" || node.kind === "hub" || node.kind === "gmore")) ? "pointer" : "default";
+          if (c) c.style.cursor = (node && (node.kind === "leaf" || node.kind === "lthreat" || node.kind === "lsight" || node.kind === "hub" || node.kind === "gmore")) ? "pointer" : "default";
         })
       .onEngineStop(function () {
         // frame the whole network once it first settles
@@ -5991,7 +6834,8 @@
     var icon = document.createElement("div");
     icon.className = "threat-toast-icon";
     icon.setAttribute("aria-hidden", "true");
-    icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+    icon.innerHTML = walletLogoHTML(newest, "big") ||   // a wallet threat names its wallet at a glance
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
 
     var copy = document.createElement("div");
     copy.className = "threat-toast-copy";
@@ -6054,6 +6898,9 @@
     while (knownFindingOrder.length > MAX_KNOWN_FINDINGS) {
       knownFindingKeys.delete(knownFindingOrder.shift());
     }
+    // Trader Shield is live: a new wallet finding refreshes its panel (and open window) now,
+    // on this 4 s poll, whatever the alert setting — not on the panel's slow 30 s timer.
+    if (fresh.some(function (f) { return !!walletKind(f); })) onWalletEvent();
     if (!threatAlertsEnabled || !fresh.length) return;
     unreadThreatCount += fresh.length;
     updateThreatNotificationUI();
@@ -6119,7 +6966,7 @@
       '<td class="col-time">' + fmtTime(f.time || f.ts || f.timestamp) + '</td>' +
       '<td>' + agentTag(f.framework) + '</td>' +
       '<td><span class="pill ' + sev + '">' + esc(sev) + '</span></td>' +
-      '<td>' + typeTag(f.category || f.type) + '</td>' +
+      '<td>' + walletLogoHTML(f) + typeTag(f.category || f.type) + '</td>' +
       '<td>' + reasonCell(f) + '</td>' +
     '</tr>';
   }
@@ -6405,6 +7252,12 @@
     return d.toLocaleString();
   }
   // Compact wall-clock (HH:MM:SS) for hover cards and inline threat lists.
+  // "Oct 12, 2:17 PM" — a date and time short enough for one detail row.
+  function shortWhen(ts) {
+    if (!ts) return "";
+    try { return new Date(ts * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); }
+    catch (e) { return ""; }
+  }
   function lclock(ts) {
     if (!ts) return "";
     try { return new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }); }
@@ -6975,7 +7828,9 @@
       report: false, report_min_severity: "high",
       discover: true, osv_lookup: true,
       categories: cats, protected_paths: [],
-      category_labels: {}
+      category_labels: {},
+      wallet_protection: false, protected_wallets: ["metamask", "phantom"],
+      wallet_supported: [{ id: "metamask", name: "MetaMask" }, { id: "phantom", name: "Phantom" }], wallet_planned: []
     };
   }
 
@@ -6989,6 +7844,11 @@
     out.report = data.report === true;
     out.discover = data.discover !== false;
     out.osv_lookup = data.osv_lookup !== false;
+    var wp = (data.wallet_protection && typeof data.wallet_protection === "object") ? data.wallet_protection : {};
+    out.wallet_protection = wp.enabled === true;
+    if (Array.isArray(wp.wallets)) out.protected_wallets = wp.wallets.slice(0, 20);
+    if (Array.isArray(wp.supported) && wp.supported.length) out.wallet_supported = wp.supported;
+    if (Array.isArray(wp.planned)) out.wallet_planned = wp.planned;
     var cats = (data.categories && typeof data.categories === "object") ? data.categories : {};
     SET_CATS.forEach(function (c) {
       var item = cats[c.key] || {};
@@ -7070,16 +7930,13 @@
     if (!setState) return;
     var host = $("set-paths-list");
     var paths = setState.protected_paths;
-    if (!paths.length) {
-      host.innerHTML = '<div class="paths-empty">No protected paths yet.</div>';
-      return;
-    }
-    host.innerHTML = paths.map(function (p, i) {
+    var own = paths.length ? paths.map(function (p, i) {
       return '<div class="path-row">' +
         '<code title="' + esc(p) + '">' + esc(p) + '</code>' +
         '<button type="button" class="path-del" data-idx="' + i + '" aria-label="Remove ' + esc(p) + '">&#10005;</button>' +
       '</div>';
-    }).join("");
+    }).join("") : '<div class="paths-empty">No protected paths yet.</div>';
+    host.innerHTML = own + shieldPathRows();
     Array.prototype.forEach.call(host.querySelectorAll(".path-del"), function (btn) {
       btn.addEventListener("click", function () {
         var idx = parseInt(btn.getAttribute("data-idx"), 10);
@@ -7120,7 +7977,44 @@
     renderCategoriesUI();
     renderPathsUI();
     renderAdvancedUI();
+    renderWalletUI();
     renderThemeUI();
+  }
+
+  // Web3 wallet protection: the mode switch and the wallets to guard (supported ones tickable,
+  // the rest listed as coming soon).
+  // While Trader Shield is on, the wallet vaults it guards are listed under Protected files too —
+  // read-only: they are not file patterns (the rule recognises each wallet in every browser
+  // profile and inside archives and copies), so they change only with Trader Shield itself.
+  function shieldPathRows() {
+    if (!setState || !setState.wallet_protection) return "";
+    var found = (wpLast && wpLast.wallets) || [];
+    var names = {};
+    (setState.wallet_supported || []).forEach(function (w) { names[w.id] = w.name; });
+    var rows = [];
+    (setState.protected_wallets || []).forEach(function (id) {
+      var name = names[id] || id;
+      var group = walletGroups(found).filter(function (g) { return g.id === id; })[0];
+      var where = group ? group.browsers.join(", ") + " · every profile" : "any browser profile";
+      rows.push('<div class="path-row shield" title="Protected by Trader Shield. Untick this wallet or turn Trader Shield off to stop.">' +
+        "<code>" + esc(name + " vault · " + where) + '</code><span class="path-shield">Trader Shield</span></div>');
+    });
+    return rows.length ? '<div class="paths-shield-note">Also protected while Trader Shield is on — every browser profile, and inside archives and copies:</div>' + rows.join("") : "";
+  }
+  function renderWalletUI() {
+    if (!setState || !$("set-wallet")) return;
+    $("set-wallet").checked = !!setState.wallet_protection;
+    var chosen = setState.protected_wallets || [];
+    var rows = (setState.wallet_supported || []).map(function (w) {
+      return '<label class="wallet-pick"><input type="checkbox" data-wallet="' + esc(w.id) + '"' +
+        (chosen.indexOf(w.id) >= 0 ? " checked" : "") + (setState.wallet_protection ? "" : " disabled") + " /> " +
+        esc(w.name) + "</label>";
+    });
+    (setState.wallet_planned || []).forEach(function (name) {
+      rows.push('<label class="wallet-pick soon"><input type="checkbox" disabled /> ' + esc(name) + ' <span>coming soon</span></label>');
+    });
+    $("set-wallets").innerHTML = rows.join("");
+    renderPathsUI();   // the Trader Shield rows under Protected files follow the switch
   }
 
   function setStatus(msg, kind) {
@@ -7150,7 +8044,9 @@
       osv_lookup: !!setState.osv_lookup,
       report: !!setState.report,
       categories: cats,
-      protected_paths: setState.protected_paths.slice(0, 100)
+      protected_paths: setState.protected_paths.slice(0, 100),
+      wallet_protection: !!setState.wallet_protection,
+      protected_wallets: (setState.protected_wallets || []).slice(0, 20)
     };
   }
 
@@ -7200,6 +8096,7 @@
         setStatus("");
         closeSettings();
         showToast("Changes saved successfully.", "ok");
+        if (typeof loadWalletProtection === "function") loadWalletProtection();   // the panel shows/hides with the mode
       } else {
         var errs = Array.isArray(result.errors) && result.errors.length
           ? result.errors.join(" · ")
@@ -7289,6 +8186,13 @@
     overlay.__wired = true;
 
     $("settings-open").addEventListener("click", openSettings);
+    // The Trader Shield panel opens Settings straight at its own section.
+    var wpEdit = $("wp-edit");
+    if (wpEdit) wpEdit.addEventListener("click", function () {
+      openSettings();
+      var group = $("set-trader-shield");
+      if (group && group.scrollIntoView) setTimeout(function () { group.scrollIntoView({ block: "start" }); }, 60);
+    });
     $("set-close").addEventListener("click", cancelSettings);
     $("set-cancel").addEventListener("click", cancelSettings);
     overlay.addEventListener("click", function (e) { if (e.target === overlay) cancelSettings(); });
@@ -7324,6 +8228,16 @@
     // advanced toggles
     $("set-discover").addEventListener("change", function () {
       if (!setState) return; setState.discover = this.checked; markDirty();
+    });
+    $("set-wallet").addEventListener("change", function () {
+      if (!setState) return; setState.wallet_protection = this.checked; renderWalletUI(); markDirty();
+    });
+    $("set-wallets").addEventListener("change", function (e) {
+      var id = e.target && e.target.getAttribute("data-wallet");
+      if (!setState || !id) return;
+      var list = (setState.protected_wallets || []).filter(function (w) { return w !== id; });
+      if (e.target.checked) list.push(id);
+      setState.protected_wallets = list; renderPathsUI(); markDirty();
     });
     $("set-osv").addEventListener("change", function () {
       if (!setState) return; setState.osv_lookup = this.checked; markDirty();
@@ -7673,6 +8587,24 @@
 </div>
 
 <!-- Settings panel — reuses the .modal-overlay / .modal system -->
+<!-- Trader Shield: every wallet event, read from this machine's logs only (wired lazily by the script above) -->
+<div class="wev-overlay" id="wallet-events" hidden role="dialog" aria-modal="true" aria-labelledby="wev-title">
+  <div class="wev-head">
+    <div>
+      <div class="wev-kicker">Trader Shield · Beta</div>
+      <h2 id="wev-title">Wallet events</h2>
+      <div class="wev-note">Every time your agent reached for a wallet, a seed phrase or a private key — what it was doing, and what Blackbox did.</div>
+    </div>
+    <button type="button" class="wev-close" id="wev-close" aria-label="Close wallet events">✕</button>
+  </div>
+  <div class="wev-private" role="note"><span aria-hidden="true">🔒</span><span><b>Private to this machine.</b> This report is read from Blackbox's own logs on this computer.
+    Wallet events are never shared with the community graph — not even a summary — and secrets in commands or messages were removed before they were written down.</span></div>
+  <div class="wev-body">
+    <nav class="wev-list" id="wev-list" aria-label="Wallet events"></nav>
+    <article class="wev-detail" id="wev-detail" aria-live="polite"></article>
+  </div>
+</div>
+
 <div class="modal-overlay" id="settings-modal" aria-hidden="true">
   <div class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="set-title">
     <button class="modal-close" id="set-close" aria-label="Close settings">&#10005;</button>
@@ -7762,13 +8694,34 @@
         </div>
       </div>
 
+      <!-- Web3 wallet protection (trader rules) -->
+      <div class="set-group" id="set-trader-shield">
+        <div class="set-glabel">Trader Shield · Beta</div>
+        <div class="set-row">
+          <div class="set-rl">
+            <div class="set-rt">Engage Trader Shield</div>
+            <div class="set-rh"><a href="/trader-shield" class="ts-link">What is Trader Shield?</a> Keep your AI agent away from your wallets: it cannot open a wallet's key store (the encrypted vault in your browser), and seed phrases and private keys it handles are flagged, and blocked if it tries to send them off this machine. Your own trading tools keep working. Seed phrases and keys are always kept out of Blackbox's logs, whether this is on or off.</div>
+          </div>
+          <div class="set-rc">
+            <label class="set-toggle"><input type="checkbox" id="set-wallet" /><span class="set-track"></span></label>
+          </div>
+        </div>
+        <div class="set-row">
+          <div class="set-rl">
+            <div class="set-rt">Wallets to protect</div>
+            <div class="set-rh">Choose the wallets installed on this machine.</div>
+            <div class="wallet-picks" id="set-wallets"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- Advanced -->
       <div class="set-group">
         <div class="set-glabel">Advanced</div>
         <div class="set-row">
           <div class="set-rl">
             <div class="set-rt">Community sharing</div>
-            <div class="set-rh">On by default. When your agent meets a threat the verified graph already lists, share its privacy-safe signature (identifier and type) with the community graph. Your prompts, commands and files never leave this machine. Switch off any time.</div>
+            <div class="set-rh">On by default. When your agent meets a threat the verified graph already lists, share a privacy-safe statement with the community graph: the threat's identifier and type, the tool that met it, whether it was blocked or flagged, and what the threat targets. Your prompts, commands and files never leave this machine. Switch off any time.</div>
           </div>
           <div class="set-rc">
             <label class="set-toggle"><input type="checkbox" id="set-report" /><span class="set-track"></span></label>

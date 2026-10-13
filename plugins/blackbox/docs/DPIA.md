@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment — Agent Blackbox community graph
 
-Version: 1.4 (draft for counsel review, 2026-10-12; v1.4 records the switch to sharing ON by default with an opt-out — founder decision; v1.3 adds the community authority — Community Curation C11; v1.2 corrected §2/§5 after review round 5 — KI-221/223/224, erasure semantics KI-220). Engineering assessment,
+Version: 1.5 (draft for counsel review, 2026-10-12; v1.5 adds the threat-profile sighting fields and the site of a verified injection; v1.4 records the switch to sharing ON by default with an opt-out — founder decision; v1.3 adds the community authority — Community Curation C11; v1.2 corrected §2/§5 after review round 5 — KI-221/223/224, erasure semantics KI-220). Engineering assessment,
 not legal advice; the launching party still needs counsel for its market.
 
 ## 1. The processing
@@ -26,6 +26,8 @@ agents, so other agents are protected sooner.
 | Export bundle of the confirmed pool (signed confirmations, the signed reports behind them, listings of those reporters) | hand-off to the verified graph's owner | wherever the receiver keeps the file | the receiver's own retention; holds nothing not already public |
 | Threat statements (identifier, closed metadata, day) signed by the reporter | the product's purpose | every replica | as above; readers keep a counted threat ≤ 90 d past expiry locally |
 | Weekly sighting digest (verified threats met, coarse buckets) | frequency signal | every replica | as above |
+| Sighting fields on each statement, closed words only (v1.5): host tool (own tools → `mcp-tool`/`other`), agent action, blocked/flagged, match method, Blackbox version, verified rule link, goal, resource CLASS at risk, MITRE technique; plus a record digest and the signer key beside the signature | reviewers can understand each threat without the operator's content | every replica | as above |
+| Site of a verified prompt injection (registrable domain only, never allowlisted or user-content platforms), as its own statement (v1.5) | other agents flag the site | every replica | as above |
 | Share ledger (what this node shared, outcomes) | the operator's own record, rights (export) | the operator's machine only | until erased by the operator |
 | Keep-alive memory (signed quads of accepted reports) | re-publishing copies before expiry | the operator's machine only | retired at the threat type's lifetime (47–460 d); erased with the identity |
 | Curator reputation ledger (outcomes per reporter, credited automatically from published verdicts) | graduation / demotion decisions | each curator group's own curator nodes, pseudonymised by a per-reporter random salt; the index from key to salt is encrypted, its key in a third owner-only file (KI-257) | inactive entries deleted after 24 months together with their salts; erasure deletes the salt (crypto-shredding) |
@@ -39,8 +41,10 @@ agents, so other agents are protected sooner.
 
 Never processed: prompts, commands, paths, file/skill source, secrets, LLM
 outputs, vulnerability findings, the names of locally authored skills, the
-source of an injection, exact times (days only), locations, end-user
-identities. Enforced by the client's closed report schema and the
+names of the operator's own tools, the page address, path or text an
+injection came from (only a verified injection's registrable domain is
+shared), the actual resource at risk (only its class), exact times (days
+only), locations, end-user identities. Enforced by the client's closed report schema and the
 never-shared source list; tested.
 
 ## 3. Lawful basis and consent
@@ -73,6 +77,8 @@ never-shared source list; tested.
 | A second group of controllers (the community curators) | Separate root keys: neither group can speak for the other; the controller map names both; the terms say what changed; sharing no longer pauses on a terms change (on by default since 2026-10-12) |
 | The export bundle spreads reporters' signed reports to a new receiver | It holds only statements already public in the community graph; reporters are told in the terms; crediting reporters is its purpose |
 | A breach of the curator ledger | Copying the entries file or the index alone links no key to any outcome (the index is encrypted); all three files together do, so the key file is the one to protect |
+| The sighting fields add to each reporter's accumulated public pattern (what its agents do, whether it runs block mode) | Closed vocabularies only; private tool names collapse to `mcp-tool`/`other`; resource is a class, never a path; no count leaves the node (network counts are computed by readers and curators); day-rounded |
+| The site of an injection reveals a site the operator's agent visited, and an attacker could give each target its own domain to learn which reporter met which page | Only VERIFIED injection patterns trigger it; only the registrable domain (a per-target sub-domain collapses); allowlisted brands and user-content platforms are never named; the operator can turn sharing off. Counsel to confirm (§7) |
 | Re-identification of a node from its address | The address is a wallet, pseudonymous by design; the terms warn; no mapping to persons is kept anywhere in the product |
 | Children's or special-category data | None is collected; the schema has no field for it |
 | Breach | Statements are public by design; the private surfaces (ledger, canaries, audit logs) are files on single machines with owner-only modes. The ledger is two files: the entries (pseudonym → outcomes) and the salt map (reporter key → salt, owner-only, pruned with its entry); a breach of the entries file alone links no key to any outcome, a breach of both does — the salt map is the file to protect |
@@ -103,6 +109,7 @@ the controller map).
 
 - Confirm the joint-controller analysis (controller map §2).
 - Confirm CC0 as the licence for statements.
+- Confirm the v1.5 sighting fields and the shared site of a verified injection under the legitimate-interest basis, with sharing on by default.
 - Confirm the 24-month ledger retention and the 90-day reader persistence.
 - Decide whether the counted-author list needs a published privacy notice of its own.
 

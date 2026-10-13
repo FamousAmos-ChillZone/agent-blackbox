@@ -26,10 +26,11 @@ from . import action_parsing
 from . import content_scanners
 from . import osv
 from . import shell_shapes
-from .finding import ANSWERED_BY_FALLBACK, FALLBACK_REASON, Finding, _rule_source, mark_answered_by  # noqa: F401 — re-exported for callers
+from .finding import ANSWERED_BY_FALLBACK, FALLBACK_REASON, Finding, _rule_source, mark_answered_by, rule_subject  # noqa: F401 — re-exported for callers
 from .injection_detection import detect_injection, discover_injection, injection_scan_text
 from .ioc_detection import detect_ioc, ioc_context
 from .skill_detection import detect_skill
+from .wallet_files import detect_wallet_files
 from ..kernel import threat_ids
 
 logger = logging.getLogger(__name__)
@@ -93,7 +94,7 @@ def detect_escalation(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
                     matched=arg_shape,
                     evidence=arg_shape,
                     confirmed=src == "public",
-                    source=src,
+                    source=src, rule_subject=rule_subject(rule),
                     fields={"tool_name": tool_lower, "arg_shape": arg_shape},
                 )
             )
@@ -158,7 +159,7 @@ def detect_dependency(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
                 evidence=f"{dep['ecosystem']}:{dep['name']}@{shown}"
                 + (f" ({rule.get('advisoryId')})" if rule.get("advisoryId") else ""),
                 confirmed=src == "public",
-                source=src,
+                source=src, rule_subject=rule_subject(rule),
                 kind=rule.get("kind"),
                 fields={
                     "ecosystem": eco,
@@ -193,12 +194,12 @@ def detect_fileaccess(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     identifier = threat_ids.fileaccess_identifier(tool, category)
     severity = hit["severity"]
     source = "heuristic"
-    name = None
+    name, link = None, ""
     for rule in getattr(ruleset, "fileaccess", []) or []:
         if str(rule.get("toolName", "")).lower() == tool and str(rule.get("category", "")).lower() == category:
             source = _rule_source(rule)
             severity = rule.get("severity", severity)
-            name = rule.get("name")
+            name, link = rule.get("name"), rule_subject(rule)
             identifier = rule.get("identifier", identifier)
             break
     return [
@@ -211,7 +212,7 @@ def detect_fileaccess(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
             matched=category,
             evidence=f"{access['mode']} {category}",
             confirmed=source == "public",
-            source=source,
+            source=source, rule_subject=link,
             fields={"tool_name": tool, "file_category": category},
         )
     ]
@@ -391,8 +392,9 @@ def detect_all(tool_name: str, args: Any, ruleset: Any, discover: bool = True) -
     findings.extend(detect_fileaccess(tool_name, args, ruleset))
     findings.extend(detect_skill(tool_name, args, ruleset))
     findings.extend(detect_ioc(tool_name, args, ruleset, ioc_context(tool_name, args)))
-    # Secret exposure always runs (not gated by discovery): personal, never a graph candidate.
+    # Secret exposure and wallet key stores always run (not gated by discovery): personal, never shared.
     findings.extend(detect_secret_exposure(tool_name, args))
+    findings.extend(detect_wallet_files(tool_name, args))
     if not discover:
         findings = [f for f in findings if f.source != "heuristic"]
     return findings

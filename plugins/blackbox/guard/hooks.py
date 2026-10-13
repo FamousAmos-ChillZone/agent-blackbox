@@ -16,6 +16,7 @@ from .. import audit, detection, killlist, overrides, ruleset
 from ..kernel import config as config_mod, constants
 from ..kernel.config import BlackboxConfig
 from . import background
+from . import injection_sites
 from . import reporting
 from . import session_context
 
@@ -85,6 +86,16 @@ def _decision(cfg: BlackboxConfig, findings: List[detection.Finding], blocking: 
     if blocking:
         return "block"
     return "flag (local override)" if _overridden(cfg, findings) else "flag"
+
+
+def _decision_detail(cfg: BlackboxConfig, findings: List[detection.Finding],
+                     blocking: List[detection.Finding]) -> Dict[str, Any]:
+    """The audit row's ``decision`` and, when something blocked, ``blocked`` —
+    which findings did, so each report can say blocked or flagged (threat-profiles D3)."""
+    out: Dict[str, Any] = {"decision": _decision(cfg, findings, blocking)}
+    if blocking:
+        out["blocked"] = [f.identifier for f in blocking]
+    return out
 
 
 def _overridden(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List[detection.Finding]:
@@ -163,7 +174,7 @@ def on_pre_tool_call(
         if findings:
             # KI-189: the audit row says what the hook DID, not only what it saw —
             # R10's "a revoked threat blocked N actions here" counts these.
-            detail["decision"] = _decision(cfg, findings, blocking)
+            detail.update(_decision_detail(cfg, findings, blocking))
         reporting._report_and_audit(cfg, "pre_tool_call", findings, detail)
         # OSV auto-discovery runs off the blocking path so a network lookup
         # never delays or breaks the tool call.
@@ -269,17 +280,40 @@ def _untrusted_request_sources(user_message: Any, request_messages: Any) -> List
         # developer, and assistant content must never create a user finding.
         if role == "user":
             add("in-user-prompt", session_context._message_text(msg.get("content")))
-        elif role == "tool":
-            name = str(msg.get("name") or tool_names.get(str(msg.get("tool_call_id") or ""), "")).lower()
+            continue
+        result = _tool_result(msg)
+        if result is not None:
+            call_id, content, name = result
+            name = str(name or tool_names.get(call_id, "")).lower()
             context = "in-fetched-page" if name.startswith(detection.FETCH_TOOL_PREFIXES) else "in-tool-output"
-            add(context, session_context._message_text(msg.get("content")))
+            add(context, session_context._message_text(content))
     return sources
 
 
+def _tool_result(msg: Any) -> Optional[Tuple[str, Any, str]]:
+    """``(call id, content, tool name or "")`` when *msg* is a tool's result, else None.
+
+    Two wire shapes reach ``pre_api_request``: Chat Completions sends
+    ``{"role": "tool", "tool_call_id", "content"}``; the Responses API (OpenAI direct,
+    Codex — Hermes passes ``api_kwargs["input"]``) sends
+    ``{"type": "function_call_output", "call_id", "output"}``. Reading only the first
+    left every Responses-API agent's tool output unscanned for injection (KI-365)."""
+    if not isinstance(msg, dict):
+        return None
+    if str(msg.get("role") or "").lower() == "tool":
+        return str(msg.get("tool_call_id") or ""), msg.get("content"), str(msg.get("name") or "")
+    if msg.get("type") == "function_call_output":
+        return str(msg.get("call_id") or ""), msg.get("output"), ""
+    return None
+
+
 def _tool_names_by_call_id(messages: List[Any]) -> Dict[str, str]:
-    """``tool_call_id`` -> tool name, from the assistant turns' ``tool_calls``."""
+    """``tool_call_id`` -> tool name, from the assistant turns' ``tool_calls`` (Chat
+    Completions) and from ``function_call`` items (Responses API)."""
     names: Dict[str, str] = {}
     for msg in messages:
+        if isinstance(msg, dict) and msg.get("type") == "function_call" and msg.get("call_id"):
+            names[str(msg["call_id"])] = str(msg.get("name") or "")
         calls = msg.get("tool_calls") if isinstance(msg, dict) else None
         for call in calls if isinstance(calls, list) else []:
             function = call.get("function") if isinstance(call, dict) else None
@@ -313,6 +347,7 @@ def on_pre_api_request(**kwargs: Any) -> None:
         sources = _untrusted_request_sources(kwargs.get("user_message"), kwargs.get("request_messages"))
         text = "\n".join(part for _, part in sources)   # the LLM reviewer's input
         findings = _injection_by_source(sources, rs, cfg.discover)
+        findings += injection_sites.injection_site_findings(findings, kwargs.get("request_messages"), rs)   # D8
         findings = reporting._flag_worthy(cfg, findings)
         detail = {
             "session_id": kwargs.get("session_id"),

@@ -1,6 +1,17 @@
 # Agent Blackbox — Reporter Terms (community graph)
 
-Version: 1.2 (draft for counsel review, 2026-10-12)
+Version: 1.3 (draft for counsel review, 2026-10-12)
+
+## What changed in version 1.3
+
+- Each statement now describes the sighting in closed words (section 1):
+  - the tool that met the threat (a tool you wrote yourself is only "other" or "mcp-tool");
+  - what the agent was doing;
+  - whether Blackbox blocked or only flagged it;
+  - how it was matched, and the Blackbox version;
+  - the verified rule it matched;
+  - what the threat goes after (a goal, a CLASS of resource such as "cloud credentials", and a MITRE technique id).
+- When a VERIFIED prompt-injection pattern is found in a page your agent fetched, the page's SITE is shared as a separate statement. Only the registrable domain is shared (`evil.example`), never the address, path or text. Popular and user-content platforms are never named.
 
 ## What changed in version 1.2
 
@@ -44,12 +55,23 @@ community graph of the OriginTrail Decentralized Knowledge Graph (DKG):
 - your node's REPORTER ADDRESS (the DKG agent address of your node's wallet)
   and a signature by your node's reporter key;
 - a weekly SIGHTING DIGEST: the verified threats your agents met that week,
-  with coarse buckets (1 / 2–9 / 10–99 / 100+), never exact counts or times.
+  with coarse buckets (1 / 2–9 / 10–99 / 100+), never exact counts or times;
+- the SIGHTING, in closed words only (version 1.3):
+  - the host tool (`web_fetch`, `terminal`, `read_file`…; any other tool is `mcp-tool` or `other`);
+  - what the agent was doing (fetch, install a package or skill, read or write a file, run a command, model input);
+  - blocked or flagged;
+  - how it was matched and the Blackbox version;
+  - the verified rule it matched;
+  - the threat's goal, the CLASS of resource at risk, and a MITRE ATT&CK / ATLAS technique id;
+- for a verified prompt injection in a fetched page, the site's registrable domain, as its own statement.
 
 Never shared, by construction: prompts, commands, file paths, file or skill
 source, secrets, LLM outputs, local-only or custom-rule findings,
-vulnerability findings, the names of locally authored skills, the source
-of an injection, exact times, your location, or any person's identity.
+vulnerability findings, the names of locally authored skills, the names of
+your own tools, the address, path or text of the page an injection came from
+(only a verified injection's registrable domain, as above), the actual file or
+resource at risk (only its class), exact times, your location, or any
+person's identity.
 
 ## 2. What you grant
 

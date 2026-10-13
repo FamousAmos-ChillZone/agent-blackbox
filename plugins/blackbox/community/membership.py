@@ -44,6 +44,7 @@ import time
 from enum import Enum
 from typing import Callable, Dict, Optional, Set, Tuple
 
+from ..kernel import constants
 from ..kernel.dkg_client import DkgClient
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,29 @@ class CommunityMembership:
         self._confirmed: Dict[str, float] = {}
         self._last_owner_dial: Dict[str, float] = {}
         self._own_peer = ""   # this node's peer id, once known (never dial ourselves)
+        #: graphs whose ``constants.COMMUNITY_SUB_GRAPH`` is registered on this node
+        self._lane_ready: Set[str] = set()
+
+    def ensure_report_lane(self, client: DkgClient, graph: str) -> bool:
+        """Register the community subgraph on this node before its first write
+        (a node writes into a named subgraph only once that subgraph is
+        registered locally; receiving nodes register it from the first share).
+        Once per process per graph; "already exists" counts as ready. Returns
+        whether the lane is ready; a failure is logged and the write proceeds,
+        so the node's own error names what went wrong (fail-open)."""
+        with self._lock:
+            if graph in self._lane_ready:
+                return True
+        try:
+            client.request("POST", "/api/sub-graph/create",
+                           {"contextGraphId": graph, "subGraphName": constants.COMMUNITY_SUB_GRAPH})
+        except Exception as exc:
+            if "already exists" not in str(exc):
+                logger.warning("blackbox: could not register the community subgraph on this node: %s", exc)
+                return False
+        with self._lock:
+            self._lane_ready.add(graph)
+        return True
 
     def ensure(self, client: DkgClient, cfg: object) -> Tuple[bool, str]:
         """Make sure this node is subscribed to (and has asked to join) the
@@ -234,6 +258,12 @@ def _connect_owner(client: DkgClient, owner_peer: str) -> None:
 
 #: The process's membership state (see module docstring).
 MEMBERSHIP = CommunityMembership()
+
+
+def ensure_report_lane(client: DkgClient, graph: str) -> bool:
+    """Before writing a community statement: register the community subgraph
+    on this node (:meth:`CommunityMembership.ensure_report_lane`)."""
+    return MEMBERSHIP.ensure_report_lane(client, graph)
 
 
 def ensure_community_subscription(client: DkgClient, cfg: object) -> Tuple[bool, str]:

@@ -238,6 +238,7 @@ def _share(ctx: CurateContext, graph: str, name: str, quads: List[Dict[str, str]
     """Share into the community graph; True when the node already held this
     asset (an earlier attempt got it there). Any other failure is raised."""
     try:
+        community.ensure_report_lane(ctx.client, graph)
         result = ctx.client.share_knowledge_asset(graph, name, quads)
     except Exception as exc:
         if community.ALREADY_SEALED_REPLY in str(exc).lower():

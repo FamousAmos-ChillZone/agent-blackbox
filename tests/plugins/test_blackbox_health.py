@@ -51,7 +51,6 @@ def test_a_healthy_node_has_nothing_to_do():
     ({"rule_count": 0}, health.HealthClass.ACTION, "UNPROTECTED"),
     ({"read_unavailable_reason": "node status unavailable"}, health.HealthClass.INFO, "could not be read"),
     ({"community_paused": True}, health.HealthClass.INFO, "paused"),
-    ({"curator_trusted": False}, health.HealthClass.INFO, "no trusted curator keys"),
     ({"backlog": "3,4,5"}, health.HealthClass.INFO, "BACKLOG"),
     ({"away_keys": 1}, health.HealthClass.INFO, "away"),
     ({"revoked": {THREAT: 0}}, health.HealthClass.INFO, "REVOKED"),
@@ -296,3 +295,11 @@ def test_no_watch_message_names_a_threat_identifier():
 def test_the_health_package_stays_under_its_size_alarm():
     from pathlib import Path
     assert len(Path(health.__file__).read_text(encoding="utf-8").splitlines()) < 400
+
+
+def test_an_untrusted_network_raises_no_item():
+    """No pinned curator manifest is the normal state, not an alarm: neither `blackbox status` nor the
+    dashboard banner (both render operator_health) may say "no trusted curator keys" (removed 2026-10-12)."""
+    items = health.operator_health(_inputs(curator_trusted=False))
+    assert items == []
+    assert not any("curator keys" in line for line in health.render_lines(items))

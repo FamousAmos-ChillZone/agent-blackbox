@@ -278,6 +278,13 @@ COMMUNITY_GRAPH_ENABLED = True
 #: ``BlackboxConfig.community_enabled``). Never a development or test graph here.
 DEFAULT_COMMUNITY_GRAPH_ID = "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-community"
 
+#: The named subgraph every community statement is written to and read from
+#: (2026-10-12). DKG 10.0.23 reserves a catalog-mode graph's ROOT for its RFC-64
+#: catalog sync and refuses members' direct shares there ("legacy SWM apply is
+#: not authoritative for root scope"); a named subgraph keeps the member lane,
+#: so a share reaches every subscribed member at once (measured: same second).
+COMMUNITY_SUB_GRAPH = "reports"
+
 #: Peer id of the node that OWNS the community graph (its read authority). An
 #: unregistered public graph has no on-chain pointer, so a fresh node cannot
 #: find the graph until it is connected to this peer (KI-216: eight subscribes
@@ -291,10 +298,10 @@ DEFAULT_COMMUNITY_GRAPH_PEER_ID = "12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyK
 
 #: Default daily cap on outbound community reports per node. Bounds a runaway
 #: or compromised agent's graph footprint even before the per-threat 6-hour
-#: cooldown is considered. Refine R1 (plan §07): 20/day, client-side hygiene
+#: cooldown is considered. Refine R1 (plan §07): 100/day (20 until 2026-10-12), client-side hygiene
 #: only — readers enforce the real per-author budget — and it can no longer be
 #: switched off: a limit of 0 or below means this default, never "no cap".
-DEFAULT_DAILY_REPORT_LIMIT = 20
+DEFAULT_DAILY_REPORT_LIMIT = 100
 
 
 def effective_daily_report_limit(configured: int) -> int:

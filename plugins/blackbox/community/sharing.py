@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from .. import audit, detection
 from .. import community
 from ..kernel import threat_ids
-from . import consent, keep_alive, report_schema, report_signer, share_retry
+from . import consent, keep_alive, membership, report_schema, report_signer, share_retry
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, DkgError
 
@@ -114,9 +114,11 @@ LOCAL_ONLY_FIELDS = frozenset({"answered_by"})
 
 
 def shareable_fields(finding: Dict[str, Any]) -> Dict[str, Any]:
-    """The finding's evidence fields a report may carry: set, and not local-only."""
+    """The fields a report may carry: the finding's evidence plus the sighting
+    the guard attached (threat-profiles §03.2) — set, and not local-only."""
     fields = finding.get("fields") if isinstance(finding.get("fields"), dict) else {}
-    return {k: v for k, v in fields.items() if v is not None and k not in LOCAL_ONLY_FIELDS}
+    sighting = finding.get("sighting") if isinstance(finding.get("sighting"), dict) else {}
+    return {k: v for k, v in {**fields, **sighting}.items() if v is not None and k not in LOCAL_ONLY_FIELDS}
 
 
 def _schema_decision(finding: Dict[str, Any]) -> "tuple[bool, str]":
@@ -166,6 +168,7 @@ def send_report(client: DkgClient, graph: str, name: str, quads: List[Dict[str, 
     if audit.previously_accepted(name):
         return ShareOutcome.REJECTED_SAME_VERSION, "already shared earlier; a same-version re-share is refused by peers"
     try:
+        membership.ensure_report_lane(client, graph)   # the community subgraph, registered once per process
         result = client.share_knowledge_asset(graph, name, quads)
     except Exception as exc:  # the outermost send boundary: any failure is FAILED, never raised
         if isinstance(exc, DkgError) and ALREADY_SEALED_REPLY in str(exc).lower():

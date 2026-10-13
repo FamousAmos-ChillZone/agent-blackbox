@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Set, Tuple
 from ..kernel.browser_boundary import BrowserBoundary
 from ..sync import state as sync_state
 from ..sync import read_durable_progress
-from . import community_routes, graph_pages, lifecycle, sync_meter, sync_timing
+from . import community_routes, graph_pages, lifecycle, protection, sync_meter, sync_timing
 from .graph_pages import _balanced_graph_entries, _graph_entries  # noqa: F401 — moved there; tests reach them here
 from .network_sync import network_sync_argv as _network_sync_argv
 from .node_probe import NodeLiveness, RepeatGate, node_sync_probe
@@ -1856,7 +1856,7 @@ def create_app(*, manage_blackbox: bool = False):
 
     community_endpoints = community_routes.register_community_routes(app, community_read=_community_read, node_reachable=_node_reachable)
     sync_meter.register_sync_meter_routes(app, load_config=load_blackbox_config, node_reachable=_node_reachable, verified_rules=lambda cfg: _graph_source_count(ruleset.peek(cfg), "public"))
-
+    protection.register_protection_routes(app)   # the wallet-protection panel (trader rules)
     @app.get("/api/threat")
     def threat(identifier: str = Query(..., min_length=1), tier: str = Query("public")) -> Any:
         """Full detail for ONE threat via a targeted point-lookup.
@@ -1878,7 +1878,7 @@ def create_app(*, manage_blackbox: bool = False):
                 "identifier": safe_identifier(identifier),
                 "tier": "community",
                 "found": True,
-                "reporters": int(rule.get("reporterCount") or 0),
+                "reporters": int(rule.get("reporterCount") or 0), **graph_pages.verified_profile(rs, identifier),
             })
             return detail
         prefix = identifier.split(":", 1)[0].lower() if ":" in identifier else ""

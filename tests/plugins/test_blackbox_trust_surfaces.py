@@ -334,4 +334,6 @@ def test_only_a_community_authority_still_counts_as_trusted_curators(monkeypatch
     TrustStore().forget()                                                  # a node that never saw that manifest
     monkeypatch.delenv("BLACKBOX_COMMUNITY_ROOT_KEYS")
     nobody = community.read_verified_reports(Store(reports=[signed_row(IP, Reporter("0xa"))]), CFG)
-    assert any("no trusted curator keys" in item.message for item in health.operator_health(health.gather(CFG, rs, True, nobody, {}, 2.0)))
+    untrusted = [item.message for item in health.operator_health(health.gather(CFG, rs, True, nobody, {}, 2.0))]
+    assert not any("curators are silent" in message for message in untrusted)   # nobody trusted: no curator alarm at all
+    assert not any("no trusted curator keys" in message for message in untrusted)

@@ -3,7 +3,7 @@
   "files": {
     "dashboard/server.py": 1996,
     "kernel/config.py": 427,
-    "kernel/dkg_client.py": 641,
+    "kernel/dkg_client.py": 639,
     "sync/command.py": 1402
   },
   "functions": {
@@ -12,7 +12,7 @@
     "attach/openclaw_bridge.py::attach_openclaw": 68,
     "attach/openclaw_discovery.py::discover_openclaw_workspaces": 67,
     "attach/openclaw_json5.py::_json5_to_json": 156,
-    "audit/activity.py::read_local_activity": 138,
+    "audit/activity.py::read_local_activity": 129,
     "cli.py::setup_cli": 80,
     "community/report_cli/report_command.py::cmd_report": 57,
     "curate/catalog_import.py::_entry_to_threat": 114,

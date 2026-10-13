@@ -126,14 +126,33 @@ def test_share_knowledge_asset_payload(monkeypatch):
     assert body["name"] == "notes"
     assert body["quads"] == quads
     assert body["alsoShareSwm"] is False
+    assert body["subGraphName"] == "reports"                       # community statements live in the subgraph
     assert cap["calls"][1]["url"] == "http://node/api/knowledge-assets/notes/swm/share-async"
-    assert json.loads(cap["calls"][1]["body"]) == {"contextGraphId": "cg", "entities": "all"}
+    assert json.loads(cap["calls"][1]["body"]) == {"contextGraphId": "cg", "entities": "all", "subGraphName": "reports"}
     assert cap["calls"][2]["url"] == "http://node/api/knowledge-assets/swm/share-jobs/share-job-1"
     assert cap["calls"][2]["method"] == "GET"
     # Auth header present.
     assert any(v == "Bearer tok" for v in cap["headers"].values())
     # Shares that also write to SWM use the longer store timeout, not the read one.
     assert cap["timeout"] == dkg_client._STORE_TIMEOUT
+
+
+
+def test_the_verified_publish_share_stays_in_the_root(monkeypatch):
+    """Only community statements use the subgraph; the verified-graph publish path
+    (node_routes: write, share in full, /vm/publish) shares into the root."""
+    cap = _capture_sequence(monkeypatch, ['{"jobId":"j","state":"queued"}', '{"jobId":"j","state":"succeeded"}'])
+    dkg_client.DkgClient(url="http://node", token="tok").share_finalized_knowledge_asset("vm", "batch-1")
+    assert json.loads(cap["calls"][0]["body"]) == {"contextGraphId": "vm", "entities": "all"}
+
+
+def test_shared_memory_reads_ask_the_community_subgraph_and_verified_reads_do_not(monkeypatch):
+    cap = _capture_sequence(monkeypatch, ['{"result":{"bindings":[]}}', '{"result":{"bindings":[]}}'])
+    client = dkg_client.DkgClient(url="http://node", token="tok")
+    client.query("SELECT * WHERE { ?s ?p ?o }", "cg", view=dkg_client.constants.VIEW_SHARED_WORKING_MEMORY)
+    client.query("SELECT * WHERE { ?s ?p ?o }", "vm")
+    swm, vm = (json.loads(call["body"]) for call in cap["calls"])
+    assert swm["subGraphName"] == "reports" and "subGraphName" not in vm
 
 
 def test_share_rejects_oversized_literal_before_http(monkeypatch):

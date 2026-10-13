@@ -1328,10 +1328,10 @@ defaults = {
     "sync_interval": 3600,
     # Community sharing is ON by default with an easy opt-out (2026-10-12):
     # privacy-safe threat statements only, never prompts, commands, paths or
-    # files. The daily cap is the plugin's default bound (20): 0 used to mean
+    # files. The daily cap is the plugin's default bound (100 since 2026-10-12; 20 before): 0 used to mean
     # NO cap, and the plugin no longer accepts it (Refine R1).
     "report": True,
-    "daily_report_limit": 20,
+    "daily_report_limit": 100,
     "report_min_severity": "high",
     "block_severity": "critical",
     "dashboard_port": 9700,
@@ -1368,8 +1368,9 @@ if blackbox.get("sharing_default") != SHARING_DEFAULT_MARK:
         added.append("report")
     blackbox["sharing_default"] = SHARING_DEFAULT_MARK
     added.append("sharing_default")
-if blackbox.get("daily_report_limit") in (0, "0"):   # the pre-R1 "no cap"; the plugin refuses it
-    blackbox["daily_report_limit"] = 20
+# 0 was the pre-R1 "no cap" (refused); 20 was the earlier installers' default, raised to 100 on 2026-10-12.
+if blackbox.get("daily_report_limit") in (0, "0", 20, "20"):
+    blackbox["daily_report_limit"] = 100
     added.append("daily_report_limit")
 with open(cfg_path, "w") as f:
     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
@@ -1528,7 +1529,8 @@ function Show-NextSteps {
 
   Community sharing is ON: when your agent meets a threat already listed in the
   verified threat graph, this node shares a privacy-safe statement (the threat's
-  identifier and type, never prompts, commands, file paths or files) with the
+  identifier and type, the tool that met it, blocked or flagged, and what the
+  threat targets; never prompts, commands, file paths or files) with the
   Blackbox community graph. Turn it off any time:
        blackbox report --disable-sharing     (or the dashboard's sharing toggle)
 "@ | Write-Host
@@ -1558,7 +1560,8 @@ function Show-NextSteps {
 
   Community sharing is ON: when your agent meets a threat already listed in the
   verified threat graph, this node shares a privacy-safe statement (the threat's
-  identifier and type, never prompts, commands, file paths or files) with the
+  identifier and type, the tool that met it, blocked or flagged, and what the
+  threat targets; never prompts, commands, file paths or files) with the
   Blackbox community graph. Turn it off any time:
        blackbox report --disable-sharing     (or the dashboard's sharing toggle)
 "@ | Write-Host
