@@ -268,6 +268,38 @@ def _resolve_key(source: str, provider: str) -> str:
     return _env_key(provider)
 
 
+def _reuse_found_config() -> Optional[int]:
+    """Use a reviewer config found elsewhere (Blackbox, Hermes, OpenClaw).
+
+    Returns the command's exit code when one was found, or None when there is none.
+    """
+    source, candidate = _auto_llm_candidate()
+    if not candidate:
+        return None
+    if source == "Blackbox":
+        print(
+            f"LLM reviewer already configured: "
+            f"provider={candidate['provider']}  model={candidate['model']}"
+        )
+        return 0
+    result = settings.write_settings({
+        "llm": {
+            "enabled": True,
+            "provider": candidate["provider"],
+            "model": candidate["model"],
+            "api_key": candidate["api_key"],
+        }
+    })
+    if not result.get("ok"):
+        print(f"error: could not save settings: {result.get('errors')}")
+        return 1
+    print(
+        f"LLM reviewer enabled from {source}: "
+        f"provider={candidate['provider']}  model={candidate['model']}"
+    )
+    return 0
+
+
 def cmd_setup_llm(args: argparse.Namespace) -> int:
     """Configure the opt-in LLM prompt-injection reviewer.
 
@@ -284,30 +316,9 @@ def cmd_setup_llm(args: argparse.Namespace) -> int:
         for name in ("provider", "model", "key_source", "api_key")
     )
     if not explicit and not getattr(args, "configure", False):
-        source, candidate = _auto_llm_candidate()
-        if candidate:
-            if source == "Blackbox":
-                print(
-                    f"LLM reviewer already configured: "
-                    f"provider={candidate['provider']}  model={candidate['model']}"
-                )
-                return 0
-            result = settings.write_settings({
-                "llm": {
-                    "enabled": True,
-                    "provider": candidate["provider"],
-                    "model": candidate["model"],
-                    "api_key": candidate["api_key"],
-                }
-            })
-            if not result.get("ok"):
-                print(f"error: could not save settings: {result.get('errors')}")
-                return 1
-            print(
-                f"LLM reviewer enabled from {source}: "
-                f"provider={candidate['provider']}  model={candidate['model']}"
-            )
-            return 0
+        reused = _reuse_found_config()
+        if reused is not None:
+            return reused
         if args.auto:
             print("No reusable Hermes/OpenClaw LLM config found.")
             return 2

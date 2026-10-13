@@ -138,30 +138,35 @@ def _validate(payload: dict[str, Any], *, sharing_consent: bool = False) -> tupl
             errors.append("protected_paths must be a list")
 
     if "llm" in payload:
-        raw = payload["llm"]
-        llm: dict[str, Any] = {}
-        if isinstance(raw, dict):
-            if "enabled" in raw:
-                if isinstance(raw["enabled"], bool):
-                    llm["enabled"] = raw["enabled"]
-                else:
-                    errors.append("llm.enabled must be a boolean")
-            if "provider" in raw:
-                prov = str(raw["provider"]).strip().lower()
-                if prov in ("openai", "anthropic", ""):
-                    llm["provider"] = prov
-                else:
-                    errors.append(f"invalid llm.provider: {raw['provider']!r}")
-            if "model" in raw:
-                llm["model"] = str(raw["model"]).strip()
-            if "api_key" in raw:
-                llm["api_key"] = str(raw["api_key"]).strip()
-            if llm:
-                updates["llm"] = llm
-        else:
-            errors.append("llm must be an object")
+        llm = _validate_llm(payload["llm"], errors)
+        if llm:
+            updates["llm"] = llm
 
     return updates, errors
+
+
+def _validate_llm(raw: Any, errors: list[str]) -> dict[str, Any]:
+    """The valid ``llm`` reviewer fields of *raw*; each problem is appended to *errors*."""
+    llm: dict[str, Any] = {}
+    if not isinstance(raw, dict):
+        errors.append("llm must be an object")
+        return llm
+    if "enabled" in raw:
+        if isinstance(raw["enabled"], bool):
+            llm["enabled"] = raw["enabled"]
+        else:
+            errors.append("llm.enabled must be a boolean")
+    if "provider" in raw:
+        prov = str(raw["provider"]).strip().lower()
+        if prov in ("openai", "anthropic", ""):
+            llm["provider"] = prov
+        else:
+            errors.append(f"invalid llm.provider: {raw['provider']!r}")
+    if "model" in raw:
+        llm["model"] = str(raw["model"]).strip()
+    if "api_key" in raw:
+        llm["api_key"] = str(raw["api_key"]).strip()
+    return llm
 
 
 def write_settings(payload: dict[str, Any], *, sharing_consent: bool = False) -> dict[str, Any]:
