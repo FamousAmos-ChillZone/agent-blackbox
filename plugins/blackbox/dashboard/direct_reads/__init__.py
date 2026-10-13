@@ -4,6 +4,10 @@ from ... import ruleset
 from ...kernel.dkg_client import DkgError
 
 
+def handles(cfg, tier):
+    return tier == "public" and getattr(cfg, "detection_backend", "legacy-cache") == "dkg"
+
+
 def unavailable(exc):
     return JSONResponse(status_code=503, content={"state": "unavailable", "code": getattr(exc, "code", "QUERY_UNAVAILABLE")})
 

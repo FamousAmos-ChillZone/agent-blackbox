@@ -62,7 +62,7 @@ def _is_blackbox_openclaw_load_path(value: Any) -> bool:
     try:
         manifest = path / "openclaw.plugin.json"
         if manifest.is_file():
-            data = json.loads(manifest.read_text(encoding="utf-8"))
+            data = json.loads(manifest.read_text(encoding="utf-8-sig"))
             if isinstance(data, dict) and data.get("id") == "blackbox":
                 return True
     except Exception:
@@ -91,7 +91,7 @@ def _is_missing_pre_blackbox_load_path(value: Any) -> bool:
         return True
 
 
-def attach_openclaw(workspace: Path, *, dry_run: bool = False) -> Dict[str, Any]:
+def attach_openclaw(workspace: Path, *, dry_run: bool = False) -> dict[str, Any]:
     """Enable Blackbox in a single OpenClaw *workspace*.
 
     Backs up ``openclaw.json``, then idempotently merges:
@@ -104,7 +104,7 @@ def attach_openclaw(workspace: Path, *, dry_run: bool = False) -> Dict[str, Any]
     """
     workspace = workspace.expanduser()
     config_path = openclaw_discovery._openclaw_config_path(workspace)
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "target": str(workspace),
         "config_path": str(config_path),
         "kind": "openclaw",
@@ -161,7 +161,7 @@ def attach_openclaw(workspace: Path, *, dry_run: bool = False) -> Dict[str, Any]
     return report
 
 
-def _desired_entry(cfg: Dict[str, Any]) -> Dict[str, Any]:
+def _desired_entry(cfg: dict[str, Any]) -> dict[str, Any]:
     """The ``plugins.entries.blackbox`` block the bridge reads (the ONE shape attach writes)."""
     return {
         "enabled": True,
@@ -187,7 +187,7 @@ def _desired_entry(cfg: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _merge_openclaw(data: Dict[str, Any], cfg: Dict[str, Any], load_path: Optional[str]) -> bool:
+def _merge_openclaw(data: dict[str, Any], cfg: dict[str, Any], load_path: Optional[str]) -> bool:
     """Idempotently merge the Blackbox block into an ``openclaw.json`` dict.
 
     Returns ``True`` when anything changed. Pure (mutates *data* in place); the
@@ -242,11 +242,11 @@ def _merge_openclaw(data: Dict[str, Any], cfg: Dict[str, Any], load_path: Option
     return changed
 
 
-def detach_openclaw(workspace: Path, *, dry_run: bool = False) -> Dict[str, Any]:
+def detach_openclaw(workspace: Path, *, dry_run: bool = False) -> dict[str, Any]:
     """Disable Blackbox in a single OpenClaw *workspace* (idempotent, fail-open)."""
     workspace = workspace.expanduser()
     config_path = openclaw_discovery._openclaw_config_path(workspace)
-    report: Dict[str, Any] = {
+    report: dict[str, Any] = {
         "target": str(workspace),
         "kind": "openclaw",
         "ok": False,
@@ -299,7 +299,7 @@ def detach_openclaw(workspace: Path, *, dry_run: bool = False) -> Dict[str, Any]
 # ---------------------------------------------------------------------------
 
 
-def load_blackbox_config_snapshot() -> Dict[str, Any]:
+def load_blackbox_config_snapshot() -> dict[str, Any]:
     """Resolve the Blackbox config values to write into an OpenClaw workspace.
 
     Uses :func:`config.load_blackbox_config` when available (honours env +

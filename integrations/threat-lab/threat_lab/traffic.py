@@ -46,7 +46,7 @@ _MAGIC = {b"\xd4\xc3\xb2\xa1": "<", b"\x4d\x3c\xb2\xa1": "<", b"\xa1\xb2\xc3\xd4
 class Traffic:
     """What the recording shows the guest did on the network."""
 
-    hosts: Tuple[str, ...]
+    hosts: tuple[str, ...]
     bait_seen: bool
 
 
@@ -61,11 +61,11 @@ def read_pcap(data: bytes, guest_address: str) -> Traffic:
     """The :class:`Traffic` in pcap *data* for the guest at *guest_address*.
     Data that is not a classic Ethernet pcap reads as no traffic."""
     guest = ipaddress.IPv4Address(guest_address).packed
-    names: Set[str] = set()
-    connected: Set[bytes] = set()
-    resolved: Set[bytes] = set()
-    flows: Dict[Tuple[bytes, int, int], List[bytes]] = {}
-    datagrams: List[bytes] = []
+    names: set[str] = set()
+    connected: set[bytes] = set()
+    resolved: set[bytes] = set()
+    flows: dict[tuple[bytes, int, int], list[bytes]] = {}
+    datagrams: list[bytes] = []
     for source, destination, protocol, segment in _ipv4_packets(data[:MAX_PCAP_BYTES]):
         if protocol == _UDP and len(segment) >= 8:
             source_port, destination_port = struct.unpack("!HH", segment[:4])
@@ -96,7 +96,7 @@ def read_pcap(data: bytes, guest_address: str) -> Traffic:
     return Traffic(tuple(sorted(hosts)), any(marker in blob for blob in outbound for marker in markers))
 
 
-def _ipv4_packets(data: bytes) -> Iterator[Tuple[bytes, bytes, int, bytes]]:
+def _ipv4_packets(data: bytes) -> Iterator[tuple[bytes, bytes, int, bytes]]:
     """``(source, destination, protocol, transport segment)`` per first-fragment IPv4 frame."""
     if not is_recording(data):
         return
@@ -111,7 +111,7 @@ def _ipv4_packets(data: bytes) -> Iterator[Tuple[bytes, bytes, int, bytes]]:
             yield packet
 
 
-def _ipv4_in(frame: bytes) -> Optional[Tuple[bytes, bytes, int, bytes]]:
+def _ipv4_in(frame: bytes) -> Optional[tuple[bytes, bytes, int, bytes]]:
     if len(frame) < 14:
         return None
     ethertype, header = struct.unpack("!H", frame[12:14])[0], 14
@@ -127,9 +127,9 @@ def _ipv4_in(frame: bytes) -> Optional[Tuple[bytes, bytes, int, bytes]]:
     return ip[12:16], ip[16:20], ip[9], ip[header_length:max(header_length, total_length)]
 
 
-def _read_name(message: bytes, offset: int) -> Tuple[Optional[str], int]:
+def _read_name(message: bytes, offset: int) -> tuple[Optional[str], int]:
     """A DNS name at *offset* and the offset after it (compression pointers followed, bounded)."""
-    labels: List[str] = []
+    labels: list[str] = []
     after: Optional[int] = None
     for _ in range(_MAX_NAME_JUMPS * 8):
         if offset >= len(message):
@@ -158,7 +158,7 @@ def _question_name(message: bytes) -> Optional[str]:
     return _read_name(message, 12)[0]
 
 
-def _answer_addresses(message: bytes) -> Set[bytes]:
+def _answer_addresses(message: bytes) -> set[bytes]:
     """The IPv4 addresses in a DNS response's A records."""
     if len(message) < 12:
         return set()
@@ -166,7 +166,7 @@ def _answer_addresses(message: bytes) -> Set[bytes]:
     offset = 12
     for _ in range(questions):
         offset = _read_name(message, offset)[1] + 4
-    addresses: Set[bytes] = set()
+    addresses: set[bytes] = set()
     for _ in range(answers):
         offset = _read_name(message, offset)[1]
         if offset + 10 > len(message):

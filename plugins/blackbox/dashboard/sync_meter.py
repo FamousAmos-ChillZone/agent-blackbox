@@ -73,7 +73,7 @@ class SyncMeter:
     #: DKG-lookup: where verified answers come from right now — ``state`` ∈ live |
     #: fallback | paused | not-live, ``label`` the few words the panel shows next to its
     #: mark, ``text`` the full sentence (the hover) — see :func:`lookup_status`.
-    lookups: Dict[str, str] = field(default_factory=dict)
+    lookups: dict[str, str] = field(default_factory=dict)
 
 
 def _percent(part: int, whole: int) -> float:
@@ -114,7 +114,7 @@ def build_sync_meter(*, downloaded: Optional[ruleset.DownloadTotals], pending: O
     )
 
 
-def lookup_status(scope: Any, health: Any, now: Optional[float] = None) -> Dict[str, str]:
+def lookup_status(scope: Any, health: Any, now: Optional[float] = None) -> dict[str, str]:
     """Where a verified check's answer comes from, for the panel and the status line (pure).
 
     *scope* — the generation's VerifiedScope (or None); *health* — ``live.HEALTH.read()``.
@@ -184,7 +184,7 @@ def read_sync_meter(cfg: Any, *, node_reachable: bool, verified_rules: int) -> S
 
 def register_sync_meter_routes(app: Any, *, load_config: Callable[[], Any],
                                node_reachable: Callable[[Any], bool],
-                               verified_rules: Callable[[Any], int]) -> Callable[[], Dict[str, Any]]:
+                               verified_rules: Callable[[Any], int]) -> Callable[[], dict[str, Any]]:
     """Add ``GET /api/verified-sync`` to *app* (a FastAPI app); returns the handler.
 
     *node_reachable* is the server's cached liveness probe (never blocks);
@@ -193,10 +193,10 @@ def register_sync_meter_routes(app: Any, *, load_config: Callable[[], Any],
     trigger one node query, not one each.
     """
     lock = threading.Lock()
-    cached: Dict[str, Any] = {"at": -1e9, "body": None}
+    cached: dict[str, Any] = {"at": -1e9, "body": None}
 
     @app.get("/api/verified-sync")
-    def verified_sync() -> Dict[str, Any]:
+    def verified_sync() -> dict[str, Any]:
         with lock:
             if cached["body"] is None or time.monotonic() - cached["at"] >= CACHE_SECONDS:
                 cfg = load_config()

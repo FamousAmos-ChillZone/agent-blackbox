@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ============================================================================
 # Agent Blackbox — one-command installer (macOS / Linux)
 # ============================================================================
@@ -1081,9 +1081,14 @@ detect_os() {
 install_python_env() {
     heading "Installing Hermes + Blackbox (Python)"
     VENV_DIR="$REPO_DIR/venv"
-    # Fast idempotent re-run: if a working hermes venv already exists, don't let
-    # setup-hermes.sh (which `rm -rf venv`s on every run) rebuild it from scratch.
-    if [ -x "$VENV_DIR/bin/hermes" ] && "$VENV_DIR/bin/python" -c "import hermes_cli" >/dev/null 2>&1; then
+    # Fast idempotent re-run for an OLDER Hermes checkout: if a working venv/ exists,
+    # don't let its setup-hermes.sh (which `rm -rf venv`s on every run) rebuild it.
+    # Hermes 0.21.7+ (pm, scripts/run-in-hermes-env) never takes this shortcut: its
+    # setup is itself hash-checked and quick when nothing changed, and a kept venv/
+    # never learns the release's new dependencies or top-level modules — an upgraded
+    # bench could not import hermes_yaml from outside the checkout.
+    if [ ! -x "$REPO_DIR/scripts/run-in-hermes-env" ] && [ -x "$VENV_DIR/bin/hermes" ] \
+        && "$VENV_DIR/bin/python" -c "import hermes_cli" >/dev/null 2>&1; then
         ok "Existing Hermes environment detected — reusing it"
         ensure_web_extra
         HERMES_BIN="$VENV_DIR/bin/hermes"
@@ -1096,6 +1101,7 @@ install_python_env() {
         # in embedded mode and launch `hermes setup` ourselves only if needed.
         if HERMES_EMBEDDED_INSTALL=1 bash "$REPO_DIR/setup-hermes.sh"; then
             ok "Base environment ready via setup-hermes.sh"
+            use_hermes_selected_venv
         else
             warn "setup-hermes.sh did not complete cleanly — falling back to a minimal venv install."
             minimal_python_env
@@ -1105,6 +1111,25 @@ install_python_env() {
     fi
     ensure_web_extra
     HERMES_BIN="$VENV_DIR/bin/hermes"
+}
+
+# Hermes 0.21.7+ builds its environment with pm OUTSIDE the checkout
+# ($HERMES_HOME/installs/<install>/environments/<generation>/venv) instead of
+# $REPO_DIR/venv. Ask Hermes which generation is selected, through its own
+# runner (scripts/run-in-hermes-env + pm.environments.selected_venv), and point
+# VENV_DIR there. Older checkouts have no runner and keep $REPO_DIR/venv.
+use_hermes_selected_venv() {
+    [ -x "$REPO_DIR/scripts/run-in-hermes-env" ] || return 0
+    local selected
+    selected="$(cd "$REPO_DIR" && scripts/run-in-hermes-env python3 -c \
+        'from pathlib import Path; from pm.environments import selected_venv; print(selected_venv(Path(".").resolve()))' \
+        2>/dev/null | tail -n 1)"
+    if [ -n "$selected" ] && [ -x "$selected/bin/python" ]; then
+        VENV_DIR="$selected"
+        step "Hermes environment: $VENV_DIR"
+    else
+        warn "Could not ask Hermes where its environment is; assuming $VENV_DIR"
+    fi
 }
 
 # The dashboard needs fastapi/uvicorn (the `[web]` extra, already part of
@@ -1614,7 +1639,10 @@ cfg_path, network, context_graph_id, graph_peer_id, dkg_url, dkg_home, dkg_bin =
 # Optional (older callers pass seven arguments): the community graph + its owner peer id, and the checkout.
 community_graph_id, community_graph_peer_id, repo_dir = (sys.argv[8:11] + ["", "", ""])[:3]
 try:
-    import yaml
+    try:
+        import hermes_yaml as yaml  # Hermes 0.21.7+: YAML through ruamel (PyYAML left the host)
+    except ImportError:
+        import yaml  # older Hermes: PyYAML
 except Exception:
     print("  (PyYAML unavailable — skipping config update; run 'blackbox status' to configure)")
     sys.exit(0)
@@ -1763,7 +1791,10 @@ read_blackbox_mode() {
 import sys, os
 cfg_path = sys.argv[1]
 try:
-    import yaml
+    try:
+        import hermes_yaml as yaml  # Hermes 0.21.7+: YAML through ruamel (PyYAML left the host)
+    except ImportError:
+        import yaml  # older Hermes: PyYAML
 except Exception:
     print("audit")
     sys.exit(0)
@@ -1782,41 +1813,52 @@ print(mode if mode in ("audit", "block") else "audit")
 PYEOF
 }
 
+# Writes plugins.entries.blackbox.mode and prints the mode now in force. $1 is the
+# requested mode ("audit" or "block"); "" keeps the mode already saved (a first
+# install, with nothing saved, gets audit).
 write_blackbox_mode() {
     local mode="$1"
     "$VENV_DIR/bin/python" - "$HERMES_HOME/config.yaml" "$mode" <<'PYEOF'
 import sys, os
 cfg_path, mode = sys.argv[1], sys.argv[2]
 try:
-    import yaml
+    try:
+        import hermes_yaml as yaml  # Hermes 0.21.7+: YAML through ruamel (PyYAML left the host)
+    except ImportError:
+        import yaml  # older Hermes: PyYAML
 except Exception:
-    print("  (PyYAML unavailable — could not save protection mode)")
+    print("  (no YAML library — could not save protection mode)", file=sys.stderr)
     sys.exit(1)
-if mode not in ("audit", "block"):
+if mode not in ("audit", "block", ""):
     sys.exit(1)
 os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
 data = {}
 if os.path.exists(cfg_path):
-    with open(cfg_path) as f:
+    with open(cfg_path, encoding="utf-8-sig") as f:
         data = yaml.safe_load(f) or {}
 blackbox = data.setdefault("plugins", {}).setdefault("entries", {}).setdefault("blackbox", {})
-blackbox["mode"] = mode
+saved = str(blackbox.get("mode") or "").lower()
+blackbox["mode"] = mode or (saved if saved in ("audit", "block") else "audit")
 blackbox.setdefault("block_severity", "critical")
-with open(cfg_path, "w") as f:
+with open(cfg_path, "w", encoding="utf-8") as f:
     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+print(blackbox["mode"])
 PYEOF
 }
 
 configure_blackbox_mode() {
     heading "Blackbox mode"
-    local current="${BLACKBOX_MODE:-}"
-    current="$(printf '%s' "$current" | tr '[:upper:]' '[:lower:]')"
-    [ "$current" = "block" ] || current="audit"
-    BLACKBOX_SELECTED_MODE="$current"
-
-    if write_blackbox_mode "$BLACKBOX_SELECTED_MODE"; then
+    # An explicit BLACKBOX_MODE wins. Otherwise a re-run keeps the mode the operator
+    # saved — an upgrade must never turn blocking off — and a first install starts in
+    # audit. (Every re-run used to write audit, so upgrading switched block off.)
+    local requested
+    requested="$(printf '%s' "${BLACKBOX_MODE:-}" | tr '[:upper:]' '[:lower:]')"
+    case "$requested" in audit|block) ;; *) requested="" ;; esac
+    BLACKBOX_SELECTED_MODE="$(write_blackbox_mode "$requested")"
+    if [ -n "$BLACKBOX_SELECTED_MODE" ]; then
         ok "Blackbox runs in $BLACKBOX_SELECTED_MODE mode"
     else
+        BLACKBOX_SELECTED_MODE="audit"
         warn "Could not save Blackbox mode. Set plugins.entries.blackbox.mode in config.yaml."
     fi
 }
@@ -2039,6 +2081,12 @@ xml_escape() {
 
 register_boot_service() {
     heading "Registering the DKG node to start on boot"
+    # No node to start (--skip-dkg, or its install failed): a boot service would
+    # only fail at every login (launchd exit 78) or restart-loop under systemd.
+    if [ ! -x "$BLACKBOX_DKG_BIN" ]; then
+        warn "No DKG node at $BLACKBOX_DKG_BIN — not registering a boot service."
+        return 0
+    fi
     local node_bin_dir
     node_bin_dir="$(dirname "$(command -v node)")"
     secure_dkg_token_perms

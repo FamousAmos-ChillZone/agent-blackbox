@@ -86,7 +86,7 @@ def _provider_alias(value: object) -> str:
     return _PROVIDER_ALIASES.get(raw, "")
 
 
-def _env_lookup(name: str, env: Optional[Dict[str, str]] = None) -> str:
+def _env_lookup(name: str, env: Optional[dict[str, str]] = None) -> str:
     if not name:
         return ""
     if env and env.get(name):
@@ -94,7 +94,7 @@ def _env_lookup(name: str, env: Optional[Dict[str, str]] = None) -> str:
     return str(os.environ.get(name, "") or "").strip()
 
 
-def _env_key_from(provider: str, env: Optional[Dict[str, str]] = None) -> str:
+def _env_key_from(provider: str, env: Optional[dict[str, str]] = None) -> str:
     for name in _LLM_KEY_ENV_VARS.get(provider, ()):
         val = _env_lookup(name, env)
         if val:
@@ -102,7 +102,7 @@ def _env_key_from(provider: str, env: Optional[Dict[str, str]] = None) -> str:
     return ""
 
 
-def _value_from(mapping: Dict[str, Any], keys: Iterable[str]) -> str:
+def _value_from(mapping: dict[str, Any], keys: Iterable[str]) -> str:
     for key in keys:
         val = mapping.get(key)
         if val is not None and str(val).strip():
@@ -110,7 +110,7 @@ def _value_from(mapping: Dict[str, Any], keys: Iterable[str]) -> str:
     return ""
 
 
-def _key_from_mapping(mapping: Dict[str, Any], provider: str, env: Optional[Dict[str, str]] = None) -> str:
+def _key_from_mapping(mapping: dict[str, Any], provider: str, env: Optional[dict[str, str]] = None) -> str:
     direct = _value_from(mapping, _API_KEY_KEYS)
     if direct:
         return direct
@@ -123,7 +123,7 @@ def _key_from_mapping(mapping: Dict[str, Any], provider: str, env: Optional[Dict
     return _env_key_from(provider, env)
 
 
-def _iter_dicts(value: Any) -> Iterable[Dict[str, Any]]:
+def _iter_dicts(value: Any) -> Iterable[dict[str, Any]]:
     if isinstance(value, dict):
         yield value
         for child in value.values():
@@ -134,10 +134,10 @@ def _iter_dicts(value: Any) -> Iterable[Dict[str, Any]]:
 
 
 def _candidate_from_mapping(
-    mapping: Dict[str, Any],
+    mapping: dict[str, Any],
     source: str,
-    env: Optional[Dict[str, str]] = None,
-) -> Optional[Dict[str, str]]:
+    env: Optional[dict[str, str]] = None,
+) -> Optional[dict[str, str]]:
     provider = _provider_alias(_value_from(mapping, _PROVIDER_KEYS))
     if not provider:
         return None
@@ -155,8 +155,8 @@ def _parse_env_value(value: str) -> str:
     return value
 
 
-def _load_env_file(path: Path) -> Dict[str, str]:
-    env: Dict[str, str] = {}
+def _load_env_file(path: Path) -> dict[str, str]:
+    env: dict[str, str] = {}
     try:
         lines = path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
     except Exception:
@@ -165,8 +165,7 @@ def _load_env_file(path: Path) -> Dict[str, str]:
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
-        if line.startswith("export "):
-            line = line[7:]
+        line = line.removeprefix("export ")
         key, _, value = line.partition("=")
         key = key.strip()
         if key:
@@ -175,10 +174,10 @@ def _load_env_file(path: Path) -> Dict[str, str]:
 
 
 def _candidate_from_hermes_config(
-    cfg: Dict[str, Any],
-    env: Optional[Dict[str, str]],
+    cfg: dict[str, Any],
+    env: Optional[dict[str, str]],
     source: str,
-) -> Optional[Dict[str, str]]:
+) -> Optional[dict[str, str]]:
     if not isinstance(cfg, dict):
         return None
     model_cfg = cfg.get("model") if isinstance(cfg.get("model"), dict) else {}
@@ -193,7 +192,7 @@ def _candidate_from_hermes_config(
     return None
 
 
-def _hermes_llm_candidate() -> Optional[Dict[str, str]]:
+def _hermes_llm_candidate() -> Optional[dict[str, str]]:
     try:
         from hermes_cli import config as hconfig
 
@@ -224,11 +223,11 @@ def _hermes_llm_candidate() -> Optional[Dict[str, str]]:
     return None
 
 
-def _openclaw_llm_candidate() -> Optional[Dict[str, str]]:
+def _openclaw_llm_candidate() -> Optional[dict[str, str]]:
     for workspace in attach.discover_openclaw_workspaces():
         path = workspace / "openclaw.json"
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
         except Exception:
             continue
         for mapping in _iter_dicts(data):
@@ -238,7 +237,7 @@ def _openclaw_llm_candidate() -> Optional[Dict[str, str]]:
     return None
 
 
-def _auto_llm_candidate() -> tuple[str, Optional[Dict[str, str]]]:
+def _auto_llm_candidate() -> tuple[str, Optional[dict[str, str]]]:
     cfg = load_blackbox_config()
     if cfg.llm_ready:
         return "Blackbox", {

@@ -40,10 +40,10 @@ class ExchangeKeyHeader:
 
     exchange: str
     header: str
-    domains: Tuple[str, ...]
+    domains: tuple[str, ...]
 
 
-EXCHANGE_KEY_HEADERS: Tuple[ExchangeKeyHeader, ...] = (
+EXCHANGE_KEY_HEADERS: tuple[ExchangeKeyHeader, ...] = (
     ExchangeKeyHeader("Binance", "X-MBX-APIKEY", ("binance.com", "binance.us", "binance.vision", "binancefuture.com")),
     ExchangeKeyHeader("OKX", "OK-ACCESS-KEY", ("okx.com", "coinall.ltd")),
     ExchangeKeyHeader("Bybit", "X-BAPI-API-KEY", ("bybit.com", "bytick.com", "bybit.nl", "bybit.com.hk")),
@@ -54,7 +54,7 @@ EXCHANGE_KEY_HEADERS: Tuple[ExchangeKeyHeader, ...] = (
 _URL = re.compile(r"https?://[^\s'\"<>`)]+", re.IGNORECASE)
 
 
-def _header_pattern(header: str) -> "re.Pattern[str]":
+def _header_pattern(header: str) -> re.Pattern[str]:
     # The header NAME followed by a value: "X: v" (curl -H, raw HTTP) or "'X': v" (a dict
     # or JS object). The name alone ("KC-API-KEY-VERSION") is not the key.
     return re.compile(rf"(?<![A-Za-z0-9-]){re.escape(header)}(?![A-Za-z0-9-])['\"]?\s*:", re.IGNORECASE)
@@ -71,7 +71,7 @@ def _domain(url: str) -> Optional[str]:
     return public_suffix.registrable_domain(host) if host else None
 
 
-def misdirected_exchange_keys(text: str) -> List[str]:
+def misdirected_exchange_keys(text: str) -> list[str]:
     """Exchanges whose key header *text* sends to a web address that is not theirs.
 
     Every web address in the same text is a destination. Nothing is returned when the
@@ -84,7 +84,7 @@ def misdirected_exchange_keys(text: str) -> List[str]:
     if not urls:
         return []
     domains = [_domain(url) for url in urls]
-    out: List[str] = []
+    out: list[str] = []
     for entry, pattern in _PATTERNS:
         if pattern.search(text) and any(domain not in entry.domains for domain in domains):
             out.append(entry.exchange)

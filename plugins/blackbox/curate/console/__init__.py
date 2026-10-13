@@ -36,5 +36,17 @@ from .metrics import (METRIC_NAMES, NEVER, UNAVAILABLE, MetricsSources, Pipeline
                       collect_metrics)
 from .routes import ConsoleServices, add_console_routes
 
-__all__ = ["ConsoleServices", "METRIC_NAMES", "NEVER", "UNAVAILABLE", "MetricsSources", "PipelineMetrics", "UpdateUptake",
-           "WalletBalance", "add_console_parser", "add_console_routes", "cmd_console", "collect_metrics"]
+__all__ = [
+                      "METRIC_NAMES",
+                      "NEVER",
+                      "UNAVAILABLE",
+                      "ConsoleServices",
+                      "MetricsSources",
+                      "PipelineMetrics",
+                      "UpdateUptake",
+                      "WalletBalance",
+                      "add_console_parser",
+                      "add_console_routes",
+                      "cmd_console",
+                      "collect_metrics",
+]

@@ -26,7 +26,7 @@ Usage::
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, UTC
 
 from .. import constants
 # Imported under its own name: the HealthInputs field below is also called community_authority, and a class
@@ -129,9 +129,9 @@ _CURATOR = "curator"
 _OPERATOR = "operator"
 
 
-def operator_health(inputs: HealthInputs) -> List[HealthItem]:
+def operator_health(inputs: HealthInputs) -> list[HealthItem]:
     """The operator's alarms for *inputs*, ACTION and SECURITY first."""
-    items: List[HealthItem] = []
+    items: list[HealthItem] = []
     items += _node_and_ruleset(inputs)
     items += _wrap(manifest_watcher.alarms(inputs.manifest_watch))
     if inputs.community_configured:
@@ -141,7 +141,7 @@ def operator_health(inputs: HealthInputs) -> List[HealthItem]:
     return sorted(items, key=lambda item: (item.klass is HealthClass.INFO, item.message))
 
 
-def _wrap(alarms: List[community_alarms.Alarm]) -> List[HealthItem]:
+def _wrap(alarms: list[community_alarms.Alarm]) -> list[HealthItem]:
     """A sub-module's (class, message, what to do) tuples as operator items."""
     return [HealthItem(_OPERATOR, HealthClass(klass), message, what_to_do) for klass, message, what_to_do in alarms]
 
@@ -157,7 +157,7 @@ def _days_between(earlier: str, later: str) -> int:
         return 0
 
 
-def _trust(inputs: HealthInputs) -> List[HealthItem]:
+def _trust(inputs: HealthInputs) -> list[HealthItem]:
     """R10b: the states about the curators and the trust layer (plan §12)."""
     items = []
     if inputs.curator_trusted and inputs.curators_last_day and inputs.today \
@@ -199,7 +199,7 @@ def _trust(inputs: HealthInputs) -> List[HealthItem]:
     return items
 
 
-def _node_and_ruleset(inputs: HealthInputs) -> List[HealthItem]:
+def _node_and_ruleset(inputs: HealthInputs) -> list[HealthItem]:
     items = []
     stale = inputs.ruleset_age_s is None or inputs.ruleset_age_s > STALE_INTERVALS * max(1.0, inputs.sync_interval_s)
     if not inputs.node_reachable or stale:
@@ -221,7 +221,7 @@ def _node_and_ruleset(inputs: HealthInputs) -> List[HealthItem]:
     return items
 
 
-def _community(inputs: HealthInputs) -> List[HealthItem]:
+def _community(inputs: HealthInputs) -> list[HealthItem]:
     items = []
     if inputs.read_unavailable_reason:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"community graph could not be read: {inputs.read_unavailable_reason}",
@@ -285,10 +285,10 @@ LANE_SLA_DAYS = {1: 2, 2: 2, 3: 7, 4: 14, 5: 14}
 DRIFT_SHARE = 0.25
 
 
-def curator_health(inputs: CuratorInputs) -> List[HealthItem]:
+def curator_health(inputs: CuratorInputs) -> list[HealthItem]:
     """The curator-audience alarms (plan §12 'Curator-only'); delivered to the
     curator webhook only, never to an operator surface."""
-    items: List[HealthItem] = []
+    items: list[HealthItem] = []
     over = {lane: n for lane, n in (inputs.lane_over_sla or {}).items() if n}
     if over:
         text = ", ".join(f"lane {lane}: {n}" for lane, n in sorted(over.items()))
@@ -314,7 +314,7 @@ def curator_health(inputs: CuratorInputs) -> List[HealthItem]:
     return sorted(items, key=lambda item: (item.klass is HealthClass.INFO, item.message))
 
 
-def render_lines(items: List[HealthItem]) -> List[str]:
+def render_lines(items: list[HealthItem]) -> list[str]:
     """The CLI view: one line per item, class first, what-to-do after a dash."""
     if not items:
         return ["  health:            ok — nothing to do"]
@@ -356,7 +356,7 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         verified_lookup_problem=verified_lookup_problem,
         shares_given_up=int(shares_given_up),
         curators_last_day=(view.last_statement_day if view is not None else ""),
-        today=datetime.fromtimestamp(now, timezone.utc).date().isoformat(),
+        today=datetime.fromtimestamp(now, UTC).date().isoformat(),
         heartbeat_missing_keys=_heartbeat_missing(view, now),
         manifest_conflict=bool(view is not None and view.manifest_conflict),
         manifest_conflict_ignored=bool(view is not None and view.manifest_conflict_ignored),
@@ -371,7 +371,7 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         manifest_state_day=(view.manifest_state_day if view is not None else ""),
         manifest_expires_day=(view.manifest_expires_day if view is not None else ""),
         community_authority=community_alarms.gather(
-            getattr(view, "community", None), datetime.fromtimestamp(now, timezone.utc).date().isoformat()),
+            getattr(view, "community", None), datetime.fromtimestamp(now, UTC).date().isoformat()),
         manifest_watch=watch or manifest_watcher.ManifestWatchInputs(),
     )
 
@@ -380,7 +380,7 @@ def _heartbeat_missing(view: Any, now: float) -> int:
     """Curator keys in the trusted manifest with no heartbeat inside HEARTBEAT_SILENCE_DAYS."""
     if view is None or view.manifest is None:
         return 0
-    today = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
+    today = datetime.fromtimestamp(now, UTC).date().isoformat()
     missing = 0
     for key in view.manifest.curator_keys:
         last = view.heartbeats.get(key, "")

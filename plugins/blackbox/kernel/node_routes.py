@@ -46,7 +46,7 @@ class InboxMessage:
     text: str
 
 
-def publish_to_verified_memory(client: DkgClient, graph: str, name: str, quads: List[Quad]) -> Dict[str, Any]:
+def publish_to_verified_memory(client: DkgClient, graph: str, name: str, quads: list[Quad]) -> dict[str, Any]:
     """Create + seal *quads* as KA *name*, share it in full to the graph's shared
     memory (DKG 10.0.23 publishes nothing else, KI-351), then publish it to
     verifiable memory.
@@ -60,21 +60,21 @@ def publish_to_verified_memory(client: DkgClient, graph: str, name: str, quads: 
     return client.request("POST", f"/api/knowledge-assets/{quote(name, safe='')}/vm/publish", {"contextGraphId": graph})
 
 
-def send_message(client: DkgClient, peer: str, text: str, graph: str = "") -> Dict[str, Any]:
+def send_message(client: DkgClient, peer: str, text: str, graph: str = "") -> dict[str, Any]:
     """Send one private message to *peer*; returns the node's delivery result."""
-    body: Dict[str, Any] = {"to": peer, "text": text}
+    body: dict[str, Any] = {"to": peer, "text": text}
     if graph:
         body["contextGraphId"] = graph
     return client.request("POST", "/api/chat", body)
 
 
-def inbox(client: DkgClient, *, since_id: int = 0, since: int = 0, limit: int = 100) -> List[InboxMessage]:
+def inbox(client: DkgClient, *, since_id: int = 0, since: int = 0, limit: int = 100) -> list[InboxMessage]:
     """Inbound messages after the compound cursor (*since*, *since_id*),
     oldest first — the lossless pagination the node documents."""
     query = urlencode({"direction": "in", "order": "asc", "limit": limit, "since": since, "sinceId": since_id})
     result = client.request("GET", f"/api/messages?{query}", None)
     rows = result.get("messages") if isinstance(result, dict) else result
-    out: List[InboxMessage] = []
+    out: list[InboxMessage] = []
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict):
             continue
@@ -86,12 +86,12 @@ def inbox(client: DkgClient, *, since_id: int = 0, since: int = 0, limit: int = 
     return out
 
 
-def write_query_catalog(client: DkgClient, graph: str, quads: List[Quad]) -> Dict[str, Any]:
+def write_query_catalog(client: DkgClient, graph: str, quads: list[Quad]) -> dict[str, Any]:
     """Save immutable saved-query catalog entries for *graph*."""
     return client.request("POST", "/api/profile/query-catalog/write", {"contextGraphId": graph, "quads": quads})
 
 
-def read_query_catalog(client: DkgClient, graph: str) -> Dict[str, Any]:
+def read_query_catalog(client: DkgClient, graph: str) -> dict[str, Any]:
     """The saved-query catalog of *graph*, as the node returns it."""
     return client.request("POST", "/api/profile/query-catalog/read", {"contextGraphId": graph})
 

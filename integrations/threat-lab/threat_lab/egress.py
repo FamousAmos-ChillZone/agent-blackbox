@@ -141,10 +141,10 @@ class NftablesEgressGuard:
         return done.stdout if done.returncode == 0 else None
 
 
-def _set_elements(listing: dict) -> List[str]:
+def _set_elements(listing: dict) -> list[str]:
     """The addresses in ``nft --json list set`` output. A timed set lists each
     element as ``{"elem": {"val": address, "timeout": …, "expires": …}}``."""
-    elements: List[str] = []
+    elements: list[str] = []
     for entry in listing["nftables"]:
         for element in entry.get("set", {}).get("elem", []):
             value = element["elem"]["val"] if isinstance(element, dict) else element

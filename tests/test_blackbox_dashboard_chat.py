@@ -189,6 +189,29 @@ def test_active_catchup_supersedes_older_authoritative_failure():
     assert "503" not in activity["detail"]
 
 
+
+def test_an_older_catchup_job_does_not_hide_a_newer_failure():
+    # The reverse of the test above: the job started BEFORE the transfer failed, so the
+    # failure is the newer fact and stays visible (as the publisher-capacity wait).
+    activity = server._sync_activity(
+        public=0,
+        community=0,
+        node_reachable=True,
+        catchup={"status": "running", "startedAt": 100.0},
+        connection={"state": "syncing", "updated_at": 100.0},
+        transfer={
+            "status": "failed",
+            "updated_at": 200.0,
+            "error": (
+                'POST /api/shared-memory/catchup -> 503: {"retryable":true,'
+                '"errorCode":"DURABLE_CATCHUP_ALL_PEERS_FAILED"}'
+            ),
+        },
+    )
+
+    assert activity["status"] == "waiting"
+    assert activity["phase"] == "waiting-for-publisher-capacity"
+
 def test_dashboard_automatic_sync_runs_canonical_verified_cli(monkeypatch):
     cfg = SimpleNamespace(context_graph_id="0x37b1/agent-blackbox")
 

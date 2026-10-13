@@ -85,7 +85,7 @@ def idn_beside(text: str, render: Callable[[str], str] = str) -> str:
     its Punycode. The reader sees both, so a look-alike cannot hide. *render*
     is applied to the host and to its other form (:func:`web_safe` defangs
     both in this one pass)."""
-    def beside(match: "re.Match[str]") -> str:
+    def beside(match: re.Match[str]) -> str:
         host = match.group(0)
         other = _other_idn_form(host)
         return render(host) if other is None else f"{render(host)} [{render(other)}]"

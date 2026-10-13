@@ -70,7 +70,7 @@ class _Fetch:
     """HTTPS fetches that record every host contacted and cap every body."""
 
     def __init__(self) -> None:
-        self.hosts: List[str] = []
+        self.hosts: list[str] = []
         recorder = self
 
         class _Redirects(urllib.request.HTTPRedirectHandler):
@@ -106,7 +106,7 @@ class _Fetch:
         return data
 
 
-def look(identifier: str) -> Dict[str, object]:
+def look(identifier: str) -> dict[str, object]:
     """Level 1 report for *identifier*."""
     target = parse_target(identifier)
     fetch = _Fetch()
@@ -124,11 +124,11 @@ def look(identifier: str) -> Dict[str, object]:
     return {"step": "look", "status": status, "hosts": fetch.hosts, "details": details}
 
 
-def fetch_artifact(identifier: str, destination: str) -> Dict[str, object]:
+def fetch_artifact(identifier: str, destination: str) -> dict[str, object]:
     """Level 2 download of *identifier*'s code to *destination*."""
     target = parse_target(identifier)
     fetch = _Fetch()
-    report: Dict[str, object] = {"step": "fetch", "status": "unsupported", "hosts": fetch.hosts}
+    report: dict[str, object] = {"step": "fetch", "status": "unsupported", "hosts": fetch.hosts}
     try:
         if target.kind is TargetKind.PACKAGE:
             metadata = json.loads(fetch.get(_registry_url(target), MAX_METADATA_BYTES))
@@ -147,7 +147,7 @@ def fetch_artifact(identifier: str, destination: str) -> Dict[str, object]:
     return report
 
 
-def read(path: str) -> Dict[str, object]:
+def read(path: str) -> dict[str, object]:
     """Level 2 reading report for the file at *path*."""
     with open(path, "rb") as handle:
         data = handle.read(rules.MAX_TOTAL_BYTES + 1)
@@ -156,7 +156,7 @@ def read(path: str) -> Dict[str, object]:
     return report
 
 
-def _look_host(host: str, fetch: _Fetch) -> Tuple[str, Dict[str, object]]:
+def _look_host(host: str, fetch: _Fetch) -> tuple[str, dict[str, object]]:
     addresses = sorted({info[4][0] for info in socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)})
     fetch.hosts.append(host)
     context = ssl.create_default_context()
@@ -174,7 +174,7 @@ def _registry_url(target: Target) -> str:
     return f"https://pypi.org/pypi/{quote(target.name)}/{quote(target.version)}/json"
 
 
-def _registry_summary(target: Target, metadata: Dict) -> Dict[str, object]:
+def _registry_summary(target: Target, metadata: dict) -> dict[str, object]:
     if target.ecosystem == "npm":
         scripts = metadata.get("scripts") or {}
         return {"install_scripts": sorted(s for s in rules.NPM_INSTALL_SCRIPTS if s in scripts),
@@ -184,7 +184,7 @@ def _registry_summary(target: Target, metadata: Dict) -> Dict[str, object]:
             "yanked": bool(info.get("yanked"))}
 
 
-def _archive_url(target: Target, metadata: Dict) -> str:
+def _archive_url(target: Target, metadata: dict) -> str:
     if target.ecosystem == "npm":
         return metadata["dist"]["tarball"]
     files = metadata["urls"]
@@ -193,7 +193,7 @@ def _archive_url(target: Target, metadata: Dict) -> str:
     return chosen[0]["url"]
 
 
-def _wallet_history(target: Target, fetch: _Fetch) -> Dict[str, object]:
+def _wallet_history(target: Target, fetch: _Fetch) -> dict[str, object]:
     if target.chain == "evm":
         request = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_getTransactionCount",
                               "params": [target.address, "latest"]}).encode("ascii")
@@ -204,7 +204,7 @@ def _wallet_history(target: Target, fetch: _Fetch) -> Dict[str, object]:
     return {"chain": "btc", "transaction_count": int(chain_stats.get("tx_count", 0))}
 
 
-def main(argv: List[str]) -> int:
+def main(argv: list[str]) -> int:
     if argv[:1] == ["look"] and len(argv) == 2:
         report = look(argv[1])
     elif argv[:1] == ["fetch"] and len(argv) == 3:

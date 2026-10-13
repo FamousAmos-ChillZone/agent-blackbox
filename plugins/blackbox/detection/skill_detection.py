@@ -14,7 +14,7 @@ from .finding import Finding, _rule_source, rule_subject
 from ..kernel import threat_ids
 
 
-def detect_skill(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
+def detect_skill(tool_name: str, args: Any, ruleset: Any) -> list[Finding]:
     """Detect a suspicious skill install/modify (graph known-bad or built-in).
 
     Three signals: known-bad ``skill:{name}@{version}`` from the graph;
@@ -24,7 +24,7 @@ def detect_skill(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     skill = action_parsing.skill_install_arg(tool_name, args)
     if not skill:
         return []
-    out: List[Finding] = []
+    out: list[Finding] = []
     seen: set = set()
     name = skill["name"]
     version = skill["version"]
@@ -67,13 +67,13 @@ def detect_skill(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     return out
 
 
-def _artifact_findings(skill: Any, tool_name: str, ruleset: Any, seen: set) -> List[Finding]:
+def _artifact_findings(skill: Any, tool_name: str, ruleset: Any, seen: set) -> list[Finding]:
     """(b)+(c) built-in dangerous-code / over-broad-permission discovery. The
     identifier is derived from the artifact itself, so a graph rule for the
     SAME identifier (a verified one, or a trusted community report) is matched
     by equality: the finding then carries that rule's tier and severity."""
     name = skill["name"]
-    out: List[Finding] = []
+    out: list[Finding] = []
     by_identifier = {rule.get("identifier"): rule for rule in getattr(ruleset, "skill", []) or []}
     for danger in content_scanners.scan_skill_dangers(skill["code"], skill["permissions"]):
         shape = danger["dangerShape"]

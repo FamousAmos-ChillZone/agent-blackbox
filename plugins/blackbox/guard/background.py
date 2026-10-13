@@ -40,7 +40,7 @@ def _spawn_osv_discovery(cfg: BlackboxConfig, rs: Any, tool_name: str, args: Any
         pass
 
 
-def _spawn_llm_review(cfg: BlackboxConfig, text: str, detail: Dict[str, Any]) -> None:
+def _spawn_llm_review(cfg: BlackboxConfig, text: str, detail: dict[str, Any]) -> None:
     """Ask the configured LLM for an injection second opinion on a daemon thread.
 
     A positive verdict becomes a local ``source="llm"`` finding: audited and
@@ -112,7 +112,7 @@ def _auto_attach_due() -> bool:
         except Exception:
             targets = []
         try:
-            state = json.loads(path.read_text(encoding="utf-8"))
+            state = json.loads(path.read_text(encoding="utf-8-sig"))
             last = float(state.get("last_run", 0.0))
             previous_targets = sorted(str(item) for item in (state.get("targets") or []))
         except Exception:

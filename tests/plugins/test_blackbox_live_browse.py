@@ -20,7 +20,7 @@ DP = "urn:defender:p:"
 class BrowseStore(StoreClient):
     """Answers the browse module's three query shapes from the named-graph fixture."""
 
-    def __init__(self, graphs: Dict[str, List[tuple]], *, fail: str = "") -> None:
+    def __init__(self, graphs: dict[str, list[tuple]], *, fail: str = "") -> None:
         super().__init__("http://127.0.0.1:7878/query")
         self.graphs, self.fail, self.queries = graphs, fail, []
 
@@ -33,7 +33,7 @@ class BrowseStore(StoreClient):
         for graph, triples in self.graphs.items():
             if not graph.startswith(prefix):
                 continue
-            by_subject: Dict[str, Dict[str, str]] = {}
+            by_subject: dict[str, dict[str, str]] = {}
             for s, p, o in triples:
                 by_subject.setdefault(s, {})[p] = o.strip('"')
             for subject, facts in by_subject.items():
@@ -56,7 +56,7 @@ class BrowseStore(StoreClient):
             return self._bound_triples(sparql)
         subjects = self._subjects(sparql)
         if "GROUP BY ?eco" in sparql:
-            totals: Dict[str, int] = {}
+            totals: dict[str, int] = {}
             for _g, _s, eco in subjects:
                 totals[eco] = totals.get(eco, 0) + 1
             return StoreAnswer([{"g": "x", "eco": f'"{e}"', "n": f'"{n}"'} for e, n in totals.items()])

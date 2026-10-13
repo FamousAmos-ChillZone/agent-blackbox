@@ -22,7 +22,7 @@ Usage::
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, UTC
 from typing import AbstractSet, Callable, List, Optional, Tuple
 
 from .statement import KillEntry, KillList
@@ -40,17 +40,17 @@ class Decision:
     accepted); ``deferred`` — entries still inside their 24 h hold;
     ``dropped`` — entries that failed a gate, with the reason."""
 
-    applied: Tuple[KillEntry, ...]
+    applied: tuple[KillEntry, ...]
     version: int
     refused: str = ""
-    deferred: Tuple[KillEntry, ...] = ()
-    dropped: Tuple[Tuple[KillEntry, str], ...] = ()
+    deferred: tuple[KillEntry, ...] = ()
+    dropped: tuple[tuple[KillEntry, str], ...] = ()
 
 
 def _held(kill_list: KillList, now: float) -> bool:
     """True while *now* is inside the 24 h hold after the list's signed day."""
     try:
-        signed = datetime.combine(date.fromisoformat(kill_list.day), datetime.min.time(), tzinfo=timezone.utc).timestamp()
+        signed = datetime.combine(date.fromisoformat(kill_list.day), datetime.min.time(), tzinfo=UTC).timestamp()
     except ValueError:
         return True   # an unparseable day never releases a hold
     return now < signed + POPULAR_HOLD_SECONDS
@@ -67,9 +67,9 @@ def admit(kill_list: KillList, *, signers: AbstractSet[str], root_signers: Abstr
         return Decision(previous_entries, previous.version, refused=f"version {kill_list.version} is not newer than {previous.version}")
     root_signed = bool(root_signers)
     held = _held(kill_list, now)
-    kept: List[KillEntry] = []
-    deferred: List[KillEntry] = []
-    dropped: List[Tuple[KillEntry, str]] = []
+    kept: list[KillEntry] = []
+    deferred: list[KillEntry] = []
+    dropped: list[tuple[KillEntry, str]] = []
     for entry in kill_list.entries:
         if entry.wide and not root_signed:
             dropped.append((entry, "a name- or publisher-wide kill needs the root as a third signature"))

@@ -22,7 +22,7 @@ from plugins.blackbox.community.statements import curator_view as cv
 from plugins.blackbox.curate import verbs
 from plugins.blackbox.curate.proposal import ProposalStore
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind
-from test_blackbox_curate import FakeNode, _ctx, _machine, curators  # noqa: F401 - fixture
+from test_blackbox_curate import FakeNode, _ctx, _machine, curators
 
 TODAY = "2026-10-02"
 KEY = "a" * 64

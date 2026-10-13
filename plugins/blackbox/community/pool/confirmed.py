@@ -40,7 +40,7 @@ from ..verification import VerifiedReport
 
 #: (statement kind, identifier) -> {signed content id: (the verified record, the smallest text that carries it)}.
 #: One statement can be published as many texts (KI-266); the pool keeps one.
-_Signed = Dict[Tuple[CuratorStatement, str], Dict[str, Tuple[CuratorRecord, str]]]
+_Signed = dict[tuple[CuratorStatement, str], dict[str, tuple[CuratorRecord, str]]]
 
 
 @dataclass(frozen=True)
@@ -65,14 +65,14 @@ class PoolEntry:
     identifier: str
     category: str
     severity: str
-    fields: Tuple[Tuple[str, str], ...]
+    fields: tuple[tuple[str, str], ...]
     evidence: str
     confirmed_day: str
     sequence: int
-    curators: Tuple[str, ...]
+    curators: tuple[str, ...]
     confirmation: str
-    reports: Tuple[str, ...] = ()
-    listings: Tuple[str, ...] = ()
+    reports: tuple[str, ...] = ()
+    listings: tuple[str, ...] = ()
     reporters: int = 0
     partner_organisations: int = 0
     established: int = 0
@@ -85,7 +85,7 @@ class PoolEntry:
 
 
 def confirmed_pool(manifest: Optional[KeyManifest], statement_rows: Iterable[Mapping[str, str]],
-                   reports: Iterable[VerifiedReport], *, graph: str, today: Optional[str] = None) -> List[PoolEntry]:
+                   reports: Iterable[VerifiedReport], *, graph: str, today: Optional[str] = None) -> list[PoolEntry]:
     """The confirmed pool, sorted by identifier.
 
     *manifest* — the COMMUNITY authority's trusted key manifest (None: an empty
@@ -101,7 +101,7 @@ def confirmed_pool(manifest: Optional[KeyManifest], statement_rows: Iterable[Map
     view = curator_view.build_view(manifest, (), rows, verified_graph="", community_graph=graph, today=day,
                                    community_readable=True, authority=Authority.COMMUNITY)
     signed = _signed_statements(rows, manifest, graph)
-    by_threat: Dict[str, List[VerifiedReport]] = {}
+    by_threat: dict[str, list[VerifiedReport]] = {}
     for report in reports:
         if report.signed:
             by_threat.setdefault(report.identifier, []).append(report)
@@ -138,12 +138,12 @@ def _signed_statements(rows: Iterable[Mapping[str, str]], manifest: KeyManifest,
     return found
 
 
-def _rank(text: str) -> Tuple[int, str]:
+def _rank(text: str) -> tuple[int, str]:
     envelope = signing.from_text(text)
     return (len(envelope.signatures) if envelope is not None else 0), text
 
 
-def _canonical_rows(rows: Iterable[Mapping[str, str]]) -> List[Dict[str, str]]:
+def _canonical_rows(rows: Iterable[Mapping[str, str]]) -> list[dict[str, str]]:
     """*rows* with every statement written the canonical way (a pool entry is
     handed on in a file where every byte must matter); rows that are not
     statements are left out."""
@@ -156,7 +156,7 @@ def _canonical_rows(rows: Iterable[Mapping[str, str]]) -> List[Dict[str, str]]:
     return out
 
 
-def _confirmation(record: CuratorRecord, signed: _Signed) -> Tuple[CuratorRecord, str]:
+def _confirmation(record: CuratorRecord, signed: _Signed) -> tuple[CuratorRecord, str]:
     """(the record, its text) of the statement the view chose as the current
     verdict: the same sequence, day and fields, whichever keys signed the copy
     that was read first."""
@@ -186,7 +186,7 @@ def _highest_severity(reports: Iterable[VerifiedReport]) -> str:
     return max((report.severity for report in reports), key=lambda s: constants.SEVERITY_RANK.get(s, 0), default="")
 
 
-def _agreed_fields(reports: Sequence[VerifiedReport]) -> Tuple[Tuple[str, str], ...]:
+def _agreed_fields(reports: Sequence[VerifiedReport]) -> tuple[tuple[str, str], ...]:
     """The evidence fields every report signed with the same value — what the
     reporters agree on, whatever order they were read in."""
     agreed: Optional[set] = None

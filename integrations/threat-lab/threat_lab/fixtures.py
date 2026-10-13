@@ -83,7 +83,7 @@ def fixture_key(name: str) -> str:
     return evidence_schema.job_key(threat_digest(identifier), level, FIXTURE_IMAGE_SHA256)
 
 
-def build_fixtures() -> Dict[str, str]:
+def build_fixtures() -> dict[str, str]:
     """``{file name: canonical raw-output JSON}`` for every fixture."""
     package = fixture_package()
     read_report = json.loads(rules.read_artifact(package).to_json())
@@ -102,7 +102,7 @@ def build_fixtures() -> Dict[str, str]:
             "level4_install_output.json": canonical_json(level_four)}
 
 
-def fixture_install_trace() -> Dict[int, str]:
+def fixture_install_trace() -> dict[int, str]:
     """``strace -ff`` logs (pid → log) of ``npm install`` running a postinstall
     that downloads with curl. pid 100 is the lab's wrapper then npm; 101 is the
     lifecycle shell (the package's code starts here); 104 is npm's own git."""

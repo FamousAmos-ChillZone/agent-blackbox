@@ -64,7 +64,7 @@ class LiveReport:
     identifier: str
     subject: str
     severity: str
-    quads: Tuple[Dict[str, str], ...]
+    quads: tuple[dict[str, str], ...]
     first_shared: float
     last_epoch: int
 
@@ -72,13 +72,13 @@ class LiveReport:
         """Still inside the community lifetime of its threat type (plan §03)."""
         return (now - self.first_shared) <= lifetime_days(self.identifier) * _DAY_SECONDS
 
-    def as_json(self) -> Dict[str, Any]:
+    def as_json(self) -> dict[str, Any]:
         return {"name": self.name, "graph": self.graph, "identifier": self.identifier, "subject": self.subject,
                 "severity": self.severity, "quads": list(self.quads), "first_shared": self.first_shared,
                 "last_epoch": self.last_epoch}
 
     @classmethod
-    def from_json(cls, data: Dict[str, Any]) -> "LiveReport":
+    def from_json(cls, data: dict[str, Any]) -> LiveReport:
         return cls(name=str(data["name"]), graph=str(data["graph"]), identifier=str(data.get("identifier", "")),
                    subject=str(data.get("subject", "")), severity=str(data.get("severity", "")),
                    quads=tuple(dict(q) for q in data.get("quads", [])), first_shared=float(data.get("first_shared", 0)),
@@ -98,12 +98,12 @@ class LiveReportStore:
         self._clock = clock
         self._lock = threading.Lock()
 
-    def all(self) -> List[LiveReport]:
+    def all(self) -> list[LiveReport]:
         with self._lock:
             return self._load()
 
     def remember(self, *, graph: str, name: str, identifier: str, subject: str, severity: str,
-                 quads: Iterable[Dict[str, str]], epoch: Epoch) -> LiveReport:
+                 quads: Iterable[dict[str, str]], epoch: Epoch) -> LiveReport:
         """Record an ACCEPTED share (idempotent by name: an existing entry keeps
         its first_shared and quads). The oldest entries drop past MAX_LIVE."""
         now = self._clock()
@@ -118,7 +118,7 @@ class LiveReportStore:
             self._save(live[-MAX_LIVE:])
             return entry
 
-    def due(self, current: Epoch, now: float) -> List[LiveReport]:
+    def due(self, current: Epoch, now: float) -> list[LiveReport]:
         """Reports whose newest copy is from an older epoch and that are still
         within their lifetime; reports past their lifetime are retired here."""
         with self._lock:
@@ -159,14 +159,14 @@ class LiveReportStore:
             self._save(kept)
             return len(live) - len(kept)
 
-    def _load(self) -> List[LiveReport]:
+    def _load(self) -> list[LiveReport]:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
             return [LiveReport.from_json(item) for item in data.get("live", [])]
         except (OSError, ValueError, KeyError, TypeError):
             return []   # missing or unreadable: nothing to keep alive
 
-    def _save(self, live: List[LiveReport]) -> None:
+    def _save(self, live: list[LiveReport]) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")

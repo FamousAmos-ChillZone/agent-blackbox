@@ -67,16 +67,16 @@ class CommunityMembership:
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
         self._lock = threading.Lock()
-        self._last_subscribe: Dict[str, float] = {}
-        self._last_join: Dict[str, float] = {}
-        self._joined: Set[str] = set()
+        self._last_subscribe: dict[str, float] = {}
+        self._last_join: dict[str, float] = {}
+        self._joined: set[str] = set()
         #: graph -> when the node last confirmed it is subscribed; inside
         #: RETRY_SECONDS the listing is not re-read (the pulse calls every ~20 s).
-        self._confirmed: Dict[str, float] = {}
-        self._last_owner_dial: Dict[str, float] = {}
+        self._confirmed: dict[str, float] = {}
+        self._last_owner_dial: dict[str, float] = {}
         self._own_peer = ""   # this node's peer id, once known (never dial ourselves)
         #: graphs whose ``constants.COMMUNITY_SUB_GRAPH`` is registered on this node
-        self._lane_ready: Set[str] = set()
+        self._lane_ready: set[str] = set()
 
     def ensure_report_lane(self, client: DkgClient, graph: str) -> bool:
         """Register the community subgraph on this node before its first write
@@ -99,7 +99,7 @@ class CommunityMembership:
             self._lane_ready.add(graph)
         return True
 
-    def ensure(self, client: DkgClient, cfg: object) -> Tuple[bool, str]:
+    def ensure(self, client: DkgClient, cfg: object) -> tuple[bool, str]:
         """Make sure this node is subscribed to (and has asked to join) the
         community graph. Fail-open: returns ``(ok, detail-for-logs)``."""
         graph = str(getattr(cfg, "community_graph_id", "") or "")
@@ -150,7 +150,7 @@ class CommunityMembership:
         return True
 
     def _fetch_definition(self, client: DkgClient, graph: str, owner_peer: str,
-                          dialled: bool) -> Tuple[bool, str]:
+                          dialled: bool) -> tuple[bool, str]:
         """Subscribed, but the graph's definition never arrived (KI-295): dial the
         owner and subscribe again, at most once per short window. Reads keep
         working meanwhile, so this still reports the node as subscribed."""
@@ -176,7 +176,7 @@ class CommunityMembership:
                 return ""
         return self._own_peer
 
-    def _due_after(self, last: Dict[str, float], key: str, window: float) -> bool:
+    def _due_after(self, last: dict[str, float], key: str, window: float) -> bool:
         """Claim the next attempt for *key* if *window* seconds have passed."""
         now = self._clock()
         with self._lock:
@@ -190,12 +190,12 @@ class CommunityMembership:
             when = self._confirmed.get(graph)
         return when is not None and self._clock() - when < self.RETRY_SECONDS
 
-    def _retry_sooner(self, last: Dict[str, float], graph: str) -> None:
+    def _retry_sooner(self, last: dict[str, float], graph: str) -> None:
         """Pull the next attempt forward to ``FAILED_SUBSCRIBE_RETRY_SECONDS`` from now."""
         with self._lock:
             last[graph] = self._clock() - (self.RETRY_SECONDS - self.FAILED_SUBSCRIBE_RETRY_SECONDS)
 
-    def _due(self, last: Dict[str, float], graph: str) -> bool:
+    def _due(self, last: dict[str, float], graph: str) -> bool:
         """Claim the next attempt for *graph* if the retry window has passed."""
         now = self._clock()
         with self._lock:
@@ -225,7 +225,7 @@ class CommunityMembership:
             self._joined.add(graph)
 
 
-def _graph_entry(client: DkgClient, graph: str) -> Optional[Dict[str, object]]:
+def _graph_entry(client: DkgClient, graph: str) -> Optional[dict[str, object]]:
     """The node's own listing row for *graph* (``subscribed``, ``accessPolicy``…), or None."""
     try:
         entries = client.context_graphs()
@@ -238,7 +238,7 @@ def _graph_entry(client: DkgClient, graph: str) -> Optional[Dict[str, object]]:
     return None
 
 
-def _has_definition(entry: Dict[str, object]) -> bool:
+def _has_definition(entry: dict[str, object]) -> bool:
     """True when the node holds the graph's definition: its listing names an
     access policy. A node without it lists the graph with no policy (KI-295)."""
     return str(entry.get("accessPolicy") or "").strip().lower() in {"public", "private"}
@@ -266,7 +266,7 @@ def ensure_report_lane(client: DkgClient, graph: str) -> bool:
     return MEMBERSHIP.ensure_report_lane(client, graph)
 
 
-def ensure_community_subscription(client: DkgClient, cfg: object) -> Tuple[bool, str]:
+def ensure_community_subscription(client: DkgClient, cfg: object) -> tuple[bool, str]:
     """Subscribe/join this node to the community graph — at most once, never
     to itself, only when the node says it is not subscribed (KI-064/114)."""
     return MEMBERSHIP.ensure(client, cfg)
@@ -289,7 +289,7 @@ class JoinState(Enum):
 
 
 #: One plain line per state, for the dashboard (no jargon, no ids).
-JOIN_STATE_TEXT: Dict[JoinState, str] = {
+JOIN_STATE_TEXT: dict[JoinState, str] = {
     JoinState.JOINED: "connected",
     JoinState.AWAITING_DEFINITION: "connecting — fetching the graph from its owner (about a minute)",
     JoinState.JOINING: "connecting — reaching the graph's owner",
@@ -297,7 +297,7 @@ JOIN_STATE_TEXT: Dict[JoinState, str] = {
 }
 
 
-def join_state_of(entry: Optional[Dict[str, object]], *, listing_read: bool) -> JoinState:
+def join_state_of(entry: Optional[dict[str, object]], *, listing_read: bool) -> JoinState:
     """Pure: the :class:`JoinState` of the node's listing row *entry* for the
     graph (None when the graph is not listed). *listing_read* False means the
     listing itself could not be read."""

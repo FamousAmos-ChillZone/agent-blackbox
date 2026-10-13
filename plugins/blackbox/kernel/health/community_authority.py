@@ -27,7 +27,7 @@ HEARTBEAT_SILENCE_DAYS = 2
 EXPIRY_NOTICE_DAYS = 30
 
 #: (class name, message, what to do) — the caller wraps them in its HealthItem.
-Alarm = Tuple[str, str, str]
+Alarm = tuple[str, str, str]
 
 
 @dataclass(frozen=True)
@@ -83,9 +83,9 @@ def gather(view: Optional[Any], today: str) -> CommunityAuthorityInputs:
         lookup_incomplete=bool(getattr(view, "lookup_incomplete", False)), today=today)
 
 
-def alarms(inputs: CommunityAuthorityInputs) -> List[Alarm]:
+def alarms(inputs: CommunityAuthorityInputs) -> list[Alarm]:
     """The operator's alarms about the community authority, as (class, message, what to do)."""
-    out: List[Alarm] = []
+    out: list[Alarm] = []
     if inputs.manifest_conflict:
         out.append(("security", "community curator key manifest CONFLICT: two root-signed manifests disagree",
                     "community trust is frozen at the last agreed version; verified rules are unaffected — tell the community curators"))

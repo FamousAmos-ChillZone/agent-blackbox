@@ -55,7 +55,7 @@ LOOKUP_CHUNK = 200
 _REVIEW_PRINT_LIMIT = 50
 
 #: identifier -> the verified-graph subjects that hold it.
-SubjectLookup = Callable[[CurateContext, Sequence[str]], Dict[str, Tuple[str, ...]]]
+SubjectLookup = Callable[[CurateContext, Sequence[str]], dict[str, tuple[str, ...]]]
 
 
 def add_publishing_parser(verbs_: Any) -> None:
@@ -111,7 +111,7 @@ def cmd_never_flag(args: argparse.Namespace, *, context: Optional[CurateContext]
                    lookup: Optional[SubjectLookup] = None, store: Optional[ProposalStore] = None) -> int:
     """``curate never-flag``: review the file, then sign one correction per held address under one code."""
     try:
-        with open(args.file, encoding="utf-8") as handle:
+        with open(args.file, encoding="utf-8-sig") as handle:
             batch = never_flag.review(json.load(handle))
     except (OSError, ValueError) as exc:   # NeverFlagError is a ValueError
         raise VerbError(f"cannot use {args.file}: {exc}") from exc
@@ -143,14 +143,14 @@ def canonical_address(identifier: str) -> str:
     return identifier
 
 
-def verified_subjects(ctx: CurateContext, identifiers: Sequence[str]) -> Dict[str, Tuple[str, ...]]:
+def verified_subjects(ctx: CurateContext, identifiers: Sequence[str]) -> dict[str, tuple[str, ...]]:
     """The subjects the verified graph holds for each ``ioc:`` identifier, matched
     as the live lookup matches (the exact ``dp:value`` / ``normalizedValue``).
     Every subject is returned — the live lookup keeps one rule per identifier,
     and suppressing only that one would expose the next. Raises
     :class:`VerbError` when the graph cannot be read (could not tell, LES-011)."""
-    by_value: Dict[str, str] = {identifier.split(":", 2)[2]: identifier for identifier in identifiers}
-    found: Dict[str, List[str]] = {}
+    by_value: dict[str, str] = {identifier.split(":", 2)[2]: identifier for identifier in identifiers}
+    found: dict[str, list[str]] = {}
     values = list(by_value)
     for start in range(0, len(values), LOOKUP_CHUNK):
         chunk = values[start:start + LOOKUP_CHUNK]
@@ -179,15 +179,15 @@ def _require_correction_rights(ctx: CurateContext) -> None:
     require_effective_manifest(ctx)
 
 
-def _payload(identifier: str, subjects: Iterable[str], *, reason: str, source: str) -> Dict[str, str]:
+def _payload(identifier: str, subjects: Iterable[str], *, reason: str, source: str) -> dict[str, str]:
     try:
         return row_builders.correction_payload(identifier, tuple(subjects), reason=reason, source=source)
     except row_builders.RowBuildError as exc:
         raise VerbError(f"{identifier}: {exc}") from exc
 
 
-def _sign_after_consent(ctx: CurateContext, store: ProposalStore, payloads: List[Mapping[str, str]],
-                        args: argparse.Namespace, *, review: List[str]) -> int:
+def _sign_after_consent(ctx: CurateContext, store: ProposalStore, payloads: list[Mapping[str, str]],
+                        args: argparse.Namespace, *, review: list[str]) -> int:
     """Show *payloads* and their code; with the matching code, sign each one
     (first signature), store it as a proposal and send it when ``--to`` names a peer."""
     content = json.dumps(payloads, sort_keys=True, separators=(",", ":"))

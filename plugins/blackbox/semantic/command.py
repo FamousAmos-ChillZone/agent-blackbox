@@ -1,4 +1,5 @@
 """Explicit local index maintenance; never a network sync or rules export."""
+import logging
 import json
 
 from ..kernel.config import load_blackbox_config
@@ -31,6 +32,7 @@ def cmd_index(args):
                 return 0
         raise ValueError("index page limit reached")
     except Exception:
+        logging.getLogger(__name__).exception("blackbox: semantic operation unavailable")
         print("Semantic index unavailable. Check the local node's embedding configuration and operator permission.")
         return 2
 

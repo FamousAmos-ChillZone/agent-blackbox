@@ -30,7 +30,7 @@ Usage::
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from typing import Any, Callable, Dict, Optional
 
 from ...kernel.signing import key_manifest, trust_anchors
@@ -74,7 +74,7 @@ class ConsoleServices:
     metrics: MetricsSources = field(default_factory=MetricsSources)
 
     def today(self) -> str:
-        return datetime.fromtimestamp(self.clock(), timezone.utc).date().isoformat()
+        return datetime.fromtimestamp(self.clock(), UTC).date().isoformat()
 
 
 class _Refused(Exception):
@@ -100,23 +100,23 @@ class ConsoleActions:
 
     # -- join requests ------------------------------------------------------------
 
-    def joins(self) -> Dict[str, object]:
+    def joins(self) -> dict[str, object]:
         return {"joinRequests": [j.as_dict() for j in self._state.joins()]}
 
-    def submit(self, curator_key: str, operator: str, self_test: Dict[str, Any]) -> Dict[str, object]:
+    def submit(self, curator_key: str, operator: str, self_test: dict[str, Any]) -> dict[str, object]:
         request = JoinRequest.new(curator_key, operator, SelfTestReport.from_mapping(self_test), self._services.clock())
         self._state.submit(request)
         return request.as_dict()
 
-    def decline(self, curator_key: str) -> Dict[str, object]:
+    def decline(self, curator_key: str) -> dict[str, object]:
         self._pending_join(curator_key)
         return self._state.decide(curator_key, JoinState.DECLINED).as_dict()
 
-    def preview_join(self, curator_key: str, threshold: Optional[int]) -> Dict[str, object]:
+    def preview_join(self, curator_key: str, threshold: Optional[int]) -> dict[str, object]:
         ctx = self._context()
         return {"diff": diff(self._effective(ctx), self._proposed_join(ctx, curator_key, threshold))}
 
-    def approve(self, curator_key: str, passphrase: str, second_factor: str, threshold: Optional[int]) -> Dict[str, object]:
+    def approve(self, curator_key: str, passphrase: str, second_factor: str, threshold: Optional[int]) -> dict[str, object]:
         ctx = self._context()
         with self._signing:
             staged = self._sign_and_stage(ctx, self._proposed_join(ctx, curator_key, threshold), passphrase,
@@ -126,26 +126,26 @@ class ConsoleActions:
 
     # -- removal, renewal, publishing --------------------------------------------------
 
-    def preview_removal(self, curator_key: str) -> Dict[str, object]:
+    def preview_removal(self, curator_key: str) -> dict[str, object]:
         ctx = self._context()
         return {"diff": diff(self._effective(ctx), self._proposed_removal(ctx, curator_key))}
 
-    def remove(self, curator_key: str, passphrase: str, second_factor: str) -> Dict[str, object]:
+    def remove(self, curator_key: str, passphrase: str, second_factor: str) -> dict[str, object]:
         ctx = self._context()
         with self._signing:
             return self._sign_and_stage(ctx, self._proposed_removal(ctx, curator_key), passphrase, second_factor)
 
-    def renew(self, passphrase: str, second_factor: str) -> Dict[str, object]:
+    def renew(self, passphrase: str, second_factor: str) -> dict[str, object]:
         ctx = self._context()
         with self._signing:
             current = self._unwaited(self._effective(ctx))
             proposed = renewed(current, version=self._state.next_version(current), today=self._services.today())
             return self._sign_and_stage(ctx, proposed, passphrase, second_factor)
 
-    def renewal(self) -> Dict[str, object]:
+    def renewal(self) -> dict[str, object]:
         return renewal_status(self._effective(self._context()), self._services.today()).as_dict()
 
-    def publish(self, proposal_id: str, confirmation_code: str) -> Dict[str, object]:
+    def publish(self, proposal_id: str, confirmation_code: str) -> dict[str, object]:
         """The existing publish path, for a key list staged here."""
         store = self._services.proposals()
         staged = store.get(proposal_id)
@@ -201,7 +201,7 @@ class ConsoleActions:
         return without_curator(current, curator_key, version=self._state.next_version(current))
 
     def _sign_and_stage(self, ctx: CurateContext, proposed: key_manifest.KeyManifest, passphrase: str,
-                        second_factor: str) -> Dict[str, object]:
+                        second_factor: str) -> dict[str, object]:
         """Root A signs *proposed* (logged), the console records it, and — only when a
         root pinned for its epoch signed it — stages it APPROVED for :meth:`publish`."""
         before = self._effective(ctx)
@@ -221,7 +221,7 @@ class ConsoleActions:
         return {"proposalId": proposal.id, "confirmationCode": code, "diff": diff(before, proposed)}
 
 
-def _answer(work: Callable[[], Dict[str, object]], status: int = 200) -> Any:
+def _answer(work: Callable[[], dict[str, object]], status: int = 200) -> Any:
     """Run *work*; every refusal is ``{"error"}`` with its status, never a traceback."""
     from fastapi.responses import JSONResponse
 
@@ -254,7 +254,7 @@ def _add_join_routes(app: Any, actions: ConsoleActions) -> None:
     @app.post("/api/join-requests")
     def submit_join(curator_key: str = Body(..., alias="curatorKey", max_length=64),
                     operator: str = Body(..., max_length=key_manifest.MAX_OPERATOR_LENGTH),
-                    self_test: Dict[str, Any] = Body(..., alias="selfTest")):
+                    self_test: dict[str, Any] = Body(..., alias="selfTest")):
         return _answer(lambda: actions.submit(curator_key, operator, self_test), status=201)
 
     @app.post("/api/join-requests/{curator_key}/decline")

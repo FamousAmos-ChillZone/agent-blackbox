@@ -19,5 +19,12 @@ from .classification import Classification, classify
 from .fields import canonical_tool, sighting_fields
 from .hosts import USER_CONTENT_PLATFORMS, injection_host_identifier
 
-__all__ = ["Classification", "USER_CONTENT_PLATFORMS", "canonical_tool", "classify", "injection_host_identifier",
-           "sighting_fields", "vocab"]
+__all__ = [
+           "USER_CONTENT_PLATFORMS",
+           "Classification",
+           "canonical_tool",
+           "classify",
+           "injection_host_identifier",
+           "sighting_fields",
+           "vocab",
+]

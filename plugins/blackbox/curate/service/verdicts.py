@@ -73,7 +73,7 @@ class Tier(Enum):
 class ProofRule:
     """Lab evidence proves a threat when ONE run saw every check in ``seen``."""
 
-    seen: FrozenSet[Check]
+    seen: frozenset[Check]
 
 
 def _rule(*checks: Check) -> ProofRule:
@@ -89,7 +89,7 @@ _ADDRESS_PROOF = (
 #: script that downloads a prebuilt binary is NOT proof. A type with no entry
 #: (injection, escalation, file access, wallet, hash…) cannot be proven or
 #: cleared by the lab — only a citable source confirms it.
-PROOF_RULES: Dict[str, Tuple[ProofRule, ...]] = {
+PROOF_RULES: dict[str, tuple[ProofRule, ...]] = {
     "dep:": (
         _rule(Check.BAIT_CREDENTIAL_SENT),
         _rule(Check.INSTALL_SCRIPT_RAN, Check.FILE_WRITTEN_OUTSIDE_PACKAGE),
@@ -116,7 +116,7 @@ class VerdictFacts:
 
     citable_listing: str = ""
     sources_clean: bool = False
-    lab: Tuple[Evidence, ...] = ()
+    lab: tuple[Evidence, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -132,11 +132,11 @@ class VerdictDecision:
     citation: str = ""
 
 
-def _rules_for(identifier: str) -> Tuple[ProofRule, ...]:
+def _rules_for(identifier: str) -> tuple[ProofRule, ...]:
     return next((rules for prefix, rules in PROOF_RULES.items() if identifier.startswith(prefix)), ())
 
 
-def lab_proves(identifier: str, lab: Tuple[Evidence, ...]) -> bool:
+def lab_proves(identifier: str, lab: tuple[Evidence, ...]) -> bool:
     """Whether one lab run meets a proof rule for *identifier*'s type."""
     rules = _rules_for(identifier)
     for evidence in lab:
@@ -146,7 +146,7 @@ def lab_proves(identifier: str, lab: Tuple[Evidence, ...]) -> bool:
     return False
 
 
-def lab_clean(identifier: str, lab: Tuple[Evidence, ...]) -> bool:
+def lab_clean(identifier: str, lab: tuple[Evidence, ...]) -> bool:
     """Whether the lab ran and every run is clean for *identifier*'s type: no
     note at all, and every check its proof rules name was answered "not seen".
     False for a type without proof rules (the lab cannot clear it)."""

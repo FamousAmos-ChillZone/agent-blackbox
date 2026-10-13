@@ -43,21 +43,21 @@ _RUNNER_ROOT = Path(__file__).resolve().parents[2] / "integrations" / "threat-la
 if str(_RUNNER_ROOT) not in sys.path:
     sys.path.insert(0, str(_RUNNER_ROOT))
 
-from threat_lab.api import JobBoard  # noqa: E402
-from threat_lab.artifacts import ArtifactStore  # noqa: E402
-from threat_lab.config import LabConfig, LabConfigError, MicroVMSettings  # noqa: E402
-from threat_lab.egress import NftablesEgressGuard  # noqa: E402
-from threat_lab.identifiers import threat_digest  # noqa: E402
-from threat_lab.kvm import kvm_problem  # noqa: E402
-from threat_lab.microvm import FirecrackerSandbox, check_image  # noqa: E402
-from threat_lab.runner import JobRequest, LabRunner  # noqa: E402
+from threat_lab.api import JobBoard
+from threat_lab.artifacts import ArtifactStore
+from threat_lab.config import LabConfig, LabConfigError, MicroVMSettings
+from threat_lab.egress import NftablesEgressGuard
+from threat_lab.identifiers import threat_digest
+from threat_lab.kvm import kvm_problem
+from threat_lab.microvm import FirecrackerSandbox, check_image
+from threat_lab.runner import JobRequest, LabRunner
 
 #: A small, well-known, benign package: a clean install for the boot and timing proofs.
 BENIGN_PACKAGE = "dep:npm:left-pad@1.3.0"
 
 
 @pytest.fixture(scope="module")
-def lab() -> Dict[str, object]:
+def lab() -> dict[str, object]:
     """The KVM host's microVM lab, or a skip naming what is missing."""
     if platform.system() != "Linux":
         pytest.skip("runs only on the KVM lab host (Linux)")
@@ -113,7 +113,7 @@ def test_a_job_past_its_deadline_is_killed_and_reads_could_not_tell(lab):
     assert _firecrackers() == before, "the killed microVM's VMM is gone"
 
 
-def _firecrackers() -> Set[str]:
+def _firecrackers() -> set[str]:
     """Pids of running Firecracker processes."""
     listed = subprocess.run(["pgrep", "-x", "firecracker"], capture_output=True, text=True, check=False)
     return set(listed.stdout.split())
@@ -154,5 +154,5 @@ def test_a_recorded_install_of_a_known_malicious_package_gives_valid_evidence(la
     key = _key(config, identifier)
     outcome = _runner(config, guard).run(JobRequest(key, identifier, 4))
     assert outcome.state == "done", outcome
-    evidence = validate_evidence(to_mapping(extract(LabJob(key, identifier, 4, list(Lane)[0], "", 0.0), outcome.output)))
+    evidence = validate_evidence(to_mapping(extract(LabJob(key, identifier, 4, next(iter(Lane)), "", 0.0), outcome.output)))
     assert evidence.level == 4 and evidence.contacted_hosts, outcome.output

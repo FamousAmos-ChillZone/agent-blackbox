@@ -18,7 +18,7 @@ def _json5_to_json(text: str) -> str:
     merge one plugin entry; uncommon numeric JSON5 extensions fail safely rather
     than risking replacement of the user's config.
     """
-    out: List[str] = []
+    out: list[str] = []
     i = 0
     length = len(text)
     while i < length:
@@ -57,7 +57,7 @@ def _json5_to_json(text: str) -> str:
             continue
         if ch == "'":
             i += 1
-            value: List[str] = []
+            value: list[str] = []
             while i < length:
                 cur = text[i]
                 i += 1
@@ -95,7 +95,7 @@ def _json5_to_json(text: str) -> str:
     cleaned = "".join(out)
 
     # Quote unquoted object keys without touching string contents.
-    keyed: List[str] = []
+    keyed: list[str] = []
     i = 0
     while i < len(cleaned):
         ch = cleaned[i]
@@ -137,7 +137,7 @@ def _json5_to_json(text: str) -> str:
 
     # Remove trailing commas outside strings.
     strictish = "".join(keyed)
-    final: List[str] = []
+    final: list[str] = []
     i = 0
     while i < len(strictish):
         ch = strictish[i]

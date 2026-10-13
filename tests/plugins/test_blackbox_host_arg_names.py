@@ -93,7 +93,7 @@ def test_the_commands_that_broke_now_reach_the_plugin_through_the_real_hermes_pa
     root = Path(__file__).resolve().parents[2]
     env = {**os.environ, "HERMES_HOME": str(tmp_path / "hermes"), "PYTHONPATH": str(root)}
     done = subprocess.run([sys.executable, "-c", _REAL_PARSE, json.dumps(argv), attribute], cwd=root, env=env,
-                          capture_output=True, text=True, timeout=120)
+                          capture_output=True, text=True, timeout=120, check=False)
     assert done.returncode == 0, done.stderr[-2000:]
     parsed = json.loads(done.stdout.strip().splitlines()[-1])
     assert parsed == {"version": False, "command": "blackbox", "value": value}     # no banner: the plugin runs

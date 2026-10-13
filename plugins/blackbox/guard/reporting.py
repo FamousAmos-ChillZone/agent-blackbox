@@ -19,7 +19,7 @@ from ..kernel.dkg_client import DkgClient
 
 logger = logging.getLogger(__name__)
 
-def _flag_worthy(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List[detection.Finding]:
+def _flag_worthy(cfg: BlackboxConfig, findings: list[detection.Finding]) -> list[detection.Finding]:
     """Apply the user's detection policy to raw findings.
 
     * Per-category policy (``detection.<category>.{enabled,min_severity}``):
@@ -31,7 +31,7 @@ def _flag_worthy(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List
     Wallet findings (key stores, seed phrases, labelled private keys) count only
     while Web3 wallet protection is on, for the wallets the operator chose.
     """
-    out: List[detection.Finding] = []
+    out: list[detection.Finding] = []
     wallets = crypto_secrets.wallet_mode.current() if findings else None
     for f in findings:
         if wallets is not None and not wallets.allows_finding({"identifier": f.identifier, "fields": f.fields}):
@@ -47,7 +47,7 @@ def _flag_worthy(cfg: BlackboxConfig, findings: List[detection.Finding]) -> List
     return out
 
 
-def _attach_sightings(finding_dicts: List[Dict[str, Any]], detail: Dict[str, Any]) -> None:
+def _attach_sightings(finding_dicts: list[dict[str, Any]], detail: dict[str, Any]) -> None:
     """Give each finding the sighting a report carries (threat-profiles §03.2):
     the tool, the action, blocked or flagged (from the hook's ``blocked`` list)
     and what the threat goes after."""
@@ -57,7 +57,7 @@ def _attach_sightings(finding_dicts: List[Dict[str, Any]], detail: Dict[str, Any
         finding["sighting"] = community.sighting_fields(finding, outcome=outcome)
 
 
-def _report_and_audit(cfg: BlackboxConfig, event: str, findings: List[detection.Finding], detail: Dict[str, Any]) -> None:
+def _report_and_audit(cfg: BlackboxConfig, event: str, findings: list[detection.Finding], detail: dict[str, Any]) -> None:
     """Audit findings locally, then fan out (Observer-style) per finding:
     private WM audit KA always; community share when the policy allows.
 

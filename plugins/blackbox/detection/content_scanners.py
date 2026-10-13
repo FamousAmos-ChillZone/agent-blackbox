@@ -60,7 +60,7 @@ _INJECTION_PHRASE_CAP = 120
 _MAX_INJECTION_SCAN = 50_000
 
 
-def scan_injection_heuristics(text: str) -> List[Dict[str, str]]:
+def scan_injection_heuristics(text: str) -> list[dict[str, str]]:
     """Return built-in injection matches as ``[{pattern, phrase, severity, owasp}]``.
 
     ``pattern`` is the built-in heuristic's own regex *source* — a fixed,
@@ -73,7 +73,7 @@ def scan_injection_heuristics(text: str) -> List[Dict[str, str]]:
     if not text:
         return []
     scan = text[:_MAX_INJECTION_SCAN]
-    out: List[Dict[str, str]] = []
+    out: list[dict[str, str]] = []
     seen: set = set()
     for severity, owasp, pattern in _INJECTION_HEURISTICS:
         try:
@@ -104,7 +104,7 @@ _EGRESS_RE = re.compile(
 )
 
 
-def scan_secret_values(text: str) -> List[Dict[str, str]]:
+def scan_secret_values(text: str) -> list[dict[str, str]]:
     """Return recognizable secret VALUES present in *text* as ``[{type, severity}]``.
 
     Deterministic; the caller carries only the secret TYPE off-box, NEVER the
@@ -113,7 +113,7 @@ def scan_secret_values(text: str) -> List[Dict[str, str]]:
     if not text:
         return []
     scan = text[:_MAX_INJECTION_SCAN]
-    out: List[Dict[str, str]] = []
+    out: list[dict[str, str]] = []
     seen: set = set()
     for typ, severity, pattern in redaction.SECRET_VALUE_RULES:
         if typ in seen:
@@ -221,13 +221,13 @@ _SKILL_PERMISSION_RULES = (
 SKILL_DANGER_SHAPES = frozenset(shape for shape, _sev, _rule in _SKILL_CODE_RULES + _SKILL_PERMISSION_RULES)
 
 
-def scan_skill_dangers(code: str, permissions: str) -> List[Dict[str, str]]:
+def scan_skill_dangers(code: str, permissions: str) -> list[dict[str, str]]:
     """Return built-in skill danger matches as ``[{dangerShape, severity}]``.
 
     Scans *code* for dangerous-code shapes and *permissions* for over-broad
     capability grants. Deterministic; the caller carries only the shape name.
     """
-    out: List[Dict[str, str]] = []
+    out: list[dict[str, str]] = []
     seen: set = set()
     for text, rules in ((code or "", _SKILL_CODE_RULES), (permissions or "", _SKILL_PERMISSION_RULES)):
         if not text:
@@ -265,7 +265,7 @@ _MAX_IOC_TEXT = 50_000
 _MAX_IOC_CANDIDATES = 4000
 
 
-def _host_suffixes(host: str) -> List[str]:
+def _host_suffixes(host: str) -> list[str]:
     """A host plus the parent domains a ``domain:`` rule might use.
 
     ``login.evil.co.uk`` yields ``login.evil.co.uk``, ``evil.co.uk``, ``co.uk``
@@ -285,7 +285,7 @@ def _host_suffixes(host: str) -> List[str]:
     return list(dict.fromkeys(out))
 
 
-def iter_ioc_candidates(text: str) -> List[str]:
+def iter_ioc_candidates(text: str) -> list[str]:
     """Candidate ``ioc:`` identifiers to look up for *text* (deduped, capped).
 
     Extracts URLs (+ their hosts), bare domains, IPv4s, sha256/md5 hashes, and
@@ -297,7 +297,7 @@ def iter_ioc_candidates(text: str) -> List[str]:
         return []
     if len(text) > _MAX_IOC_TEXT:
         text = text[:_MAX_IOC_TEXT]
-    out: List[str] = []
+    out: list[str] = []
     seen: set = set()
 
     def add(ioc_type: str, value: str) -> None:

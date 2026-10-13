@@ -90,7 +90,7 @@ def available(cfg: Any) -> bool:
     return bool(getattr(cfg, "llm_ready", False))
 
 
-def review_injection(text: str, cfg: Any) -> Optional[Dict[str, Any]]:
+def review_injection(text: str, cfg: Any) -> Optional[dict[str, Any]]:
     """Ask the configured LLM whether *text* is a prompt-injection attempt.
 
     Returns a normalized verdict ``{"severity", "reason"}`` when the model flags
@@ -141,7 +141,7 @@ def review_injection(text: str, cfg: Any) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def _post(url: str, headers: Dict[str, str], body: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _post(url: str, headers: dict[str, str], body: dict[str, Any]) -> Optional[dict[str, Any]]:
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={**headers, "Content-Type": "application/json"}, method="POST")
     try:
@@ -160,7 +160,7 @@ def _post(url: str, headers: Dict[str, str], body: Dict[str, Any]) -> Optional[D
 
 
 def _call_openai(cfg: Any, text: str) -> Optional[str]:
-    body: Dict[str, Any] = {
+    body: dict[str, Any] = {
         "model": cfg.llm_model,
         "temperature": 0,
         "response_format": {"type": "json_object"},
@@ -199,7 +199,7 @@ def _call_anthropic(cfg: Any, text: str) -> Optional[str]:
         return None
 
 
-def _parse_verdict(content: Optional[str]) -> Optional[Dict[str, Any]]:
+def _parse_verdict(content: Optional[str]) -> Optional[dict[str, Any]]:
     """Extract the JSON verdict object from a model reply. Tolerant of stray prose."""
     if not content:
         return None
@@ -209,7 +209,7 @@ def _parse_verdict(content: Optional[str]) -> Optional[Dict[str, Any]]:
     except Exception:
         pass
     # Model wrapped the JSON in prose/fences — grab the first {...} block.
-    match = re.search(r"\{.*\}", text, re.S)
+    match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
         return None
     try:

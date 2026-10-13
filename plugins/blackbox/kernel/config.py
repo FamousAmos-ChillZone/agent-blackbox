@@ -30,7 +30,7 @@ _FALSE = {"0", "false", "no", "off"}
 
 #: Sensible out-of-the-box protected paths — high-signal credential stores an agent rarely has a
 #: legitimate reason to read. Applied only when the config key is absent; an explicit (even empty) list wins.
-DEFAULT_PROTECTED_PATHS: Tuple[str, ...] = (
+DEFAULT_PROTECTED_PATHS: tuple[str, ...] = (
     "~/.ssh/*",          # SSH private keys
     ".env",              # environment files (any directory)
     ".env.*",            # env variants (.env.local, .env.production, ...)
@@ -104,7 +104,7 @@ class BlackboxConfig:
     #: matching path is flagged locally (source="custom", never shared to SWM)
     #: and blocks in block mode. Config key: ``protected_paths``. Defaults to
     #: :data:`DEFAULT_PROTECTED_PATHS` when the key is absent.
-    protected_paths: Tuple[str, ...] = DEFAULT_PROTECTED_PATHS
+    protected_paths: tuple[str, ...] = DEFAULT_PROTECTED_PATHS
 
     @property
     def block_enabled(self) -> bool:
@@ -156,7 +156,7 @@ class BlackboxConfig:
         floor = rank.get(self.report_min_severity.lower(), rank["high"])
         return rank.get((severity or "").lower(), -1) >= floor
 
-    def category_setting(self, category: str) -> Dict[str, Any]:
+    def category_setting(self, category: str) -> dict[str, Any]:
         """Resolved user policy for one category: ``{"enabled", "min_severity"}``.
 
         Defaults: enabled at ``info`` — flag everything Blackbox can detect for
@@ -184,7 +184,7 @@ class BlackboxConfig:
         return rank.get((severity or "").lower(), -1) >= floor
 
 
-def _blackbox_entry() -> Dict[str, Any]:
+def _blackbox_entry() -> dict[str, Any]:
     """Return the ``plugins.entries.blackbox`` mapping, or ``{}`` on any error."""
     try:
         from hermes_cli.config import load_config
@@ -333,16 +333,16 @@ def load_blackbox_config() -> BlackboxConfig:
     )
 
 
-def _normalize_categories(raw: Any) -> Dict[str, Dict[str, Any]]:
+def _normalize_categories(raw: Any) -> dict[str, dict[str, Any]]:
     """Validate the ``detection`` config mapping into per-category policy dicts."""
-    out: Dict[str, Dict[str, Any]] = {}
+    out: dict[str, dict[str, Any]] = {}
     if not isinstance(raw, dict):
         return out
     for category in DETECTION_CATEGORIES:
         item = raw.get(category)
         if not isinstance(item, dict):
             continue
-        setting: Dict[str, Any] = {}
+        setting: dict[str, Any] = {}
         if isinstance(item.get("enabled"), bool):
             setting["enabled"] = item["enabled"]
         min_sev = str(item.get("min_severity") or "").lower()
@@ -353,7 +353,7 @@ def _normalize_categories(raw: Any) -> Dict[str, Dict[str, Any]]:
     return out
 
 
-def _normalize_protected_paths(raw: Any) -> Tuple[str, ...]:
+def _normalize_protected_paths(raw: Any) -> tuple[str, ...]:
     """Validate ``protected_paths`` into a tuple of non-empty pattern strings.
 
     A missing key (``None``) falls back to :data:`DEFAULT_PROTECTED_PATHS`; an

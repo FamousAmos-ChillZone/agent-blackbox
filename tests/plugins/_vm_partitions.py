@@ -34,7 +34,7 @@ def is_lane_query(sparql: str) -> bool:
     return "GRAPH ?g {" in sparql and bool(_PREFIX.search(sparql))
 
 
-def answer_lane_query(sparql: str, rows_by_partition: Dict[str, List[dict]]) -> List[dict]:
+def answer_lane_query(sparql: str, rows_by_partition: dict[str, list[dict]]) -> list[dict]:
     """One page of a lane: the joined-shape rows of the matching type (or any row
     with an identifier for the legacy lane) from every partition under the prefix,
     each with its ``g``, after the cursor, in threat order, up to the limit."""
@@ -59,7 +59,7 @@ def answer_lane_query(sparql: str, rows_by_partition: Dict[str, List[dict]]) -> 
     return page[:limit]
 
 
-def answer_verified_query(sparql: str, rows_by_partition: Dict[str, List[dict]]) -> List[dict]:
+def answer_verified_query(sparql: str, rows_by_partition: dict[str, list[dict]]) -> list[dict]:
     """The verified read a fake node is asked for (a small-tier lane since B6)."""
     return answer_lane_query(sparql, rows_by_partition)
 

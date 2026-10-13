@@ -90,7 +90,7 @@ class Candidate:
     proposal_id: str
     entry: ConfirmedEntry
     envelope: signing.SignedEnvelope
-    quads: Tuple[Dict[str, str], ...]
+    quads: tuple[dict[str, str], ...]
     approved_at: float
     reporters: int
 
@@ -136,7 +136,7 @@ def strict_verified_subset(compiled: Any) -> VerifiedSubset:
     """``Ruleset.verified_subset`` that RAISES :class:`PrecheckUnavailable` instead of
     reading a store that could not tell as "none listed" (precheck's contract)."""
 
-    def lookup(identifiers: Iterable[str]) -> Set[str]:
+    def lookup(identifiers: Iterable[str]) -> set[str]:
         wanted = {str(identifier) for identifier in identifiers}
         if compiled is None:
             raise PrecheckUnavailable("no compiled ruleset to check against")
@@ -211,10 +211,10 @@ class BatchPublisher:
 
     # ------------------------------------------------------------ collecting
 
-    def _candidates(self, ctx: CurateContext) -> Tuple[Dict[str, Candidate], int]:
+    def _candidates(self, ctx: CurateContext) -> tuple[dict[str, Candidate], int]:
         """APPROVED, quorum-signed promotions for the verified graph, by identifier;
         plus how many of them no row builder can write (held back, logged)."""
-        out: Dict[str, Candidate] = {}
+        out: dict[str, Candidate] = {}
         held_back = 0
         for proposal in self._store.all():
             if (proposal.state is not ProposalState.APPROVED or proposal.kind != PROMOTION_STATEMENT
@@ -232,7 +232,7 @@ class BatchPublisher:
             out.setdefault(candidate.entry.identifier, candidate)
         return out, held_back
 
-    def _waiting(self, candidates: Mapping[str, Candidate]) -> List[Candidate]:
+    def _waiting(self, candidates: Mapping[str, Candidate]) -> list[Candidate]:
         """Candidates in no batch yet (a written-off batch's entries wait again)."""
         taken = {entry.identifier for record in self._ledger.batches()
                  if record.state is not PublishState.WRITTEN_OFF for entry in record.entries}
@@ -380,7 +380,7 @@ def _candidate(proposal: Proposal, envelope: signing.SignedEnvelope) -> Candidat
     return Candidate(proposal.id, entry, envelope, quads, proposal.updated, len(provenance))
 
 
-def _signed_rows(batch: Sequence[Candidate]) -> Dict[str, str]:
+def _signed_rows(batch: Sequence[Candidate]) -> dict[str, str]:
     return {threat_ids.threat_uri(c.entry.identifier): c.envelope.to_text() for c in batch}
 
 

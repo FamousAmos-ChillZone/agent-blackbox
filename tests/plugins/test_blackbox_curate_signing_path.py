@@ -26,7 +26,7 @@ from plugins.blackbox.curate.proposal import ProposalStore
 from plugins.blackbox.curate.watch import SigningLog, SigningRow
 from plugins.blackbox.kernel import signing
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement
-from test_blackbox_curate import VM_GRAPH, FakeNode, _ctx, _machine, curators  # noqa: F401 - fixture
+from test_blackbox_curate import VM_GRAPH, FakeNode, _ctx, _machine, curators
 
 CURATE = Path(__file__).resolve().parents[2] / "plugins" / "blackbox" / "curate"
 
@@ -42,11 +42,11 @@ _SIGNING_FUNCTIONS = {"sign_statement", "sign_manifest", "sign_curator_statement
 _CHOKE_POINT = {("context.py", "CurateContext", "sign"), ("context.py", "CurateContext", "cosign")}
 
 
-def _signing_references(tree: ast.AST) -> List[Tuple[int, str, str]]:
+def _signing_references(tree: ast.AST) -> list[tuple[int, str, str]]:
     """Every reference to a signing function in *tree* as (line, enclosing
     ``Class.method`` or "", what) — a call, a bare handle (``f = signing.sign``), a
     ``from … import sign_manifest``, or a signing module imported under another name."""
-    found: List[Tuple[int, str, str]] = []
+    found: list[tuple[int, str, str]] = []
 
     def visit(node: ast.AST, owner: str) -> None:
         if isinstance(node, ast.ClassDef):
@@ -84,7 +84,7 @@ def _signing_references(tree: ast.AST) -> List[Tuple[int, str, str]]:
     return found
 
 
-def _offenders(relative: str, source: str) -> List[str]:
+def _offenders(relative: str, source: str) -> list[str]:
     """Signing references in one curate/ file that sit outside the choke point."""
     offenders = []
     for line, owner, what in _signing_references(ast.parse(source)):
@@ -139,7 +139,7 @@ def test_a_direct_signing_call_injected_into_verbs_fails_the_guard(injected):
 # -- the SigningLog rows ---------------------------------------------------------
 
 
-def _rows(home: Path) -> List[SigningRow]:
+def _rows(home: Path) -> list[SigningRow]:
     return SigningLog(home / "curate" / "signing_log.jsonl").rows()
 
 

@@ -36,7 +36,7 @@ from __future__ import annotations
 import json
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 from typing import Callable, Dict, Optional, Tuple
 
 from ...kernel import threat_ids
@@ -87,9 +87,9 @@ class AbuseChFetcher:
         self._key = key
         self._clock = clock
         self._lock = threading.Lock()
-        self._answers: Dict[str, Tuple[float, JsonObject]] = {}
+        self._answers: dict[str, tuple[float, JsonObject]] = {}
 
-    def fetch(self, url: str, *, form: Optional[Dict[str, str]] = None,
+    def fetch(self, url: str, *, form: Optional[dict[str, str]] = None,
               json_body: Optional[JsonObject] = None) -> Optional[JsonObject]:
         auth_key = self._key()
         if not auth_key:
@@ -108,7 +108,7 @@ class AbuseChFetcher:
         return answer
 
 
-def ioc_parts(identifier: str) -> Optional[Tuple[str, str]]:
+def ioc_parts(identifier: str) -> Optional[tuple[str, str]]:
     """``(type, value)`` of a well-formed ``ioc:<type>:<value>`` identifier, else None."""
     parts = identifier.split(":", 2)
     if len(parts) != 3 or parts[0] != "ioc" or not threat_ids.ioc_value_is_well_formed(parts[1], parts[2]):
@@ -162,7 +162,7 @@ class ThreatFoxSource:
     name = "threatfox"
     terms = TERMS
 
-    def __init__(self, fetcher: AbuseChFetcher, *, now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
+    def __init__(self, fetcher: AbuseChFetcher, *, now: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
         self._fetcher = fetcher
         self._now = now
 
@@ -198,7 +198,7 @@ def _last_seen(record: object) -> Optional[datetime]:
         if not text:
             continue
         try:
-            seen.append(datetime.strptime(str(text), _THREATFOX_TIME_FORMAT).replace(tzinfo=timezone.utc))
+            seen.append(datetime.strptime(str(text), _THREATFOX_TIME_FORMAT).replace(tzinfo=UTC))
         except ValueError:
             return None
     return max(seen) if seen else None

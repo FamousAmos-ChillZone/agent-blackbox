@@ -64,14 +64,14 @@ class GraphAsset:
     carries (empty: none); ``seen_at`` — Unix time it was first seen."""
 
     ual: str
-    envelope_digests: Tuple[str, ...]
+    envelope_digests: tuple[str, ...]
     seen_at: float
 
 
 class AssetExpectation(Protocol):
     """A node's record of the assets it expects (the Strategy interface)."""
 
-    def split(self, assets: Sequence[GraphAsset]) -> Tuple[List[GraphAsset], List[GraphAsset]]:
+    def split(self, assets: Sequence[GraphAsset]) -> tuple[list[GraphAsset], list[GraphAsset]]:
         """``(unexplained, could_not_tell)`` — explained assets are in neither."""
         ...
 
@@ -79,13 +79,13 @@ class AssetExpectation(Protocol):
 class LedgerExpectation:
     """Expected = the publish ledger's lines (``PublishLedger().transitions()``, the publisher node)."""
 
-    def __init__(self, transitions: Iterable["Transition"]) -> None:
+    def __init__(self, transitions: Iterable[Transition]) -> None:
         from ..publishing.ledger import PublishState  # late: see the TYPE_CHECKING import
 
         # A batch whose money may have left without the ledger knowing its UAL yet.
         unsettled = (PublishState.SUBMITTED, PublishState.MINTED)
-        current: Dict[str, "Transition"] = {}
-        submitted_at: Dict[str, float] = {}
+        current: dict[str, Transition] = {}
+        submitted_at: dict[str, float] = {}
         for step in transitions:
             current[step.record.batch_id] = step
             if step.record.state is PublishState.SUBMITTED:
@@ -94,10 +94,10 @@ class LedgerExpectation:
         self._in_flight_since = sorted(submitted_at[batch_id] for batch_id, step in current.items()
                                        if step.record.state in unsettled and not step.record.ual)
 
-    def split(self, assets: Sequence[GraphAsset]) -> Tuple[List[GraphAsset], List[GraphAsset]]:
+    def split(self, assets: Sequence[GraphAsset]) -> tuple[list[GraphAsset], list[GraphAsset]]:
         unknown = sorted((asset for asset in assets if asset.ual not in self._known_uals),
                          key=lambda asset: asset.seen_at)
-        could_not_tell: List[GraphAsset] = []
+        could_not_tell: list[GraphAsset] = []
         for submitted_at in self._in_flight_since:  # each in-flight batch accounts for at most one asset
             claim = next((asset for asset in unknown if asset.seen_at >= submitted_at), None)
             if claim is not None:
@@ -113,16 +113,16 @@ class CosignExpectation:
         key = key.lower()
         self._signed = {row.digest for row in signing_rows if row.key.lower() == key}
 
-    def split(self, assets: Sequence[GraphAsset]) -> Tuple[List[GraphAsset], List[GraphAsset]]:
+    def split(self, assets: Sequence[GraphAsset]) -> tuple[list[GraphAsset], list[GraphAsset]]:
         unexplained = [asset for asset in assets
                        if not asset.envelope_digests or not set(asset.envelope_digests) <= self._signed]
         return unexplained, []
 
 
-def unexpected_assets(new_assets: Sequence[GraphAsset], expected: AssetExpectation) -> List[HealthItem]:
+def unexpected_assets(new_assets: Sequence[GraphAsset], expected: AssetExpectation) -> list[HealthItem]:
     """SECURITY when any new asset is unexplained; INFO for assets that could not be told yet."""
     unexplained, could_not_tell = expected.split(new_assets)
-    items: List[HealthItem] = []
+    items: list[HealthItem] = []
     if unexplained:
         first = _utc(min(asset.seen_at for asset in unexplained))
         items.append(HealthItem(
@@ -140,10 +140,10 @@ def unexpected_assets(new_assets: Sequence[GraphAsset], expected: AssetExpectati
     return items
 
 
-def proposal_rate(proposals_per_lane: Mapping[str, int], normal_per_lane: Mapping[str, float]) -> List[HealthItem]:
+def proposal_rate(proposals_per_lane: Mapping[str, int], normal_per_lane: Mapping[str, float]) -> list[HealthItem]:
     """One ACTION item per lane whose proposal count is at least
     :data:`RATE_WARNING_FACTOR` times its normal (both over the same window)."""
-    items: List[HealthItem] = []
+    items: list[HealthItem] = []
     for lane, count in sorted(proposals_per_lane.items()):
         normal = float(normal_per_lane.get(lane, 0.0))
         if not math.isfinite(normal) or normal < MIN_LANE_NORMAL:  # max(nan, 1.0) is nan: it would never warn

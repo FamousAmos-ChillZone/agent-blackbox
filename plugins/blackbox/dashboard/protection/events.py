@@ -54,7 +54,7 @@ def is_wallet_identifier(identifier: str) -> bool:
     return wallet_mode.belongs_to_mode(identifier)
 
 
-def _last_request(context: Optional[Dict[str, Any]]) -> str:
+def _last_request(context: Optional[dict[str, Any]]) -> str:
     """The latest user turn before the action (already redacted by the audit reader)."""
     turns = (context or {}).get("turns") or []
     for turn in reversed(turns):
@@ -63,15 +63,15 @@ def _last_request(context: Optional[Dict[str, Any]]) -> str:
     return ""
 
 
-def _step(event: Dict[str, Any], is_this: bool) -> Dict[str, Any]:
+def _step(event: dict[str, Any], is_this: bool) -> dict[str, Any]:
     """One timeline step: what kind, when, and a short readable label."""
     kind = event.get("type") or "event"
     if kind == "api":
         label = "Asked the model " + str(event.get("model") or "")
     elif kind == "file":
-        label = "%s %s" % (event.get("mode") or "read", event.get("path") or "")
+        label = "{} {}".format(event.get("mode") or "read", event.get("path") or "")
     elif kind == "dependency":
-        label = "install %s:%s@%s" % (event.get("ecosystem"), event.get("name"), event.get("version"))
+        label = "install {}:{}@{}".format(event.get("ecosystem"), event.get("name"), event.get("version"))
     elif kind == "threat":   # met outside a tool call, e.g. an injection in a model request
         label = "Threat found in what the agent was given"
     else:
@@ -84,20 +84,20 @@ def _step(event: Dict[str, Any], is_this: bool) -> Dict[str, Any]:
             "this": is_this}
 
 
-def _timeline(events: List[Dict[str, Any]], index: int) -> List[Dict[str, Any]]:
+def _timeline(events: list[dict[str, Any]], index: int) -> list[dict[str, Any]]:
     """The session's steps, at most :data:`MAX_TIMELINE_STEPS`, centred on step *index*."""
     start = max(0, min(index - MAX_TIMELINE_STEPS // 2, len(events) - MAX_TIMELINE_STEPS))
     window = events[start:start + MAX_TIMELINE_STEPS]
     return [_step(event, start + offset == index) for offset, event in enumerate(window)]
 
 
-def _session_summary(session: Dict[str, Any]) -> Dict[str, Any]:
+def _session_summary(session: dict[str, Any]) -> dict[str, Any]:
     return {"id": local_text(session.get("shortId"), 16), "agent": local_text(session.get("agent"), 24),
             "model": local_text(session.get("model"), 64), "start": session.get("start"), "end": session.get("end"),
             "status": local_text(session.get("status"), 16), "steps": len(session.get("events") or [])}
 
 
-def _event(threat: Dict[str, Any], step: Dict[str, Any], session: Dict[str, Any], index: int) -> Dict[str, Any]:
+def _event(threat: dict[str, Any], step: dict[str, Any], session: dict[str, Any], index: int) -> dict[str, Any]:
     """One wallet event as the report window shows it (see the module doc)."""
     return {"ts": threat.get("ts") or step.get("ts") or 0,
             "identifier": safe_identifier(threat.get("identifier")),
@@ -113,13 +113,13 @@ def _event(threat: Dict[str, Any], step: Dict[str, Any], session: Dict[str, Any]
             "timeline": _timeline(session.get("events") or [], index)}
 
 
-def wallet_event_report() -> Dict[str, Any]:
+def wallet_event_report() -> dict[str, Any]:
     """Every wallet event on this machine, newest first (fail-open: empty when logs are unreadable)."""
     try:
         sessions = audit.read_local_activity(max_sessions=SESSIONS_SCANNED).get("sessions") or []
     except Exception:   # an unreadable log means "no events", never a broken window
         sessions = []
-    events: List[Dict[str, Any]] = []
+    events: list[dict[str, Any]] = []
     for session in sessions:
         for index, step in enumerate(session.get("events") or []):
             for threat in step.get("threats") or []:

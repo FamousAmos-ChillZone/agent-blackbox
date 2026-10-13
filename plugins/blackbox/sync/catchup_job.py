@@ -7,7 +7,7 @@ from typing import Any, Dict
 from ..kernel.dkg_client import DkgClient, DkgError
 
 
-def _catchup_denied(catchup: Dict[str, Any]) -> bool:
+def _catchup_denied(catchup: dict[str, Any]) -> bool:
     if not isinstance(catchup, dict):
         return False
     status = str(catchup.get("status") or "").lower()
@@ -33,7 +33,7 @@ def _catchup_status(
     client: DkgClient,
     context_graph_id: str,
     job_id: str = "",
-) -> tuple[Dict[str, Any], bool]:
+) -> tuple[dict[str, Any], bool]:
     """Read an exact catch-up job when supported, otherwise the graph latest."""
     if job_id:
         try:

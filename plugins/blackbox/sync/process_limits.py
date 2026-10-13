@@ -62,7 +62,7 @@ def read_cgroup_memory_limit() -> int | None:
     """Return the active cgroup memory ceiling, if it is finite."""
     for path in _CGROUP_MEMORY_LIMIT_PATHS:
         try:
-            raw = path.read_text(encoding="utf-8").strip()
+            raw = path.read_text(encoding="utf-8-sig").strip()
         except (OSError, UnicodeError):
             continue
         if raw == "max":
@@ -236,7 +236,7 @@ def read_process_limits(dkg_home: str) -> Optional[ProcessLimits]:
     return ProcessLimits(**limits)
 
 
-def apply_process_limits(env: Dict[str, str], limits: ProcessLimits) -> None:
+def apply_process_limits(env: dict[str, str], limits: ProcessLimits) -> None:
     """Put *limits* into the launch environment *env* (in place). A value the
     environment already carries wins: an explicit heap in ``NODE_OPTIONS`` or an
     explicit queue limit. The install-time projection switch is removed: the

@@ -23,7 +23,7 @@ from . import live
 
 logger = logging.getLogger(__name__)
 
-def _fetch_proofs(client: DkgClient, cg_id: str) -> Dict[str, Dict[str, Any]]:
+def _fetch_proofs(client: DkgClient, cg_id: str) -> dict[str, dict[str, Any]]:
     """Legacy proofs from the VM view: subject -> {root, members}. Fail-open
     to {} — no proofs simply means no community row can be promoted."""
     try:
@@ -31,7 +31,7 @@ def _fetch_proofs(client: DkgClient, cg_id: str) -> Dict[str, Dict[str, Any]]:
     except Exception as exc:  # pragma: no cover - fail open
         logger.debug("blackbox: proof query failed: %s", exc)
         return {}
-    proofs: Dict[str, Dict[str, Any]] = {}
+    proofs: dict[str, dict[str, Any]] = {}
     for row in rows or []:
         subj = extract_binding(row.get("proof"))
         root = extract_binding(row.get("root"))
@@ -44,7 +44,7 @@ def _fetch_proofs(client: DkgClient, cg_id: str) -> Dict[str, Dict[str, Any]]:
     return proofs
 
 
-def verified_identifiers(community_rows: List[Dict[str, Any]], proofs: Dict[str, Dict[str, Any]]) -> set:
+def verified_identifiers(community_rows: list[dict[str, Any]], proofs: dict[str, dict[str, Any]]) -> set:
     """Identifiers of SWM threat rows covered by a matching VM proof.
 
     A proof verifies only when EVERY member is present locally and the batch
@@ -52,7 +52,7 @@ def verified_identifiers(community_rows: List[Dict[str, Any]], proofs: Dict[str,
     tampered or missing row invalidates its whole batch, never silently
     passes. Verified identifiers earn the blockable ``public`` tier.
     """
-    candidates: List[Dict[str, str]] = []
+    candidates: list[dict[str, str]] = []
     for row in community_rows:
         # Hash only threat-subject rows: reports (urn:guardian:report:*) share
         # the identifier and would shadow the threat row's hash.
@@ -73,7 +73,7 @@ def verified_identifiers(community_rows: List[Dict[str, Any]], proofs: Dict[str,
     return ok
 
 
-def _copy_community_stats(entry: Dict[str, Any], rule: Dict[str, Any]) -> None:
+def _copy_community_stats(entry: dict[str, Any], rule: dict[str, Any]) -> None:
     """Copy a community rule's corroboration stats onto a graph entry (the UI's
     reporter count and recency — this node's observations, KI-012)."""
     entry["reporterCount"] = int(rule.get("reporterCount") or 0)
@@ -94,20 +94,20 @@ class Ruleset(live.LiveAnswering):
     ``verified_scope`` and the compiled dicts; compiler.py sits at its size alarm).
     """
 
-    injection: List[Dict[str, Any]] = field(default_factory=list)
-    escalation: List[Dict[str, Any]] = field(default_factory=list)
-    dependency: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    fileaccess: List[Dict[str, Any]] = field(default_factory=list)
-    skill: List[Dict[str, Any]] = field(default_factory=list)
+    injection: list[dict[str, Any]] = field(default_factory=list)
+    escalation: list[dict[str, Any]] = field(default_factory=list)
+    dependency: dict[str, dict[str, Any]] = field(default_factory=dict)
+    fileaccess: list[dict[str, Any]] = field(default_factory=list)
+    skill: list[dict[str, Any]] = field(default_factory=list)
     # IOC rules keyed by full identifier (``ioc:{type}:{value}``) for O(1) lookup.
-    ioc: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    graph_threats: List[Dict[str, Any]] = field(default_factory=list)
+    ioc: dict[str, dict[str, Any]] = field(default_factory=dict)
+    graph_threats: list[dict[str, Any]] = field(default_factory=list)
     #: Community tier (B5): aggregated reports keyed by identifier LITERAL —
     #: the corroboration/display store ({identifier: rule-dict with
     #: reporterCount/firstSeen/lastSeen/...}). Matchable subsets are also
     #: materialized into ``dependency``/``ioc``; community rules can only
     #: ever flag (confirmed stays False downstream).
-    community: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    community: dict[str, dict[str, Any]] = field(default_factory=dict)
     #: True when the curator fleet-wide pause flag suppressed community
     #: ingest this refresh (KI-036) — surfaced in status/dashboard.
     community_paused: bool = False
@@ -122,7 +122,7 @@ class Ruleset(live.LiveAnswering):
     community_empty_since: float = 0.0
     #: R14: the curators' kill list in force (killlist.KillList.as_cache()); {} = none.
     #: Written only after a list passed its signatures and gates — else last-good stays.
-    kill_list: Dict[str, Any] = field(default_factory=dict)
+    kill_list: dict[str, Any] = field(default_factory=dict)
     #: R14: why the newest kill list was refused ("" = none) — the SECURITY alarm reads it.
     kill_list_refused: str = ""
     #: R7b: "" | "STALE since <day>" | "PENDING until <day>" — the curator manifest's clock as of the last refresh.
@@ -143,11 +143,11 @@ class Ruleset(live.LiveAnswering):
     verified_scope: Optional[live.VerifiedScope] = None
     #: Identifiers the curator revoked as of this generation (Refine R2); the
     #: scope carries them so a live lookup withdraws the same rules the compile did.
-    curator_revoked: FrozenSet[str] = frozenset()
+    curator_revoked: frozenset[str] = frozenset()
     #: Subjects a public CorrectionSignal suppressed in THIS compile (not persisted:
     #: the scope keeps its own copy) — what the live scope withdraws too.
-    suppressed_subjects: FrozenSet[str] = frozenset()
-    _graph_entries_cache: Dict[str, List[Dict[str, Any]]] = field(
+    suppressed_subjects: frozenset[str] = frozenset()
+    _graph_entries_cache: dict[str, list[dict[str, Any]]] = field(
         default_factory=dict,
         init=False,
         repr=False,
@@ -160,14 +160,14 @@ class Ruleset(live.LiveAnswering):
         due = self.synced_at + interval
         return min(due, self.refresh_due_at) if self.refresh_due_at else due
 
-    def live_counts(self) -> Dict[str, int]:
+    def live_counts(self) -> dict[str, int]:
         """Verified rules held in the live tiers (``dependency``, ``ioc``), from the
         scope's aggregate counts (its per-ecosystem breakdown is not included); {}
         when this generation has no scope."""
         counts = self.verified_scope.verified_counts if self.verified_scope is not None else {}
         return {tier: int(counts[tier]) for tier in ("dependency", "ioc") if tier in counts}
 
-    def counts(self) -> Dict[str, int]:
+    def counts(self) -> dict[str, int]:
         """Rules per category: the compiled lists / dicts plus the live tiers'
         verified counts (a compiled dict holds community-materialised rules once a
         scope exists, so the two never count the same rule twice)."""
@@ -199,7 +199,7 @@ class Ruleset(live.LiveAnswering):
         for r in self.ioc.values():
             yield "ioc", r
 
-    def drop_identifiers(self, identifiers: "Iterable[str]") -> int:
+    def drop_identifiers(self, identifiers: Iterable[str]) -> int:
         """Remove every rule whose identifier is in *identifiers* (Refine R2:
         a curator revocation withdraws a verified rule). Returns how many
         rules were removed."""
@@ -220,7 +220,7 @@ class Ruleset(live.LiveAnswering):
         compiled = sum(1 for _cat, r in self.iter_rules() if r.get("source") == source)
         return compiled + (sum(self.live_counts().values()) if source == "public" else 0)
 
-    def graph_entries(self, source: str) -> List[Dict[str, Any]]:
+    def graph_entries(self, source: str) -> list[dict[str, Any]]:
         cached = self._graph_entries_cache.get(source)
         if cached is not None:
             return cached
@@ -273,7 +273,7 @@ class Ruleset(live.LiveAnswering):
         return len(self.graph_entries(source)) + (sum(self.live_counts().values()) if source == "public" else 0)
 
 
-def suppressed_subjects(tagged_rows: Iterable[tuple], pin: live.CorrectionPin = live.NO_PIN) -> FrozenSet[str]:
+def suppressed_subjects(tagged_rows: Iterable[tuple], pin: live.CorrectionPin = live.NO_PIN) -> frozenset[str]:
     """Subjects the PUBLIC CorrectionSignal rows suppress (``(row, source)`` pairs):
     a curated correction withdraws the threat it targets from every tier. Once
     *pin* holds the legacy pin, only a quorum-signed correction counts, on the
@@ -281,7 +281,7 @@ def suppressed_subjects(tagged_rows: Iterable[tuple], pin: live.CorrectionPin = 
     return live.signed_suppressions(tagged_rows, *pin)
 
 
-def build_from_rows(rows: List[Dict[str, Any]], source: str = "public", pin: live.CorrectionPin = live.NO_PIN) -> Ruleset:
+def build_from_rows(rows: list[dict[str, Any]], source: str = "public", pin: live.CorrectionPin = live.NO_PIN) -> Ruleset:
     """Build a :class:`Ruleset` from ``(rows, source)`` pairs or plain rows.
 
     *rows* may be a flat list of binding rows (all tagged *source*) or a list
@@ -334,7 +334,7 @@ def build_from_rows(rows: List[Dict[str, Any]], source: str = "public", pin: liv
     return rs
 
 
-def _keep_public_first(table: Dict[str, Dict[str, Any]], key: str, rule: Dict[str, Any]) -> None:
+def _keep_public_first(table: dict[str, dict[str, Any]], key: str, rule: dict[str, Any]) -> None:
     """Store *rule* under *key* unless one is already there — public (curated)
     rules always win over community rows, so only a community rule is replaced."""
     existing = table.get(key)

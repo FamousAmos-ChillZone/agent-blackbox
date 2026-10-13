@@ -58,7 +58,7 @@ def advisory_reason(advisory_id: Optional[str]) -> Optional[str]:
     return f"{constants.ADVISORY_REASON_PREFIX}{advisory_id}" if advisory_id else None
 
 # In-memory result cache. Value is the finding dict or None (clean/skip).
-_cache: Dict[str, Optional[Dict[str, str]]] = {}
+_cache: dict[str, Optional[dict[str, str]]] = {}
 _cache_lock = threading.Lock()
 
 
@@ -67,7 +67,7 @@ def osv_ecosystem(ecosystem: str) -> Optional[str]:
     return _ECOSYSTEM_MAP.get((ecosystem or "").strip().lower())
 
 
-def _severity_of(vuln: Dict[str, Any]) -> str:
+def _severity_of(vuln: dict[str, Any]) -> str:
     """Best-effort severity from an OSV vuln record (defaults to ``high``)."""
     # OSV database_specific.severity is the most common human label.
     dbs = vuln.get("database_specific")
@@ -86,7 +86,7 @@ def _severity_of(vuln: Dict[str, Any]) -> str:
     return "high"
 
 
-def _query(osv_eco: str, name: str, version: str) -> Optional[Dict[str, Any]]:
+def _query(osv_eco: str, name: str, version: str) -> Optional[dict[str, Any]]:
     body = json.dumps({"package": {"ecosystem": osv_eco, "name": name}, "version": version}).encode("utf-8")
     req = urllib.request.Request(
         _OSV_URL, data=body, headers={"Content-Type": "application/json", "Accept": "application/json"}, method="POST"
@@ -103,7 +103,7 @@ def _query(osv_eco: str, name: str, version: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def lookup(ecosystem: str, name: str, version: str) -> Optional[Dict[str, str]]:
+def lookup(ecosystem: str, name: str, version: str) -> Optional[dict[str, str]]:
     """Return ``{advisory_id, severity, kind}`` if OSV knows *name@version* bad.
 
     ``kind`` is ``malware`` when any advisory is a malicious-package (MAL-)
@@ -129,7 +129,7 @@ def lookup(ecosystem: str, name: str, version: str) -> Optional[Dict[str, str]]:
     return result
 
 
-def advisory_status(ecosystem: str, name: str, version: str) -> Tuple[str, Optional[Dict[str, str]]]:
+def advisory_status(ecosystem: str, name: str, version: str) -> tuple[str, Optional[dict[str, str]]]:
     """Like :func:`lookup`, but "nothing found" and "could not ask" are told
     apart: ``("found", {advisory_id, severity, kind})``, ``("clean", None)``
     when OSV answered and names no advisory, ``("unavailable", None)`` when the
@@ -147,7 +147,7 @@ def advisory_status(ecosystem: str, name: str, version: str) -> Tuple[str, Optio
     return ("found", finding) if finding is not None else ("clean", None)
 
 
-def _finding(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, str]]:
+def _finding(data: Optional[dict[str, Any]]) -> Optional[dict[str, str]]:
     """``{advisory_id, severity, kind}`` from one OSV answer, or None when it
     names no advisory (or is no answer at all)."""
     if not isinstance(data, dict):

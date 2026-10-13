@@ -32,7 +32,7 @@ from ...kernel.signing.statement_order import CuratorStatement
 #: A listing is proposed for renewal this many days before it expires (plan §13).
 RENEW_AHEAD_DAYS = 30
 
-AdvisoryStatus = Callable[[str, str, str], Tuple[str, Optional[Dict[str, str]]]]
+AdvisoryStatus = Callable[[str, str, str], tuple[str, Optional[dict[str, str]]]]
 
 
 class Lookup(Enum):

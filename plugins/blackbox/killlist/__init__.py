@@ -23,7 +23,22 @@ from .statement import (KILL_LIST_STATEMENT, KILL_LIST_TYPE_IRI, MAX_ENTRIES, Ki
 from .store import LastGoodStore
 
 __all__ = [
-    "Decision", "KILL_LIST_STATEMENT", "KILL_LIST_TYPE_IRI", "KillAction", "KillEntry", "KillList", "LastGoodStore",
-    "MAX_ENTRIES", "MAX_NEW_DISABLES", "POPULAR_HOLD_SECONDS", "admit", "finding_for", "kill_list_quads",
-    "kill_list_sparql", "kill_list_subject", "match", "parse_kill_list", "sign_kill_list",
+                        "KILL_LIST_STATEMENT",
+                        "KILL_LIST_TYPE_IRI",
+                        "MAX_ENTRIES",
+                        "MAX_NEW_DISABLES",
+                        "POPULAR_HOLD_SECONDS",
+                        "Decision",
+                        "KillAction",
+                        "KillEntry",
+                        "KillList",
+                        "LastGoodStore",
+                        "admit",
+                        "finding_for",
+                        "kill_list_quads",
+                        "kill_list_sparql",
+                        "kill_list_subject",
+                        "match",
+                        "parse_kill_list",
+                        "sign_kill_list",
 ]

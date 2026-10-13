@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from _community_rows import GRAPH, NETWORK, signed_report_quads
+from datetime import UTC
 
 SWM = "shared-working-memory"
 VM = "verifiable-memory"
@@ -52,11 +53,11 @@ class Network:
 
     def __init__(self, network_id: str = NETWORK) -> None:
         self.network_id = network_id
-        self.assets: Dict[Tuple[str, str], Dict[Tuple[str, str], List[Dict[str, str]]]] = {}
-        self.inbox: Dict[str, List[Dict[str, Any]]] = {}
+        self.assets: dict[tuple[str, str], dict[tuple[str, str], list[dict[str, str]]]] = {}
+        self.inbox: dict[str, list[dict[str, Any]]] = {}
         self.clock = 1_000
 
-    def put(self, graph: str, view: str, author: str, name: str, quads: List[Dict[str, str]]) -> bool:
+    def put(self, graph: str, view: str, author: str, name: str, quads: list[dict[str, str]]) -> bool:
         """Store one asset; False when this author already holds one under that name (never rewritten)."""
         store = self.assets.setdefault((graph, view), {})
         if (author, name) in store:
@@ -68,12 +69,12 @@ class Network:
         """Shared memory forgot everything in *graph* (expiry)."""
         self.assets.pop((graph, view), None)
 
-    def rows(self, graph: str, view: str, type_name: Optional[str]) -> List[Dict[str, str]]:
+    def rows(self, graph: str, view: str, type_name: Optional[str]) -> list[dict[str, str]]:
         """One row per (asset, subject): ``r`` plus every plain-literal property by its local name."""
         out = []
         for quads in self.assets.get((graph, view), {}).values():
-            by_subject: Dict[str, Dict[str, str]] = {}
-            types: Dict[str, str] = {}
+            by_subject: dict[str, dict[str, str]] = {}
+            types: dict[str, str] = {}
             for quad in quads:
                 subject, predicate, obj = quad["subject"], quad["predicate"], quad["object"]
                 if predicate == _RDF_TYPE:
@@ -91,34 +92,34 @@ class Node:
 
     def __init__(self, network: Network, name: str, address: str) -> None:
         self.network, self.name, self.address = network, name, address
-        self.sealed: Dict[str, Tuple[str, List[Dict[str, str]]]] = {}
-        self.queries: List[Tuple[str, str]] = []
+        self.sealed: dict[str, tuple[str, list[dict[str, str]]]] = {}
+        self.queries: list[tuple[str, str]] = []
         self.offline = False          # every query fails
         self.refuse_shares = False    # a share is refused (a new subscriber, or a full node)
 
     # -- identity ------------------------------------------------------------
-    def status(self) -> Dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         return {"networkId": self.network.network_id, "peerId": self.name}
 
-    def agent_identity(self) -> Dict[str, Any]:
+    def agent_identity(self) -> dict[str, Any]:
         return {"agentAddress": self.address}
 
-    def context_graphs(self) -> List[Dict[str, Any]]:
+    def context_graphs(self) -> list[dict[str, Any]]:
         graphs = {graph for graph, _ in self.network.assets}
         return [{"id": graph, "subscribed": True, "synced": True, "accessPolicy": "public"} for graph in graphs]
 
     # -- writes --------------------------------------------------------------
-    def share_knowledge_asset(self, cg: str, name: str, quads: List[Dict[str, str]], **kw: Any) -> Dict[str, Any]:
+    def share_knowledge_asset(self, cg: str, name: str, quads: list[dict[str, str]], **kw: Any) -> dict[str, Any]:
         if self.refuse_shares:
             raise RuntimeError("share refused")
         fresh = self.network.put(cg, SWM, self.name, name, quads)
         return {"state": "succeeded"} if fresh else {"idempotent": True}
 
-    def write_private_knowledge_asset(self, cg: str, name: str, quads: List[Dict[str, str]]) -> Dict[str, Any]:
+    def write_private_knowledge_asset(self, cg: str, name: str, quads: list[dict[str, str]]) -> dict[str, Any]:
         self.sealed[name] = (cg, [dict(q) for q in quads])
         return {"name": name}
 
-    def request(self, method: str, path: str, body: Optional[Dict[str, Any]] = None, timeout: Any = None) -> Dict[str, Any]:
+    def request(self, method: str, path: str, body: Optional[dict[str, Any]] = None, timeout: Any = None) -> dict[str, Any]:
         if path.endswith("/vm/publish"):
             name = path.split("/knowledge-assets/", 1)[1].rsplit("/vm/publish", 1)[0]
             graph, quads = self.sealed[name]
@@ -177,11 +178,11 @@ class Machine:
         self.node = Node(network, name, address or "0x" + (name.encode().hex() * 40)[:40])
         self._monkeypatch = monkeypatch
 
-    def __enter__(self) -> "Machine":
+    def __enter__(self) -> Machine:
         self._monkeypatch.setenv("BLACKBOX_HOME", str(self.home))
         return self
 
-    def __exit__(self, *exc: Any) -> None:
+    def __exit__(self, *exc: object) -> None:
         return None
 
 
@@ -191,6 +192,6 @@ def share_report(node: Node, identifier: str, reporter: Any, *, graph: str = GRA
     *node*, dated *day* (``YYYY-MM-DD``; today when omitted) — built by the
     product's own report writer."""
     from datetime import datetime, timezone
-    ts = datetime.fromisoformat(day).replace(tzinfo=timezone.utc) if day else None
+    ts = datetime.fromisoformat(day).replace(tzinfo=UTC) if day else None
     quads = signed_report_quads(identifier, reporter, graph=graph, ts=ts, **evidence)
     node.share_knowledge_asset(graph, f"report-{abs(hash((identifier, reporter.address))):x}", quads)

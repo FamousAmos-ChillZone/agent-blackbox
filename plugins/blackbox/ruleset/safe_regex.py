@@ -79,7 +79,7 @@ def _walk(node: Any, *, iterating: bool) -> None:
     """*iterating*: some enclosing repeat can run more than once."""
     for op, arg in _items(node):
         if op in _REPEAT_OPS:
-            low, high, body = arg
+            _low, high, body = arg
             single = len(body) == 1 and body[0][0] in _SINGLE_ATOM_OPS
             if high == _MAXREPEAT and iterating:
                 raise UnsafePattern("an unbounded repeat inside a repeating group (nested quantifiers)")
