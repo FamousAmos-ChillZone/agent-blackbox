@@ -365,7 +365,7 @@ def test_read_states_are_tagged():
     unknown_network.network = ""
     read = read_verified_reports(unknown_network, CFG)
     assert read.state is ReadState.UNAVAILABLE and "network id" in read.reason
-    assert read_verified_reports(FakeClient(), BlackboxConfig()).state is ReadState.AUTHORISED_EMPTY
+    assert read_verified_reports(FakeClient(), BlackboxConfig(community_graph_id="")).state is ReadState.AUTHORISED_EMPTY
 
 
 def test_reapply_on_a_reused_ruleset_replaces_stale_community_entries():

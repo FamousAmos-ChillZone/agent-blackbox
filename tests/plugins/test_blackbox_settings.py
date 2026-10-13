@@ -297,10 +297,17 @@ def test_custom_fileaccess_benign_path_no_finding():
     assert detection.detect_custom_fileaccess("read_file", {"path": path}, ["*.pem"]) == []
 
 
-def test_custom_fileaccess_non_file_tool_no_finding():
-    # A terminal call is not a file-access tool even if a pem path appears.
+def test_custom_fileaccess_terminal_read_is_matched_too():
+    # KI-363: the terminal reaches a protected file as easily as a file tool does
+    # (terminal coverage in detail: test_blackbox_protected_paths_terminal.py).
     args = {"command": "cat " + os.path.join(_HOME, "certs", "server.pem")}
-    assert detection.detect_custom_fileaccess("terminal", args, ["*.pem"]) == []
+    _sole_custom(detection.detect_custom_fileaccess("terminal", args, ["*.pem"]))
+
+
+def test_custom_fileaccess_non_file_tool_no_finding():
+    # A tool that is neither a file tool nor a shell names no path.
+    args = {"query": os.path.join(_HOME, "certs", "server.pem")}
+    assert detection.detect_custom_fileaccess("web_search", args, ["*.pem"]) == []
 
 
 def test_custom_fileaccess_empty_patterns_no_finding():

@@ -15,8 +15,9 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 from ..kernel import constants
 from ..kernel import rdf_terms
-from ..kernel import threat_ids
+from ..kernel import signing, threat_ids
 from . import report_schema
+from .sighting import vocab as sighting_vocab
 from .report_signer import DISPUTE_STATEMENT, REPORT_STATEMENT, RETRACT_STATEMENT, ReportSigner
 
 # ---------------------------------------------------------------------------
@@ -51,8 +52,21 @@ _EVIDENCE_FIELDS: Dict[str, Tuple[Tuple[str, str], ...]] = {
     # curators' evidence queries bound nothing for it. The value itself already
     # lives IN the identifier (ioc:{type}:{value}); the type travels as its own
     # field so reviewers can filter without parsing.
-    "ioc": (("ioc_type", constants.IOC_TYPE_PRED), ("ioc_context", constants.IOC_CONTEXT_PRED)),
+    "ioc": (("ioc_type", constants.IOC_TYPE_PRED), ("ioc_context", constants.IOC_CONTEXT_PRED),
+            ("reason", constants.REPORT_REASON_PRED)),   # §03.6: why the indicator is bad (IOC_REASONS)
 }
+
+#: The common fields any category may carry (trust-and-threat-lab §03.6), in
+#: emission order after the evidence: (keyword argument, predicate).
+_COMMON_FIELDS: Tuple[Tuple[str, str], ...] = (
+    ("matched_by", constants.MATCHED_BY_PRED),
+    ("blackbox_version", constants.BLACKBOX_VERSION_PRED),
+    *sighting_vocab.SIGHTING_FIELDS,   # threat-profiles §03.2: the sighting and what the threat goes after
+)
+#: Every key a signed report payload may carry beside the core: what a READER
+#: validates; any other key is a newer writer's field it does not know yet.
+PAYLOAD_FIELD_KEYS = frozenset({name for table in _EVIDENCE_FIELDS.values() for name, _ in table}
+                               | {name for name, _ in _COMMON_FIELDS})
 
 
 def _day(ts: Optional[datetime]) -> datetime:
@@ -65,16 +79,31 @@ def _day(ts: Optional[datetime]) -> datetime:
 
 
 def _evidence(record: report_schema.ReportRecord) -> List[Tuple[str, str, str]]:
-    """(name, predicate, value) for each field of a VALIDATED record, in the
-    table's emission order."""
-    values = dict(record.evidence)
-    return [(name, predicate, values[name]) for name, predicate in _EVIDENCE_FIELDS.get(record.category, ()) if name in values]
+    """(name, predicate, value) for each field of a VALIDATED record — its
+    evidence in the table's emission order, then the common fields it states."""
+    values = {**dict(record.evidence), **record.common_fields()}
+    table = (*_EVIDENCE_FIELDS.get(record.category, ()), *_COMMON_FIELDS)
+    return [(name, predicate, values[name]) for name, predicate in table if name in values]
 
 
 def _signature_quad(subject: str, signer: ReportSigner, statement_type: str, payload: Dict[str, str]) -> rdf_terms.Quad:
     """The quad carrying *subject*'s signed envelope."""
     return rdf_terms.make_quad(subject, constants.SIGNED_STATEMENT_PRED,
                                rdf_terms.literal(signer.sign(statement_type, payload)))
+
+
+def _integrity_quads(subject: str, signed_text: str) -> List[rdf_terms.Quad]:
+    """Who signed and what was signed, beside the envelope (threat-profiles §03.3a):
+    the record digest (sha256 of the exact signed bytes — the statement's identity,
+    LES-033) and the signer's public key. Readers take both from the envelope
+    itself; these quads are for anyone browsing the graph."""
+    envelope = signing.from_text(signed_text)
+    if envelope is None or not envelope.signatures:
+        return []
+    return [rdf_terms.make_quad(subject, sighting_vocab.RECORD_DIGEST_PRED,
+                                rdf_terms.literal("sha256:" + signing.content_id(envelope))),
+            rdf_terms.make_quad(subject, sighting_vocab.SIGNER_KEY_PRED,
+                                rdf_terms.literal("ed25519:" + envelope.signatures[0].signer))]
 
 
 def build_report_quads(
@@ -94,6 +123,8 @@ def build_report_quads(
     passed as keyword arguments; what each category may carry, and every
     rule it must meet, is :mod:`.report_schema` (Refine R1) — a bad report
     raises :class:`.report_schema.ReportValidationError` and is never built.
+    The common fields ``matched_by`` and ``blackbox_version`` (§03.6) are
+    keyword arguments like the evidence and are written and signed with it.
     Timestamps are rounded to the day (decision 25). With a *signer* the
     report carries a signed envelope over its fields (R0b).
     """
@@ -119,7 +150,9 @@ def build_report_quads(
         payload = {"subject": subj, "identifier": identifier, "category": category, "severity": severity,
                    "reporter": reporter, "framework": framework, "day": day.date().isoformat()}
         payload.update({name: value for name, _, value in fields})
-        out.append(_signature_quad(subj, signer, REPORT_STATEMENT, payload))
+        signed_text = signer.sign(REPORT_STATEMENT, payload)
+        out.append(rdf_terms.make_quad(subj, constants.SIGNED_STATEMENT_PRED, rdf_terms.literal(signed_text)))
+        out.extend(_integrity_quads(subj, signed_text))
     return out
 
 

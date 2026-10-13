@@ -158,6 +158,7 @@ def publish_due(client: Any, cfg: Any, now: Optional[float] = None) -> int:
             retired.append(entry.name)
             continue
         try:
+            community.ensure_report_lane(client, entry.graph)
             client.share_knowledge_asset(entry.graph, community.keep_alive.copy_name(entry.name, epoch), list(entry.quads))
         except Exception as exc:
             if community.ALREADY_SEALED_REPLY not in str(exc).lower():

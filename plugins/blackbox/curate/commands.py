@@ -24,7 +24,7 @@ from ..detection import osv
 from ..kernel import display_safety, node_routes, signing
 from ..kernel.signing.authority import Authority
 from ..kernel.signing.statement_order import CuratorStatement
-from . import dossier, handoff, intake, keys, node_ui_views, publishing, queue, service, transport, verbs
+from . import console, dossier, handoff, intake, keys, node_ui_views, publishing, queue, transport, verbs, watch
 from .ladder import outcomes
 from .upkeep import heartbeat, published
 from .context import CurateContext, build_context, verified_identifiers
@@ -91,7 +91,7 @@ def _queue(args: argparse.Namespace) -> int:
     if ctx.compiled is None:
         print("No compiled ruleset available.")
         return 1
-    view = queue.delta_view(ctx.compiled.community, verified_identifiers(ctx.compiled))
+    view = queue.delta_view(ctx.compiled.community, verified_identifiers(ctx.compiled, ctx.compiled.community))
     print(f"NEW: {len(view.new)} · ALREADY VERIFIED (closed as duplicates): {len(view.already_verified)}"
           f" · UNLISTED-ONLY (stored, no lane): {len(view.unlisted_only)}"
           + ("" if ctx.manifest else " · no trusted key manifest: every author is unlisted"))
@@ -131,16 +131,6 @@ def _export(args: argparse.Namespace) -> int:
 
 def _verify_bundle(args: argparse.Namespace) -> int:
     return handoff.verify_file(args.file, root=args.root, network=args.network, graph=args.graph)   # offline: no context
-
-
-def _run(args: argparse.Namespace) -> int:
-    def context(interest):
-        return build_context(getattr(args, "compiled_ruleset", None), authority=getattr(args, "authority", None), interest=interest)
-    return service.run_command(context, peers=args.peer or [], interval=args.interval, once=args.once)
-
-
-def _policy(args: argparse.Namespace) -> int:
-    return service.policy_command(accept=args.accept, withdraw=args.withdraw, code=args.code)   # local: no context
 
 
 def _list(args: argparse.Namespace) -> int:
@@ -271,7 +261,8 @@ def _manifest(args: argparse.Namespace) -> int:
     ctx = _ctx(args)
     if ctx.authority is Authority.VERIFIED and not args.promotion_author:
         raise verbs.VerbError("a verified-authority manifest needs --promotion-author (the pinned publisher of verified rows)")
-    proposal = verbs.manifest_proposal(ctx, ProposalStore(), curator_keys=args.curator_keys, threshold=args.threshold,
+    proposal = verbs.manifest_proposal(ctx, ProposalStore(), curator_keys=args.curator_keys,
+                                       curator_operators=args.curator_operators, threshold=args.threshold,
                                        promotion_author=args.promotion_author, root_epoch=args.root_epoch,
                                        version=args.manifest_version, legacy_uals=[], issued_day=args.issued_day)
     root = signing.public_key_hex(keys.root_key_store(ctx.authority).load_or_create())
@@ -283,15 +274,21 @@ def _manifest(args: argparse.Namespace) -> int:
 def _watch(args: argparse.Namespace) -> int:
     watcher = intake.IntakeWatcher()
     alarms = intake.AlarmWatcher()
-    sink = intake.WebhookSink(args.webhook)
+    try:   # W3: this node's OWN credential (<curate home>/alarm_sink.json) unless a URL is given
+        sink = watch.WebhookSink(args.webhook) if args.webhook else watch.node_sink()
+    except watch.SinkCredentialError as exc:
+        raise verbs.VerbError(str(exc)) from exc
     while True:
         ctx = _ctx(args)   # KI-261: a fresh view every round (the curators' statements change between rounds)
-        compiled = ctx.compiled
+        compiled, now = ctx.compiled, time.time()
         if compiled is not None:
-            announced = watcher.poll(queue.delta_view(compiled.community, verified_identifiers(compiled)), sink)
+            announced = watcher.poll(queue.delta_view(compiled.community, verified_identifiers(compiled, compiled.community)), sink)
             if announced:
                 print(f"announced {len(announced)} new threat(s): " + ", ".join(_term(a, 60) for a in announced[:10]))
-        delivered = alarms.poll(verbs.curator_alarms(ctx, compiled, today=_today(), now=time.time()), sink)   # R10b
+        items = verbs.curator_alarms(ctx, compiled, today=_today(), now=now) + watch.manifest_items(ctx.manifest, now)
+        delivered = alarms.poll(items, sink, now=now)   # R10b + W1 items + the daily dead-man beat
+        alarms.post_metrics(lambda: console.collect_metrics(console.MetricsSources(), lambda: ctx, now),
+                            sink, now)   # F-035: C4's one record, built only when the hourly post is due
         if delivered:
             print(f"delivered {len(delivered)} curator alarm(s)")
         if args.once:
@@ -366,6 +363,5 @@ _VERBS: Dict[str, Callable[[argparse.Namespace], int]] = {
     "keys": _keys, "manifest": _manifest, "queue": _queue, "show": _show, "propose": _propose, "inbox": _inbox,
     "approve": _approve, "publish": _publish, "reject": _reject, "list": _list, "watch": _watch, "views": _views,
     "heartbeat": _heartbeat, "upkeep": _upkeep, "pool": _pool, "export": _export, "verify-bundle": _verify_bundle,
-    "policy": _policy, "run": _run,
     "view": _view, "outcome": _outcome, "graduate": _graduate, "metrics": _metrics,
 }

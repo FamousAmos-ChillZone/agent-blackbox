@@ -1,7 +1,7 @@
 """Response shaping for the direct graph backend."""
 from fastapi.responses import JSONResponse
-from .. import ruleset
-from ..kernel.dkg_client import DkgError
+from ... import ruleset
+from ...kernel.dkg_client import DkgError
 
 
 def unavailable(exc):

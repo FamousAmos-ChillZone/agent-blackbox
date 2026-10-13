@@ -22,7 +22,7 @@ import time
 import pytest
 
 from _blackbox_loader import load_blackbox
-from _vm_partitions import answer_partition_query, is_partition_query, is_partition_read
+from _vm_partitions import answer_verified_query, is_lane_query, is_verified_query
 
 
 audit = load_blackbox("audit")
@@ -89,7 +89,7 @@ def test_pypi_graph_threat_fires_for_underscore_variant():
             "packageVersion": "1.0", "severity": "critical", "name": "malware", "source": "public"}
     rs = ruleset_mod.build_from_rows([({"identifier": {"value": rid}, "packageEcosystem": {"value": "pypi"},
         "packageName": {"value": "foo-bar"}, "packageVersion": {"value": "1.0"},
-        "severity": {"value": "critical"}}, "public")])
+        "severity": {"value": "critical"}, "kind": {"value": "malware"}}, "public")])   # no kind = flag-only (R4)
     findings = detection.detect_dependency("shell", {"command": "pip install foo_bar==1.0"}, rs)
     assert findings and findings[0].confirmed
 
@@ -131,33 +131,34 @@ class _Pager:
                 },
                 "status": {"value": "confirmed"},
             } for i in range(partition_count)]
-        if not is_partition_query(sparql):
+        if not is_verified_query(sparql):
             return []
-        partition = re.search(r"GRAPH <([^>]+)>", sparql).group(1)
-        index = int(partition.rsplit("/", 1)[1])
-        start, end = index * 1000, min(index * 1000 + 1000, self.n)
-        return answer_partition_query(sparql, {partition: [{
-            "threat": f"urn:test:dependency:{i:08d}",
-            "rdfType": "urn:defender:DependencySignal",
-            "packageEcosystem": "npm",
-            "packageName": f"pkg{i}",
-            "packageVersion": "1.0",
-            "severity": "critical",
-        } for i in range(start, end)]})
+        partition_count = (self.n + 999) // 1000
+        # DKG-lookup B6: the compiled tiers are the small ones; the pager is exercised
+        # with injection rules (dependency rules are looked up live, never compiled).
+        return answer_verified_query(sparql, {
+            f"{data_graph}/_verifiable_memory/partition/{index:04d}": [{
+                "threat": f"urn:test:injection:{i:08d}",
+                "rdfType": "urn:defender:InjectionSignal",
+                "pattern": f"ignore previous {i}",
+                "severity": "critical",
+            } for i in range(index * 1000, min(index * 1000 + 1000, self.n))]
+            for index in range(partition_count)})
 
 def test_ruleset_sync_is_uncapped(monkeypatch):
     monkeypatch.setattr(ruleset_disk_cache, "_write_cache", lambda rs: None)
     monkeypatch.setattr(ruleset_refresh, "_memory", ruleset_refresh._new_memory())
     pager = _Pager(16_250)
     rs = ruleset_mod.refresh(config_mod.BlackboxConfig(), pager)
-    assert len(rs.dependency) == 16_250
+    assert len(rs.injection) == 16_250
     metadata_queries = [query for query, _kwargs in pager.queries if "dkg:assertionGraph" in query]
-    partition_queries = [(query, kwargs) for query, kwargs in pager.queries if is_partition_read(query)]
+    partition_queries = [(query, kwargs) for query, kwargs in pager.queries if is_lane_query(query)]
     assert len(metadata_queries) == 1
-    # KI-288/KI-289: one plain triple read per asset (17 assets of up to 1,000 threats), no OFFSET paging
-    assert len(partition_queries) == 17
+    # DKG-lookup B6: the small tiers are read by cursor-paged lanes over every confirmed
+    # asset at once (the 16,250 injection rows take 4 pages + the empty one), no OFFSET
+    assert len(partition_queries) >= 5
     assert not any("OFFSET" in query for query, _kwargs in partition_queries)
-    assert all(kwargs["view"] is None for _query, kwargs in partition_queries)
+    assert all(kwargs["view"] == "verifiable-memory" for _query, kwargs in partition_queries)
 
 
 def test_concurrent_ruleset_refresh_reuses_completed_generation(monkeypatch, tmp_path):
@@ -172,6 +173,7 @@ def test_concurrent_ruleset_refresh_reuses_completed_generation(monkeypatch, tmp
         "packageEcosystem": "npm",
         "packageName": "serialized",
         "packageVersion": "1.0.0",
+        "kind": "malware",
     }
 
     def slow_fetch(*_args, **_kwargs):
@@ -185,12 +187,12 @@ def test_concurrent_ruleset_refresh_reuses_completed_generation(monkeypatch, tmp
     monkeypatch.setattr(ruleset_fetching, "fetch_tier", slow_fetch)
 
     first = threading.Thread(
-        target=lambda: results.append(ruleset_mod.refresh(config_mod.BlackboxConfig(), object()))
+        target=lambda: results.append(ruleset_mod.refresh(config_mod.BlackboxConfig(community_graph_id=""), object()))
     )
 
     def second_refresh():
         second_started.set()
-        results.append(ruleset_mod.refresh(config_mod.BlackboxConfig(), object()))
+        results.append(ruleset_mod.refresh(config_mod.BlackboxConfig(community_graph_id=""), object()))
 
     second = threading.Thread(target=second_refresh)
     first.start()
@@ -244,7 +246,7 @@ def test_post_barrier_refresh_does_not_reuse_pre_barrier_generation(
             barrier_stamp_read.set()
         return stamp
 
-    cfg = config_mod.BlackboxConfig(context_graph_id="owner/public")
+    cfg = config_mod.BlackboxConfig(context_graph_id="owner/public", community_graph_id="")
     monkeypatch.setattr(ruleset_disk_cache.constants, "blackbox_home", lambda: tmp_path)
     monkeypatch.setattr(ruleset_refresh, "_memory", ruleset_refresh._new_memory())
     monkeypatch.setattr(ruleset_fetching, "fetch_tier", staged_fetch)
@@ -318,7 +320,7 @@ def test_forced_refresh_rejects_incomplete_vm_query_without_restamping_cache(
         "packageName": "last-good",
         "packageVersion": "1.0.0",
     }
-    cfg = config_mod.BlackboxConfig(context_graph_id="owner/public")
+    cfg = config_mod.BlackboxConfig(context_graph_id="owner/public", community_graph_id="")
     monkeypatch.setattr(ruleset_disk_cache.constants, "blackbox_home", lambda: tmp_path)
     monkeypatch.setattr(ruleset_refresh, "_memory", ruleset_refresh._new_memory())
     monkeypatch.setattr(ruleset_fetching, "fetch_tier", lambda *_args, **_kwargs: [row])
@@ -345,13 +347,14 @@ def test_ruleset_cache_never_crosses_custom_context_graphs(monkeypatch, tmp_path
         "packageEcosystem": "npm",
         "packageName": "graph-a",
         "packageVersion": "1.0.0",
+        "kind": "malware",
     }
     monkeypatch.setattr(ruleset_disk_cache.constants, "blackbox_home", lambda: tmp_path)
     monkeypatch.setattr(ruleset_refresh, "_memory", ruleset_refresh._new_memory())
     monkeypatch.setattr(ruleset_fetching, "fetch_tier", lambda *_args, **_kwargs: [row])
 
-    graph_a = config_mod.BlackboxConfig(context_graph_id="owner/graph-a")
-    graph_b = config_mod.BlackboxConfig(context_graph_id="owner/graph-b")
+    graph_a = config_mod.BlackboxConfig(context_graph_id="owner/graph-a", community_graph_id="")
+    graph_b = config_mod.BlackboxConfig(context_graph_id="owner/graph-b", community_graph_id="")
     first = ruleset_mod.refresh(graph_a, object())
     assert first.context_graph_id == "owner/graph-a"
     assert first.source_count("public") == 1
@@ -604,7 +607,7 @@ def test_missing_community_does_not_restart_dkg_sync(monkeypatch):
         config_mod.BlackboxConfig(context_graph_id="public-with-empty-community"),
         _PublicOnly(1),
     )
-    assert len(rs.dependency) == 1
+    assert len(rs.injection) == 1
 
 
 def test_vm_error_preserves_public_rules_without_loading_swm(monkeypatch):

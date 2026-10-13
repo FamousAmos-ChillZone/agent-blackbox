@@ -65,3 +65,8 @@ def _is_default_dkg_home(value: object) -> bool:
     except Exception:
         return Path(raw).expanduser() == Path.home() / ".dkg"
 
+
+
+def _fallback_mode(value: Any) -> str:
+    """Enable index fallback only when explicitly selected."""
+    return "index" if str(value or "").strip().lower() == "index" else "off"

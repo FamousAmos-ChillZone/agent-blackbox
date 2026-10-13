@@ -216,10 +216,9 @@ def test_the_route_is_served_and_the_page_asks_for_it(monkeypatch):
     community_routes.register_community_routes(app, community_read=lambda cfg: read)
     response = TestClient(app, base_url="http://127.0.0.1").get("/api/trust")
     assert response.status_code == 200 and response.json()["confirmed_total"] == 1
-    page = PAGE.read_text(encoding="utf-8")
-    assert 'getJSON("/api/trust").then(renderTrust' in page and "loadTrust();" in page
-    for element in ("trust-authorities", "trust-reporters-body", "trust-confirmed-body", "trust-note"):
-        assert f'id="{element}"' in page and f'$("{element}")' in page
+    # The dashboard's Community graph section (and its Trust pane) was removed at Amos's direction
+    # (2026-10-10); /api/trust stays for `blackbox status` parity and other clients.
+    assert 'id="community-panel"' not in PAGE.read_text(encoding="utf-8")
 
 
 # ------------------------------------------------------------------ a reporter's progress
@@ -335,4 +334,6 @@ def test_only_a_community_authority_still_counts_as_trusted_curators(monkeypatch
     TrustStore().forget()                                                  # a node that never saw that manifest
     monkeypatch.delenv("BLACKBOX_COMMUNITY_ROOT_KEYS")
     nobody = community.read_verified_reports(Store(reports=[signed_row(IP, Reporter("0xa"))]), CFG)
-    assert any("no trusted curator keys" in item.message for item in health.operator_health(health.gather(CFG, rs, True, nobody, {}, 2.0)))
+    untrusted = [item.message for item in health.operator_health(health.gather(CFG, rs, True, nobody, {}, 2.0))]
+    assert not any("curators are silent" in message for message in untrusted)   # nobody trusted: no curator alarm at all
+    assert not any("no trusted curator keys" in message for message in untrusted)

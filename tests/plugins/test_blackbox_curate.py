@@ -18,7 +18,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from plugins.blackbox import ruleset
 from plugins.blackbox.community.statements import curator_view as cv
 from plugins.blackbox.curate import consent, dossier, keys, node_ui_views, publishing, queue, transport, verbs
-from plugins.blackbox.curate.context import CurateContext
+from plugins.blackbox.curate.context import CurateContext, PromotionDraft
 from plugins.blackbox.curate.proposal import Proposal, ProposalError, ProposalState, ProposalStore
 from plugins.blackbox.kernel import constants, node_routes, signing
 from plugins.blackbox.kernel.config import BlackboxConfig
@@ -38,6 +38,7 @@ class FakeNode:
 
     def __init__(self):
         self.vm_published, self.shared, self.messages, self.sealed = [], [], [], []
+        self.order: list = []   # seal / share / publish, in call order (KI-351)
 
     def status(self):
         return {"networkId": NETWORK}
@@ -55,11 +56,13 @@ class FakeNode:
 
     def write_private_knowledge_asset(self, cg, name, quads):
         self.sealed.append((cg, name, quads))
+        self.order.append("seal")
         return {"name": name}
 
     def request(self, method, path, body=None, timeout=None):
         if path.endswith("/vm/publish"):
             self.vm_published.append((body["contextGraphId"], path, self.sealed[-1][2]))
+            self.order.append("publish")
             return {"status": "confirmed"}
         if path == "/api/chat":
             self.messages.append(body)
@@ -68,6 +71,10 @@ class FakeNode:
             return {"messages": [{"id": i + 1, "ts": 1000 + i, "peer": "A", "text": m["text"]}
                                  for i, m in enumerate(self.messages)]}
         raise AssertionError(path)
+
+    def share_finalized_knowledge_asset(self, cg, name):
+        self.order.append("share")
+        return {"state": "succeeded"}
 
     def share_knowledge_asset(self, cg, name, quads, **kw):
         self.shared.append((cg, name, quads))
@@ -78,7 +85,8 @@ class FakeNode:
 def curators():
     a, b, c = (Ed25519PrivateKey.generate() for _ in range(3))
     manifest = km.KeyManifest(environment=NETWORK, graph=VM_GRAPH, chain="", root_epoch=1, version=1,
-                              curator_keys=tuple(sorted(signing.public_key_hex(k) for k in (a, b, c))), threshold=2,
+                              curator_keys=tuple(sorted(signing.public_key_hex(k) for k in (a, b, c))),
+                              curator_operators=("operator-a", "operator-b", "operator-c"), threshold=2,
                               promotion_author="0x" + "1" * 40, legacy_assets_hash=km.legacy_assets_hash([]))
     return {"a": a, "b": b, "c": c, "manifest": manifest}
 
@@ -198,7 +206,8 @@ def test_advisory_statements_go_to_the_community_graph_enforcement_to_the_verifi
     for p in (rejection, revocation):
         store_b.save(p)
         verbs.approve(_ctx(node, curators["manifest"]), store_b, p.id, evidence="", typed_code=None, yes=True)
-    assert [cg for cg, _n, _q in node.shared] == [COMMUNITY]                    # rejection: advisory
+    # rejection: advisory; then the revocation's advisory twin (trust-and-threat-lab P5, D26)
+    assert [(cg, name.split("-")[1]) for cg, name, _q in node.shared] == [(COMMUNITY, "rejection"), (COMMUNITY, "twin")]
     assert [cg for cg, _p, _q in node.vm_published] == [VM_GRAPH]              # revocation: enforcement
 
 
@@ -288,7 +297,7 @@ def test_the_second_signer_refuses_a_crafted_promotion_payload(monkeypatch, tmp_
     crafted = {"identifier": THREAT, "severity": "critical", "kind": "vulnerability", "ecosystem": "npm",
                "packageName": "evil-pkg", "packageVersion": "1.0.0", "advisoryId": "MAL-1", "name": "x", "provenance": ""}
     mismatched = {**crafted, "kind": "malware", "packageName": "left-pad"}
-    proposals = [Proposal.new(Kind.PROMOTION.value, THREAT, promotion.sign(payload, curators["a"], curators["manifest"], sequence=1),
+    proposals = [Proposal.new(Kind.PROMOTION.value, THREAT, _ctx(node, curators["manifest"]).sign(PromotionDraft(payload, sequence=1), curators["a"]),
                               VM_GRAPH, checks={}).transition(ProposalState.PROPOSED) for payload in (crafted, mismatched)]
     _machine(monkeypatch, tmp_path, "B", curators["b"])
     store = ProposalStore()
@@ -299,9 +308,43 @@ def test_the_second_signer_refuses_a_crafted_promotion_payload(monkeypatch, tmp_
     assert node.vm_published == []
     whole = promotion.payload_for("dep:npm:evil-pkg@*", severity="high", advisory="MAL-1", report_subjects=[],
                                   provenance=promotion.ProvenanceMap())
-    envelope = promotion.sign(whole, curators["b"], curators["manifest"], sequence=2)
+    envelope = _ctx(node, curators["manifest"]).sign(PromotionDraft(whole, sequence=2), curators["b"])
     proposal = Proposal.new(Kind.PROMOTION.value, "dep:npm:evil-pkg@*", envelope, VM_GRAPH, checks={})
     assert "WHOLE PACKAGE" in publishing.summary(proposal)
+
+
+@pytest.mark.parametrize("operators,break_glass,signed_by,publishes", [
+    (("acme", "acme", "globex"), False, (0, 1), False),        # one organisation's two keys are one vote
+    (("acme", "acme", "globex"), False, (0, 2), True),
+    (("acme", "globex", "vault"), True, (0, 2), False),        # break-glass never counts on a raise (R7b)
+])
+def test_the_promotion_publish_gate_counts_one_key_per_operator(monkeypatch, tmp_path, operators, break_glass,
+                                                                signed_by, publishes):
+    """K2: publish's PROMOTION gate used to count raw keys, so it would write a promotion every reader refuses."""
+    from plugins.blackbox.curate import promotion
+    node = FakeNode()
+    curator_keys = [Ed25519PrivateKey.generate() for _ in range(3)]
+    hexes = [signing.public_key_hex(k) for k in curator_keys]
+    manifest = km.KeyManifest(environment=NETWORK, graph=VM_GRAPH, chain="", root_epoch=1, version=1, threshold=2,
+                              **km.roster(dict(zip(hexes, operators))), promotion_author="0x" + "1" * 40,
+                              legacy_assets_hash=km.legacy_assets_hash([]),
+                              break_glass_key=hexes[2] if break_glass else "")
+    _machine(monkeypatch, tmp_path, "A", curator_keys[signed_by[1]])
+    payload = promotion.payload_for(THREAT, severity="critical", advisory="MAL-1", report_subjects=[],
+                                    provenance=promotion.ProvenanceMap())
+    envelope = _ctx(node, manifest).cosign(_ctx(node, manifest).sign(PromotionDraft(payload, sequence=1), curator_keys[signed_by[0]]),
+                                         curator_keys[signed_by[1]])
+    proposal = (Proposal.new(Kind.PROMOTION.value, THREAT, envelope, VM_GRAPH, checks={})
+                .transition(ProposalState.PROPOSED).transition(ProposalState.APPROVED))
+    store = ProposalStore()
+    store.save(proposal)
+    if publishes:
+        _, outcome = publishing.publish(_ctx(node, manifest), store, proposal.id, typed_code=None, yes=True)
+        assert outcome.startswith("published")
+    else:
+        with pytest.raises(verbs.VerbError, match="enough curator signatures"):
+            publishing.publish(_ctx(node, manifest), store, proposal.id, typed_code=None, yes=True)
+        assert node.vm_published == []
 
 
 def test_saved_views_are_catalog_entries_in_the_nodes_vocabulary():
@@ -326,6 +369,7 @@ def test_publish_to_verified_memory_seals_then_publishes():
     quads = [{"subject": "urn:x", "predicate": constants.IDENTIFIER_PRED, "object": '"dep:npm:x@1"'}]
     node_routes.publish_to_verified_memory(node, VM_GRAPH, "threat-x", quads)
     assert node.sealed[0][1] == "threat-x" and node.vm_published[0][1] == "/api/knowledge-assets/threat-x/vm/publish"
+    assert node.order == ["seal", "share", "publish"]   # KI-351: shared in full before the paid publish
 
 
 def test_a_stage_attestation_needs_two_keys_and_lands_in_the_community_graph(monkeypatch, tmp_path, curators):

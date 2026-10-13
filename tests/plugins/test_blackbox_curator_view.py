@@ -49,7 +49,7 @@ def keys():
 def manifest(keys):
     return km.KeyManifest(environment=NETWORK, graph=VM_GRAPH, chain="", root_epoch=1, version=1,
                           curator_keys=tuple(sorted(signing.public_key_hex(k) for k in keys["curators"])),
-                          threshold=2, promotion_author="0x" + "1" * 40, legacy_assets_hash=km.legacy_assets_hash([]))
+                          curator_operators=("operator-a", "operator-b", "operator-c"), threshold=2, promotion_author="0x" + "1" * 40, legacy_assets_hash=km.legacy_assets_hash([]))
 
 
 @pytest.fixture
@@ -107,7 +107,7 @@ class _Node:
 
 def test_a_pinned_network_cannot_be_overridden_from_the_environment(monkeypatch):
     pinned, sandbox = "a" * 64, "b" * 64
-    monkeypatch.setattr(constants, "CURATOR_ROOT_KEYS", {NETWORK: (pinned,)})
+    monkeypatch.setattr(constants, "CURATOR_ROOT_KEYS", {NETWORK: {1: (pinned,)}})
     env = {"BLACKBOX_CURATOR_ROOT_KEYS": sandbox}
     assert trust_anchors.trusted_roots(NETWORK, env) == {pinned}
     assert trust_anchors.trusted_roots("sandbox-network", env) == {sandbox}

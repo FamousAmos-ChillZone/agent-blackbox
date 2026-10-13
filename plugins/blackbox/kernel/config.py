@@ -25,9 +25,8 @@ logger = logging.getLogger(__name__)
 _TRUE = {"1", "true", "yes", "on"}
 _FALSE = {"0", "false", "no", "off"}
 
-#: Sensible out-of-the-box protected paths — high-signal credential stores an
-#: agent rarely has a legitimate reason to read. Applied only when the config
-#: key is absent; an explicit (even empty) ``protected_paths`` list wins.
+#: Sensible out-of-the-box protected paths — high-signal credential stores an agent rarely has a
+#: legitimate reason to read. Applied only when the config key is absent; an explicit (even empty) list wins.
 DEFAULT_PROTECTED_PATHS: Tuple[str, ...] = (
     "~/.ssh/*",          # SSH private keys
     ".env",              # environment files (any directory)
@@ -42,7 +41,7 @@ DEFAULT_PROTECTED_PATHS: Tuple[str, ...] = (
 
 
 from .config_values import (_as_bool, _as_int, _as_float, _env_or, _first_env,
-                            _default_dkg_url, _is_default_dkg_home)
+                            _default_dkg_url, _is_default_dkg_home, _fallback_mode)
 
 @dataclass(frozen=True)
 class BlackboxConfig:
@@ -58,7 +57,7 @@ class BlackboxConfig:
     dkg_home: str = field(default_factory=lambda: str(constants.blackbox_dkg_home()))
     dkg_bin: str = field(default_factory=lambda: str(constants.blackbox_dkg_bin()))
     sync_interval: int = 3600
-    report: bool = False
+    report: bool = True   # community sharing ON by default, opt-out (2026-10-12)
     daily_report_limit: int = constants.DEFAULT_DAILY_REPORT_LIMIT
     report_min_severity: str = "high"
     #: Community context graph address (env BLACKBOX_COMMUNITY_GRAPH_ID →
@@ -77,6 +76,8 @@ class BlackboxConfig:
     #: R15 shadow phase: community stages are computed and logged, but every
     #: community rule is clamped to MONITOR — nothing community-derived reaches an agent.
     community_shadow: bool = False
+    #: DKG-lookup B9: ``off`` (default: a failed lookup is could-not-tell + an alarm) | ``index`` (opt-in on-disk SQLite last resort).
+    verified_lookup_fallback: str = "off"
     block_severity: str = "critical"
     dashboard_port: int = 9700
     discover: bool = True
@@ -283,8 +284,8 @@ def load_blackbox_config() -> BlackboxConfig:
             default=constants.DEFAULT_GRAPH_PEER_ID,
         )
     ).strip()
-    # Replace bootstrap peers from previous releases; custom peers are untouched.
-    if graph_peer_id in constants.LEGACY_GRAPH_PEER_IDS:
+    # Replace old bootstrap peers (custom ones untouched); the default is in that set too (KI-335).
+    if graph_peer_id in constants.LEGACY_GRAPH_PEER_IDS and graph_peer_id != constants.DEFAULT_GRAPH_PEER_ID:
         logger.info(
             "blackbox: switching stale graph_peer_id %s -> %s",
             graph_peer_id,
@@ -299,33 +300,25 @@ def load_blackbox_config() -> BlackboxConfig:
         dkg_url=dkg_url,
         dkg_home=dkg_home,
         dkg_bin=dkg_bin,
-        sync_interval=max(3600, _as_int(_env_or(entry, env="BLACKBOX_SYNC_INTERVAL", key="sync_interval",
-                                                default=3600), 3600)),
-        # Community sharing switches (README: `report` / `report_min_severity`): `report` defaults OFF;
-        # the daily cap defaults to a real bound so the safeguard exists the moment sharing turns on (KI-002).
-        report=_as_bool(_env_or(entry, env="BLACKBOX_REPORT", key="report", default=False), False),
-        daily_report_limit=constants.effective_daily_report_limit(_as_int(
-            _env_or(entry, env="BLACKBOX_DAILY_REPORT_LIMIT", key="daily_report_limit",
-                    default=constants.DEFAULT_DAILY_REPORT_LIMIT), constants.DEFAULT_DAILY_REPORT_LIMIT)),
+        sync_interval=max(3600, _as_int(_env_or(entry, env="BLACKBOX_SYNC_INTERVAL", key="sync_interval", default=3600), 3600)),
+        # Community sharing switches (README: `report` / `report_min_severity`): `report` defaults ON
+        # (opt-out, 2026-10-12); the daily cap is a real bound from the first report (KI-002).
+        report=_as_bool(_env_or(entry, env="BLACKBOX_REPORT", key="report", default=True), True),
+        daily_report_limit=constants.effective_daily_report_limit(_as_int(_env_or(entry, env="BLACKBOX_DAILY_REPORT_LIMIT", key="daily_report_limit", default=constants.DEFAULT_DAILY_REPORT_LIMIT), constants.DEFAULT_DAILY_REPORT_LIMIT)),
         community_shadow=_as_bool(_env_or(entry, env="BLACKBOX_COMMUNITY_SHADOW", key="community_shadow", default=False), False),
+        verified_lookup_fallback=_fallback_mode(_env_or(entry, env="BLACKBOX_VERIFIED_LOOKUP_FALLBACK", key="verified_lookup_fallback", default="off")),
         community_graph_id=str(_env_or(entry, env="BLACKBOX_COMMUNITY_GRAPH_ID", key="community_graph_id",
                                         default=constants.DEFAULT_COMMUNITY_GRAPH_ID)).strip(),
         community_graph_peer_id=str(_env_or(entry, env="BLACKBOX_COMMUNITY_GRAPH_PEER_ID", key="community_graph_peer_id",
                                              default=constants.DEFAULT_COMMUNITY_GRAPH_PEER_ID)).strip(),
-        community_poll_interval=_as_int(_env_or(entry, env="BLACKBOX_COMMUNITY_POLL_INTERVAL",
-                                                key="community_poll_interval", default=20), 20),
-        community_keepalive_epoch_days=_as_float(_env_or(entry, env="BLACKBOX_COMMUNITY_KEEPALIVE_EPOCH_DAYS",
-                                                         key="community_keepalive_epoch_days", default=10.0), 10.0),
+        community_poll_interval=_as_int(_env_or(entry, env="BLACKBOX_COMMUNITY_POLL_INTERVAL", key="community_poll_interval", default=20), 20),
+        community_keepalive_epoch_days=_as_float(_env_or(entry, env="BLACKBOX_COMMUNITY_KEEPALIVE_EPOCH_DAYS", key="community_keepalive_epoch_days", default=10.0), 10.0),
         report_min_severity=report_min_severity,
         block_severity=block_severity,
         dashboard_port=_as_int(_env_or(entry, env="BLACKBOX_DASHBOARD_PORT", key="dashboard_port", default=9700), 9700),
         discover=_as_bool(_env_or(entry, env="BLACKBOX_DISCOVER", key="discover", default=True), True),
-        osv_lookup=_as_bool(
-            _env_or(entry, env="BLACKBOX_OSV_LOOKUP", key="osv_lookup", default=True), True
-        ),
-        auto_attach=_as_bool(
-            _env_or(entry, env="BLACKBOX_AUTO_ATTACH", key="auto_attach", default=True), True
-        ),
+        osv_lookup=_as_bool(_env_or(entry, env="BLACKBOX_OSV_LOOKUP", key="osv_lookup", default=True), True),
+        auto_attach=_as_bool(_env_or(entry, env="BLACKBOX_AUTO_ATTACH", key="auto_attach", default=True), True),
         categories=categories,
         protected_paths=protected_paths,
         llm_enabled=llm_enabled,

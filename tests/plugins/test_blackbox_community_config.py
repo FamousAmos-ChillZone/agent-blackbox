@@ -57,13 +57,24 @@ def test_default_is_shipped_constant(clean_env):
     assert cfg.community_graph_id == constants.DEFAULT_COMMUNITY_GRAPH_ID
 
 
-def test_shipped_default_is_empty_until_production_graph_exists(clean_env):
-    """KI-035 launch-safety rule: a release must never point the fleet at a
-    dev graph. Until the production graph id lands here, the default MUST be
-    empty — which keeps community_enabled False by construction."""
-    assert constants.DEFAULT_COMMUNITY_GRAPH_ID == ""
-    # KI-216: the owner peer id ships as a PAIR with the graph id — both empty or both set
+def test_the_shipped_default_is_the_production_community_graph(clean_env):
+    """KI-035 launch-safety rule: a release never points the fleet at a dev or
+    test graph. The shipped default is the production graph, owned by the
+    Umanitek wallet, and its owner peer ships with it (KI-216: both or neither)."""
+    graph = constants.DEFAULT_COMMUNITY_GRAPH_ID
+    assert graph == "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-community"
+    assert not any(word in graph.lower() for word in ("test", "dev", "sim", "bench", "demo"))
+    assert constants.DEFAULT_COMMUNITY_GRAPH_PEER_ID.startswith("12D3KooW")
     assert bool(constants.DEFAULT_COMMUNITY_GRAPH_PEER_ID) == bool(constants.DEFAULT_COMMUNITY_GRAPH_ID)
+
+
+def test_a_fresh_install_reads_and_shares_with_the_community_graph(clean_env):
+    """Everything works as soon as Blackbox is installed: the production graph is
+    the default and sharing is on (opt-out); the operator's `report: false` still wins."""
+    cfg = _load_with_entry(clean_env, {})
+    assert cfg.community_graph_id == constants.DEFAULT_COMMUNITY_GRAPH_ID
+    assert cfg.report is True and cfg.community_enabled is True
+    assert _load_with_entry(clean_env, {"report": False}).community_enabled is False
 
 
 # ---------------------------------------------------------------------------
@@ -102,9 +113,10 @@ def test_report_env_override_wins(clean_env):
     assert cfg.report is True
 
 
-def test_report_defaults_off(clean_env):
+def test_report_defaults_on(clean_env):
+    """Community sharing is ON by default with an opt-out (founder decision 2026-10-12)."""
     cfg = _load_with_entry(clean_env, {})
-    assert cfg.report is False
+    assert cfg.report is True
 
 
 def test_daily_report_limit_has_real_default(clean_env):
@@ -116,7 +128,7 @@ def test_daily_report_limit_has_real_default(clean_env):
 def test_daily_report_limit_configurable_and_never_negative(clean_env):
     assert _load_with_entry(clean_env, {"daily_report_limit": 5}).daily_report_limit == 5
     # Refine R1 (plan §07): the cap can no longer be switched off — 0 or below means the default.
-    assert _load_with_entry(clean_env, {"daily_report_limit": -3}).daily_report_limit == 20
+    assert _load_with_entry(clean_env, {"daily_report_limit": -3}).daily_report_limit == 100
 
 
 # ---------------------------------------------------------------------------
@@ -124,19 +136,19 @@ def test_daily_report_limit_configurable_and_never_negative(clean_env):
 # ---------------------------------------------------------------------------
 
 
-def test_the_daily_cap_defaults_to_20_and_cannot_be_switched_off(clean_env):
-    """Refine R1: 20/day client hygiene; `0` used to mean NO cap — the very
-    value the installers wrote to make the allowance "inert"."""
-    assert constants.DEFAULT_DAILY_REPORT_LIMIT == 20
-    assert _load_with_entry(clean_env, {"daily_report_limit": 0}).daily_report_limit == 20
+def test_the_daily_cap_defaults_to_100_and_cannot_be_switched_off(clean_env):
+    """Refine R1: client hygiene (20/day, raised to 100 on 2026-10-12); `0` used to
+    mean NO cap — the very value the installers wrote to make the allowance "inert"."""
+    assert constants.DEFAULT_DAILY_REPORT_LIMIT == 100
+    assert _load_with_entry(clean_env, {"daily_report_limit": 0}).daily_report_limit == 100
     clean_env.setenv("BLACKBOX_DAILY_REPORT_LIMIT", "0")
-    assert _load_with_entry(clean_env, {}).daily_report_limit == 20
+    assert _load_with_entry(clean_env, {}).daily_report_limit == 100
 
 
 def test_allow_report_with_zero_still_caps(clean_env, tmp_path):
     from plugins.blackbox import audit
     clean_env.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
-    allowed = [audit.allow_report(0) for _ in range(25)]
+    allowed = [audit.allow_report(0) for _ in range(constants.DEFAULT_DAILY_REPORT_LIMIT + 5)]
     assert allowed.count(True) == constants.DEFAULT_DAILY_REPORT_LIMIT
 
 

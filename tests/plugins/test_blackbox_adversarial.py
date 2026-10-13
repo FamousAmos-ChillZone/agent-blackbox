@@ -168,7 +168,7 @@ def keys():
 def manifest(keys):
     return km.KeyManifest(environment=NETWORK, graph=VM_GRAPH, chain="", root_epoch=1, version=1,
                           curator_keys=tuple(sorted(signing.public_key_hex(k) for k in keys["curators"])),
-                          threshold=2, promotion_author="0x" + "1" * 40, legacy_assets_hash=km.legacy_assets_hash([]))
+                          curator_operators=("operator-a", "operator-b", "operator-c"), threshold=2, promotion_author="0x" + "1" * 40, legacy_assets_hash=km.legacy_assets_hash([]))
 
 
 @pytest.fixture
@@ -355,7 +355,7 @@ def test_forged_statements_are_dropped(trust, keys, manifest):
     # Curator statements: a stranger's key, a single key on a quorum statement, the wrong graph, a non-root manifest.
     stranger_manifest = km.KeyManifest(environment=NETWORK, graph=VM_GRAPH, chain="", root_epoch=1, version=1,
                                        curator_keys=tuple(sorted(signing.public_key_hex(k) for k in (stranger, accomplice))),
-                                       threshold=2, promotion_author="0x" + "1" * 40, legacy_assets_hash=km.legacy_assets_hash([]))
+                                       curator_operators=("operator-a", "operator-b"), threshold=2, promotion_author="0x" + "1" * 40, legacy_assets_hash=km.legacy_assets_hash([]))
     forged = {
         "strangers reject (their own 2-of-2, not the trusted manifest)":
             [_curator_row(Kind.REJECTION, MALWARE, {"reason": "bad-faith"}, [stranger, accomplice], stranger_manifest)],

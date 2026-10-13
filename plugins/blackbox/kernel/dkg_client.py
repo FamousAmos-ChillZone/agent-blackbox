@@ -418,7 +418,7 @@ class DkgClient:
     # -- knowledge assets --------------------------------------------------
 
     def share_knowledge_asset(self, cg_id: str, name: str, quads: List[Quad],
-                              create_timeout: Optional[float] = None) -> Dict[str, Any]:
+                              create_timeout: Optional[float] = None) -> Dict[str, Any]:   # community statements only
         """Create/finalize a KA, then explicitly share its sealed assertion to SWM.
 
         Private/agent-gated context graphs require the node's sender-key SWM
@@ -437,13 +437,14 @@ class DkgClient:
             self.request(
                 "POST",
                 "/api/knowledge-assets",
-                {"contextGraphId": cg_id, "name": name, "quads": quads, "alsoShareSwm": False},
+                {"contextGraphId": cg_id, "name": name, "quads": quads, "alsoShareSwm": False,
+                 "subGraphName": constants.COMMUNITY_SUB_GRAPH},
                 timeout=create_timeout or _STORE_TIMEOUT,
             )
         except DkgError as exc:
             if not (_is_already_finalized(exc) or _is_wm_merkle_conflict(exc)):
                 raise
-        return self.share_finalized_knowledge_asset(cg_id, name)
+        return self.share_finalized_knowledge_asset(cg_id, name, constants.COMMUNITY_SUB_GRAPH)
 
     def _ka_path(self, name: str, suffix: str = "") -> str:
         enc = urllib.parse.quote(name, safe="")
@@ -456,30 +457,22 @@ class DkgClient:
         layer: str = "swm",
         *,
         on_conflict: Optional[str] = None,
+        sub_graph: str = "",
     ) -> Dict[str, Any]:
-        """Pull the latest KA assertion from another layer into local WM.
+        """Pull the latest KA assertion from another layer into local WM (of *sub_graph*, "" = root).
 
         Used to repair stale local finalized state before re-sharing old assets.
         """
-        body: Dict[str, Any] = {"contextGraphId": cg_id, "layer": layer}
+        body: Dict[str, Any] = {"contextGraphId": cg_id, "layer": layer, **({"subGraphName": sub_graph} if sub_graph else {})}
         if on_conflict:
             body["onConflict"] = on_conflict
-        return self.request(
-            "POST",
-            self._ka_path(name, "/wm/pull-from"),
-            body,
-            timeout=_STORE_TIMEOUT,
-        )
+        return self.request("POST", self._ka_path(name, "/wm/pull-from"), body, timeout=_STORE_TIMEOUT)
 
-    def share_async(self, cg_id: str, name: str) -> Dict[str, Any]:
-        """Queue an async SWM share job for an already-finalized WM KA."""
+    def share_async(self, cg_id: str, name: str, sub_graph: str = "") -> Dict[str, Any]:
+        """Queue an async SWM share job for an already-finalized WM KA (in *sub_graph*; "" = root)."""
+        body = {"contextGraphId": cg_id, "entities": "all", **({"subGraphName": sub_graph} if sub_graph else {})}
         try:
-            return self.request(
-                "POST",
-                self._ka_path(name, "/swm/share-async"),
-                {"contextGraphId": cg_id, "entities": "all"},
-                timeout=_STORE_TIMEOUT,
-            )
+            return self.request("POST", self._ka_path(name, "/swm/share-async"), body, timeout=_STORE_TIMEOUT)
         except DkgError as exc:
             job_id = _job_id_from_error(exc)
             if job_id:
@@ -539,24 +532,27 @@ class DkgClient:
         *,
         timeout_s: float = 600.0,
         poll_s: float = 5.0,
+        sub_graph: str = "",
     ) -> Dict[str, Any]:
-        """Queue async SWM share and poll the share job to completion."""
-        result = self.share_async(cg_id, name)
+        """Queue async SWM share (into *sub_graph*; "" = root) and poll the job to completion."""
+        result = self.share_async(cg_id, name, sub_graph)
         job_id = self._share_job_id(result)
         if not job_id:
             return result
         return self.wait_for_share_job(job_id, timeout_s=timeout_s, poll_s=poll_s)
 
-    def share_finalized_knowledge_asset(self, cg_id: str, name: str) -> Dict[str, Any]:
-        """Share an already-finalized WM KA to SWM via async job polling."""
+    def share_finalized_knowledge_asset(self, cg_id: str, name: str, sub_graph: str = "") -> Dict[str, Any]:
+        """Share an already-finalized WM KA to SWM via async job polling. *sub_graph*
+        "" is the root (the verified-graph publish path); community statements pass
+        ``constants.COMMUNITY_SUB_GRAPH``."""
         try:
-            return self.share_async_and_wait(cg_id, name)
+            return self.share_async_and_wait(cg_id, name, sub_graph=sub_graph)
         except DkgError as exc:
             if _is_already_finalized(exc):
                 return {"name": name, "idempotent": True}
             if _is_wm_merkle_conflict(exc):
-                self.pull_knowledge_asset_from(cg_id, name, "swm", on_conflict="replace")
-                return self.share_async_and_wait(cg_id, name)
+                self.pull_knowledge_asset_from(cg_id, name, "swm", on_conflict="replace", sub_graph=sub_graph)
+                return self.share_async_and_wait(cg_id, name, sub_graph=sub_graph)
             raise
 
     def write_private_knowledge_asset(self, cg_id: str, name: str, quads: List[Quad]) -> Dict[str, Any]:
@@ -591,6 +587,8 @@ class DkgClient:
         payload = {"sparql": sparql, "contextGraphId": cg_id}
         if view:
             payload["view"] = view
+        if view == constants.VIEW_SHARED_WORKING_MEMORY:   # community statements live in their subgraph
+            payload["subGraphName"] = constants.COMMUNITY_SUB_GRAPH
         if agent_address:
             payload["agentAddress"] = agent_address
         try:
