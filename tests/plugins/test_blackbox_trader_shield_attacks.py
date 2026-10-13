@@ -139,3 +139,27 @@ def test_every_gap_says_what_would_close_it():
 def test_the_page_reads_the_table_it_is_tested_against():
     page = protection.TRADER_SHIELD_PAGE.read_text(encoding="utf-8")
     assert 'fetch("/trader-shield/attacks.json"' in page
+
+
+#: How far an attack was proven, weakest to strongest (dashboard/static/trader-shield-attacks.json).
+EVIDENCE = ("tests", "bench", "real-software", "real-agent")
+
+
+def test_every_attack_says_what_it_targets_and_how_it_was_proven():
+    systems = {system["id"] for system in TABLE["systems"]}
+    assert set(TABLE["evidence_levels"]) == set(EVIDENCE)
+    for attack in TABLE["attacks"]:
+        assert attack["targets"] and set(attack["targets"]) <= systems, attack["id"]
+        assert attack["evidence"] and set(attack["evidence"]) <= set(EVIDENCE), attack["id"]
+        assert ("tests" in attack["evidence"]) == (attack["proof"] == "test"), attack["id"]   # the suite runs exactly these
+        assert "bench" in attack["evidence"], attack["id"]                                    # the full bench run covers every row
+
+
+def test_every_system_has_something_proven_against_it():
+    for system in TABLE["systems"]:
+        assert any(system["id"] in attack["targets"] and attack["outcome"] == "blocked" for attack in TABLE["attacks"]), system["id"]
+
+
+def test_the_page_groups_the_proof_by_system():
+    page = protection.TRADER_SHIELD_PAGE.read_text(encoding="utf-8")
+    assert 'id="systems"' in page and "renderProven(t);" in page

@@ -211,6 +211,24 @@
   .brands span b { font-variant-numeric: tabular-nums; color: var(--text); margin-left: 4px; }
   .fine { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 
+  /* Proven, system by system (from /trader-shield/attacks.json: targets + evidence) */
+  .proven-total { display: flex; flex-wrap: wrap; gap: 8px 22px; font-family: var(--mono); font-size: 13px; color: var(--muted-strong); }
+  .proven-total b { color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
+  .systems { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .sys { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: grid; gap: 10px; align-content: start; }
+  .sys header { display: flex; align-items: center; gap: 10px; }
+  .sys header img { width: 26px; height: 26px; }
+  .sys header b { font-size: 16px; } .sys header small { display: block; font-size: 12px; color: var(--muted); }
+  .sys .big { font-size: 28px; font-weight: 850; font-variant-numeric: tabular-nums; line-height: 1; }
+  .sys .big span { font-size: 13px; font-weight: 600; color: var(--muted-strong); margin-left: 6px; }
+  .sys ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .sys li { font-size: 13.5px; color: var(--muted-strong); display: grid; gap: 3px; }
+  .ev { display: flex; flex-wrap: wrap; gap: 4px; }
+  .ev i { font-style: normal; font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; padding: 1px 6px;
+    border-radius: 3px; border: 1px solid var(--border-strong); color: var(--muted); }
+  .ev i.real-agent { border-color: var(--shield-edge); color: var(--signal); }
+  .ev i.real-software { border-color: color-mix(in srgb, var(--ok) 55%, transparent); color: var(--ok); }
+
   /* quick start */
   .qs { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; counter-reset: qs; }
   .qs li { counter-increment: qs; display: grid; grid-template-columns: 28px 1fr; gap: 12px; font-size: 14.5px; color: var(--muted-strong); }
@@ -221,10 +239,11 @@
   @media (max-width: 900px) {
     .hero { grid-template-columns: 1fr; } .stage { height: 360px; }
     .flow { grid-template-columns: 1fr 1fr; } .fstep:not(:last-child)::after { display: none; }
+    .systems { grid-template-columns: 1fr 1fr; }
     .grid3, .outcomes { grid-template-columns: 1fr; } .grid2 { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr 1fr; }
     .set { grid-template-columns: 1fr; gap: 8px; }
   }
-  @media (max-width: 480px) { .flow { grid-template-columns: 1fr; } .wrap { gap: 64px; } .arow { grid-template-columns: 1fr; }
+  @media (max-width: 480px) { .systems { grid-template-columns: 1fr; } .flow { grid-template-columns: 1fr; } .wrap { gap: 64px; } .arow { grid-template-columns: 1fr; }
     .stage { height: 290px; } .stack { width: min(360px, 50%); } }   /* a phone column: perspective enlarges the top layer and leans it right */
   @media (prefers-reduced-motion: reduce) {
     .stack, .bolt, .p-shield::before, .beta i { animation: none !important; }
@@ -321,6 +340,15 @@
       <p id="known-brands-lead">Phishing and drainer sites whose address names the brand they imitate.</p>
       <div class="brands" id="known-brands"></div></div>
     <p class="fine" id="known-fine"></p>
+  </section>
+
+  <!-- Proven, system by system: the same table, grouped by what each attack goes after -->
+  <section id="proven" aria-label="Proven, system by system">
+    <div class="eyebrow">Proven, system by system</div>
+    <h2>What we tried against each wallet, and stopped</h2>
+    <p class="muted">Every attack below was run through Blackbox's real checks; many were also tried against the real software installed the normal way, and some by a real AI agent asked to do it. The labels say which.</p>
+    <div class="proven-total" id="proven-total"></div>
+    <div class="systems" id="systems"><p class="muted">Loading…</p></div>
   </section>
 
   <!-- Tested, attack by attack: the same table the test suite checks -->
@@ -465,6 +493,32 @@
     document.getElementById("known-stats").innerHTML = '<p class="muted">Open this page from your Blackbox dashboard to see the counts.</p>';
   });
 
+  // ---- Proven, system by system (targets + evidence of each attack row) ----
+  var EV_WORD = { "real-agent": "real AI agent", "real-software": "real app", bench: "real checks", tests: "tests" };
+  function renderProven(t) {
+    var blocked = (t.attacks || []).filter(function (a) { return a.outcome === "blocked"; });
+    var byAgent = blocked.filter(function (a) { return (a.evidence || []).indexOf("real-agent") >= 0; }).length;
+    var byApp = blocked.filter(function (a) { return (a.evidence || []).indexOf("real-software") >= 0; }).length;
+    document.getElementById("proven-total").innerHTML =
+      "<span><b>" + blocked.length + "</b> attacks blocked</span><span><b>" + (t.systems || []).length + "</b> wallets and systems</span>" +
+      "<span><b>" + byApp + "</b> proven on the real software</span><span><b>" + byAgent + "</b> tried by a real AI agent</span>";
+    document.getElementById("systems").innerHTML = (t.systems || []).map(function (sys) {
+      var mine = blocked.filter(function (a) { return (a.targets || []).indexOf(sys.id) >= 0; });
+      if (!mine.length) return "";
+      mine.sort(function (a, b) { return (b.evidence || []).length - (a.evidence || []).length; });
+      var agent = mine.filter(function (a) { return (a.evidence || []).indexOf("real-agent") >= 0; }).length;
+      var logo = sys.logo ? '<img src="/wallets/' + esc(sys.id) + '.svg" alt="" />' : "";
+      return '<div class="sys"><header>' + logo + "<div><b>" + esc(sys.name) + "</b>" + (sys.note ? "<small>" + esc(sys.note) + "</small>" : "") +
+        '</div></header><div class="big">' + mine.length + "<span>blocked" + (agent ? " · " + agent + " by a real agent" : "") + "</span></div><ul>" +
+        mine.slice(0, 6).map(function (a) {
+          var ev = (a.evidence || []).filter(function (e) { return e !== "tests"; }).reverse().map(function (e) {
+            return '<i class="' + esc(e) + '">' + esc(EV_WORD[e] || e) + "</i>";
+          }).join("");
+          return "<li>" + esc(a.title) + '<span class="ev">' + ev + "</span></li>";
+        }).join("") + (mine.length > 6 ? '<li class="muted">and ' + (mine.length - 6) + " more in the list below</li>" : "") + "</ul></div>";
+    }).join("");
+  }
+
   // ---- Tested, attack by attack (the file the test suite checks) ----
   var OUTCOME_WORD = { blocked: "Blocked", flagged: "Flagged", missed: "Coming", allowed: "Left alone" };
   fetch("/trader-shield/attacks.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (t) {
@@ -474,6 +528,7 @@
       return '<span class="' + o + '">' + count[o] + " " + OUTCOME_WORD[o].toLowerCase() + "</span>";
     }).join("");
     document.getElementById("bench-run").textContent = t.bench_run ? "Last full run: " + t.bench_run + "." : "";
+    renderProven(t);
     document.getElementById("attacks").innerHTML = t.groups.map(function (g) {
       var rows = t.attacks.filter(function (a) { return a.group === g.id; });
       if (!rows.length) return "";
