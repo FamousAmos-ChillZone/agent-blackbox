@@ -78,3 +78,26 @@ def test_approvals_run_with_every_detector_under_trader_shield():
     row = {"identifier": finding.identifier, "fields": finding.fields}
     assert wallet_mode.WalletProtection(enabled=True).allows_finding(row)
     assert not wallet_mode.WalletProtection(enabled=False).allows_finding(row)
+
+
+ROUTERS = {"0x7a250d5630b4cf539739df2c5dacb4c659f2488d": "Uniswap V2 Router 02",
+           "0x10ed43c718714eb63d5aa57b78b54704e256024e": "PancakeSwap V2 Router"}
+
+
+class _GraphListingTheRouters:
+    """The verified graph as it is today (KI-370): Uniswap's and PancakeSwap's routers listed as wallets."""
+
+    def __init__(self):
+        self.ioc = {threat_ids.ioc_identifier("wallet", router): {"source": "public"} for router in ROUTERS}
+
+
+@pytest.mark.parametrize("router", sorted(ROUTERS))
+def test_approving_an_exchange_router_is_ordinary_trading_even_when_a_feed_lists_it(router):
+    command = f"cast send {USDC} 'approve(address,uint256)' {router} {MAX}"
+    assert detect_token_approvals("terminal", {"command": command}, _GraphListingTheRouters()) == []
+
+
+def test_a_real_drainer_beside_a_router_is_still_caught():
+    command = f"cast send {USDC} 'approve(address,uint256)' {SPENDER} 5 && cast send {USDC} 'approve(address,uint256)' 0x7a250d5630b4cf539739df2c5dacb4c659f2488d {MAX}"
+    [finding] = detect_token_approvals("terminal", {"command": command}, _Graph("public"))
+    assert finding.identifier == "secret:token-approval-drainer"

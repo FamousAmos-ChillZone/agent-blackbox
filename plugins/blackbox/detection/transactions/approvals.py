@@ -23,7 +23,10 @@ What it does with one:
 * otherwise an UNLIMITED approval (2^256−1, ``MaxUint256``, ``type(uint256).max``,
   ``2**256-1``, ``cast max-uint``) or an approve-all → medium, flagged so the operator
   sees it: DeFi bots approve routers this way every day, so it must not block;
-* a limited approval to an unknown spender → nothing.
+* a limited approval to an unknown spender → nothing;
+* an approval to a well-known exchange router (Uniswap, SushiSwap, PancakeSwap, 1inch —
+  ``kernel/crypto_secrets/known_contracts.json``) → nothing, whatever a feed says about it:
+  that is ordinary trading (KI-370: the verified graph lists seven routers as drainers).
 
 Local-only (``source="secret"``): the finding names the kind of approval, never
 the operator's addresses.
@@ -44,7 +47,7 @@ from typing import Any, List, Optional
 from .. import ioc_detection
 from ..finding import Finding, _rule_source
 from ..injection_detection import injection_scan_text
-from ...kernel import threat_ids
+from ...kernel import crypto_secrets, threat_ids
 
 MAX_UINT256 = 2 ** 256 - 1
 #: An amount this large is unlimited in practice (drainers use MAX; nobody holds 2^255).
@@ -123,7 +126,8 @@ def _listed_by(ruleset: Any, address: str) -> str:
 
 def detect_token_approvals(tool_name: str, args: Any, ruleset: Any) -> List[Finding]:
     """One finding for the riskiest approval in this call (see the module doc)."""
-    approvals = approvals_in(injection_scan_text(args))
+    approvals = [approval for approval in approvals_in(injection_scan_text(args))
+                 if not crypto_secrets.protocol_contract(approval.spender)]   # STOPGAP KI-370, see known_contracts
     if not approvals:
         return []
     listed = {_listed_by(ruleset, approval.spender) for approval in approvals} - {""}
