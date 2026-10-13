@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from .config import LabConfig, LabConfigError, MicroVMSettings
+from .sandbox import kill_and_reap
 from .egress import EgressGuard, lab_bridge
 from .kvm import kvm_problem
 from .sandbox import SandboxResult, SandboxSpec
@@ -312,8 +313,7 @@ def _mac(address: str) -> str:
 def _kill(process: subprocess.Popen[bytes]) -> None:
     # The jailer exec'd Firecracker in place (no --daemonize, no new pid namespace):
     # this pid IS the VMM, and killing it ends the microVM.
-    process.kill()
-    process.communicate()
+    kill_and_reap(process)
 
 
 def _stop(recorder: Optional[subprocess.Popen[bytes]]) -> None:

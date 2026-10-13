@@ -154,5 +154,19 @@ class GVisorSandbox:
                            stderr=subprocess.DEVNULL, timeout=_KILL_TIMEOUT_SECONDS, check=False)
         except subprocess.TimeoutExpired:
             pass
-        process.kill()
-        process.communicate()
+        kill_and_reap(process)
+
+
+def kill_and_reap(process: subprocess.Popen[bytes]) -> None:
+    """Kill *process* and reap it, never waiting forever.
+
+    ``communicate()`` drains the pipes so the child does not linger as a zombie, but a
+    grandchild that inherited the pipes can keep them open after the kill; then the
+    drain gives up after ``_KILL_TIMEOUT_SECONDS`` and only the killed process itself is
+    reaped (``wait`` returns at once for a killed process).
+    """
+    process.kill()
+    try:
+        process.communicate(timeout=_KILL_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        process.wait(timeout=_KILL_TIMEOUT_SECONDS)
