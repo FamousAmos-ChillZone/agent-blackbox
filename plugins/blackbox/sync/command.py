@@ -23,7 +23,7 @@ from . import state as sync_state
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig, load_blackbox_config
 from ..kernel.dkg_client import DkgClient, DkgError
-from .progress import capture_durable_progress_cursor, read_durable_progress
+from .progress import apply_completion_contract, capture_durable_progress_cursor, read_durable_progress
 from ..kernel import display_safety
 from . import managed_node, native, side_subscriptions
 from .catchup_job import _catchup_denied, _catchup_job_id, _catchup_status
@@ -1059,17 +1059,12 @@ def _catchup_authoritative_vm(
             return False
         backpressure_retries = 0
         inserted = int(result.get("totalDurableInsertedTriples") or 0)
-        durable_progress = read_durable_progress(
+        request_progress = read_durable_progress(
             str(getattr(client, "dkg_home", "") or ""),
             context_graph_id,
             after=progress_cursor,
         )
-        # Newer DKG releases report the request's completion contract directly.
-        # Retain daemon-log parsing as a compatibility fallback for 10.0.9.
-        if result.get("durableComplete") is True:
-            durable_progress["snapshot_complete"] = True
-        elif result.get("durableComplete") is False:
-            durable_progress["snapshot_complete"] = False
+        apply_completion_contract(request_progress, result)
         sync_state.write(
             "running",
             context_graph_id=context_graph_id,
@@ -1080,12 +1075,12 @@ def _catchup_authoritative_vm(
                 else "refreshing-verifiable-memory"
             ),
             inserted_durable_triples=inserted,
-            **durable_progress,
+            **request_progress,
         )
-        durable_progress = read_durable_progress(
-            str(getattr(client, "dkg_home", "") or ""),
-            context_graph_id,
-        )
+        # The whole log gives the cumulative numbers; completion comes only from THIS
+        # invocation (its log lines or the node's answer), never an earlier run's lines.
+        durable_progress = read_durable_progress(str(getattr(client, "dkg_home", "") or ""), context_graph_id)
+        durable_progress["snapshot_complete"] = request_progress.get("snapshot_complete") is True
         if inserted <= 0:
             expected = int(durable_progress.get("expected_triples") or 0)
             safe_current = int(durable_progress.get("safe_current_triples") or 0)
