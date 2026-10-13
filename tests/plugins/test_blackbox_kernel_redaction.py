@@ -62,3 +62,32 @@ def test_audit_redacts_before_truncating():
 def test_detection_still_flags_a_private_key_header():
     hits = content_scanners.scan_secret_values(f"echo {PEM[:40]}")
     assert {"type": "private-key", "severity": "critical"} in hits
+
+
+# --- KI-373: the assignment rule runs in linear time on hostile text --------
+# Every tool call, tool result and model request is redacted, so a fetched page
+# full of "tokens-tokens-..." stalled the agent: 4 KB took ~20 s, 50 KB ~75 s.
+# The bound is generous (the fixed rule takes well under 0.5 s here); the old
+# rule took minutes on these inputs, so a regression cannot pass.
+
+import time
+
+import pytest
+
+
+@pytest.mark.parametrize("hostile", ["tokens-" * 3000, "a-" * 10000, "privatekey" * 2000, "token_" * 4000])
+def test_redaction_stays_fast_on_hostile_text(hostile):
+    started = time.perf_counter()
+    redact_secret_values(hostile)
+    assert time.perf_counter() - started < 3.0
+
+
+@pytest.mark.parametrize("text, kept_name", [
+    ("DB_PASSWORD=supersecret123", "DB_PASSWORD="),
+    ('"api_key": "abcd1234efgh"', '"api_key": '),
+    ("x_tokens_y: 12345678abcd", "x_tokens_y: "),
+    ("MY-CLIENT-SECRET=abcdefgh1234", "MY-CLIENT-SECRET="),
+])
+def test_the_faster_rule_still_removes_named_secrets(text, kept_name):
+    redacted = redact_secret_values(text)
+    assert redacted.startswith(kept_name) and "[REDACTED" in redacted
