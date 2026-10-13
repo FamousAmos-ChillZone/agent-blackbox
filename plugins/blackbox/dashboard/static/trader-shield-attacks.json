@@ -1,7 +1,7 @@
 {
   "about": "Every Web3 attack Trader Shield was tested against, with what it does today. tests/plugins/test_blackbox_trader_shield_attacks.py drives each 'test' scenario through Blackbox's real checks and fails if the outcome here stops being true; 'bench' scenarios need the verified threat graph or OSV and are proven on a bench node. 'allowed' rows are harmless look-alikes that must NOT trigger. Placeholders (@SEED12@ …) are filled with values made at test time — no real secret is in this file.",
   "tested_with": "Trader Shield on (every supported wallet), block mode, block at critical",
-  "bench_run": "2026-10-12 · bb-trader-1 · every scenario through the real checks, with the verified graph and live OSV",
+  "bench_run": "2026-10-13 09:11 UTC · bb-trader-1 · all 49 scenarios through the real checks (block mode, every wallet ticked, the verified graph, live OSV) — 49 of 49 as stated; the new rules also checked against the real Exodus, Electrum, Solana CLI, Foundry and exchange SDK installs",
   "groups": [
     {"id": "vault", "title": "Stealing the wallet vault", "intro": "Browser wallets (MetaMask, Phantom) keep your keys in an encrypted vault inside the browser profile; Exodus, Electrum and the Solana CLI keep them in folders of their own. Copied off the machine, a vault can be cracked offline — and an Exodus wallet with no password set needs no cracking at all."},
     {"id": "seed", "title": "Seed phrases", "intro": "The 12–24 recovery words ARE the wallet: whoever has them controls every account in it."},
