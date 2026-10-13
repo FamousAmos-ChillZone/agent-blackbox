@@ -75,8 +75,11 @@ def test_sending_any_phrase_off_the_machine_is_critical():
 
 
 def test_published_test_phrase_and_broken_checksum_only_flag():
-    assert severity_of("echo " + encode(bytes(16))) == "medium"
-    assert severity_of(f"echo {broken(12)}") == "medium"
+    # Not "echo": it is itself a BIP-39 word, so "echo" + 12 words is a 13-word run whose
+    # first 12-word window passes the checksum about 1 time in 16 (the test was flaky).
+    assert "printf" not in WORDS
+    assert severity_of("printf " + encode(bytes(16))) == "medium"
+    assert severity_of(f"printf {broken(12)}") == "medium"
 
 
 @pytest.mark.parametrize("text", [
