@@ -85,17 +85,17 @@ class SignedRule:
     package_version: str = ""
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, str]) -> "SignedRule":
+    def from_payload(cls, payload: Mapping[str, str]) -> SignedRule:
         return cls(identifier=str(payload.get("identifier") or ""), severity=str(payload.get("severity") or ""),
                    kind=str(payload.get("kind") or ""), ecosystem=str(payload.get("ecosystem") or ""),
                    package_name=str(payload.get("packageName") or ""),
                    package_version=str(payload.get("packageVersion") or ""))
 
-    def to_json(self) -> Dict[str, str]:
+    def to_json(self) -> dict[str, str]:
         return {"identifier": self.identifier, "severity": self.severity, "kind": self.kind,
                 "ecosystem": self.ecosystem, "packageName": self.package_name, "packageVersion": self.package_version}
 
-    def served(self, rule: Mapping[str, Any]) -> Dict[str, Any]:
+    def served(self, rule: Mapping[str, Any]) -> dict[str, Any]:
         """*rule* (built from the row) with every field the signature names
         taken from the payload: identifier, severity, kind, version."""
         served = {**rule, "identifier": self.identifier,
@@ -121,14 +121,14 @@ class AssetFacts:
     never served at all (a transplanted envelope)."""
 
     counts: Mapping[str, int] = field(default_factory=dict)
-    aliases: Mapping[str, Tuple[str, ...]] = field(default_factory=dict)
+    aliases: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     ual: str = ""
     tier: Optional[AssetTier] = None
     day: str = ""
     signed: Mapping[str, SignedRule] = field(default_factory=dict)
-    ignored: FrozenSet[str] = frozenset()
+    ignored: frozenset[str] = frozenset()
 
-    def to_json(self) -> Dict[str, Any]:
+    def to_json(self) -> dict[str, Any]:
         return {"counts": dict(self.counts), "aliases": {k: list(v) for k, v in self.aliases.items()},
                 **({"ual": self.ual} if self.ual else {}), **({"tier": self.tier.value} if self.tier else {}),
                 **({"day": self.day} if self.day else {}),
@@ -137,7 +137,7 @@ class AssetFacts:
                 **({"ignored": sorted(self.ignored)} if self.ignored else {})}
 
     @classmethod
-    def from_json(cls, data: Any) -> Optional["AssetFacts"]:
+    def from_json(cls, data: Any) -> Optional[AssetFacts]:
         """Facts from :meth:`to_json`; a record written before tiers existed (or
         with an unknown tier) yields ``tier`` None — decided again, never FLAG."""
         if not isinstance(data, dict):
@@ -159,8 +159,8 @@ class AssetFacts:
         )
 
 
-def read_new_asset_facts(store: StoreClient, *, wanted: FrozenSet[str], known: Mapping[str, AssetFacts],
-                         budget_seconds: float = BUDGET_SECONDS) -> Dict[str, AssetFacts]:
+def read_new_asset_facts(store: StoreClient, *, wanted: frozenset[str], known: Mapping[str, AssetFacts],
+                         budget_seconds: float = BUDGET_SECONDS) -> dict[str, AssetFacts]:
     """*known* facts for the assets still wanted, plus facts read now for the wanted
     assets not known yet — in batches, within the budget, stopping at the first
     query the store could not answer (the rest are read on a later refresh)."""
@@ -179,8 +179,8 @@ def read_new_asset_facts(store: StoreClient, *, wanted: FrozenSet[str], known: M
     return facts
 
 
-def tier_assets(store: StoreClient, facts: Mapping[str, AssetFacts], *, legacy: FrozenSet[str],
-                budget_seconds: float = BUDGET_SECONDS) -> Dict[str, AssetFacts]:
+def tier_assets(store: StoreClient, facts: Mapping[str, AssetFacts], *, legacy: frozenset[str],
+                budget_seconds: float = BUDGET_SECONDS) -> dict[str, AssetFacts]:
     """*facts* with every undecided asset in the verified *legacy* list tiered
     BLOCK. UALs and days are read (one ``_meta`` query per batch, bound to each
     asset's graph) only for undecided assets whose UAL is not known yet; a
@@ -200,10 +200,10 @@ def tier_assets(store: StoreClient, facts: Mapping[str, AssetFacts], *, legacy: 
             for graph, fact in tiered.items()}
 
 
-def totals(facts: Mapping[str, AssetFacts], graphs: Iterable[str]) -> Tuple[Dict[str, int], Dict[str, Tuple[str, ...]]]:
+def totals(facts: Mapping[str, AssetFacts], graphs: Iterable[str]) -> tuple[dict[str, int], dict[str, tuple[str, ...]]]:
     """Counts summed and aliases merged over *graphs* (assets without facts add nothing)."""
-    counts: Dict[str, int] = {}
-    aliases: Dict[str, set] = {}
+    counts: dict[str, int] = {}
+    aliases: dict[str, set] = {}
     for graph in graphs:
         fact = facts.get(graph)
         if fact is None:
@@ -215,11 +215,11 @@ def totals(facts: Mapping[str, AssetFacts], graphs: Iterable[str]) -> Tuple[Dict
     return counts, {key: tuple(sorted(values)) for key, values in aliases.items()}
 
 
-def _values(batch: List[str]) -> str:
+def _values(batch: list[str]) -> str:
     return " ".join(f"<{graph}>" for graph in batch)
 
 
-def _queries(batch: List[str]) -> List[Tuple[str, str]]:
+def _queries(batch: list[str]) -> list[tuple[str, str]]:
     """(kind, SPARQL) for one batch: three tier counts, the ecosystem split, the spellings."""
     values = _values(batch)
     def count(pattern: str) -> str:
@@ -237,9 +237,9 @@ def _queries(batch: List[str]) -> List[Tuple[str, str]]:
     ]
 
 
-def _read_batch(store: StoreClient, batch: List[str]) -> Optional[Dict[str, AssetFacts]]:
-    counts: Dict[str, Dict[str, int]] = {graph: {"dependency": 0, "ioc": 0} for graph in batch}
-    aliases: Dict[str, Dict[str, set]] = {graph: {} for graph in batch}
+def _read_batch(store: StoreClient, batch: list[str]) -> Optional[dict[str, AssetFacts]]:
+    counts: dict[str, dict[str, int]] = {graph: {"dependency": 0, "ioc": 0} for graph in batch}
+    aliases: dict[str, dict[str, set]] = {graph: {} for graph in batch}
     for kind, sparql in _queries(batch):
         answer = store.select(sparql, timeout=QUERY_TIMEOUT_SECONDS)
         time.sleep(PAUSE_SECONDS)
@@ -268,7 +268,7 @@ def _meta_graph(graph: str) -> str:
     return graph.split(_VM_SEGMENT, 1)[0] + "/_meta" if _VM_SEGMENT in graph else ""
 
 
-def _read_meta(store: StoreClient, batch: List[str]) -> Optional[Dict[str, Tuple[str, str]]]:
+def _read_meta(store: StoreClient, batch: list[str]) -> Optional[dict[str, tuple[str, str]]]:
     """Asset graph → (UAL, day) for *batch*, each pair bound to its own ``_meta``
     graph; the day is ``dkg:publishedAt``'s UTC day ("" when absent or not a
     date). None when the store failed."""

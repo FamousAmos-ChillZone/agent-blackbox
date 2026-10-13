@@ -39,8 +39,8 @@ class CaughtScanning(Exception):
     """The egress guard listed the sandbox's address as over a cap."""
 
 
-def watch(process: "subprocess.Popen[bytes]", timeout_seconds: float, egress: EgressGuard,
-          address: Callable[[], Optional[str]], watched: List[str]) -> bytes:
+def watch(process: subprocess.Popen[bytes], timeout_seconds: float, egress: EgressGuard,
+          address: Callable[[], Optional[str]], watched: list[str]) -> bytes:
     """The process's stdout once it exits. Retrying ``communicate`` after its
     timeout loses no output. Raises ``subprocess.TimeoutExpired`` at the
     deadline and :class:`CaughtScanning` on a definite yes from the guard

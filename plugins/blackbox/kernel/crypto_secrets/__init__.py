@@ -31,5 +31,19 @@ from . import exchange_keys
 from .exchange_keys import misdirected_exchange_keys
 from .known_contracts import protocol_contract
 
-__all__ = ["protocol_contract", "exchange_keys", "address_of", "own_keys_in", "SEED_PHRASE_MARKER", "SOLANA_KEY_MARKER", "SeedPhraseRun", "find_seed_phrase_runs", "find_solana_secret_keys",
-           "misdirected_exchange_keys", "redact_seed_phrases", "redact_solana_keys", "wallet_mode", "wordlist_ready"]
+__all__ = [
+           "SEED_PHRASE_MARKER",
+           "SOLANA_KEY_MARKER",
+           "SeedPhraseRun",
+           "address_of",
+           "exchange_keys",
+           "find_seed_phrase_runs",
+           "find_solana_secret_keys",
+           "misdirected_exchange_keys",
+           "own_keys_in",
+           "protocol_contract",
+           "redact_seed_phrases",
+           "redact_solana_keys",
+           "wallet_mode",
+           "wordlist_ready",
+]

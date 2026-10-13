@@ -108,8 +108,8 @@ class KeyManifest:
     chain: str
     root_epoch: int
     version: int
-    curator_keys: Tuple[str, ...]
-    curator_operators: Tuple[str, ...]
+    curator_keys: tuple[str, ...]
+    curator_operators: tuple[str, ...]
     threshold: int
     promotion_author: str
     legacy_assets_hash: str
@@ -128,11 +128,11 @@ class KeyManifest:
         _validate(self)
 
     @property
-    def order(self) -> Tuple[int, int]:
+    def order(self) -> tuple[int, int]:
         """``(root_epoch, version)`` — compare manifests by this pair."""
         return self.root_epoch, self.version
 
-    def to_payload(self) -> Dict[str, str]:
+    def to_payload(self) -> dict[str, str]:
         """The manifest as the flat str→str payload its envelope signs."""
         return {
             "environment": self.environment,
@@ -161,7 +161,7 @@ class KeyManifest:
         return legacy_assets_hash(legacy_uals) == self.legacy_assets_hash
 
     def curator_signers(self, statement: Optional[signing.SignedEnvelope], *, statement_type: str,
-                        graph: Optional[str] = None) -> FrozenSet[str]:
+                        graph: Optional[str] = None) -> frozenset[str]:
         """This manifest's curator keys that validly signed *statement* for its
         environment, chain and root epoch, in *graph* (default: the manifest's
         verified graph — advisory statements live in the community graph),
@@ -169,7 +169,7 @@ class KeyManifest:
         so the answer is deterministic)."""
         signers = signing.verified_signers(statement, statement_type=statement_type, environment=self.environment,
                                            graph=graph or self.graph, chain=self.chain, root_epoch=self.root_epoch)
-        counted: Dict[str, str] = {}   # operator -> the one key counted for it
+        counted: dict[str, str] = {}   # operator -> the one key counted for it
         for key, operator in zip(self.curator_keys, self.curator_operators):   # keys are sorted: lowest wins
             if key not in signers or operator in counted:
                 continue
@@ -213,7 +213,7 @@ def _reduces(statement_type: str) -> bool:
     return statement_type in _REDUCING_STATEMENTS
 
 
-def manifest_clock(manifest: KeyManifest, today: str) -> Tuple[str, str]:
+def manifest_clock(manifest: KeyManifest, today: str) -> tuple[str, str]:
     """R7b: ("" | "pending" | "stale", detail day). A dated manifest is PENDING
     before its time-lock ends (issued + MANIFEST_TIME_LOCK_DAYS, the day it takes effect) and
     STALE after issued + 60 d (the day it expired). Undated: ""."""
@@ -278,7 +278,7 @@ def _validate_threshold(manifest: KeyManifest) -> None:
                                "and never more than the operators")
 
 
-def roster(curators: Mapping[str, str]) -> Dict[str, Tuple[str, ...]]:
+def roster(curators: Mapping[str, str]) -> dict[str, tuple[str, ...]]:
     """The ``curator_keys`` and ``curator_operators`` keyword arguments of a
     :class:`KeyManifest`, from public key hex -> operator, sorted by key::
 

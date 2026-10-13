@@ -165,7 +165,6 @@ def test_semantic_http_failures_retain_actionable_codes(tmp_path, status, code):
     import json
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from threading import Thread
-    client_module = load_blackbox('ruleset.direct.client')
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args): pass
         def do_POST(self):

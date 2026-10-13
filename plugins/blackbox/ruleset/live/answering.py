@@ -29,8 +29,8 @@ class LiveAnswering:
     ``dependency``, ``ioc`` and ``iter_rules()`` on ``self``."""
 
     verified_scope: Optional[VerifiedScope]
-    dependency: Dict[str, Dict[str, Any]]
-    ioc: Dict[str, Dict[str, Any]]
+    dependency: dict[str, dict[str, Any]]
+    ioc: dict[str, dict[str, Any]]
 
     def iter_rules(self):  # pragma: no cover - provided by Ruleset
         raise NotImplementedError
@@ -43,7 +43,7 @@ class LiveAnswering:
             return None
         return VerifiedLookup(scope, StoreClient(scope.store_url), fallback=fallback_index.FallbackIndex.for_scope(scope))
 
-    def dependency_rules(self, candidates: "Sequence[Tuple[str, str, str]]") -> LookupAnswer:
+    def dependency_rules(self, candidates: Sequence[tuple[str, str, str]]) -> LookupAnswer:
         """Rules for these ``(ecosystem, name, version)`` candidates, keyed as
         ``dependency_key`` keys. PUBLIC rules come from the live lookup when this
         generation has one; the compiled ``dependency`` dict fills the keys it did
@@ -55,14 +55,14 @@ class LiveAnswering:
         keys = [threat_ids.dependency_key(ecosystem, name, version) for ecosystem, name, version in candidates]
         return _fill_from_dict(answer, keys, self.dependency)
 
-    def ioc_rules(self, identifiers: "Sequence[str]") -> LookupAnswer:
+    def ioc_rules(self, identifiers: Sequence[str]) -> LookupAnswer:
         """Rules among these ``ioc:type:value`` identifiers (see :meth:`dependency_rules`
         for the live-then-compiled precedence and the outcome)."""
         lookup = self.live_lookup()
         answer = lookup.iocs(identifiers) if lookup else LookupAnswer({}, CLEAN)
         return _fill_from_dict(answer, identifiers, self.ioc)
 
-    def verified_subset(self, identifiers: "Iterable[str]") -> set:
+    def verified_subset(self, identifiers: Iterable[str]) -> set:
         """Which of *identifiers* the verified (public) tier lists: compiled public
         rules, plus live lookups for the ``dep:`` / ``ioc:`` ones. The curate queue,
         the confirmed pool and the shadow metrics ask this instead of materialising
@@ -95,8 +95,8 @@ class LiveAnswering:
 
 
 
-def _fill_from_dict(answer: LookupAnswer, keys: "Sequence[str]",
-                    compiled: Dict[str, Dict[str, Any]]) -> LookupAnswer:
+def _fill_from_dict(answer: LookupAnswer, keys: Sequence[str],
+                    compiled: dict[str, dict[str, Any]]) -> LookupAnswer:
     """The live answer plus every *key* the compiled dict holds that the lookup
     did not; HIT when anything matched unless the lookup could not tell."""
     rules = dict(answer.rules)

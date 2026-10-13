@@ -99,11 +99,11 @@ class PolicyDecision:
     reason: str
 
 
-def _always(reason: str) -> Callable[[str, Facts], Tuple[bool, str]]:
+def _always(reason: str) -> Callable[[str, Facts], tuple[bool, str]]:
     return lambda identifier, facts: (True, reason)
 
 
-def _never(reason: str) -> Callable[[str, Facts], Tuple[bool, str]]:
+def _never(reason: str) -> Callable[[str, Facts], tuple[bool, str]]:
     return lambda identifier, facts: (False, reason)
 
 
@@ -111,7 +111,7 @@ def _exact_dependency(identifier: str) -> bool:
     return identifier.startswith("dep:") and "@" in identifier and not identifier.endswith("@*")
 
 
-def _confirm(identifier: str, facts: Facts) -> Tuple[bool, str]:
+def _confirm(identifier: str, facts: Facts) -> tuple[bool, str]:
     if not _exact_dependency(identifier):
         return False, "no independent machine-checkable source exists for this kind of threat"
     if not facts.malicious_advisory:
@@ -121,7 +121,7 @@ def _confirm(identifier: str, facts: Facts) -> Tuple[bool, str]:
     return True, f"this node found {facts.malicious_advisory} for that exact version"
 
 
-def _defer(identifier: str, facts: Facts) -> Tuple[bool, str]:
+def _defer(identifier: str, facts: Facts) -> tuple[bool, str]:
     if not identifier.startswith(BLOCKABLE_PREFIXES):
         return False, "only a blockable kind is deferred for missing evidence"
     if not (facts.corroborated and facts.lookup_clean):
@@ -129,21 +129,21 @@ def _defer(identifier: str, facts: Facts) -> Tuple[bool, str]:
     return True, "corroborated, and this node's own lookup found no evidence yet"
 
 
-def _lapse(identifier: str, facts: Facts) -> Tuple[bool, str]:
+def _lapse(identifier: str, facts: Facts) -> tuple[bool, str]:
     if facts.deferral_age_days <= DEFERRAL_LAPSE_DAYS:
         return False, f"a deferral lapses after {DEFERRAL_LAPSE_DAYS} days"
     return True, f"the deferral is {facts.deferral_age_days} days old"
 
 
-def _ledger(wanted: str, why: str) -> Callable[[str, Facts], Tuple[bool, str]]:
-    def rule(identifier: str, facts: Facts) -> Tuple[bool, str]:
+def _ledger(wanted: str, why: str) -> Callable[[str, Facts], tuple[bool, str]]:
+    def rule(identifier: str, facts: Facts) -> tuple[bool, str]:
         if facts.ledger_calls_for != wanted:
             return False, f"this node's own ledger does not call for that ({why})"
         return True, f"this node's own ledger calls for it ({why})"
     return rule
 
 
-_RULES: Dict[Action, Callable[[str, Facts], Tuple[bool, str]]] = {
+_RULES: dict[Action, Callable[[str, Facts], tuple[bool, str]]] = {
     Action.HEARTBEAT: _always("no judgement involved"),
     Action.ACKNOWLEDGE: _always("no judgement involved"),
     Action.KEEP_ALIVE: _always("no judgement involved"),
@@ -168,7 +168,7 @@ def decide(action: Action, identifier: str, facts: Facts) -> PolicyDecision:
     return PolicyDecision(action=action, automatic=automatic, reason=reason)
 
 
-_KIND_ACTIONS: Dict[str, Action] = {
+_KIND_ACTIONS: dict[str, Action] = {
     CuratorStatement.HEARTBEAT.value: Action.HEARTBEAT,
     CuratorStatement.IN_REVIEW.value: Action.ACKNOWLEDGE,
     CuratorStatement.CONFIRMATION.value: Action.CONFIRM,
@@ -195,7 +195,7 @@ def action_for(kind: str, fields: Mapping[str, str]) -> Action:
 
 
 #: The §07 table: (what, who decides, why). The text an operator accepts is built from it.
-POLICY_ROWS: Tuple[Tuple[str, str, str], ...] = (
+POLICY_ROWS: tuple[tuple[str, str, str], ...] = (
     ("Heartbeat, in-review acknowledgement, keep-alive", "the service", "no judgement involved"),
     ("Confirm a malicious dependency", "the service, when this node itself finds a malicious-package advisory for that "
      "exact version and the statement cites it", "the truth check is a lookup in an independent public source; two nodes do it separately"),

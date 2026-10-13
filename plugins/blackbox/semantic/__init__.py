@@ -1,4 +1,5 @@
 """Opt-in graph retrieval and local advisory review, independent of regex hits."""
+import logging
 import time
 from dataclasses import dataclass, field
 
@@ -52,6 +53,7 @@ def assess(cfg, text, origin, *, retrieve=None, classify=None, ready=None):
     except TimeoutError:
         return SemanticResult("unavailable", "SEMANTIC_DEADLINE_EXCEEDED")
     except Exception as exc:
+        logging.getLogger(__name__).exception("blackbox: semantic operation unavailable")
         code = getattr(exc, "code", "SEMANTIC_REVIEW_UNAVAILABLE")
         if isinstance(exc, ValueError) and str(exc) in {"SEMANTIC_REVIEW_INPUT_LIMIT", "SEMANTIC_REVIEW_INVALID", "SEMANTIC_REVIEW_UNGROUNDED"}:
             code = str(exc)
@@ -60,4 +62,4 @@ def assess(cfg, text, origin, *, retrieve=None, classify=None, ready=None):
 
 from .command import add_semantic_parser
 
-__all__ = ["add_semantic_parser", "assess", "SemanticResult", "prepare", "check"]
+__all__ = ["SemanticResult", "add_semantic_parser", "assess", "check", "prepare"]

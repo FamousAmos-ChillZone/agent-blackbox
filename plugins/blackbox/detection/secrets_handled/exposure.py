@@ -38,7 +38,7 @@ def _wallet_secrets_sent(text: str) -> set:
     return in_urls & _WALLET_SECRET_TYPES
 
 
-def detect_secret_exposure(tool_name: str, args: Any) -> List[Finding]:
+def detect_secret_exposure(tool_name: str, args: Any) -> list[Finding]:
     """Flag a real secret VALUE (API key, token, private key) in the tool args.
 
     Complements the sensitive-FILE detection: this fires when the agent is
@@ -56,7 +56,7 @@ def detect_secret_exposure(tool_name: str, args: Any) -> List[Finding]:
         return []
     egress = content_scanners.looks_like_egress(text)
     wallet_sent = _wallet_secrets_sent(text)
-    out: List[Finding] = []
+    out: list[Finding] = []
     for hit in hits:
         sent = egress or hit["type"] in wallet_sent
         severity = "critical" if (sent and hit["severity"] != "critical") else hit["severity"]
@@ -77,7 +77,7 @@ def detect_secret_exposure(tool_name: str, args: Any) -> List[Finding]:
     return out
 
 
-def detect_exchange_key_misdirection(tool_name: str, args: Any) -> List[Finding]:
+def detect_exchange_key_misdirection(tool_name: str, args: Any) -> list[Finding]:
     """An exchange's API key header sent to a site that is not that exchange
     (:mod:`kernel.crypto_secrets.exchange_keys`). Critical, local-only, under Trader Shield."""
     exchanges = crypto_secrets.misdirected_exchange_keys(injection_scan_text(args))
@@ -100,7 +100,7 @@ def detect_exchange_key_misdirection(tool_name: str, args: Any) -> List[Finding]
 _HEX64 = re.compile(r"(?<![0-9A-Za-z])(?:0x)?[0-9a-fA-F]{64}(?![0-9A-Za-z])")
 
 
-def detect_own_wallet_keys(tool_name: str, args: Any, own_addresses: Callable[[], Iterable[str]]) -> List[Finding]:
+def detect_own_wallet_keys(tool_name: str, args: Any, own_addresses: Callable[[], Iterable[str]]) -> list[Finding]:
     """A raw 64-hex private key that opens one of the operator's OWN listed addresses
     (``own_addresses`` is called only when a 64-hex value is present — no config read for
     ordinary calls). Handling it flags; sending it (command, web address, script) is critical."""

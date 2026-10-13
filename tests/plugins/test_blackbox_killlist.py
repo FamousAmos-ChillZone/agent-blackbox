@@ -28,7 +28,7 @@ from plugins.blackbox.guard import hooks
 from plugins.blackbox.kernel import signing
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.ruleset import compiler, curator_tier, disk_cache
-from test_blackbox_curate import COMMUNITY, NETWORK, VM_GRAPH, FakeNode, _ctx, _machine, curators  # noqa: F401 - fixture
+from test_blackbox_curate import COMMUNITY, NETWORK, VM_GRAPH, FakeNode, _ctx, _machine, curators
 
 DAY = "2026-10-02"
 NOW = 1_800_000_000.0
@@ -85,7 +85,7 @@ def test_wide_kills_need_the_root_and_popular_targets_need_the_root_plus_a_day()
     wide = _entry(identifier="any-version-skill")                       # no version, no hash → wide
     pinned = _entry(version="1.0.0")
     popular = _entry(identifier="lodash-skill", version="2.0.0")
-    is_popular = lambda e: e.identifier == "lodash-skill"               # noqa: E731
+    is_popular = lambda e: e.identifier == "lodash-skill"
     kill_list = killlist.KillList(version=1, day=DAY, entries=(wide, pinned, popular))
     without_root = killlist.admit(kill_list, signers={"a", "b"}, root_signers=set(), previous=None, now=NOW, is_popular=is_popular)
     assert without_root.applied == (pinned,) and {e.identifier for e, _why in without_root.dropped} == {"any-version-skill", "lodash-skill"}

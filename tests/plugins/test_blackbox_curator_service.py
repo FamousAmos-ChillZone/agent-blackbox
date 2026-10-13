@@ -236,8 +236,8 @@ def test_the_first_node_does_not_propose_without_its_own_malicious_package_advis
 
 
 def test_a_vulnerability_advisory_is_not_evidence_of_malware():
-    vulnerability = lambda eco, name, version: ("found", {"advisory_id": "GHSA-aaaa-bbbb-cccc", "severity": "high", "kind": "vulnerability"})  # noqa: E731
-    malware = lambda eco, name, version: ("found", {"advisory_id": "MAL-2026-1", "severity": "critical", "kind": "malware"})  # noqa: E731
+    vulnerability = lambda eco, name, version: ("found", {"advisory_id": "GHSA-aaaa-bbbb-cccc", "severity": "high", "kind": "vulnerability"})
+    malware = lambda eco, name, version: ("found", {"advisory_id": "MAL-2026-1", "severity": "critical", "kind": "malware"})
     assert service.own_check(PKG, vulnerability) == CLEAN
     assert service.own_check(PKG, malware) == FOUND and service.own_check(PKG, malware).evidence == "advisory:MAL-2026-1"
     assert service.own_check(PKG, lambda *a: ("clean", None)) == CLEAN
@@ -418,7 +418,7 @@ def test_the_beat_keeps_this_nodes_statements_alive_and_only_with_consent(svc):
     svc.answers[PKG] = FOUND
     svc.beat("A"), svc.beat("B")                                         # B published the confirmation
     assert svc.beat("B").kept_alive == 0                                 # the same keep-alive epoch: nothing due
-    later = lambda: time.time() + 11 * DAY                               # noqa: E731 — the next epoch
+    later = lambda: time.time() + 11 * DAY
     with svc.machines["B"]:
         PolicyConsent().withdraw()
     assert svc.beat("B", clock=later).kept_alive == 0                    # no standing consent: nothing is re-published
@@ -1075,7 +1075,7 @@ def test_simultaneous_disputes_on_one_listing_open_it_once_and_keep_one_address(
     assert sorted(answer.body["state"] for answer in answers) == ["already open"] * 7 + ["open"]
     assert {answer.status for answer in answers} == {202} and len({answer.body["dispute_id"] for answer in answers}) == 1
     (record,) = lane.store.all()
-    opener = next(answer for answer in answers if answer.body["state"] == "open")
+    assert sum(answer.body["state"] == "open" for answer in answers) == 1
     kept = json.loads((lane.store._contacts).read_text())
     assert list(kept) == [record.dispute_id] and len(lane.log.rows()) == 1          # one address kept, one signature made
 

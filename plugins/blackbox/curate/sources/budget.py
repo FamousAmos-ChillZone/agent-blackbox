@@ -65,7 +65,7 @@ class LookupBudget:
     ``retest_days`` on which a deferred / not-proven item is due."""
 
     items_per_beat: int = ITEMS_PER_BEAT
-    retest_days: Tuple[int, ...] = RETEST_DAYS
+    retest_days: tuple[int, ...] = RETEST_DAYS
 
     def due(self, item: LookupItem, today: str) -> bool:
         """An open item is always due; a deferred / not-proven one only on a re-test day."""
@@ -74,7 +74,7 @@ class LookupBudget:
         return _days_between(item.state_since, today) in self.retest_days
 
 
-def select_for_lookup(items: Sequence[LookupItem], budget: LookupBudget, today: str) -> Tuple[LookupItem, ...]:
+def select_for_lookup(items: Sequence[LookupItem], budget: LookupBudget, today: str) -> tuple[LookupItem, ...]:
     """The items this beat looks up: the due ones, lane order then oldest
     first (identifier breaks ties so the pick is deterministic), cut at the budget."""
     due = sorted((item for item in items if budget.due(item, today)),

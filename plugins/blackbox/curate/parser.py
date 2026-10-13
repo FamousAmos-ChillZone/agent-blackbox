@@ -23,7 +23,7 @@ from .publishing.commands import add_publishing_parser
 from .service.commands import add_service_parser
 
 
-def add_curate_parser(sub: "argparse._SubParsersAction", *, compiled_ruleset: Optional[CompiledRuleset] = None) -> None:
+def add_curate_parser(sub: argparse._SubParsersAction, *, compiled_ruleset: Optional[CompiledRuleset] = None) -> None:
     """Register ``blackbox curate <verb>`` on the CLI's sub-parsers."""
     curate = sub.add_parser("curate", help="Curator tooling: queue, dossier, two-key proposals, publish")
     curate.set_defaults(func=cmd_curate, compiled_ruleset=compiled_ruleset, verb=None)

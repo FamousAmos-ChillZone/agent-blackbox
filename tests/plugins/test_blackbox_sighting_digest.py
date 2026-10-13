@@ -10,7 +10,7 @@ estimate is the sum of bucket midpoints over counted authors.
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, UTC
 
 import pytest
 from _community_rows import GRAPH, NETWORK, Reporter, signed_row
@@ -27,8 +27,8 @@ from plugins.blackbox.detection import Finding
 
 CFG = BlackboxConfig(report=True, community_graph_id=GRAPH)
 THREAT = "dep:npm:evil@1.0.0"
-MONDAY_W40 = datetime(2026, 9, 28, 12, tzinfo=timezone.utc)
-MONDAY_W41 = datetime(2026, 10, 5, 12, tzinfo=timezone.utc)
+MONDAY_W40 = datetime(2026, 9, 28, 12, tzinfo=UTC)
+MONDAY_W41 = datetime(2026, 10, 5, 12, tzinfo=UTC)
 
 
 @pytest.fixture(autouse=True)
@@ -65,7 +65,7 @@ def test_repeats_inside_the_report_cooldown_still_increment_the_tally(home):
     assert audit.recently_reported(THREAT)
     for _ in range(3):
         digest.record_verified_sighting(THREAT)
-    assert digest.SightingTally().counts(digest.iso_week(datetime.now(timezone.utc).date())) == {THREAT: 3}
+    assert digest.SightingTally().counts(digest.iso_week(datetime.now(UTC).date())) == {THREAT: 3}
 
 
 def test_only_verified_tier_matches_enter_the_tally(monkeypatch, home):
@@ -80,7 +80,7 @@ def test_only_verified_tier_matches_enter_the_tally(monkeypatch, home):
                         source="heuristic", confirmed=False)]
     reporting._report_and_audit(BlackboxConfig(), "pre_tool_call", findings, {})
     reporting._report_and_audit(BlackboxConfig(), "pre_tool_call", findings, {})   # a repeat
-    assert digest.SightingTally().counts(digest.iso_week(datetime.now(timezone.utc).date())) == {THREAT: 2}
+    assert digest.SightingTally().counts(digest.iso_week(datetime.now(UTC).date())) == {THREAT: 2}
 
 
 def test_the_tally_knows_which_completed_weeks_are_due(tmp_path):
@@ -168,7 +168,7 @@ def test_publishing_sends_one_digest_per_completed_week_and_never_twice(monkeypa
     clock.at = MONDAY_W41
     assert digest.publish_due_digests(node, CFG, tally) == 1
     assert digest.publish_due_digests(node, CFG, tally) == 0            # the week is marked published
-    cg, name, quads = node.shares[0]
+    cg, name, _quads = node.shares[0]
     assert cg == GRAPH and name.startswith("digest-") and len(node.shares) == 1
     assert audit.read_share_ledger()[0]["category"] == "digest"
 

@@ -40,7 +40,7 @@ SLOW_CHECK_SECONDS = 2.0
 #: at most this often.
 REPEAT_LOG_SECONDS = 300.0
 
-_LogLine = Tuple[int, str, Tuple[Any, ...]]
+_LogLine = tuple[int, str, tuple[Any, ...]]
 
 
 class RepeatGate:
@@ -55,7 +55,7 @@ class RepeatGate:
         self._interval = interval
         self._clock = clock
         self._lock = threading.Lock()
-        self._last: Dict[str, float] = {}
+        self._last: dict[str, float] = {}
 
     def due(self, key: str) -> bool:
         now = self._clock()
@@ -135,7 +135,7 @@ class NodeLiveness:
         with self._lock:
             return bool(self._answering)
 
-    def _record(self, ok: bool, seconds: float) -> List[_LogLine]:
+    def _record(self, ok: bool, seconds: float) -> list[_LogLine]:
         """Fold one check result into the state; return the log lines it earns."""
         now = self._clock()
         with self._lock:
@@ -152,8 +152,8 @@ class NodeLiveness:
                 self._answering = False
             return self._missed_lines(was, seconds, now - self._first_failure_at)
 
-    def _answered_lines(self, was: Optional[bool], missed: int, seconds: float, outage: float) -> List[_LogLine]:
-        lines: List[_LogLine] = []
+    def _answered_lines(self, was: Optional[bool], missed: int, seconds: float, outage: float) -> list[_LogLine]:
+        lines: list[_LogLine] = []
         if was is None:
             lines.append((logging.INFO, "DKG node answering (status check %.2f s)", (seconds,)))
         elif was is False:
@@ -167,7 +167,7 @@ class NodeLiveness:
                           (seconds, self._timeout)))
         return lines
 
-    def _missed_lines(self, was: Optional[bool], seconds: float, outage: float) -> List[_LogLine]:
+    def _missed_lines(self, was: Optional[bool], seconds: float, outage: float) -> list[_LogLine]:
         if was is None:
             return [(logging.WARNING, "DKG node not answering at dashboard start (status check gave up after %.1f s)",
                      (seconds,))]
@@ -183,7 +183,7 @@ class NodeLiveness:
         return []
 
 
-def node_sync_probe(cfg: Any, *, reachable: bool) -> Optional[Dict[str, Any]]:
+def node_sync_probe(cfg: Any, *, reachable: bool) -> Optional[dict[str, Any]]:
     if not reachable:
         return None
     client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)

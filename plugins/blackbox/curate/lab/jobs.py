@@ -138,7 +138,7 @@ class LabJobStore:
         self._clock = clock
         self._capacity = capacity
         self._lock = threading.Lock()
-        self._records: Dict[str, LabJobRecord] = self._load()
+        self._records: dict[str, LabJobRecord] = self._load()
 
     def request(self, identifier: str, *, level: int, image_sha256: str, lane: Lane,
                 requested_by: str) -> LabJobRecord:
@@ -164,13 +164,13 @@ class LabJobStore:
         with self._lock:
             return self._settled(key)
 
-    def queued(self) -> List[LabJobRecord]:
+    def queued(self) -> list[LabJobRecord]:
         """QUEUED jobs in work order: lane first, then oldest request."""
         with self._lock:
             waiting = [r for r in self._records.values() if r.state is LabJobState.QUEUED]
         return sorted(waiting, key=lambda r: (r.job.lane.value, r.job.requested_at))
 
-    def records(self) -> List[LabJobRecord]:
+    def records(self) -> list[LabJobRecord]:
         """Every stored job, each settled (a RUNNING job past its deadline reads
         COULD_NOT_TELL) — what the controller polls and its metrics count."""
         with self._lock:
@@ -202,7 +202,7 @@ class LabJobStore:
         if record is None or record.evidence_sha256 is None:
             return None
         path = self._evidence_dir / f"{record.evidence_sha256}.json"
-        return evidence_schema.validate_evidence(json.loads(path.read_text(encoding="utf-8")))
+        return evidence_schema.validate_evidence(json.loads(path.read_text(encoding="utf-8-sig")))
 
     def forget_requester(self, peer_id: str) -> int:
         """Erase *peer_id* from every job (data-subject erasure); the count changed."""
@@ -217,7 +217,7 @@ class LabJobStore:
 
     # -- internals (callers hold the lock) ------------------------------------
 
-    def _open(self) -> List[LabJobRecord]:
+    def _open(self) -> list[LabJobRecord]:
         return [r for r in self._records.values() if r.state in (LabJobState.QUEUED, LabJobState.RUNNING)]
 
     def _settled(self, key: str) -> Optional[LabJobRecord]:
@@ -248,10 +248,10 @@ class LabJobStore:
         lines = (json.dumps(_record_to_mapping(r), sort_keys=True) for r in self._records.values())
         _write_atomic(self._path, "".join(line + "\n" for line in lines))
 
-    def _load(self) -> Dict[str, LabJobRecord]:
-        records: Dict[str, LabJobRecord] = {}
+    def _load(self) -> dict[str, LabJobRecord]:
+        records: dict[str, LabJobRecord] = {}
         try:
-            text = self._path.read_text(encoding="utf-8")
+            text = self._path.read_text(encoding="utf-8-sig")
         except FileNotFoundError:
             return records
         for number, line in enumerate(text.splitlines(), 1):

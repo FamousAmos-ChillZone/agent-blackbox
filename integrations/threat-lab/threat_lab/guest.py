@@ -86,7 +86,7 @@ def read_job(drive: bytes) -> str:
     return strip_query(str(job["identifier"]))
 
 
-def run_job(identifier: str) -> Dict[str, object]:
+def run_job(identifier: str) -> dict[str, object]:
     target = parse_target(identifier)
     plant_bait(LAB_HOME)
     if target.kind is TargetKind.PACKAGE:
@@ -116,7 +116,7 @@ def plant_bait(home: Path) -> None:
         os.chown(path, LAB_USER_ID, LAB_USER_ID)
 
 
-def install_command(ecosystem: str, name: str, version: str, prefix: Path) -> List[str]:
+def install_command(ecosystem: str, name: str, version: str, prefix: Path) -> list[str]:
     """The package manager's own install, scripts ON: that is the behaviour under test."""
     prefix.mkdir(parents=True, exist_ok=True)
     os.chown(prefix, LAB_USER_ID, LAB_USER_ID)
@@ -133,7 +133,7 @@ def package_code_root(ecosystem: str) -> Callable[[str, str], bool]:
     return lambda name, line: "_in_process" in line        # pip's build-backend runner (setup.py)
 
 
-def skill_command(url: str, folder: Path) -> Optional[List[str]]:
+def skill_command(url: str, folder: Path) -> Optional[list[str]]:
     """Download the skill file and the command that runs it, or None when it is not runnable."""
     folder.mkdir(parents=True, exist_ok=True)
     request = urllib.request.Request(url, headers={"User-Agent": "threat-lab/1"})
@@ -156,7 +156,7 @@ def skill_command(url: str, folder: Path) -> Optional[List[str]]:
 
 
 def traced(command: Sequence[str], is_root: Callable[[str, str], bool],
-           phase: str) -> Tuple[int, List[Dict[str, str]]]:
+           phase: str) -> tuple[int, list[dict[str, str]]]:
     """Run *command* as the test user, with the bait in its environment, under
     ``strace -ff``; its exit code and the sample's processes."""
     shutil.rmtree(TRACE_DIR, ignore_errors=True)
@@ -172,15 +172,15 @@ def traced(command: Sequence[str], is_root: Callable[[str, str], bool],
     return done.returncode, sample_processes(traces, is_root, phase)
 
 
-def sample_processes(traces: Dict[int, str], is_root: Callable[[str, str], bool],
-                     phase: str) -> List[Dict[str, str]]:
+def sample_processes(traces: dict[int, str], is_root: Callable[[str, str], bool],
+                     phase: str) -> list[dict[str, str]]:
     """The sample's processes in ``strace -ff`` output (pid → that pid's log):
     every successful exec by a process at or under a root exec, in pid order,
     each as ``{"name": <basename>, "phase": phase}``.
     The first traced process's first :data:`_WRAPPER_EXECS` execs are the
     lab's own wrapper (``setpriv``, ``env``) and are never the sample's."""
-    parents: Dict[int, int] = {}
-    execs: Dict[int, List[Tuple[str, str]]] = {}
+    parents: dict[int, int] = {}
+    execs: dict[int, list[tuple[str, str]]] = {}
     for pid, log in traces.items():
         for line in log.splitlines():
             matched = _SYSCALL.match(line)
@@ -197,17 +197,17 @@ def sample_processes(traces: Dict[int, str], is_root: Callable[[str, str], bool]
     if first in execs:
         execs[first] = execs[first][_WRAPPER_EXECS:]
     roots = {pid for pid, calls in execs.items() if any(is_root(name, line) for name, line in calls)}
-    processes: List[Dict[str, str]] = []
+    processes: list[dict[str, str]] = []
     for pid in sorted(execs):
         if _descends_from(pid, roots, parents):
             processes.extend({"name": name, "phase": phase} for name, _line in execs[pid])
     return processes[:MAX_PROCESSES]
 
 
-def _descends_from(pid: int, roots: Set[int], parents: Dict[int, int]) -> bool:
+def _descends_from(pid: int, roots: set[int], parents: dict[int, int]) -> bool:
     """Whether *pid* is a root or under one. A loop, not recursion: a sample
     can fork a chain deeper than Python's recursion limit."""
-    seen: Set[int] = set()
+    seen: set[int] = set()
     while pid not in seen:
         if pid in roots:
             return True
@@ -218,7 +218,7 @@ def _descends_from(pid: int, roots: Set[int], parents: Dict[int, int]) -> bool:
     return False
 
 
-def write_report(device: Path, report: Dict[str, object]) -> None:
+def write_report(device: Path, report: dict[str, object]) -> None:
     body = json.dumps(report, sort_keys=True, separators=(",", ":")).encode("utf-8")
     if len(body) > MAX_REPORT_BYTES:
         body = json.dumps({"status": "guest-error", "error": "report-too-large"}).encode("utf-8")

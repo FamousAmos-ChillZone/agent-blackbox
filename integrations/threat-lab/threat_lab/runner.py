@@ -71,7 +71,7 @@ class JobRequest:
 class _CapReached(Exception):
     """A probe cut short by the deadline or a resource cap; carries the note."""
 
-    def __init__(self, note: "NoteCode") -> None:
+    def __init__(self, note: NoteCode) -> None:
         super().__init__(note.value)
         self.note = note
 
@@ -113,11 +113,11 @@ class LabRunner:
         logger.info("job %s level %s: %s", request.key, request.level, result.state)
         return result
 
-    def _look(self, request: JobRequest, work: Path, started: float, deadline: float) -> Dict[str, Any]:
+    def _look(self, request: JobRequest, work: Path, started: float, deadline: float) -> dict[str, Any]:
         look = self._probe(("look", request.identifier), self._config.network, work, True, deadline)
         return output.from_look(self._times(request, started), look)
 
-    def _read(self, request: JobRequest, work: Path, started: float, deadline: float) -> Dict[str, Any]:
+    def _read(self, request: JobRequest, work: Path, started: float, deadline: float) -> dict[str, Any]:
         fetch = self._probe(("fetch", request.identifier, f"/work/{_ARTIFACT_NAME}"),
                             self._config.network, work, True, deadline)
         download = work / _ARTIFACT_NAME
@@ -128,12 +128,12 @@ class LabRunner:
         read = self._probe(("read", f"/work/{_ARTIFACT_NAME}"), NO_NETWORK, work, False, deadline)
         return output.from_read(self._times(request, started), fetch, read)
 
-    def _run(self, request: JobRequest, work: Path, started: float, deadline: float) -> Dict[str, Any]:
+    def _run(self, request: JobRequest, work: Path, started: float, deadline: float) -> dict[str, Any]:
         # The microVM's network is its own TAP on the lab bridge; the spec's network is unused.
         run = self._probe(("run", request.identifier), self._config.network, work, True, deadline)
         return output.from_run(self._times(request, started), run)
 
-    def _probe(self, args: tuple, network: str, work: Path, writable: bool, deadline: float) -> Dict[str, Any]:
+    def _probe(self, args: tuple, network: str, work: Path, writable: bool, deadline: float) -> dict[str, Any]:
         remaining = deadline - self._clock()
         if remaining <= 0:
             raise _CapReached(NoteCode.DEADLINE_REACHED)
@@ -149,7 +149,7 @@ class LabRunner:
         return RunTimes(request.key, int(started), max(int(started), int(self._clock())))
 
 
-def _report(result: SandboxResult) -> Dict[str, Any]:
+def _report(result: SandboxResult) -> dict[str, Any]:
     if result.timed_out:
         raise _CapReached(NoteCode.DEADLINE_REACHED)
     if result.scanning_killed:

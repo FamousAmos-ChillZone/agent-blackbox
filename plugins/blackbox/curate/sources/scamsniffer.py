@@ -33,7 +33,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from typing import Callable, Dict, FrozenSet, Optional, Tuple
 from urllib.parse import urlsplit
 
@@ -61,7 +61,7 @@ _FILE_FOR_TYPE = {"domain": DOMAINS_FILE, "url": DOMAINS_FILE, "wallet": ADDRESS
 class _Snapshot:
     """One list as read on ``day`` (UTC ISO date) at epoch ``fetched_at``."""
 
-    entries: FrozenSet[str]
+    entries: frozenset[str]
     day: str
     fetched_at: float
 
@@ -76,8 +76,8 @@ class ScamSnifferSource:
         self._client = client or UrllibClient()
         self._clock = clock
         self._lock = threading.Lock()
-        self._snapshots: Dict[str, _Snapshot] = {}
-        self._failed_at: Dict[str, float] = {}
+        self._snapshots: dict[str, _Snapshot] = {}
+        self._failed_at: dict[str, float] = {}
 
     def check(self, identifier: str) -> SourceVerdict:
         target = _lookup_target(identifier)
@@ -107,19 +107,19 @@ class ScamSnifferSource:
                 self._snapshots.pop(list_file, None)
                 self._failed_at[list_file] = now
                 return None
-            day = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
+            day = datetime.fromtimestamp(now, UTC).date().isoformat()
             self._snapshots[list_file] = snapshot = _Snapshot(entries, day, now)
             return snapshot
 
 
-def _entries(answer: object) -> Optional[FrozenSet[str]]:
+def _entries(answer: object) -> Optional[frozenset[str]]:
     """The list's entries lowercased, or None unless the answer is a non-empty JSON list of strings."""
     if not isinstance(answer, list) or not answer or not all(isinstance(entry, str) for entry in answer):
         return None
     return frozenset(entry.strip().lower() for entry in answer)
 
 
-def _lookup_target(identifier: str) -> Optional[Tuple[str, str]]:
+def _lookup_target(identifier: str) -> Optional[tuple[str, str]]:
     """``(list file, value to match)`` for an identifier ScamSniffer can answer, else None."""
     parts = identifier.split(":", 2)
     if len(parts) != 3 or parts[0] != "ioc" or parts[1] not in _FILE_FOR_TYPE:

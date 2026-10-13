@@ -50,8 +50,8 @@ class Source:
 @dataclass(frozen=True)
 class Dossier:
     identifier: str
-    sources: Tuple[Source, ...] = ()
-    notes: Tuple[str, ...] = field(default=())
+    sources: tuple[Source, ...] = ()
+    notes: tuple[str, ...] = field(default=())
 
 
 @dataclass(frozen=True)
@@ -74,19 +74,19 @@ class DossierBuilder:
     def __init__(self, identifier: str, clock: Callable[[], float] = time.time) -> None:
         self._identifier = identifier
         self._clock = clock
-        self._sources: List[Source] = []
+        self._sources: list[Source] = []
 
-    def _add(self, name: str, summary: str) -> "DossierBuilder":
+    def _add(self, name: str, summary: str) -> DossierBuilder:
         self._sources.append(Source(name=name, fetched_at=self._clock(), summary=summary[:400]))
         return self
 
-    def community(self, rule: Optional[Mapping[str, Any]]) -> "DossierBuilder":
+    def community(self, rule: Optional[Mapping[str, Any]]) -> DossierBuilder:
         if rule is None:
             return self._add("community graph", "no community reports compiled for this threat")
         return self._add("community graph", f"stage {rule.get('stage')} ({rule.get('enforcement')}) — "
                          f"{rule.get('stageReason')}; {rule.get('reporterCount')} verified signer(s)")
 
-    def advisories(self, lookup: Callable[[str, str, str], Optional[Mapping[str, str]]]) -> "DossierBuilder":
+    def advisories(self, lookup: Callable[[str, str, str], Optional[Mapping[str, str]]]) -> DossierBuilder:
         """OSV, for a dependency threat: the advisory and whether it is malware."""
         parts = threat_ids.parse_dependency_identifier(self._identifier)
         if parts is None:
@@ -100,11 +100,11 @@ class DossierBuilder:
             return self._add("OSV", "no advisory for this exact version")
         return self._add("OSV", f"{hit.get('advisory_id')} ({hit.get('kind')}, severity {hit.get('severity')})")
 
-    def curator(self, verdict: Optional[str], dispute_weight: int) -> "DossierBuilder":
+    def curator(self, verdict: Optional[str], dispute_weight: int) -> DossierBuilder:
         self._add("curator statements", f"current verdict: {verdict or 'none'}")
         return self._add("disputes", f"{dispute_weight} counted author(s) dispute it")
 
-    def community_confirmation(self, confirmed: Optional[CommunityConfirmation]) -> "DossierBuilder":
+    def community_confirmation(self, confirmed: Optional[CommunityConfirmation]) -> DossierBuilder:
         """The community curators' confirmation and the evidence they checked —
         evidence for this curator's own item 1, never a verdict to adopt."""
         if confirmed is None:
@@ -113,17 +113,17 @@ class DossierBuilder:
         return self._add("community curators", f"confirmed {confirmed.day} by {confirmed.curators} curator key(s); evidence they "
                          f"checked: {confirmed.evidence}{behind} — check it yourself (from {confirmed.source})")
 
-    def allowlist(self, verdict: Any) -> "DossierBuilder":
+    def allowlist(self, verdict: Any) -> DossierBuilder:
         """R9: what the allowlist / warninglist says (checklist item 3, now automatic)."""
         tag = f" (confusable-of:{verdict.confusable_of})" if getattr(verdict, "confusable_of", "") else ""
         return self._add("allowlist", f"{verdict.verdict.value}{tag}: {verdict.reason}")
 
-    def heat(self, estimate: Optional[Any]) -> "DossierBuilder":
+    def heat(self, estimate: Optional[Any]) -> DossierBuilder:
         if estimate is None:
             return self._add("sighting digests", "no counted digest names it this week")
         return self._add("sighting digests", f"seen by ~{estimate.agents} agents in {estimate.week} ({estimate.digests} digests)")
 
-    def history(self, proposals: Iterable[Any]) -> "DossierBuilder":
+    def history(self, proposals: Iterable[Any]) -> DossierBuilder:
         rows = [f"{p.kind} {p.state.value} ({time.strftime('%Y-%m-%d', time.gmtime(p.created))})" for p in proposals]
         return self._add("prior decisions", "; ".join(rows) if rows else "none")
 
@@ -131,7 +131,7 @@ class DossierBuilder:
         return Dossier(identifier=self._identifier, sources=tuple(self._sources))
 
 
-def render(dossier: Dossier) -> List[str]:
+def render(dossier: Dossier) -> list[str]:
     """Plain lines for the terminal (sources and times; no verdict)."""
     lines = [f"Dossier for {dossier.identifier}"]
     for source in dossier.sources:
@@ -150,7 +150,7 @@ class CheckItem:
     note: str
 
 
-def checklist(identifier: str, *, kind: str, evidence: str, reason: str) -> Tuple[CheckItem, ...]:
+def checklist(identifier: str, *, kind: str, evidence: str, reason: str) -> tuple[CheckItem, ...]:
     """The ≤3-item promotion checklist for one threat (plan §09). Blockable
     kinds fail item 1 without independent evidence; a whole-package scope
     fails item 2 without a scope reason; item 3 is recorded as not checked."""

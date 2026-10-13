@@ -49,7 +49,7 @@ class LastGoodStore:
 
     def _load(self) -> Optional[KillList]:
         try:
-            data: Dict[str, Any] = json.loads(self._path.read_text(encoding="utf-8"))
+            data: dict[str, Any] = json.loads(self._path.read_text(encoding="utf-8-sig"))
             entries = [KillEntry.from_json(item) for item in data.get("entries", []) if isinstance(item, dict)]
             if any(e is None for e in entries):
                 return None

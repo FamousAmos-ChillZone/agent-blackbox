@@ -76,7 +76,7 @@ def _npmrc_has_token(args: Any) -> bool:
     return "_authtoken" in text.lower()
 
 
-def file_access_arg(tool_name: str, args: Any) -> Optional[Dict[str, str]]:
+def file_access_arg(tool_name: str, args: Any) -> Optional[dict[str, str]]:
     """Extract ``{tool, path, mode}`` for a file-access tool call, or ``None``.
 
     Recognises the file-touching tools in :data:`_FILE_ACCESS_TOOLS`. ``mode``
@@ -97,7 +97,7 @@ def file_access_arg(tool_name: str, args: Any) -> Optional[Dict[str, str]]:
     return {"tool": tool, "path": path, "mode": _FILE_ACCESS_TOOLS[tool]}
 
 
-def sensitive_path_category(path: str, args: Any = None) -> Optional[Dict[str, str]]:
+def sensitive_path_category(path: str, args: Any = None) -> Optional[dict[str, str]]:
     """Classify *path* into a sensitive category, or ``None``.
 
     Returns ``{category, severity}``. The ``.npmrc`` file is only sensitive
@@ -146,7 +146,7 @@ def _stringify(value: Any) -> str:
     return str(value) if value is not None else ""
 
 
-def skill_install_arg(tool_name: str, args: Any) -> Optional[Dict[str, str]]:
+def skill_install_arg(tool_name: str, args: Any) -> Optional[dict[str, str]]:
     """Extract a skill install/modify descriptor, or ``None``.
 
     Returns ``{name, version, code, permissions, artifact_hash}`` (missing
@@ -217,14 +217,14 @@ _SHELL_INSTALL_PATTERNS = (
 _TOKEN_RE = re.compile(r"""\"([^\"]*)\"|'([^']*)'|(\S+)""")
 
 
-def _tokenize_shell(command: str) -> List[str]:
-    out: List[str] = []
+def _tokenize_shell(command: str) -> list[str]:
+    out: list[str] = []
     for m in _TOKEN_RE.finditer(command):
         out.append(m.group(1) or m.group(2) or m.group(3) or "")
     return out
 
 
-def _parse_package_token(raw: str, ecosystem: str) -> Optional[Dict[str, str]]:
+def _parse_package_token(raw: str, ecosystem: str) -> Optional[dict[str, str]]:
     """Parse a single install token into ``{name, version}`` for *ecosystem*."""
     token = raw.replace(",", "").replace(";", "").strip()
     if not token or token.startswith(("http://", "https://", "/", ".", "@git")):
@@ -271,7 +271,7 @@ _MANAGER_SPECS = {
 
 
 #: cat-family commands whose following path args are file reads.
-def parse_shell_reads(command: str) -> List[str]:
+def parse_shell_reads(command: str) -> list[str]:
     """Best-effort list of file paths the read, copy and archive commands in *command* touch.
 
     Completes the audit trail for the shell channel: ``cat ~/.ssh/id_rsa`` is a
@@ -282,14 +282,14 @@ def parse_shell_reads(command: str) -> List[str]:
     return [arg.path for arg in shell_files.shell_file_args(command)]
 
 
-def parse_downloads(command: str) -> List[str]:
+def parse_downloads(command: str) -> list[str]:
     """URLs fetched by a curl/wget in *command* (for the download audit trail)."""
     if not command or not re.search(r"\b(?:curl|wget)\b", command, re.IGNORECASE):
         return []
     return list(dict.fromkeys(re.findall(r"https?://[^\s;'\"|&>]+", command)))
 
 
-def parse_dependency_installs(command: str) -> List[Dict[str, str]]:
+def parse_dependency_installs(command: str) -> list[dict[str, str]]:
     """Parse install commands into ``[{ecosystem, name, version}, ...]``.
 
     Supports pip/uv/uvx/npm/pnpm/yarn/bun/cargo/gem/brew. Returns an empty list
@@ -298,7 +298,7 @@ def parse_dependency_installs(command: str) -> List[Dict[str, str]]:
     if not command or not any(p.search(command) for p in _SHELL_INSTALL_PATTERNS):
         return []
     tokens = _tokenize_shell(command)
-    out: List[Dict[str, str]] = []
+    out: list[dict[str, str]] = []
     seen: set = set()
     i = 0
     while i < len(tokens):

@@ -59,12 +59,12 @@ ROW_LIMIT = 20_000
 
 #: Which key manifest was in force on a UTC day (None = none was).
 ManifestForDay = Callable[[str], Optional[key_manifest.KeyManifest]]
-Triple = Tuple[str, str, str]
+Triple = tuple[str, str, str]
 
 
 def decide_by_envelope(store: StoreClient, facts: Mapping[str, AssetFacts], *, manifest_for_day: ManifestForDay,
                        verified_graph: str, today: str,
-                       budget_seconds: float = asset_facts.BUDGET_SECONDS) -> Dict[str, AssetFacts]:
+                       budget_seconds: float = asset_facts.BUDGET_SECONDS) -> dict[str, AssetFacts]:
     """*facts* with every undecided asset whose ``_meta`` was read (its UAL is
     known, so legacy membership is settled) decided BLOCK or FLAG from its
     signed rows, judged by the manifest in force on the asset's day (its
@@ -109,11 +109,11 @@ def rule_disagrees(category: str, key: str, rule: Mapping[str, Any], signed: Sig
     return key != signed.identifier
 
 
-def _decide(fact: AssetFacts, graph: str, subjects: Mapping[str, List[Triple]],
+def _decide(fact: AssetFacts, graph: str, subjects: Mapping[str, list[Triple]],
             manifest: Optional[key_manifest.KeyManifest], verified_graph: str) -> AssetFacts:
     """One asset's tier: BLOCK when at least one row carries a quorum envelope
     and no row shows a rule its signature does not name; FLAG otherwise."""
-    signed: Dict[str, SignedRule] = {}
+    signed: dict[str, SignedRule] = {}
     ignored = set()
     for subject, triples in sorted(subjects.items()):
         rule = _quorum_rule(triples, manifest, verified_graph)
@@ -130,7 +130,7 @@ def _decide(fact: AssetFacts, graph: str, subjects: Mapping[str, List[Triple]],
     return replace(fact, tier=AssetTier.FLAG, signed={}, ignored=frozenset(ignored))
 
 
-def _quorum_rule(triples: List[Triple], manifest: Optional[key_manifest.KeyManifest],
+def _quorum_rule(triples: list[Triple], manifest: Optional[key_manifest.KeyManifest],
                  verified_graph: str) -> Optional[SignedRule]:
     """The signed rule of a row whose ONE envelope the *manifest* accepts as a
     promotion in *verified_graph*; None otherwise (two envelopes on one row are
@@ -145,7 +145,7 @@ def _quorum_rule(triples: List[Triple], manifest: Optional[key_manifest.KeyManif
     return rule if rule.identifier else None
 
 
-def _shows_another_rule(graph: str, triples: List[Triple], signed: SignedRule) -> bool:
+def _shows_another_rule(graph: str, triples: list[Triple], signed: SignedRule) -> bool:
     """True when ANY rule the reader's builders make of the row disagrees with
     *signed* (:func:`rule_disagrees`) — a typed row yields one rule per branch,
     and a multi-valued locator one per value, so each is checked."""
@@ -156,7 +156,7 @@ def _shows_another_rule(graph: str, triples: List[Triple], signed: SignedRule) -
     return False
 
 
-def _read_signed_rows(store: StoreClient, batch: List[str]) -> Optional[Dict[str, Dict[str, List[Triple]]]]:
+def _read_signed_rows(store: StoreClient, batch: list[str]) -> Optional[dict[str, dict[str, list[Triple]]]]:
     """Asset graph → signed subject → its triples, for *batch*; None when the
     store failed or the answer may be cut short."""
     sparql = graph_queries.signed_rows_sparql(batch, ROW_LIMIT)
@@ -172,7 +172,7 @@ def _read_signed_rows(store: StoreClient, batch: List[str]) -> Optional[Dict[str
         logger.warning("blackbox: signed verified rows reached the row limit; these assets stay undecided")
         return None
     wanted = set(batch)
-    by_graph: Dict[str, Dict[str, List[Triple]]] = {}
+    by_graph: dict[str, dict[str, list[Triple]]] = {}
     for row in rows:
         graph = extract_binding(row.get("g"))
         if graph in wanted:

@@ -25,7 +25,7 @@ from ..kernel.dkg_client import DkgClient
 logger = logging.getLogger(__name__)
 
 
-def ensure_side_subscriptions(client: DkgClient, cfg: BlackboxConfig) -> Tuple[str, ...]:
+def ensure_side_subscriptions(client: DkgClient, cfg: BlackboxConfig) -> tuple[str, ...]:
     """Subscribe the community graph and, when one is active, the successor of
     the verified graph. Returns the successor graphs a subscription was
     requested for (empty when none is active or the request failed). Fail-open."""

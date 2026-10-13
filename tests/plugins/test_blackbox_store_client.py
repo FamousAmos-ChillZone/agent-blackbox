@@ -83,7 +83,7 @@ def test_the_query_goes_as_a_form_post_with_the_results_json_accept_header(urlop
 
 
 @pytest.mark.parametrize("failure, reason", [
-    (urllib.error.URLError(socket.timeout("timed out")), "timeout"),
+    (urllib.error.URLError(TimeoutError("timed out")), "timeout"),
     (TimeoutError("timed out"), "timeout"),
     (urllib.error.HTTPError("u", 500, "boom", {}, None), "http 500"),
     (ConnectionRefusedError(111, "refused"), "transport"),

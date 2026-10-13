@@ -66,7 +66,7 @@ class GrowthWatch:
         self._triggered_for: Optional[int] = None
 
     @classmethod
-    def for_config(cls, load_config: Callable[[], Any]) -> "GrowthWatch":
+    def for_config(cls, load_config: Callable[[], Any]) -> GrowthWatch:
         """A watch over the configured verified graph, re-reading the config on
         every probe so a changed graph id or node URL is followed without a restart."""
 

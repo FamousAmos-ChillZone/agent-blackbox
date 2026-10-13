@@ -40,20 +40,20 @@ LEGACY_ASSETS_FILE = Path(__file__).with_name("legacy_assets.txt")
 ANCHOR_FIELDS = ("identifier", "kind", "severity", "name", "pattern", "toolName", "argShape")
 
 
-def threat_anchor_hash(fields: Dict[str, Any]) -> str:
+def threat_anchor_hash(fields: dict[str, Any]) -> str:
     """Canonical sha256 over a threat row's detection-relevant fields."""
     lines = [f"{k}={fields.get(k) or ''}" for k in ANCHOR_FIELDS]
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
-def anchor_hashes_from_rows(rows: Iterable[Dict[str, Any]]) -> Dict[str, str]:
+def anchor_hashes_from_rows(rows: Iterable[dict[str, Any]]) -> dict[str, str]:
     """Map identifier -> anchor hash from plain-string binding rows.
 
     A re-published threat can yield several rows per identifier; keeping the
     lexicographically greatest hash makes independent clients converge on
     the same value without coordinating row order.
     """
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     for row in rows:
         ident = str(row.get("identifier") or "").strip()
         if not ident:
@@ -81,14 +81,14 @@ class LegacyAssets:
     (None: not usable this refresh); ``refused`` — why a pinned list was refused
     ("" when it matched, or when no trusted manifest pins one)."""
 
-    uals: Optional[FrozenSet[str]] = None
+    uals: Optional[frozenset[str]] = None
     refused: str = ""
 
 
-def load_legacy_assets(path: Optional[Path] = None) -> Optional[FrozenSet[str]]:
+def load_legacy_assets(path: Optional[Path] = None) -> Optional[frozenset[str]]:
     """The UALs in the list file (default :data:`LEGACY_ASSETS_FILE`); None when it cannot be read."""
     try:
-        text = (path or LEGACY_ASSETS_FILE).read_text(encoding="utf-8")
+        text = (path or LEGACY_ASSETS_FILE).read_text(encoding="utf-8-sig")
     except (OSError, UnicodeDecodeError) as exc:
         logger.warning("blackbox: legacy asset list not readable: %s", exc)
         return None

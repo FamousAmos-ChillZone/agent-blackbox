@@ -67,7 +67,7 @@ def test_every_operator_state_has_a_class_and_a_what_to_do(over, klass, needle):
 
 def test_info_is_never_red_and_action_sorts_first():
     items = health.operator_health(_inputs(node_reachable=False, community_paused=True, held_back=2))
-    assert [i.klass for i in items][0] is health.HealthClass.ACTION
+    assert next(i.klass for i in items) is health.HealthClass.ACTION
     assert all(not health.red(i) for i in items if i.klass is health.HealthClass.INFO)
     assert health.red(items[0])
 
@@ -171,13 +171,13 @@ def test_the_audit_counts_only_the_firings_that_blocked(monkeypatch, tmp_path):
 
 # ------------------------------------------------------------------ the manifest watcher (trust-and-threat-lab W1)
 
-from datetime import datetime, timedelta, timezone  # noqa: E402
+from datetime import datetime, timedelta, timezone, UTC
 
-from plugins.blackbox.kernel.health import manifest_watch as mw  # noqa: E402
+from plugins.blackbox.kernel.health import manifest_watch as mw
 
 CURATOR_A, CURATOR_B = "a" * 64, "b" * 64
 ISSUED = "2026-08-01"
-_ISSUED_NOON = datetime(2026, 8, 1, 12, tzinfo=timezone.utc).timestamp()
+_ISSUED_NOON = datetime(2026, 8, 1, 12, tzinfo=UTC).timestamp()
 
 
 def _on_day(day: int) -> float:

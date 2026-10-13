@@ -57,15 +57,15 @@ class CommunityRule:
     reporter_count: int
     first_seen: float
     last_seen: float
-    fields: "tuple[tuple[str, str], ...]" = ()
+    fields: tuple[tuple[str, str], ...] = ()
     #: The verified signer keys behind it (Refine R3: stages count counted clusters among them).
-    authors: "tuple[str, ...]" = ()
+    authors: tuple[str, ...] = ()
 
     _CLAMP = 256
 
-    def as_rule(self) -> Dict[str, Any]:
+    def as_rule(self) -> dict[str, Any]:
         """The merge-compatible rule dict; every value clamped display-only."""
-        clamp = lambda v: str(v or "")[: self._CLAMP]  # noqa: E731 - tiny local helper
+        clamp = lambda v: str(v or "")[: self._CLAMP]
         rule = {
             "identifier": clamp(self.identifier),
             "name": clamp(self.identifier),
@@ -86,14 +86,14 @@ class CommunityRule:
 PER_SIGHTING_VARS = frozenset({"outcome", "agentAction", "agentTool"})
 
 
-def _cap_per_author(reports: Iterable[VerifiedReport], prior_first_seen: Dict[str, float]) -> List[VerifiedReport]:
+def _cap_per_author(reports: Iterable[VerifiedReport], prior_first_seen: dict[str, float]) -> list[VerifiedReport]:
     """At most MAX_REPORTS_PER_AUTHOR threats per verified signer, keeping
     each signer's oldest-known threats (this node's first-seen history;
     threats it has never seen sort last, then by identifier)."""
-    by_author: Dict[str, List[VerifiedReport]] = {}
+    by_author: dict[str, list[VerifiedReport]] = {}
     for report in reports:
         by_author.setdefault(report.author, []).append(report)
-    kept: List[VerifiedReport] = []
+    kept: list[VerifiedReport] = []
     for author_reports in by_author.values():
         author_reports.sort(key=lambda r: (prior_first_seen.get(r.identifier, float("inf")), r.identifier))
         kept.extend(author_reports[:MAX_REPORTS_PER_AUTHOR])
@@ -102,7 +102,7 @@ def _cap_per_author(reports: Iterable[VerifiedReport], prior_first_seen: Dict[st
     return kept
 
 
-def _fold(slot: Dict[str, Any], report: VerifiedReport) -> None:
+def _fold(slot: dict[str, Any], report: VerifiedReport) -> None:
     """Add one verified report to its identifier's slot: its signer, the max
     severity, the first value of each threat field, every value of each
     per-sighting field."""
@@ -117,8 +117,8 @@ def _fold(slot: Dict[str, Any], report: VerifiedReport) -> None:
 
 
 def aggregate_community_reports(
-    reports: Iterable[VerifiedReport], prior_first_seen: Dict[str, float]
-) -> List[CommunityRule]:
+    reports: Iterable[VerifiedReport], prior_first_seen: dict[str, float]
+) -> list[CommunityRule]:
     """Fold VERIFIED reports into per-identifier CommunityRules.
 
     Only :class:`~.verification.VerifiedReport` values reach here — a raw row
@@ -129,7 +129,7 @@ def aggregate_community_reports(
     from this node's previous cache, never a reporter-supplied date (KI-012).
     """
     now = time.time()
-    grouped: Dict[str, Dict[str, Any]] = {}
+    grouped: dict[str, dict[str, Any]] = {}
     for report in _cap_per_author(reports, prior_first_seen):
         slot = grouped.setdefault(
             report.identifier,

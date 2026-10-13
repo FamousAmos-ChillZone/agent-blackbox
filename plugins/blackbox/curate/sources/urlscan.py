@@ -106,7 +106,7 @@ class UrlscanScan:
     verdict: SourceVerdict
     observations: Mapping[str, Any]
 
-    def lab_output(self) -> Dict[str, Any]:
+    def lab_output(self) -> dict[str, Any]:
         """The raw lab output ``extractor.extract(job, raw)`` reads for a level-3 job."""
         return {"started_at": self.submitted_at, "finished_at": self.finished_at, "urlscan": self.observations}
 
@@ -130,7 +130,7 @@ class UrlscanSource:
         self._key = key
         self._clock = clock
         self._lock = threading.Lock()
-        self._scans: Dict[str, Union[_Pending, UrlscanScan]] = {}
+        self._scans: dict[str, _Pending | UrlscanScan] = {}
 
     def check(self, identifier: str) -> SourceVerdict:
         url = visit_url(identifier)
@@ -181,7 +181,7 @@ class UrlscanSource:
         return verdict
 
     def _forget_stale(self, now: float) -> None:
-        def stale(entry: Union[_Pending, UrlscanScan]) -> bool:
+        def stale(entry: _Pending | UrlscanScan) -> bool:
             if isinstance(entry, _Pending):
                 return now - entry.submitted_at > GIVE_UP_AFTER_SECONDS
             return now - entry.finished_at > RESULT_TTL_SECONDS
@@ -217,7 +217,7 @@ def _verdict(result: JsonObject, uuid: str) -> SourceVerdict:
     return SourceVerdict(Lookup.UNAVAILABLE, source=NAME)
 
 
-def _observations(result: JsonObject) -> Dict[str, Any]:
+def _observations(result: JsonObject) -> dict[str, Any]:
     """The extractor's ``urlscan`` section: only the typed fields it reads, strings only, bounded."""
     lists = _mapping(result.get("lists"))
     return {
@@ -231,5 +231,5 @@ def _mapping(value: object) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
-def _strings(value: object) -> List[str]:
+def _strings(value: object) -> list[str]:
     return [entry for entry in value if isinstance(entry, str)][:MAX_LIST_ENTRIES] if isinstance(value, list) else []

@@ -53,7 +53,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, UTC
 from pathlib import Path
 from typing import Callable, Collection, Dict, Iterable, List, Mapping, Optional, Tuple
 
@@ -75,7 +75,7 @@ PAUSES_KEPT = 4
 #: Statement kinds where each curator KEY has its own current statement.
 _PER_KEY_KINDS = frozenset({CuratorStatement.HEARTBEAT.value, CuratorStatement.AWAY.value})
 
-Row = Dict[str, str]
+Row = dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -86,7 +86,7 @@ class StoredSuccessor:
     ``to_graph`` and the cut-off day ``from_day``. Only the pair is acted on:
     which graph is active is decided again from the verified rows every read."""
 
-    order: Tuple[int, int]
+    order: tuple[int, int]
     content_hash: str
     to_graph: str = ""
     from_day: str = ""
@@ -105,17 +105,17 @@ class StoredTrust:
     root-signed graph-migration rows (unverified until checked) and
     ``successor`` — the migration followed (None before any, T2)."""
 
-    manifests: Tuple[Row, ...] = ()
-    statements: Tuple[Row, ...] = ()
+    manifests: tuple[Row, ...] = ()
+    statements: tuple[Row, ...] = ()
     admitted: Mapping[str, str] = field(default_factory=dict)
     baseline_until: Optional[float] = None
-    effective_order: Optional[Tuple[int, int]] = None
+    effective_order: Optional[tuple[int, int]] = None
     effective_hash: str = ""
-    migrations: Tuple[Row, ...] = ()
+    migrations: tuple[Row, ...] = ()
     successor: Optional[StoredSuccessor] = None
 
     @property
-    def identifiers(self) -> List[str]:
+    def identifiers(self) -> list[str]:
         """The identifiers the stored statements are about (worth asking for again)."""
         return list(dict.fromkeys(row.get("identifier", "") for row in self.statements if row.get("identifier")))
 
@@ -138,13 +138,13 @@ def _age_days(day: str, today: str) -> int:
         return 0   # an unreadable day is kept (pruning must never remove a reduction by accident)
 
 
-def current_statements(rows: Iterable[Mapping[str, str]], today: str) -> List[Row]:
+def current_statements(rows: Iterable[Mapping[str, str]], today: str) -> list[Row]:
     """The rows worth keeping: per (kind, identifier) — per curator key for
     heartbeats and away notices — only the highest sequence number (every row
     at that number, so ties stay decidable); the newest ``PAUSES_KEPT`` pauses;
     nothing signed more than ``MAX_STATEMENT_AGE_DAYS`` ago. Newest first,
     capped at ``MAX_STORED_STATEMENTS``. Rows must already be verified."""
-    groups: Dict[Tuple[str, str, str], List[Tuple[int, str, Row]]] = {}
+    groups: dict[tuple[str, str, str], list[tuple[int, str, Row]]] = {}
     for row in rows:
         envelope = signing.from_text(row.get("signedStatement", ""))
         if envelope is None:
@@ -158,7 +158,7 @@ def current_statements(rows: Iterable[Mapping[str, str]], today: str) -> List[Ro
                  "signedStatement": str(row.get("signedStatement", ""))}
         groups.setdefault((kind, str(envelope.payload.get("identifier", "")), key_field), []).append(
             (envelope.sequence, day, plain))
-    kept: List[Tuple[str, Row]] = []
+    kept: list[tuple[str, Row]] = []
     for (kind, _identifier, _key), entries in groups.items():
         if kind == CuratorStatement.PAUSE.value:
             numbers = sorted({sequence for sequence, _, _ in entries}, reverse=True)[:PAUSES_KEPT]
@@ -187,7 +187,7 @@ class TrustStore:
 
     def remember(self, graph: str, manifests: Iterable[Mapping[str, str]],
                  statements: Iterable[Mapping[str, str]], *, admitted: Optional[Mapping[str, str]] = None,
-                 keep_orders: Iterable[Tuple[int, int]] = ()) -> StoredTrust:
+                 keep_orders: Iterable[tuple[int, int]] = ()) -> StoredTrust:
         """Replace *graph*'s stored trust with these VERIFIED rows, pruned to
         the current ones, and with *admitted* (the raising statements acted on
         — kept only for rows that are kept). Manifest rows at *keep_orders*
@@ -199,7 +199,7 @@ class TrustStore:
             data = self._read()
             before = self._entry(data, graph)
             now = self._clock()
-            today = datetime.fromtimestamp(now, timezone.utc).date().isoformat()
+            today = datetime.fromtimestamp(now, UTC).date().isoformat()
             kept = current_statements(statements, today)
             keys = {statement_key(row) for row in kept}
             source = before.admitted if admitted is None else admitted
@@ -212,7 +212,7 @@ class TrustStore:
                 self._put(data, graph, after)
             return after
 
-    def remember_effective(self, graph: str, order: Optional[Tuple[int, int]], content_hash: str) -> StoredTrust:
+    def remember_effective(self, graph: str, order: Optional[tuple[int, int]], content_hash: str) -> StoredTrust:
         """Record the manifest this node acts on for *graph* once its time-lock
         has passed (:func:`.manifests.sticky_after` decides). The sticky order
         only moves forward: a lower *order* is ignored. Writes only on change."""
@@ -227,7 +227,7 @@ class TrustStore:
 
     def remember_migrations(self, graph: str, rows: Iterable[Mapping[str, str]],
                             successor: Optional[StoredSuccessor], *,
-                            keep_orders: Iterable[Tuple[int, int]] = ()) -> StoredTrust:
+                            keep_orders: Iterable[tuple[int, int]] = ()) -> StoredTrust:
         """Replace *graph*'s stored graph-migration rows with these VERIFIED
         rows (the newest ``MAX_STORED_MIGRATIONS``, plus every row at the
         followed order and at *keep_orders* — the freeze), and record
@@ -258,7 +258,7 @@ class TrustStore:
 
     # -- file -------------------------------------------------------------
 
-    def _put(self, data: Dict[str, object], graph: str, entry: StoredTrust) -> None:
+    def _put(self, data: dict[str, object], graph: str, entry: StoredTrust) -> None:
         data.setdefault("graphs", {})[graph] = {
             "manifests": list(entry.manifests), "statements": list(entry.statements),
             "admitted": dict(entry.admitted), "baseline_until": entry.baseline_until,
@@ -284,9 +284,9 @@ class TrustStore:
         except (TypeError, ValueError):
             return StoredTrust()
 
-    def _read(self) -> Dict[str, object]:
+    def _read(self) -> dict[str, object]:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
             return data if isinstance(data, dict) else {}
         except (OSError, ValueError):
             return {}   # missing or unreadable: rebuilt from the network
@@ -298,8 +298,8 @@ class TrustStore:
             logger.warning("blackbox: could not save the community trust store (%s)", exc)
 
 
-def _plain_rows(value: object) -> List[Row]:
-    rows: List[Row] = []
+def _plain_rows(value: object) -> list[Row]:
+    rows: list[Row] = []
     for item in value if isinstance(value, list) else []:
         if isinstance(item, dict):
             rows.append({"r": str(item.get("r", "")), "identifier": str(item.get("identifier", "")),
@@ -307,7 +307,7 @@ def _plain_rows(value: object) -> List[Row]:
     return rows
 
 
-def _order(value: object) -> Optional[Tuple[int, int]]:
+def _order(value: object) -> Optional[tuple[int, int]]:
     """A stored (root epoch, version), or None when absent or malformed (an
     edited file only loses the sticky memory, never invents one higher)."""
     if isinstance(value, list) and len(value) == 2 and all(isinstance(part, int) and not isinstance(part, bool) for part in value):
@@ -315,7 +315,7 @@ def _order(value: object) -> Optional[Tuple[int, int]]:
     return None
 
 
-def _successor_json(successor: Optional[StoredSuccessor]) -> Optional[Dict[str, object]]:
+def _successor_json(successor: Optional[StoredSuccessor]) -> Optional[dict[str, object]]:
     if successor is None:
         return None
     return {"order": list(successor.order), "content_hash": successor.content_hash,
@@ -335,12 +335,12 @@ def _successor(value: object) -> Optional[StoredSuccessor]:
 
 
 def _newest_signed_rows(rows: Iterable[Mapping[str, str]], limit: int,
-                        keep_orders: Collection[Optional[Tuple[int, int]]] = ()) -> List[Row]:
+                        keep_orders: Collection[Optional[tuple[int, int]]] = ()) -> list[Row]:
     """The newest *limit* root-signed rows (key manifests or graph migrations)
     by (root epoch, version), plus every row at *keep_orders* (the sticky one
     and the freeze): a flood of conflicting higher versions must not push the
     statement this node acts on, or the conflict that froze it, out of the store."""
-    ordered: List[Tuple[Tuple[int, int], Row]] = []
+    ordered: list[tuple[tuple[int, int], Row]] = []
     for row in rows:
         envelope = signing.from_text(row.get("signedStatement", ""))
         if envelope is not None:
@@ -351,14 +351,14 @@ def _newest_signed_rows(rows: Iterable[Mapping[str, str]], limit: int,
     return [row for _, row in ordered[:limit]] + [row for order, row in ordered[limit:] if order in keep_orders]
 
 
-def held_manifest_texts(graph: str) -> Tuple[str, ...]:
+def held_manifest_texts(graph: str) -> tuple[str, ...]:
     """The signed key manifests this node holds for *graph*, as texts (each was
     verified against the pinned root when it was stored) — the chain an export
     bundle carries so a receiver can check everything from the root down."""
     return tuple(sorted(row["signedStatement"] for row in TrustStore().load(graph).manifests if row.get("signedStatement")))
 
 
-def manifest_orders(rows: Iterable[Mapping[str, str]]) -> List[Tuple[int, int]]:
+def manifest_orders(rows: Iterable[Mapping[str, str]]) -> list[tuple[int, int]]:
     """The (root epoch, version) of each stored manifest row — what the next lookup probes beyond."""
     orders = []
     for row in rows:

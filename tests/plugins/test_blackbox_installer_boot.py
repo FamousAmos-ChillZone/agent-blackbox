@@ -154,7 +154,7 @@ def test_dashboard_service_is_written_and_enabled_on_a_systemd_machine(tmp_path)
         "register_dashboard_service",
     ])
     result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
-                            env={"PATH": f"{stubs}:/usr/bin:/bin"})
+                            env={"PATH": f"{stubs}:/usr/bin:/bin"}, check=False)
 
     assert result.returncode == 0, result.stderr
     unit = tmp_path / ".config" / "systemd" / "user" / "blackbox-dashboard.service"
@@ -177,7 +177,7 @@ def _start_dashboard_run(tmp_path, *, running: bool, marker: str | None):
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
     subprocess.run(["git", "-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-qm", "v"],
                    cwd=repo, check=True)
-    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True).stdout.strip()
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=False).stdout.strip()
     home = tmp_path / ".hermes"
     if marker is not None:
         (home / "blackbox").mkdir(parents=True)
@@ -195,7 +195,7 @@ def _start_dashboard_run(tmp_path, *, running: bool, marker: str | None):
         func, "start_dashboard",
     ])
     result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
-                            env={"PATH": f"{stubs}:/usr/bin:/bin"})
+                            env={"PATH": f"{stubs}:/usr/bin:/bin"}, check=False)
     assert result.returncode == 0, result.stderr
     revision = (home / "blackbox" / ".dashboard-revision")
     return launched.exists(), (revision.read_text().strip() if revision.exists() else ""), head
@@ -241,6 +241,15 @@ _NODE_SETTINGS = {
 }
 
 
+def _installed_dkg_bin(tmp_path) -> str:
+    """A stand-in node binary: register_boot_service registers nothing for a missing one."""
+    dkg = tmp_path / "dkg" / "node_modules" / ".bin" / "dkg"
+    dkg.parent.mkdir(parents=True)
+    dkg.write_text("#!/bin/sh\nexit 0\n")
+    dkg.chmod(0o755)
+    return str(dkg)
+
+
 def _register_boot_service(tmp_path, os_name: str):
     """Run the real register_boot_service in a sandbox shaped like *os_name*."""
     import shutil
@@ -259,12 +268,13 @@ def _register_boot_service(tmp_path, os_name: str):
         "secure_dkg_token_perms() { :; }", "id() { echo 1000; }",
         f"HOME={tmp_path}",
         *(f"{key}='{value}'" for key, value in _NODE_SETTINGS.items()),
+        f"BLACKBOX_DKG_BIN='{_installed_dkg_bin(tmp_path)}'",
         _top_level_function("xml_escape"),
         _top_level_function("register_boot_service"),
         "register_boot_service",
     ])
     result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
-                            env={"PATH": f"{stubs}:/usr/bin:/bin"})
+                            env={"PATH": f"{stubs}:/usr/bin:/bin"}, check=False)
     assert result.returncode == 0, result.stderr
 
 
@@ -320,6 +330,7 @@ def test_a_plist_value_is_escaped_as_xml_text(tmp_path):
         "set -euo pipefail", "ok() { :; }", "warn() { :; }", "step() { :; }", "heading() { :; }",
         "secure_dkg_token_perms() { :; }", f"HOME={tmp_path}",
         *(f"{key}='{value}'" for key, value in settings_with_markup.items()),
+        f"BLACKBOX_DKG_BIN='{_installed_dkg_bin(tmp_path)}'",
         _top_level_function("xml_escape"), _top_level_function("register_boot_service"), "register_boot_service",
     ])
     subprocess.run(["bash", "-c", script], check=True, env={"PATH": f"{stubs}:/usr/bin:/bin"})

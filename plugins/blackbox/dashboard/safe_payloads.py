@@ -42,7 +42,7 @@ def safe_identifier(value: Any) -> str:
     return display_safety.strip_controls(value)[:MAX_IDENTIFIER_CHARS]
 
 
-def graph_tier_item(item: Mapping[str, Any], *, community: bool) -> Dict[str, Any]:
+def graph_tier_item(item: Mapping[str, Any], *, community: bool) -> dict[str, Any]:
     """One ``/api/graph`` threat as the client payload carries it.
 
     The category ALWAYS comes from the identifier (``threat_ids.category_for``):
@@ -54,7 +54,7 @@ def graph_tier_item(item: Mapping[str, Any], *, community: bool) -> Dict[str, An
     """
     identifier = str(item.get("identifier") or "")
     name = str(item.get("name") or "")
-    out: Dict[str, Any] = {
+    out: dict[str, Any] = {
         "identifier": safe_identifier(identifier) if community else identifier,
         "category": threat_ids.category_for(identifier),
         "severity": str(item.get("severity") or "info").lower(),
@@ -82,7 +82,7 @@ _PROFILE_KEYS = ("threatGoal", "resourceAtRisk", "attackTechnique", "outcome", "
                  "verifiedSubject")
 
 
-def sanitized_ledger(limit: int = 50) -> List[Dict[str, Any]]:
+def sanitized_ledger(limit: int = 50) -> list[dict[str, Any]]:
     """This node's outbound reports ledger, sanitized for serving."""
     from .. import audit as _audit
 

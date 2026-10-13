@@ -250,11 +250,11 @@ def test_other_ipv6_addresses_keep_the_compressed_lower_case_form():
 # every result passes validate_evidence, and only EvidenceError escapes (the
 # controller's poll catches nothing else).
 
-import random  # noqa: E402
+import random
 
-from plugins.blackbox.curate.lab import extractor  # noqa: E402
-from plugins.blackbox.curate.lab.jobs import LabJob, threat_digest  # noqa: E402
-from plugins.blackbox.curate.queue import Lane  # noqa: E402
+from plugins.blackbox.curate.lab import extractor
+from plugins.blackbox.curate.lab.jobs import LabJob, threat_digest
+from plugins.blackbox.curate.queue import Lane
 
 PAGE = "url:https://login.example-phish.test/signin?email=victim@example.test"
 
@@ -532,7 +532,7 @@ def test_a_reader_crash_surfaces_as_evidence_error(monkeypatch):
 
 
 def test_the_extractor_satisfies_the_controller_contract():
-    from plugins.blackbox.curate.lab.controller import Extractor  # noqa: F401  (the Strategy type)
+    from plugins.blackbox.curate.lab.controller import Extractor
     import inspect
 
     assert list(inspect.signature(extractor.extract).parameters) == ["job", "raw"]
@@ -603,7 +603,7 @@ def test_extraction_is_identical_across_interpreter_runs():
     for seed in ("1", "2"):
         env = dict(os.environ, PYTHONHASHSEED=seed, PYTHONDONTWRITEBYTECODE="1")
         completed = subprocess.run([sys.executable, "-c", _EXTRACT_IN_A_FRESH_INTERPRETER, PAGE, "4", IMAGE],
-                                   input=raw, capture_output=True, text=True, env=env, cwd=repo_root, timeout=120)
+                                   input=raw, capture_output=True, text=True, env=env, cwd=repo_root, timeout=120, check=False)
         assert completed.returncode == 0, completed.stderr
         outputs.append(completed.stdout)
     assert outputs[0] == outputs[1]
@@ -646,7 +646,7 @@ def _fixture_job(fixtures, name: str):
     from plugins.blackbox.curate.queue import Lane
 
     identifier, level = fixtures.FIXTURE_JOBS[name]
-    return LabJob(fixtures.fixture_key(name), identifier, level, list(Lane)[0], "", 0.0)
+    return LabJob(fixtures.fixture_key(name), identifier, level, next(iter(Lane)), "", 0.0)
 
 
 def build_fixture_evidence(fixtures) -> dict:

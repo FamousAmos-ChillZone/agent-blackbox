@@ -29,7 +29,7 @@ from .. import keys
 NOT_LISTED_TTL_SECONDS = 24 * 60 * 60
 _FILE = "not_listed_cache.json"
 
-Entries = Dict[str, Dict[str, float]]
+Entries = dict[str, dict[str, float]]
 
 
 class NotListedCache:
@@ -62,7 +62,7 @@ class NotListedCache:
 
     def _read(self) -> Entries:
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
+            data = json.loads(self._path.read_text(encoding="utf-8-sig"))
         except (OSError, ValueError):
             return {}
         if not isinstance(data, dict):

@@ -98,11 +98,11 @@ def test_a_secret_in_the_request_or_command_is_redacted_in_the_report(shielded):
 
 
 def test_a_long_session_keeps_the_steps_nearest_the_event():
-    session_steps = [{"type": "tool", "ts": n, "action": "step %d" % n, "threats": []} for n in range(100)]
+    session_steps = [{"type": "tool", "ts": n, "action": f"step {n}", "threats": []} for n in range(100)]
     window = wallet_events._timeline(session_steps, 70)
     assert len(window) == wallet_events.MAX_TIMELINE_STEPS
     assert [step["label"] for step in window if step["this"]] == ["step 70"]
-    assert window[0]["label"] == "step %d" % (70 - wallet_events.MAX_TIMELINE_STEPS // 2)
+    assert window[0]["label"] == f"step {70 - wallet_events.MAX_TIMELINE_STEPS // 2}"
 
 
 def test_a_wallet_event_never_leaves_the_machine(shielded, monkeypatch):

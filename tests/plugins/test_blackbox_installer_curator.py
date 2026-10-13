@@ -38,8 +38,8 @@ class Installed:
     system and user folders alike), and the systemctl / useradd calls it made."""
 
     out: str
-    units: Dict[str, str]
-    system_units: Dict[str, str]
+    units: dict[str, str]
+    system_units: dict[str, str]
     calls: str
     useradd: str
 
@@ -78,10 +78,10 @@ BLACKBOX_SYSTEMD_DIR="{system_dir}"; BLACKBOX_PTRACE_SCOPE_FILE="{ptrace_file}"
 {call}
 """
     done = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30,
-                          env={"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin", **env})
+                          env={"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin", **env}, check=False)
     assert done.returncode == 0, done.stderr
 
-    def read(folder: Path) -> Dict[str, str]:
+    def read(folder: Path) -> dict[str, str]:
         return {name: (folder / f"{name}.service").read_text(encoding="utf-8")
                 for name in UNITS if (folder / f"{name}.service").exists()}
 

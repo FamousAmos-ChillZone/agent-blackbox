@@ -75,7 +75,7 @@ New-BlackboxDkgLauncherLines -NodeDir $env:T_NODE_DIR
     env = {**os.environ, "T_FUNCTIONS": str(functions), "T_DKG_HOME": r"C:\Users\O'Brien\agent-blackbox\.dkg",
            "T_DKG_BIN": r"C:\Users\O'Brien\agent-blackbox\dkg\node_modules\.bin\dkg.cmd", "T_NODE_DIR": r"C:\node"}
     result = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-Command", script],
-                            capture_output=True, text=True, timeout=120, env=env)
+                            capture_output=True, text=True, timeout=120, env=env, check=False)
 
     assert result.returncode == 0, result.stderr
     lines = result.stdout.splitlines()

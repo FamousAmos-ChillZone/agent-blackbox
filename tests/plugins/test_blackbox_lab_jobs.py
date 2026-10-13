@@ -443,7 +443,7 @@ def test_the_lab_verbs_parse_through_the_real_hermes_parser(argv, attribute, val
     env = {**os.environ, "HERMES_HOME": str(tmp_path / "hermes"), "PYTHONPATH": str(root)}
     probe = _REAL_PARSE + "print(json.dumps([args.func.__module__, args.func.__name__]))\n"
     done = subprocess.run([sys.executable, "-c", probe, json.dumps(argv), attribute], cwd=root, env=env,
-                          capture_output=True, text=True, timeout=120)
+                          capture_output=True, text=True, timeout=120, check=False)
     assert done.returncode == 0, done.stderr[-2000:]
     parsed, (module, name) = (json.loads(line) for line in done.stdout.strip().splitlines()[-2:])
     assert parsed == {"version": False, "command": "blackbox", "value": value}

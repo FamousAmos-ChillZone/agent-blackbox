@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ============================================================================
 # Agent Blackbox — restore one curator-state backup into an EMPTY curate home
 # ============================================================================

@@ -97,10 +97,10 @@ class Evidence:
     level: int
     started_at: int
     finished_at: int
-    contacted_hosts: Tuple[str, ...]
-    file_fingerprints: Tuple[str, ...]
-    observations: Tuple[Observation, ...]
-    notes: Tuple[NoteCode, ...]
+    contacted_hosts: tuple[str, ...]
+    file_fingerprints: tuple[str, ...]
+    observations: tuple[Observation, ...]
+    notes: tuple[NoteCode, ...]
 
 
 _FIELDS = frozenset(Evidence.__dataclass_fields__)
@@ -160,7 +160,7 @@ def validate_evidence(mapping: Mapping[str, Any]) -> Evidence:
     )
 
 
-def to_mapping(evidence: Evidence) -> Dict[str, Any]:
+def to_mapping(evidence: Evidence) -> dict[str, Any]:
     """The JSON-ready mapping :func:`validate_evidence` reads back."""
     return {
         "job_key": evidence.job_key,
@@ -214,7 +214,7 @@ def _host(value: Any, field: str) -> str:
     return host
 
 
-def _address_text(address: Union[ipaddress.IPv4Address, ipaddress.IPv6Address]) -> str:
+def _address_text(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str:
     """One spelling per address on every Python (FIX-0090).
 
     CPython changed how an IPv4-mapped IPv6 address prints: ``::ffff:0:1`` on
@@ -261,7 +261,7 @@ def _observation(value: Any, field: str) -> Observation:
         raise EvidenceError(f"{field}: {str(value['check'])[:64]!r} is not a known check") from None
 
 
-def _observations(values: Any) -> Tuple[Observation, ...]:
+def _observations(values: Any) -> tuple[Observation, ...]:
     observations = _capped(values, "observations", len(Check), _observation)
     if len({o.check for o in observations}) != len(observations):
         raise EvidenceError("observations answers a check twice")

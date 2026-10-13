@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from ..kernel import constants
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -73,11 +73,11 @@ class Threshold:
     or ``established_only`` established authors — over at least ``days``."""
 
     partner_only: int
-    mixed: Tuple[int, int]
+    mixed: tuple[int, int]
     established_only: int
     days: int
 
-    def met(self, clusters: "Clusters") -> bool:
+    def met(self, clusters: Clusters) -> bool:
         partners, established = clusters.partner, clusters.established
         return (partners >= self.partner_only
                 or (partners >= self.mixed[0] and established >= self.mixed[1])
@@ -149,7 +149,7 @@ class StageResult:
     #: R9: the allowlisted name this threat looks like (a homograph supports the report).
     confusable_of: str = ""
 
-    def as_fields(self) -> Dict[str, str]:
+    def as_fields(self) -> dict[str, str]:
         """The rule-dict fields the ruleset stores and the UI shows."""
         fields = {"stage": self.stage.value, "enforcement": self.enforcement.value, "stageReason": self.reason,
                   "stageSource": self.source, "disputed": "yes" if self.disputed else "no", "counted": str(self.counted)}
@@ -204,7 +204,7 @@ def _attested(stage_value: str, sequence: int, clusters: Clusters) -> StageResul
     return StageResult(stage, enforcement, f"attested by the curator (statement #{sequence})", source="curator")
 
 
-def _stage(identifier: str, first_seen: float, clusters: "Clusters", dispute_weight: int,
+def _stage(identifier: str, first_seen: float, clusters: Clusters, dispute_weight: int,
            verdict: Optional[CuratorStatement], now: float, listed: allowlist.Verdict,
            fields: Optional[Mapping[str, str]] = None) -> StageResult:
     terminal = _terminal_stage(verdict)
@@ -278,7 +278,7 @@ def _deferral_lapsed(verdict_day: str, now: float) -> bool:
     """True when a DEFERRAL signed on *verdict_day* is older than DEFERRAL_LAPSE_DAYS (KI-229).
     An undated or unparseable day never lapses (fail toward MONITOR)."""
     try:
-        signed = datetime.fromisoformat(verdict_day).replace(tzinfo=timezone.utc).timestamp()
+        signed = datetime.fromisoformat(verdict_day).replace(tzinfo=UTC).timestamp()
     except (TypeError, ValueError):
         return False
     return (now - signed) / _DAY_SECONDS > DEFERRAL_LAPSE_DAYS

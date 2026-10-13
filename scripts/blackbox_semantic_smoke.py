@@ -5,8 +5,9 @@ Requires an already installed local nomic-embed-text embedding model and qwen3:8
 review model. Starts only an isolated DKG route fixture on an ephemeral port.
 Does not attach plugins, execute test commands, read credentials, or call paid services.
 """
+import logging
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 import json
 import os
 from pathlib import Path
@@ -70,10 +71,10 @@ def seed():
 
 def run(args):
     dkg = Path(args.dkg_root).resolve()
-    report = {'started_at': datetime.now(timezone.utc).isoformat(), 'scope': 'isolated route integration; no chain, peer sync, or interactive agent', 'cases': [],
-              'dkg_commit': subprocess.check_output(['git','rev-parse','HEAD'],cwd=dkg,text=True,encoding='utf-8',errors='replace').strip(),
-              'consumer_commit': subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True,encoding='utf-8',errors='replace').strip(),
-              'source_changes_uncommitted': {key: bool(subprocess.check_output(['git','status','--porcelain','--untracked-files=normal'],cwd=path,text=True,encoding='utf-8',errors='replace').strip()) for key,path in [('dkg',dkg),('consumer',ROOT)]}}
+    report = {'started_at': datetime.now(UTC).isoformat(), 'scope': 'isolated route integration; no chain, peer sync, or interactive agent', 'cases': [],
+              'dkg_commit': subprocess.check_output(['git','rev-parse','HEAD'],cwd=dkg,text=True,encoding='utf-8',errors='replace',timeout=15).strip(),
+              'consumer_commit': subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True,encoding='utf-8',errors='replace',timeout=15).strip(),
+              'source_changes_uncommitted': {key: bool(subprocess.check_output(['git','status','--porcelain','--untracked-files=normal'],cwd=path,text=True,encoding='utf-8',errors='replace',timeout=15).strip()) for key,path in [('dkg',dkg),('consumer',ROOT)]}}
     with urllib.request.urlopen('http://127.0.0.1:11434/api/tags',timeout=5) as r:
         tags=json.load(r)['models']
     names={m['name']:m['digest'] for m in tags}
@@ -97,8 +98,8 @@ def run(args):
                 until=time.monotonic()+30
                 while not portfile.exists() and process.poll() is None and time.monotonic()<until:
                     time.sleep(.1)
-                if not portfile.exists():raise RuntimeError('fixture did not start: '+logfile.read_text(encoding='utf-8')[-3000:])
-                url='http://127.0.0.1:'+portfile.read_text(encoding='utf-8').strip()
+                if not portfile.exists():raise RuntimeError('fixture did not start: '+logfile.read_text(encoding='utf-8-sig')[-3000:])
+                url='http://127.0.0.1:'+portfile.read_text(encoding='utf-8-sig').strip()
                 start=time.perf_counter()
                 while True:
                     indexed=post(url,'/api/entities/index',{'contextGraphId':CG,**reader.INDEX_SPEC})
@@ -127,6 +128,7 @@ def run(args):
                             classification_match=(result.state=='advisory')==threat and result.state in {'advisory','no-finding'},
                             verdict=result.verdict)
                     except Exception as exc:
+                        logging.getLogger(__name__).exception("blackbox: semantic operation unavailable")
                         case.update(state='unavailable',code=getattr(exc,'code',type(exc).__name__),
                                     recall_at_5=False,classification_match=False)
                     report['cases'].append(case)
@@ -139,7 +141,7 @@ def run(args):
                 except subprocess.TimeoutExpired:process.kill();process.wait()
                 report['fixture_exit_code']=process.returncode
                 report['fixture_stopped']=process.poll() is not None
-    report['finished_at']=datetime.now(timezone.utc).isoformat()
+    report['finished_at']=datetime.now(UTC).isoformat()
     report['passed']=bool(report['cases']) and all(c['recall_at_5'] and c['classification_match'] for c in report['cases']) and report['rules_export_absent']
     Path(args.report).write_text(json.dumps(report,indent=2)+'\n', encoding='utf-8')
     return 0 if report['passed'] else 1

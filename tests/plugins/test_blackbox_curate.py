@@ -126,7 +126,7 @@ def test_a_malware_dependency_is_promoted_by_two_keys_on_two_machines_with_one_h
     assert [p.id for p in received] == [proposal.id]
     store_b = ProposalStore()
     store_b.save(received[0])
-    published, outcome = verbs.approve(_ctx(node, curators["manifest"]), store_b, proposal.id,
+    _published, outcome = verbs.approve(_ctx(node, curators["manifest"]), store_b, proposal.id,
                                        evidence="advisory:MAL-2026-0001", typed_code=None, yes=True)
     assert outcome.startswith("published to " + VM_GRAPH)
     assert store_b.get(proposal.id).state is ProposalState.PUBLISHED

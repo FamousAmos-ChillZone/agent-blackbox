@@ -71,7 +71,7 @@ def catchup_supersedes_failure(catchup: Any, transfer: Any) -> bool:
     def timestamp(value):
         try:
             if isinstance(value, str) and "T" in value:
-                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                parsed = datetime.fromisoformat(value)
                 value = parsed.timestamp() if parsed.tzinfo else 0
             value = float(value)
             if value > 100_000_000_000:  # DKG job timestamps may use epoch milliseconds.

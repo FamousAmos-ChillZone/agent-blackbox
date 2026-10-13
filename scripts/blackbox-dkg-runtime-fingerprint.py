@@ -45,7 +45,7 @@ def write_limits(dkg_home: str, node_options: str, store_queue_limit: str) -> Pa
     return process_limits.write_process_limits(dkg_home, limits)
 
 
-def _add_bytes(digest: "hashlib._Hash", label: str, data: bytes) -> None:
+def _add_bytes(digest: hashlib._Hash, label: str, data: bytes) -> None:
     label_bytes = label.encode("utf-8")
     digest.update(len(label_bytes).to_bytes(8, "big"))
     digest.update(label_bytes)
@@ -159,7 +159,7 @@ def installed_commit(cli_dir: Path) -> str:
         if not build_info.is_file():
             continue
         try:
-            payload = json.loads(build_info.read_text(encoding="utf-8"))
+            payload = json.loads(build_info.read_text(encoding="utf-8-sig"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise FingerprintError(f"could not read DKG build metadata: {exc}") from exc
         commit = str(payload.get("commit") or "").strip().lower()

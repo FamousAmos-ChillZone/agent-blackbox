@@ -140,7 +140,7 @@ REPO_BRANCH=main
 resolve_repo
 """
     result = subprocess.run(
-        ["bash", "-c", script], capture_output=True, text=True
+        ["bash", "-c", script], capture_output=True, text=True, check=False
     )
 
     assert result.returncode == 0, result.stderr
@@ -173,7 +173,7 @@ REPO_BRANCH={shlex.quote(branch)}
 {functions}
 resolve_repo
 """
-    return subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)
 
 
 @pytest.mark.skipif(

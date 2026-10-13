@@ -21,8 +21,8 @@ from .. import report_builder, report_schema, report_signer, sharing
 
 
 def send_and_record(client: DkgClient, cfg, *, identifier: str, category: str, severity: str,
-                     subject: str, name: str, quads: List[Dict[str, str]],
-                     keep_alive: bool = False) -> Tuple["sharing.ShareOutcome", str]:
+                     subject: str, name: str, quads: list[dict[str, str]],
+                     keep_alive: bool = False) -> tuple[sharing.ShareOutcome, str]:
     """Send one built statement to the community graph and record the attempt
     in the local share ledger, success or failure (KI-015). Returns
     (outcome, detail) for the caller to report. *keep_alive* (reports only —

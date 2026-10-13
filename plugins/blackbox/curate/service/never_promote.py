@@ -33,13 +33,13 @@ import ipaddress
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple
 
 _RANGES_FILE = Path(__file__).with_name("never_promote_ranges.json")
 #: The only identifier kind the rule applies to: a bare IP address IOC.
 _BARE_IP_PREFIX = "ioc:ip:"
 
-IPAddress = Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
+IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 
 
 class RangesUnavailable(RuntimeError):
@@ -56,7 +56,7 @@ class ProviderRanges:
     source: str
     list_version: str
     fetched: str
-    intervals: Dict[int, Tuple[Tuple[int, int], ...]]
+    intervals: dict[int, tuple[tuple[int, int], ...]]
 
     def contains(self, address: IPAddress) -> bool:
         """Whether *address* falls inside one of this provider's ranges."""
@@ -78,11 +78,11 @@ def _provider(entry: dict) -> ProviderRanges:
 
 
 @functools.lru_cache(maxsize=1)
-def providers() -> Tuple[ProviderRanges, ...]:
+def providers() -> tuple[ProviderRanges, ...]:
     """Every provider's held ranges (read once). Raises :class:`RangesUnavailable`
     when the file is missing or malformed — never an empty answer."""
     try:
-        data = json.loads(_RANGES_FILE.read_text(encoding="utf-8"))
+        data = json.loads(_RANGES_FILE.read_text(encoding="utf-8-sig"))
         held = tuple(_provider(entry) for entry in data["providers"])
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise RangesUnavailable(f"the never-promote ranges could not be read ({exc})") from exc

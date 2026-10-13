@@ -153,7 +153,7 @@ def test_repeat_gate_allows_a_key_once_per_interval():
 
 def test_the_default_graph_peer_is_not_switched_to_itself(monkeypatch, caplog):
     monkeypatch.delenv("BLACKBOX_GRAPH_PEER_ID", raising=False)
-    monkeypatch.setattr(config_module, "_blackbox_entry", lambda: {})
+    monkeypatch.setattr(config_module, "_blackbox_entry", dict)
     with caplog.at_level(logging.INFO, logger=config_module.__name__):
         cfg = config_module.load_blackbox_config()
     assert cfg.graph_peer_id == constants.DEFAULT_GRAPH_PEER_ID

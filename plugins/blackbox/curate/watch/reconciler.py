@@ -51,7 +51,7 @@ def key_fingerprint(key: str) -> str:
     return key[:KEY_FINGERPRINT_CHARS]
 
 
-def reconcile(signing_log: SigningRecords, published_under_my_key: Iterable[PublishedStatement]) -> List[HealthItem]:
+def reconcile(signing_log: SigningRecords, published_under_my_key: Iterable[PublishedStatement]) -> list[HealthItem]:
     """One SECURITY item per key that has published statements its log lacks.
 
     A statement is explained when the log holds a row with the same digest
@@ -59,7 +59,7 @@ def reconcile(signing_log: SigningRecords, published_under_my_key: Iterable[Publ
     names the key fingerprint, the count and the statement kinds — never a
     statement's content."""
     signed = {(row.digest, row.key.lower()) for row in signing_log.rows()}
-    unexplained: Dict[str, Dict[str, str]] = {}  # key -> {digest: kind}
+    unexplained: dict[str, dict[str, str]] = {}  # key -> {digest: kind}
     for statement in published_under_my_key:
         key = statement.key.lower()
         if (statement.digest, key) not in signed:
@@ -67,7 +67,7 @@ def reconcile(signing_log: SigningRecords, published_under_my_key: Iterable[Publ
     return [_unexplained_signature_item(key, kinds_by_digest) for key, kinds_by_digest in sorted(unexplained.items())]
 
 
-def _unexplained_signature_item(key: str, kinds_by_digest: Dict[str, str]) -> HealthItem:
+def _unexplained_signature_item(key: str, kinds_by_digest: dict[str, str]) -> HealthItem:
     kinds = ", ".join(sorted(set(kinds_by_digest.values())))
     return HealthItem(
         _CURATOR, HealthClass.SECURITY,

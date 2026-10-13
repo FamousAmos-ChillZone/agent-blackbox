@@ -154,7 +154,8 @@ def test_only_the_canonical_payload_verifies(root, payload_change):
 def test_migrations_order_by_root_epoch_then_sequence():
     ordered = [_migration(root_epoch=1, sequence=9), _migration(root_epoch=2, sequence=1),
                _migration(root_epoch=2, sequence=3)]
-    assert sorted(reversed(ordered), key=lambda m: m.order) == ordered
+    shuffled = [ordered[2], ordered[0], ordered[1]]
+    assert sorted(shuffled, key=lambda m: m.order) == ordered
     assert _migration(root_epoch=2, sequence=1).order > _migration(root_epoch=1, sequence=99).order
 
 

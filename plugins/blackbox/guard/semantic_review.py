@@ -1,4 +1,5 @@
 """Profile-bound, capacity-bounded semantic advisory work."""
+import logging
 import threading
 
 from .. import audit, detection, semantic
@@ -27,6 +28,7 @@ def schedule(cfg, sources, detail):
         from agent.memory_provider import spawn_context_thread
         spawn_context_thread(_run, name="blackbox-semantic", args=(key, cfg, list(sources), dict(detail))).start()
     except Exception:
+        logging.getLogger(__name__).exception("blackbox: semantic operation unavailable")
         with _lock:
             _active.discard(key)
         audit.record(event="semantic_review", detail={"state": "unavailable", "code": "SEMANTIC_WORKER_UNAVAILABLE"})

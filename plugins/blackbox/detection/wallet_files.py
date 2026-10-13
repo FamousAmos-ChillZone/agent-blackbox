@@ -70,11 +70,11 @@ class WalletStore:
     """
 
     name: str
-    chromium_ids: Tuple[str, ...]
-    firefox_ids: Tuple[str, ...] = ()
+    chromium_ids: tuple[str, ...]
+    firefox_ids: tuple[str, ...] = ()
 
 
-WALLETS: Tuple[WalletStore, ...] = (
+WALLETS: tuple[WalletStore, ...] = (
     WalletStore("MetaMask", (
         "nkbihfbeogaeaoehlefnkodbefgpgknn",   # Chrome Web Store (verified 2026-10-12)
         "ejbalbakoplchlghecdalmeeeajnimhm",   # Edge Add-ons (verified 2026-10-12)
@@ -84,7 +84,7 @@ WALLETS: Tuple[WalletStore, ...] = (
     ), firefox_ids=("{7c42eea1-b3e4-4be4-a56f-82a5852b12dc}",)),   # AMO phantom-app (verified 2026-10-13)
 )
 #: Firefox add-on id -> wallet name.
-_FIREFOX_WALLETS: Dict[str, str] = {addon: store.name for store in WALLETS for addon in store.firefox_ids}
+_FIREFOX_WALLETS: dict[str, str] = {addon: store.name for store in WALLETS for addon in store.firefox_ids}
 
 #: The file category these findings carry (a closed name, never a path).
 WALLET_CATEGORY = "crypto-wallet"
@@ -95,7 +95,7 @@ _EXISTING_TTL_SECONDS = 300.0
 _FIREFOX_STORAGE = r"storage/default/moz-extension\+\+\+[^/]*\^usercontextid=4294967295"
 
 
-def _store_pattern(store: WalletStore) -> "re.Pattern[str]":
+def _store_pattern(store: WalletStore) -> re.Pattern[str]:
     ids = "|".join(re.escape(store_id) for store_id in store.chromium_ids)
     return re.compile(
         rf"(?:^|/)(?:(?:local|sync) extension settings/(?:{ids})"
@@ -154,7 +154,7 @@ def wallet_in_path(path: str) -> Optional[str]:
 
 # -- key stores that exist on this machine (for whole-folder copies) ---------
 
-def _browser_roots() -> List[str]:
+def _browser_roots() -> list[str]:
     """Where browsers keep their data on this OS (Chromium ``user_data_dir.md``,
     Mozilla's profile docs). Globs; missing folders simply match nothing."""
     home = os.path.expanduser("~")
@@ -195,10 +195,10 @@ class _ExistingStores:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._found: List[Tuple[str, str]] = []
+        self._found: list[tuple[str, str]] = []
         self._at = float("-inf")
 
-    def get(self) -> List[Tuple[str, str]]:
+    def get(self) -> list[tuple[str, str]]:
         with self._lock:
             if time.monotonic() - self._at > _EXISTING_TTL_SECONDS:
                 self._found = self._scan()
@@ -210,8 +210,8 @@ class _ExistingStores:
             self._at = float("-inf")
 
     @staticmethod
-    def _scan() -> List[Tuple[str, str]]:
-        found: List[Tuple[str, str]] = []
+    def _scan() -> list[tuple[str, str]]:
+        found: list[tuple[str, str]] = []
         for root in _browser_roots():
             for candidate in _store_globs(root):
                 for match in glob.glob(candidate):
@@ -221,7 +221,7 @@ class _ExistingStores:
         return found + app_wallets.existing_app_wallets()
 
 
-def _store_globs(root: str) -> List[str]:
+def _store_globs(root: str) -> list[str]:
     """The exact key-store folder globs under one browser folder — never a deep
     walk (a profile holds thousands of cache files)."""
     out = [os.path.join(root, "storage", "default", "moz-extension+++*")]   # a Firefox profile
@@ -245,7 +245,7 @@ _AREAS = (("Local Extension Settings", "vault"), ("Sync Extension Settings", "sy
           ("IndexedDB", "backup copy"), ("moz-extension", "extension storage"))
 
 
-def found_wallets() -> List[dict]:
+def found_wallets() -> list[dict]:
     """The wallets whose key stores exist on this machine, for the dashboard:
     ``[{wallet, id, browser, profile, areas: [...]}]`` (``id`` is the settings id, see :func:`wallet_id`). Built from the folder NAMES
     the archive check already found (:data:`EXISTING_STORES`) — no file is opened,
@@ -267,7 +267,7 @@ def found_wallets() -> List[dict]:
     return list(grouped.values())
 
 
-def wallets_inside_folder(path: str) -> List[str]:
+def wallets_inside_folder(path: str) -> list[str]:
     """Every wallet whose key store sits somewhere inside folder *path* on this
     machine, in the order found, each once (empty when none exists here).
 
@@ -278,7 +278,7 @@ def wallets_inside_folder(path: str) -> List[str]:
     if not folder:
         return []
     prefix = folder.rstrip("/") + "/"
-    wallets: List[str] = []
+    wallets: list[str] = []
     for store, wallet in EXISTING_STORES.get():
         if (store == folder or store.startswith(prefix) or folder == "/") and wallet not in wallets:
             wallets.append(wallet)
@@ -314,7 +314,7 @@ def _finding(tool: str, mode: str, wallet: str) -> Finding:
     )
 
 
-def detect_wallet_files(tool_name: str, args: Any) -> List[Finding]:
+def detect_wallet_files(tool_name: str, args: Any) -> list[Finding]:
     """A finding when this call reads a wallet key store, or copies/archives a
     folder that holds one — one finding per wallet involved, so the mode gate can
     keep the chosen ones. Fail-open (an error returns ``[]`` so a Blackbox fault
@@ -327,7 +327,7 @@ def detect_wallet_files(tool_name: str, args: Any) -> List[Finding]:
         tool = (tool_name or "").strip().lower()
         if tool not in shell_shapes.SHELL_TOOLS:
             return []
-        mode_by_wallet: Dict[str, str] = {}   # each wallet once, with how it was first reached
+        mode_by_wallet: dict[str, str] = {}   # each wallet once, with how it was first reached
         for arg in shell_files.shell_file_args(shell_shapes.command_from_args(tool_name, args)):
             direct = wallet_in_path(arg.path)
             found = [direct] if direct else (wallets_inside_folder(arg.path) if arg.recursive else [])

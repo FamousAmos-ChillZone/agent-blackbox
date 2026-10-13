@@ -52,11 +52,11 @@ class FakeStore(StoreClient):
     """A store holding named-graph triples; answers the lookup's VALUES queries
     by matching literals, so the SPARQL shape itself is exercised a little."""
 
-    def __init__(self, graphs: Dict[str, List[tuple]], *, fail: Optional[str] = None) -> None:
+    def __init__(self, graphs: dict[str, list[tuple]], *, fail: Optional[str] = None) -> None:
         super().__init__("http://127.0.0.1:7878/query")
         self.graphs = graphs
         self.fail = fail
-        self.queries: List[str] = []
+        self.queries: list[str] = []
 
     def select(self, sparql: str, *, timeout=None) -> StoreAnswer:
         self.queries.append(sparql)

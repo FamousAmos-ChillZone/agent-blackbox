@@ -11,7 +11,7 @@ Usage: ``community.build_report_quads(identifier, severity=..., reporter_address
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from typing import Dict, List, Optional, Tuple
 from ..kernel import constants
 from ..kernel import rdf_terms
@@ -27,7 +27,7 @@ from .report_signer import DISPUTE_STATEMENT, REPORT_STATEMENT, RETRACT_STATEMEN
 #: The evidence a report may carry, per category: (keyword argument, predicate),
 #: in emission order. ONE table, so the builder and anything that reads or signs
 #: a report's fields agree on what a report holds.
-_EVIDENCE_FIELDS: Dict[str, Tuple[Tuple[str, str], ...]] = {
+_EVIDENCE_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
     # R1: never the pattern text — the identifier is its hash; the closed context instead.
     "injection": (("context", constants.INJECTION_CONTEXT_PRED), ("owasp_category", constants.OWASP_CATEGORY_PRED)),
     "escalation": (("tool_name", constants.TOOL_NAME_PRED), ("arg_shape", constants.ARG_SHAPE_PRED)),
@@ -58,7 +58,7 @@ _EVIDENCE_FIELDS: Dict[str, Tuple[Tuple[str, str], ...]] = {
 
 #: The common fields any category may carry (trust-and-threat-lab §03.6), in
 #: emission order after the evidence: (keyword argument, predicate).
-_COMMON_FIELDS: Tuple[Tuple[str, str], ...] = (
+_COMMON_FIELDS: tuple[tuple[str, str], ...] = (
     ("matched_by", constants.MATCHED_BY_PRED),
     ("blackbox_version", constants.BLACKBOX_VERSION_PRED),
     *sighting_vocab.SIGHTING_FIELDS,   # threat-profiles §03.2: the sighting and what the threat goes after
@@ -72,13 +72,13 @@ PAYLOAD_FIELD_KEYS = frozenset({name for table in _EVIDENCE_FIELDS.values() for 
 def _day(ts: Optional[datetime]) -> datetime:
     """*ts* (default: now) rounded down to midnight UTC — decision 25: a report
     says WHICH DAY, never the minute, so the timestamp is no activity clock."""
-    when = ts or datetime.now(timezone.utc)
+    when = ts or datetime.now(UTC)
     if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    return when.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        when = when.replace(tzinfo=UTC)
+    return when.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-def _evidence(record: report_schema.ReportRecord) -> List[Tuple[str, str, str]]:
+def _evidence(record: report_schema.ReportRecord) -> list[tuple[str, str, str]]:
     """(name, predicate, value) for each field of a VALIDATED record — its
     evidence in the table's emission order, then the common fields it states."""
     values = {**dict(record.evidence), **record.common_fields()}
@@ -86,13 +86,13 @@ def _evidence(record: report_schema.ReportRecord) -> List[Tuple[str, str, str]]:
     return [(name, predicate, values[name]) for name, predicate in table if name in values]
 
 
-def _signature_quad(subject: str, signer: ReportSigner, statement_type: str, payload: Dict[str, str]) -> rdf_terms.Quad:
+def _signature_quad(subject: str, signer: ReportSigner, statement_type: str, payload: dict[str, str]) -> rdf_terms.Quad:
     """The quad carrying *subject*'s signed envelope."""
     return rdf_terms.make_quad(subject, constants.SIGNED_STATEMENT_PRED,
                                rdf_terms.literal(signer.sign(statement_type, payload)))
 
 
-def _integrity_quads(subject: str, signed_text: str) -> List[rdf_terms.Quad]:
+def _integrity_quads(subject: str, signed_text: str) -> list[rdf_terms.Quad]:
     """Who signed and what was signed, beside the envelope (threat-profiles §03.3a):
     the record digest (sha256 of the exact signed bytes — the statement's identity,
     LES-033) and the signer's public key. Readers take both from the envelope
@@ -116,7 +116,7 @@ def build_report_quads(
     ts: Optional[datetime] = None,
     signer: Optional[ReportSigner] = None,
     **evidence: Optional[str],
-) -> List[rdf_terms.Quad]:
+) -> list[rdf_terms.Quad]:
     """Build a sighting/report for SWM — only from a VALIDATED record.
 
     The subject is per-submitter namespaced (:func:`report_uri`). Evidence is
@@ -136,7 +136,7 @@ def build_report_quads(
     day = _day(ts)
     reporter = reporter_address.strip().lower()   # report_uri above refused a blank one
     fields = _evidence(record)
-    out: List[rdf_terms.Quad] = [
+    out: list[rdf_terms.Quad] = [
         rdf_terms.make_quad(subj, constants.RDF_TYPE, rdf_terms.iri(constants.REPORT_TYPE_IRI)),
         rdf_terms.make_quad(subj, constants.REPORTS_THREAT_PRED, rdf_terms.iri(threat)),
         rdf_terms.make_quad(subj, constants.IDENTIFIER_PRED, rdf_terms.literal(identifier)),
@@ -166,7 +166,7 @@ def build_false_positive_quads(
     framework: str = "hermes",
     ts: Optional[datetime] = None,
     signer: Optional[ReportSigner] = None,
-) -> List[rdf_terms.Quad]:
+) -> list[rdf_terms.Quad]:
     """A dispute signal: "this community threat is wrong" (KI-011, Q8's writer).
 
     Same per-(reporter, threat) subject discipline as reports — one dispute
@@ -191,7 +191,7 @@ def build_retraction_quads(
     framework: str = "hermes",
     ts: Optional[datetime] = None,
     signer: Optional[ReportSigner] = None,
-) -> List[rdf_terms.Quad]:
+) -> list[rdf_terms.Quad]:
     """A retraction: "I withdraw my report of this threat" (Refine R1, RETRACT).
 
     Subject ``report_uri(identifier, reporter) + ":retract"`` — one per
@@ -210,7 +210,7 @@ def build_retraction_quads(
 
 def _reporter_statement_quads(*, identifier: str, reporter_address: str, suffix: str, type_iri: str,
                               statement_type: str, framework: str, ts: Optional[datetime],
-                              signer: Optional[ReportSigner], reason: str = "") -> List[rdf_terms.Quad]:
+                              signer: Optional[ReportSigner], reason: str = "") -> list[rdf_terms.Quad]:
     """A reporter's statement ABOUT a threat (dispute, retraction, …): subject
     ``report_uri(identifier, reporter) + suffix`` — one per (reporter, threat,
     kind) — carrying type, identifier, reporter, framework, day, an optional
