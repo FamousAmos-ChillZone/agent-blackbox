@@ -1245,7 +1245,7 @@ def create_app(*, manage_blackbox: bool = False):
             lines.append(line.rstrip())
         return "\n".join(lines).strip()
 
-    def _parse_chat_session_id(text: str) -> Optional[str]:
+    def _parse_chat_session_id(text: str) -> str | None:
         for line in (text or "").splitlines():
             stripped = line.strip()
             if stripped.startswith("session_id:"):
