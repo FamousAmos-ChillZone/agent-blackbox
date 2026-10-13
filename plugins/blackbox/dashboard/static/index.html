@@ -844,8 +844,8 @@
   .wallet-pick.soon { color: var(--muted); cursor: default; }
   .wallet-pick.soon span { font-size: 11px; }
   .wp-mode { font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 4px 10px; border-radius: 999px; }
-  .wp-mode.block { background: color-mix(in srgb, var(--mint) 18%, transparent); color: var(--mint); }
-  .wp-mode.audit { background: color-mix(in srgb, #d99a1e 20%, transparent); color: #b7791f; }
+  .wp-mode.block { background: var(--secure-soft); color: var(--secure); box-shadow: inset 0 0 0 1px var(--secure); }   /* green: secured */
+  .wp-mode.audit { background: var(--caution-soft); color: var(--caution); box-shadow: inset 0 0 0 1px var(--caution); }  /* amber: watched only */
   .wp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0; }
   .wp-col { padding: 16px 20px; border-right: 1px solid var(--border); display: grid; gap: 10px; align-content: start; }
   .wp-col:last-child { border-right: 0; }

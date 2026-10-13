@@ -240,3 +240,9 @@ def test_the_event_list_scrolls_inside_its_column():
     page = (protection.STATIC_DIR / "index.html").read_text(encoding="utf-8")
     assert ".wp-evlist { max-height:" in page and "overflow-y: auto" in page.split(".wp-evlist {", 1)[1].split("}", 1)[0]
     assert '<div class="wp-evlist" tabindex="0"' in page
+
+
+def test_the_blocking_badge_is_green_and_watching_is_amber():
+    page = (protection.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert ".wp-mode.block { background: var(--secure-soft); color: var(--secure)" in page
+    assert ".wp-mode.audit { background: var(--caution-soft); color: var(--caution)" in page
