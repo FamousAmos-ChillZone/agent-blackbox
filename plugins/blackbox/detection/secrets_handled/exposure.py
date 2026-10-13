@@ -7,6 +7,8 @@
   site that is not that exchange.
 * :func:`detect_own_wallet_keys` — a raw 64-hex private key that opens one of the
   operator's own listed addresses (Trader Shield settings).
+* :func:`detect_model_request_secrets` — a wallet secret in what is about to go to the
+  model provider (the user's message, a tool's output).
 
 Findings are ``source="secret"``: local-only (only the TYPE is recorded, never the
 value) and blockable.
@@ -156,3 +158,23 @@ def detect_own_wallet_keys(tool_name: str, args: Any, own_addresses: Callable[[]
         confirmed=False,
         source="secret",
     )]
+
+
+def detect_model_request_secrets(sources: Iterable[tuple[str, str]]) -> list[Finding]:
+    """Wallet secrets (seed phrase, private keys) in a model request's untrusted parts —
+    *sources* as the hook gathers them, ``[(context, text)]`` (``in-user-prompt``,
+    ``in-tool-output``, ``in-fetched-page``). The request is about to leave the machine for
+    the model provider, so each is reported as sent; the hook only observes there (it
+    cannot block), so the finding keeps the secret's own severity and names where it was
+    (KI-381). One finding per secret type, from the first part that carried it."""
+    found: dict[str, Finding] = {}
+    for context, text in sources:
+        for hit in content_scanners.scan_secret_values(text):
+            if hit["type"] in _WALLET_SECRET_TYPES and hit["type"] not in found:
+                found[hit["type"]] = Finding(
+                    identifier=f"secret:{hit['type']}", category="secret", severity=hit["severity"],
+                    title=f"Wallet secret sent to the model provider: {hit['type']}",
+                    matched=hit["type"], evidence=f"{hit['type']} (sent to the model provider, {context})",
+                    confirmed=False, source="secret", fields={"context": context})
+    return list(found.values())
+
