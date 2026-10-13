@@ -17,19 +17,20 @@ are caught per rule and oversized inputs are capped.
 
 from __future__ import annotations
 
-import fnmatch
 import logging
-import os
 from typing import Any, Dict, Iterable, List
 
 from . import action_parsing
-from . import content_scanners
 from . import osv
 from . import shell_shapes
 from .finding import ANSWERED_BY_FALLBACK, FALLBACK_REASON, Finding, _rule_source, mark_answered_by, rule_subject  # noqa: F401 — re-exported for callers
 from .injection_detection import detect_injection, discover_injection, injection_scan_text
 from .ioc_detection import detect_ioc, ioc_context
 from .skill_detection import detect_skill
+from .transactions.approvals import detect_token_approvals
+from .paths.keychain import detect_keychain_access
+from .paths.protected import detect_custom_fileaccess  # noqa: F401 — re-exported for callers
+from .secrets_handled.exposure import detect_exchange_key_misdirection, detect_own_wallet_keys, detect_secret_exposure  # noqa: F401 — re-exported
 from .wallet_files import detect_wallet_files
 from ..kernel import threat_ids
 
@@ -271,106 +272,6 @@ def discover_dependency_candidates(tool_name: str, args: Any, ruleset: Any, osv_
     return out
 
 
-def _protected_path_match(path: str, pattern: str) -> bool:
-    """True when *path* matches a user's protected-path *pattern*.
-
-    Patterns are matched three ways so plain paths, directories, and globs all
-    behave intuitively: exact/glob match on the full expanded path, glob match
-    on the basename (``*.pem``), and prefix match when the pattern names a
-    directory (``~/secrets`` protects everything under it).
-    """
-    try:
-        norm_path = os.path.normpath(os.path.expanduser(str(path or "")))
-        norm_pat = os.path.normpath(os.path.expanduser(str(pattern or "")))
-        if not norm_path or not norm_pat:
-            return False
-        if fnmatch.fnmatch(norm_path, norm_pat):
-            return True
-        if fnmatch.fnmatch(os.path.basename(norm_path), norm_pat):
-            return True
-        # Directory-prefix semantics for glob-free patterns.
-        if not any(ch in norm_pat for ch in "*?[") and (
-            norm_path == norm_pat or norm_path.startswith(norm_pat.rstrip(os.sep) + os.sep)
-        ):
-            return True
-    except Exception:  # pragma: no cover - fail open
-        return False
-    return False
-
-
-def detect_custom_fileaccess(
-    tool_name: str, args: Any, protected_paths: Iterable[str]
-) -> List[Finding]:
-    """Match file-access tool calls against the USER'S protected-path list.
-
-    These are personal, locally-configured rules (``source="custom"``): they
-    always flag, they block in block mode (the user wrote the rule), and they
-    are NEVER reported to the community graph — the matched pattern is the
-    user's own configuration, not shared threat intel.
-    """
-    patterns = [p for p in (protected_paths or []) if str(p or "").strip()]
-    if not patterns:
-        return []
-    access = action_parsing.file_access_arg(tool_name, args)
-    if not access:
-        return []
-    for pattern in patterns:
-        if _protected_path_match(access["path"], pattern):
-            tool = access["tool"]
-            return [
-                Finding(
-                    identifier=threat_ids.fileaccess_identifier(tool, "user-protected"),
-                    category="fileaccess",
-                    severity="critical",
-                    title="Access to a user-protected path",
-                    tool_name=tool,
-                    matched="user-protected",
-                    evidence=f"{access['mode']} path matching protected pattern {str(pattern)[:120]}",
-                    confirmed=False,
-                    source="custom",
-                    fields={},
-                )
-            ]
-    return []
-
-
-def detect_secret_exposure(tool_name: str, args: Any) -> List[Finding]:
-    """Flag a real secret VALUE (API key, token, private key) in the tool args.
-
-    Complements the sensitive-FILE detection: this fires when the agent is
-    actually *handling* a recognizable secret — e.g. passing an ``sk-…`` key in a
-    command, or a private-key block. If the same call also sends data off-box
-    (``curl --data``, ``nc``, …), it is treated as exfiltration and escalated to
-    critical (blockable). Findings are ``source="secret"``: local-only (the
-    value never leaves the machine — only the TYPE is recorded) and blockable.
-    """
-    text = injection_scan_text(args)
-    if not text:
-        return []
-    hits = content_scanners.scan_secret_values(text)
-    if not hits:
-        return []
-    egress = content_scanners.looks_like_egress(text)
-    out: List[Finding] = []
-    for hit in hits:
-        severity = "critical" if (egress and hit["severity"] != "critical") else hit["severity"]
-        prefix = "Secret exfiltration" if egress else "Secret exposed"
-        out.append(
-            Finding(
-                identifier=f"secret:{hit['type']}",
-                category="secret",
-                severity=severity,
-                title=f"{prefix}: {hit['type']}",
-                tool_name=tool_name or "",
-                matched=hit["type"],   # TYPE only — never the secret value
-                evidence=hit["type"],
-                confirmed=False,
-                source="secret",
-            )
-        )
-    return out
-
-
 def detect_all(tool_name: str, args: Any, ruleset: Any, discover: bool = True) -> List[Finding]:
     """Run every detector (graph rules + built-in discovery) across categories.
 
@@ -394,6 +295,9 @@ def detect_all(tool_name: str, args: Any, ruleset: Any, discover: bool = True) -
     findings.extend(detect_ioc(tool_name, args, ruleset, ioc_context(tool_name, args)))
     # Secret exposure and wallet key stores always run (not gated by discovery): personal, never shared.
     findings.extend(detect_secret_exposure(tool_name, args))
+    findings.extend(detect_exchange_key_misdirection(tool_name, args))
+    findings.extend(detect_token_approvals(tool_name, args, ruleset))
+    findings.extend(detect_keychain_access(tool_name, args))
     findings.extend(detect_wallet_files(tool_name, args))
     if not discover:
         findings = [f for f in findings if f.source != "heuristic"]

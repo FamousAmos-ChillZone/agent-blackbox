@@ -198,13 +198,51 @@
   .arow .n { font-size: 12.5px; color: var(--muted); margin-top: 4px; } .arow .n b { color: var(--text); }
   .arow .proof { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-left: 6px; }
   .attacks { display: grid; gap: 16px; }
+
+  /* What the verified graph knows about crypto (from /trader-shield/graph.json) */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: grid; gap: 6px; align-content: start; }
+  .stat .num { font-size: clamp(26px, 3.4vw, 34px); font-weight: 850; font-stretch: 110%; letter-spacing: -.01em; font-variant-numeric: tabular-nums; line-height: 1.05; }
+  .stat .lbl { font-weight: 700; font-size: 14.5px; }
+  .stat .act { font-family: var(--mono); font-size: 11.5px; letter-spacing: .04em; color: var(--muted); }
+  .stat .act b { color: var(--signal); font-weight: 600; } .stat .act i { color: var(--warn); font-style: normal; }
+  .brands { display: flex; flex-wrap: wrap; gap: 8px; }
+  .brands span { font-size: 13.5px; border: 1px solid var(--border); background: var(--panel); border-radius: 999px; padding: 5px 11px; color: var(--muted-strong); }
+  .brands span b { font-variant-numeric: tabular-nums; color: var(--text); margin-left: 4px; }
+
+  /* Proven, system by system (from /trader-shield/attacks.json: targets + evidence) */
+  .proven-total { display: flex; flex-wrap: wrap; gap: 8px 22px; font-family: var(--mono); font-size: 13px; color: var(--muted-strong); }
+  .proven-total b { color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
+  .systems { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .sys { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: grid; gap: 10px; align-content: start; }
+  .sys header { display: flex; align-items: center; gap: 10px; }
+  .sys header img { width: 26px; height: 26px; }
+  .sys header b { font-size: 16px; } .sys header small { display: block; font-size: 12px; color: var(--muted); }
+  .sys .big { font-size: 28px; font-weight: 850; font-variant-numeric: tabular-nums; line-height: 1; }
+  .sys .big span { font-size: 13px; font-weight: 600; color: var(--muted-strong); margin-left: 6px; }
+  .sys ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .sys li { font-size: 13.5px; color: var(--muted-strong); display: grid; gap: 3px; }
+  .ev { display: flex; flex-wrap: wrap; gap: 4px; }
+  .ev i { font-style: normal; font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; padding: 1px 6px;
+    border-radius: 3px; border: 1px solid var(--border-strong); color: var(--muted); }
+  .ev i.real-agent { border-color: var(--shield-edge); color: var(--signal); }
+  .ev i.real-software { border-color: color-mix(in srgb, var(--ok) 55%, transparent); color: var(--ok); }
+
+  /* quick start */
+  .qs { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; counter-reset: qs; }
+  .qs li { counter-increment: qs; display: grid; grid-template-columns: 28px 1fr; gap: 12px; font-size: 14.5px; color: var(--muted-strong); }
+  .qs li::before { content: counter(qs); width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--shield-edge); color: var(--signal);
+    font-family: var(--mono); font-size: 12px; display: grid; place-items: center; }
+  .qs li b { color: var(--text); }
+  .qs code { font-family: var(--mono); font-size: 12.5px; background: var(--elevated); padding: 2px 7px; border-radius: 3px; overflow-wrap: anywhere; }
   @media (max-width: 900px) {
     .hero { grid-template-columns: 1fr; } .stage { height: 360px; }
     .flow { grid-template-columns: 1fr 1fr; } .fstep:not(:last-child)::after { display: none; }
-    .grid3, .outcomes { grid-template-columns: 1fr; } .grid2 { grid-template-columns: 1fr; }
+    .systems { grid-template-columns: 1fr 1fr; }
+    .grid3, .outcomes { grid-template-columns: 1fr; } .grid2 { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr 1fr; }
     .set { grid-template-columns: 1fr; gap: 8px; }
   }
-  @media (max-width: 480px) { .flow { grid-template-columns: 1fr; } .wrap { gap: 64px; } .arow { grid-template-columns: 1fr; }
+  @media (max-width: 480px) { .systems { grid-template-columns: 1fr; } .flow { grid-template-columns: 1fr; } .wrap { gap: 64px; } .arow { grid-template-columns: 1fr; }
     .stage { height: 290px; } .stack { width: min(360px, 50%); } }   /* a phone column: perspective enlarges the top layer and leans it right */
   @media (prefers-reduced-motion: reduce) {
     .stack, .bolt, .p-shield::before, .beta i { animation: none !important; }
@@ -291,6 +329,26 @@
     </div>
   </section>
 
+  <!-- What Umanitek's verified threat graph knows about crypto (counted by scripts/blackbox-trader-graph-counts.py) -->
+  <section id="known" aria-label="What it already knows">
+    <div class="eyebrow">What it already knows</div>
+    <h2>The crypto threats in the verified threat graph</h2>
+    <p class="muted">Blackbox checks every action against Umanitek's verified threat graph. These are the crypto threats in it today, counted the same way each time.</p>
+    <div class="stats" id="known-stats"><p class="muted">Loading the counts…</p></div>
+    <div class="card"><span class="k">Fake sites that name a crypto brand</span>
+      <p id="known-brands-lead">Phishing and drainer sites whose address names the brand they imitate.</p>
+      <div class="brands" id="known-brands"></div></div>
+  </section>
+
+  <!-- Proven, system by system: the same table, grouped by what each attack goes after -->
+  <section id="proven" aria-label="Proven, system by system">
+    <div class="eyebrow">Proven, system by system</div>
+    <h2>What we tried against each wallet, and stopped</h2>
+    <p class="muted">Every attack below was run through Blackbox's real checks; many were also tried against the real software installed the normal way, and some by a real AI agent asked to do it. The labels say which.</p>
+    <div class="proven-total" id="proven-total"></div>
+    <div class="systems" id="systems"><p class="muted">Loading…</p></div>
+  </section>
+
   <!-- Tested, attack by attack: the same table the test suite checks -->
   <section id="tested" aria-label="Tested attack by attack">
     <div class="eyebrow">Tested, attack by attack</div>
@@ -309,11 +367,13 @@
       <div class="set"><div class="name"><span class="switch" aria-hidden="true"></span>Engage Trader Shield<small>off by default</small></div>
         <div class="what"><p>Turns the wallet protections on. While it's off, Blackbox doesn't flag or block anything wallet-related and the Trader Shield panel stays hidden. Seed phrases and keys are still kept out of Blackbox's logs either way.</p></div></div>
       <div class="set"><div class="name">Wallets to protect<small>pick the ones you use</small></div>
-        <div class="what"><p>Only the wallets you tick are guarded. Blackbox finds them by checking which folders exist in your browser profiles; it never opens a wallet. The dashboard panel lists what it found.</p></div></div>
+        <div class="what"><p>Only the wallets you tick are guarded. Blackbox finds them by checking which folders exist in your browser profiles and app folders; it never opens a wallet. The dashboard panel lists what it found.</p></div></div>
+      <div class="set"><div class="name">Your wallet addresses<small>optional</small></div>
+        <div class="what"><p>A raw private key looks exactly like a transaction hash. List your own public addresses and Trader Shield recognises a raw key that opens one of them. Addresses stay on this machine — never logged, reported or shared.</p></div></div>
       <div class="set"><div class="name">Protection mode: Audit or Block<small>Blackbox-wide setting</small></div>
         <div class="what"><p><b>Audit</b> records and flags. <b>Block</b> stops the action before it runs. For real protection, use Block once you've seen a day of flags.</p></div></div>
       <div class="set"><div class="name">Protected files<small>.env · ~/.ssh · *.pem …</small></div>
-        <div class="what"><p>Your own list of sensitive files, such as the config where your exchange API keys live. Reads through file tools are flagged critical and blocked in block mode.</p></div></div>
+        <div class="what"><p>Your own list of sensitive files, such as the config where your exchange API keys live. Reads through file tools and the terminal are flagged critical and blocked in block mode; setting a project up from its template (cp .env.example .env) keeps working.</p></div></div>
     </div>
   </section>
 
@@ -343,7 +403,14 @@
     <div class="start">
       <span class="beta"><i aria-hidden="true"></i>Beta</span>
       <h2>Get started with Trader Shield</h2>
-      <p class="muted">Turns Trader Shield on for MetaMask and Phantom on this machine. You can change or switch it off any time in Settings.</p>
+      <ol class="qs" aria-label="Quick start">
+        <li><span><b>Install Blackbox</b> (skip if you are reading this from your dashboard): <code>curl -fsSL blackbox.umanitek.ai | bash</code>, then open the dashboard with <code>blackbox dashboard</code>.</span></li>
+        <li><span><b>Engage Trader Shield</b> with the button below. Keep block mode ticked: wallet threats are stopped, not just flagged.</span></li>
+        <li><span><b>Choose your wallets</b> in Settings → Trader Shield, and list your own wallet addresses (public, kept on this machine) so a raw private key is recognised too.</span></li>
+        <li><span><b>Restart your agent</b> so it picks up the rules.</span></li>
+        <li><span><b>Try it safely.</b> In an empty folder run <code>echo DEMO_KEY=not-a-real-key &gt; .env</code>, then ask your agent to <code>cat .env</code>. It is blocked, and the block shows on your dashboard.</span></li>
+      </ol>
+      <p class="muted">The button turns Trader Shield on for every wallet it supports on this machine. You can choose wallets, or switch it off, any time in Settings.</p>
       <label class="opt"><input type="checkbox" id="opt-block" checked /> <span><b>Also switch Blackbox to block mode</b>, so wallet threats are stopped, not just flagged. Your agent's own trading tools keep working.</span></label>
       <div class="cta-row">
         <button class="btn primary" id="engage" type="button">Engage Trader Shield</button>
@@ -359,26 +426,27 @@
 <script>
   // ---- Page content: update this block as Trader Shield gains features ----
   var SHIELD = {
-    version: "Beta · updated 2026-10-13",
+    version: "Beta · updated 2026-10-13 · 49 attacks tested",
     can: [
-      ["Keep your agent out of MetaMask's and Phantom's vaults", "in Chrome, Brave, Edge, Opera, Vivaldi, Arc and Firefox; through file tools, the terminal, copies and archives"],
-      ["Recognise a Solana secret key", "Phantom's exported key or a Solana CLI key file, proven by its own signature check, so transaction signatures never trigger it"],
-      ["Recognise real seed phrases", "12 to 24 words, checked with the phrase's own checksum, so ordinary text doesn't trigger it"],
-      ["Stop a seed phrase or wallet key leaving", "when the agent sends it from the terminal (curl, wget, nc) — to a website, a webhook or a chat bot, in block mode"],
+      ["Keep your agent out of your wallets", "MetaMask and Phantom in Chrome, Brave, Edge, Opera, Vivaldi, Arc and Firefox; Exodus and Electrum on the desktop; the Solana CLI key file — through file tools, the terminal, find, one-line scripts, copies and archives"],
+      ["Recognise real seed phrases", "12 to 24 words, checked with the phrase's own checksum, so ordinary text doesn't trigger it — even written into a web address"],
+      ["Stop a seed phrase or wallet key leaving", "however it goes: curl, wget or nc, a web address the agent opens, or a script that posts it — in block mode"],
+      ["Recognise your own raw private key", "list your public addresses in Settings and a bare 64-character key that opens one is caught; transaction hashes are left alone"],
       ["Spot a labelled private key or a Solana key", "PRIVATE_KEY=, pk:, \"privateKey\": and similar, and any real Solana key; flagged, because your own trading config may hold one, and blocked when sent"],
+      ["Keep exchange API keys with their exchange", "a Binance, OKX, Bybit, Coinbase Exchange or KuCoin key header sent anywhere but that exchange is blocked"],
+      ["Catch the approval a drainer needs", "an approval to a wallet the verified threat graph lists as a drainer is blocked; any unlimited approval is flagged so you see it"],
+      ["Guard your other secrets", ".env files, SSH keys, key files and the macOS keychain (its file and the security tool), through file tools and the terminal"],
       ["Keep secrets out of Blackbox's logs", "phrases and keys are scrubbed before anything is recorded"],
       ["Explain every event", "what the agent reached for, why it matters, and what led to it"]
     ],
     cannot: [
-      ["Other wallets yet", "Rabby, Coinbase Wallet, Solflare and others are coming"],
-      ["Exchange API keys", "Binance, Coinbase, Bybit and OKX keys aren't recognised yet"],
-      ["Solana CLI key file and desktop wallets", "reading ~/.config/solana/id.json, Electrum, Exodus, Bitcoin Core"],
-      ["Block reading .env through the terminal", "it's flagged and logged; file tools are already covered"],
+      ["Other wallets yet", "Rabby, Coinbase Wallet, Solflare, Bitcoin Core and others are coming"],
+      ["Every exchange", "Kraken and Bitget use header names many other services share, so their keys are not matched yet"],
       ["Stop malware outside your agent", "Trader Shield guards what your AI agent does, not other programs"],
-      ["Block links or addresses", "known scam sites and wallets are flagged, never blocked"],
-      ["Catch every way out", "a phrase hidden in a web address, or posted by a script, isn't stopped yet — see the tested list"]
+      ["Block links or addresses on their own", "known scam sites and wallets are flagged; only an approval to a known drainer is blocked"],
+      ["Read a path a script builds piece by piece", "quoted paths and the usual home-folder joins are read; a path assembled character by character is not"]
     ],
-    coming: ["Rabby", "Coinbase Wallet", "Solflare", "Exchange API keys", "Solana CLI key file", "Electrum & Bitcoin Core", "Terminal reads of protected files"],
+    coming: ["Rabby", "Coinbase Wallet", "Solflare", "Bitcoin Core", "More exchanges", "Safari wallets"],
     // Set to {text: "...", who: "<name> · <role>", link: "https://…"} once a write-up is published.
     testimonial: null
   };
@@ -397,6 +465,56 @@
     if (SHIELD.testimonial.link) who.innerHTML += ' · <a href="' + esc(SHIELD.testimonial.link) + '" target="_blank" rel="noopener">Read the article</a>';
   }
 
+  // ---- What the verified graph knows about crypto (counted by scripts/blackbox-trader-graph-counts.py) ----
+  function n(x) { return Number(x || 0).toLocaleString("en-US"); }
+  fetch("/trader-shield/graph.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (g) {
+    var pk = g.crypto_packages || {};
+    var stats = [
+      [n(g.drainer_phishing_domains), "Web3 phishing and wallet-drainer sites", "flagged when your agent goes there", "flag"],
+      [n(g.crypto_packages_total), "malicious crypto packages", (pk.npm ? n(pk.npm.packages) + " npm · " : "") + (pk.pypi ? n(pk.pypi.packages) + " PyPI · " : "") + "blocked in block mode", "block"],
+      [n(g.drainer_wallets), "listed drainer wallets", "Ethereum-style networks only · an approval to one is blocked", "block"],
+      [n(g.stealer_indicators), "wallet-stealer malware indicators", "Vidar, Lumma, Atomic, RedLine and more · flagged", "flag"]
+    ];
+    document.getElementById("known-stats").innerHTML = stats.map(function (s) {
+      var act = s[3] === "block" ? "<b>" + esc(s[2]) + "</b>" : "<i>" + esc(s[2]) + "</i>";
+      return '<div class="stat"><span class="num">' + esc(s[0]) + '</span><span class="lbl">' + esc(s[1]) + '</span><span class="act">' + act + "</span></div>";
+    }).join("");
+    document.getElementById("known-brands-lead").textContent = n(g.brand_sites_total) +
+      " phishing and drainer sites name the brand they imitate. Thousands more lure with \u201cclaim\u201d (" + n((g.lure_sites || {}).claim) +
+      ") or \u201cairdrop\u201d (" + n((g.lure_sites || {}).airdrop) + ").";
+    document.getElementById("known-brands").innerHTML = (g.brand_sites || []).slice(0, 18).map(function (b) {
+      return "<span>" + esc(b.brand) + "<b>" + n(b.sites) + "</b></span>";
+    }).join("");
+  }).catch(function () {
+    document.getElementById("known-stats").innerHTML = '<p class="muted">Open this page from your Blackbox dashboard to see the counts.</p>';
+  });
+
+  // ---- Proven, system by system (targets + evidence of each attack row) ----
+  var EV_WORD = { "real-agent": "real AI agent", "real-software": "real app", bench: "real checks", tests: "tests" };
+  function renderProven(t) {
+    var blocked = (t.attacks || []).filter(function (a) { return a.outcome === "blocked"; });
+    var byAgent = blocked.filter(function (a) { return (a.evidence || []).indexOf("real-agent") >= 0; }).length;
+    var byApp = blocked.filter(function (a) { return (a.evidence || []).indexOf("real-software") >= 0; }).length;
+    document.getElementById("proven-total").innerHTML =
+      "<span><b>" + blocked.length + "</b> attacks blocked</span><span><b>" + (t.systems || []).length + "</b> wallets and systems</span>" +
+      "<span><b>" + byApp + "</b> proven on the real software</span><span><b>" + byAgent + "</b> blocked with a real AI agent trying</span>";
+    document.getElementById("systems").innerHTML = (t.systems || []).map(function (sys) {
+      var mine = blocked.filter(function (a) { return (a.targets || []).indexOf(sys.id) >= 0; });
+      if (!mine.length) return "";
+      mine.sort(function (a, b) { return (b.evidence || []).length - (a.evidence || []).length; });
+      var agent = mine.filter(function (a) { return (a.evidence || []).indexOf("real-agent") >= 0; }).length;
+      var logo = sys.logo ? '<img src="/wallets/' + esc(sys.id) + '.svg" alt="" />' : "";
+      return '<div class="sys"><header>' + logo + "<div><b>" + esc(sys.name) + "</b>" + (sys.note ? "<small>" + esc(sys.note) + "</small>" : "") +
+        '</div></header><div class="big">' + mine.length + "<span>blocked" + (agent ? " · " + agent + " by a real agent" : "") + "</span></div><ul>" +
+        mine.slice(0, 6).map(function (a) {
+          var ev = (a.evidence || []).filter(function (e) { return e !== "tests"; }).reverse().map(function (e) {
+            return '<i class="' + esc(e) + '">' + esc(EV_WORD[e] || e) + "</i>";
+          }).join("");
+          return "<li>" + esc(a.title) + '<span class="ev">' + ev + "</span></li>";
+        }).join("") + (mine.length > 6 ? '<li class="muted">and ' + (mine.length - 6) + " more in the list below</li>" : "") + "</ul></div>";
+    }).join("");
+  }
+
   // ---- Tested, attack by attack (the file the test suite checks) ----
   var OUTCOME_WORD = { blocked: "Blocked", flagged: "Flagged", missed: "Coming", allowed: "Left alone" };
   fetch("/trader-shield/attacks.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (t) {
@@ -406,6 +524,7 @@
       return '<span class="' + o + '">' + count[o] + " " + OUTCOME_WORD[o].toLowerCase() + "</span>";
     }).join("");
     document.getElementById("bench-run").textContent = t.bench_run ? "Last full run: " + t.bench_run + "." : "";
+    renderProven(t);
     document.getElementById("attacks").innerHTML = t.groups.map(function (g) {
       var rows = t.attacks.filter(function (a) { return a.group === g.id; });
       if (!rows.length) return "";
@@ -438,11 +557,10 @@
       el.innerHTML = '<span class="state off">Not engaged</span><span class="detail">Trader Shield is off on this machine.</span>';
       return;
     }
-    var found = (d.wallets || []).filter(function (w) { return w.protected; }).map(function (w) {
-      return esc(w.wallet) + " · " + esc(w.browser) + (w.profile ? " (" + esc(w.profile) + ")" : "");
-    });
+    // The wallets themselves are listed on the dashboard's panel; here only the state, and a note if none is guarded.
+    var guarded = (d.wallets || []).some(function (w) { return w.protected; });
     el.innerHTML = '<span class="state on">● Engaged · ' + (d.mode === "block" ? "blocking" : "watching only (audit mode)") + "</span>" +
-      '<span class="detail">' + (found.length ? "Protecting " + found.join(", ") : "No protected wallet found on this machine yet") + "</span>";
+      (guarded ? "" : '<span class="detail">No protected wallet found on this machine yet</span>');
     var engage = document.getElementById("engage");
     engage.textContent = "Trader Shield is engaged";
     engage.disabled = true;

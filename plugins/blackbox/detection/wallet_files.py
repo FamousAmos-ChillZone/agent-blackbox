@@ -1,4 +1,5 @@
-"""Crypto wallet key stores an agent must never read — MetaMask and Phantom.
+"""Crypto wallet key stores an agent must never read — browser wallets (MetaMask,
+Phantom) here, app wallets (Exodus, Electrum, the Solana CLI) in :mod:`.app_wallets`.
 
 A browser wallet keeps its encrypted vault (the seed and keys, locked by the
 user's password) in the browser profile. Copied off the machine, the vault can
@@ -52,7 +53,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..kernel import threat_ids
 from ..kernel.crypto_secrets import wallet_mode
-from . import action_parsing, shell_files, shell_shapes
+from . import action_parsing, app_wallets, firefox_extensions, shell_shapes
+from .paths import shell_files
 from .finding import Finding
 
 
@@ -61,23 +63,28 @@ class WalletStore:
     """A wallet whose key store lives in browser extension storage.
 
     ``chromium_ids`` — every store ID it is published under (verified against
-    the store listing on the date in the module doc). Add a wallet by adding a
-    row to :data:`WALLETS`; nothing else changes.
+    the store listing on the date in the module doc); ``firefox_ids`` — its
+    add-on id on addons.mozilla.org, which Firefox's own map ties to the random
+    storage folder (:mod:`.firefox_extensions`). Add a wallet by adding a row to
+    :data:`WALLETS`; nothing else changes.
     """
 
     name: str
     chromium_ids: Tuple[str, ...]
+    firefox_ids: Tuple[str, ...] = ()
 
 
 WALLETS: Tuple[WalletStore, ...] = (
     WalletStore("MetaMask", (
         "nkbihfbeogaeaoehlefnkodbefgpgknn",   # Chrome Web Store (verified 2026-10-12)
         "ejbalbakoplchlghecdalmeeeajnimhm",   # Edge Add-ons (verified 2026-10-12)
-    )),
+    ), firefox_ids=("webextension@metamask.io",)),                 # AMO ether-metamask (verified 2026-10-13)
     WalletStore("Phantom", (
         "bfnaelmomeimhlpmgjnjophhpkkoljpa",   # Chrome Web Store (verified 2026-10-12)
-    )),
+    ), firefox_ids=("{7c42eea1-b3e4-4be4-a56f-82a5852b12dc}",)),   # AMO phantom-app (verified 2026-10-13)
 )
+#: Firefox add-on id -> wallet name.
+_FIREFOX_WALLETS: Dict[str, str] = {addon: store.name for store in WALLETS for addon in store.firefox_ids}
 
 #: The file category these findings carry (a closed name, never a path).
 WALLET_CATEGORY = "crypto-wallet"
@@ -98,16 +105,38 @@ def _store_pattern(store: WalletStore) -> "re.Pattern[str]":
 
 _PATTERNS = tuple((store.name, _store_pattern(store)) for store in WALLETS)
 _FIREFOX_PATTERN = re.compile(rf"(?:^|/){_FIREFOX_STORAGE}(?:/|$)")
+#: The same folder on the path as written (case kept, so the profile's prefs.js can be found).
+_FIREFOX_FOLDER = re.compile(r"(?i)^(?P<profile>.*?)/storage/default/moz-extension\+\+\+(?P<uuid>[0-9a-f-]{36})"
+                             r"\^usercontextid=4294967295(?:/|$)")
 
 
-def normalize_path(path: str) -> str:
-    """*path* with ``~``, ``$HOME`` and Windows ``%VARS%`` expanded, ``\\`` made
-    ``/``, ``.``/``..`` resolved and lower-cased (macOS and Windows file names
-    ignore case), so one pattern serves every OS."""
+def _expanded(path: str) -> str:
+    """*path* with ``~``, ``$HOME`` and Windows ``%VARS%`` expanded, ``\\`` made ``/``
+    and ``.``/``..`` resolved — case kept."""
     text = str(path or "").strip()
     text = re.sub(r"%([A-Za-z_]+)%", lambda m: os.environ.get(m.group(1), m.group(0)), text)
     text = os.path.expanduser(os.path.expandvars(text)).replace("\\", "/")
-    return os.path.normpath(text).replace("\\", "/").lower() if text else ""
+    return os.path.normpath(text).replace("\\", "/") if text else ""
+
+
+def normalize_path(path: str) -> str:
+    """:func:`_expanded`, lower-cased (macOS and Windows file names ignore case), so one
+    pattern serves every OS."""
+    return _expanded(path).lower()
+
+
+def _firefox_wallet(path: str) -> Optional[str]:
+    """The wallet a Firefox extension-storage *path* belongs to, by Firefox's own map:
+    its name; None when the map names an add-on that is not a wallet; and
+    :data:`FIREFOX_EXTENSION` when the map cannot tell — the folder is then protected
+    for every chosen wallet rather than left open."""
+    match = _FIREFOX_FOLDER.search(_expanded(path))
+    if not match:
+        return FIREFOX_EXTENSION
+    addon = firefox_extensions.addon_for(match.group("profile"), match.group("uuid"))
+    if addon is None:
+        return FIREFOX_EXTENSION
+    return _FIREFOX_WALLETS.get(addon)
 
 
 def wallet_in_path(path: str) -> Optional[str]:
@@ -119,8 +148,8 @@ def wallet_in_path(path: str) -> Optional[str]:
         if pattern.search(normalized):
             return name
     if _FIREFOX_PATTERN.search(normalized):
-        return FIREFOX_EXTENSION
-    return None
+        return _firefox_wallet(path)
+    return app_wallets.app_wallet_at(normalized)
 
 
 # -- key stores that exist on this machine (for whole-folder copies) ---------
@@ -189,7 +218,7 @@ class _ExistingStores:
                     wallet = wallet_in_path(match)
                     if wallet:
                         found.append((normalize_path(match), wallet))
-        return found
+        return found + app_wallets.existing_app_wallets()
 
 
 def _store_globs(root: str) -> List[str]:
@@ -224,8 +253,9 @@ def found_wallets() -> List[dict]:
     grouped: dict = {}
     for path, wallet in EXISTING_STORES.get():
         low = path.lower()
-        browser = next((label for key, label in _BROWSERS if key in low), "Browser")
-        area = next((label for key, label in _AREAS if key.lower() in low), "storage")
+        browser = app_wallets.KINDS.get(wallet) or next((label for key, label in _BROWSERS if key in low), "Browser")
+        area = ("key file" if low.endswith(".json") else "wallet folder") if wallet in app_wallets.KINDS else \
+            next((label for key, label in _AREAS if key.lower() in low), "storage")
         parts = path.split("/")
         anchor = next((i for i, part in enumerate(parts) if part in ("local extension settings", "sync extension settings",
                                                                     "indexeddb", "storage")), len(parts))   # paths are lower-cased
@@ -257,10 +287,16 @@ def wallets_inside_folder(path: str) -> List[str]:
 
 # -- the detector -------------------------------------------------------------
 
+#: Display name -> settings id (``"Solana CLI"`` -> ``"solana-cli"``).
+_IDS = {name: wallet_id for wallet_id, name in wallet_mode.SUPPORTED_WALLETS.items()}
+
+
 def wallet_id(wallet: str) -> str:
     """The settings id of a wallet display name: ``"MetaMask"`` → ``"metamask"``; a Firefox
     extension store → ``wallet_mode.ANY_EXTENSION_WALLET`` (no folder name ties it to one)."""
-    return wallet_mode.ANY_EXTENSION_WALLET if wallet == FIREFOX_EXTENSION else wallet.lower()
+    if wallet == FIREFOX_EXTENSION:
+        return wallet_mode.ANY_EXTENSION_WALLET
+    return _IDS.get(wallet, wallet.lower())
 
 
 def _finding(tool: str, mode: str, wallet: str) -> Finding:

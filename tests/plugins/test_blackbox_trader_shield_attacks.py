@@ -28,6 +28,7 @@ from plugins.blackbox.guard import background as guard_background
 from plugins.blackbox.guard import hooks
 from plugins.blackbox.guard import reporting as guard_reporting
 from plugins.blackbox.kernel import config as config_mod
+from plugins.blackbox.kernel import crypto_secrets
 from plugins.blackbox.kernel.crypto_secrets import seed_phrase, wallet_mode
 from plugins.blackbox.ruleset import Ruleset
 
@@ -79,13 +80,15 @@ def shield(tmp_path, monkeypatch):
     monkeypatch.setattr(hooks, "_config", lambda: config_mod.BlackboxConfig(mode="block", report=False))
     monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: Ruleset())
     monkeypatch.setattr(guard_background, "_spawn_osv_discovery", lambda *a, **k: None)
-    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=True))
     findings: list = []
     monkeypatch.setattr(guard_reporting, "_report_and_audit", lambda cfg, event, found, detail: findings.extend(found))
     seed12, seed24, key = _phrase(os.urandom(16)), _phrase(os.urandom(32)), "0x" + secrets.token_hex(32)
+    # Every supported wallet chosen, and @KEY@'s address listed as the trader's own (settings).
+    own = wallet_mode.WalletProtection(enabled=True, addresses=(crypto_secrets.address_of(bytes.fromhex(key[2:])),))
+    monkeypatch.setattr(wallet_mode, "current", lambda: own)
     solana = _solana_key()
     values = {"@SEED12PLUS@": seed12.replace(" ", "+"), "@SEED12@": seed12, "@SEED24@": seed24, "@KEY@": key,
-              "@HEX@": key[2:], "@VAULTFILE@": str(vault / "000003.log"),
+              "@HEX@": key[2:], "@TXHASH@": secrets.token_hex(32), "@APIKEY@": secrets.token_hex(32), "@VAULTFILE@": str(vault / "000003.log"),
               "@VAULT@": "~/.config/google-chrome/Default/Local\\ Extension\\ Settings/" + METAMASK,
               "@PHANTOMFILE@": str(phantom / "000003.log"),
               "@PHANTOM@": "~/.config/google-chrome/Default/Local\\ Extension\\ Settings/" + PHANTOM,
@@ -136,3 +139,27 @@ def test_every_gap_says_what_would_close_it():
 def test_the_page_reads_the_table_it_is_tested_against():
     page = protection.TRADER_SHIELD_PAGE.read_text(encoding="utf-8")
     assert 'fetch("/trader-shield/attacks.json"' in page
+
+
+#: How far an attack was proven, weakest to strongest (dashboard/static/trader-shield-attacks.json).
+EVIDENCE = ("tests", "bench", "real-software", "real-agent")
+
+
+def test_every_attack_says_what_it_targets_and_how_it_was_proven():
+    systems = {system["id"] for system in TABLE["systems"]}
+    assert set(TABLE["evidence_levels"]) == set(EVIDENCE)
+    for attack in TABLE["attacks"]:
+        assert attack["targets"] and set(attack["targets"]) <= systems, attack["id"]
+        assert attack["evidence"] and set(attack["evidence"]) <= set(EVIDENCE), attack["id"]
+        assert ("tests" in attack["evidence"]) == (attack["proof"] == "test"), attack["id"]   # the suite runs exactly these
+        assert "bench" in attack["evidence"], attack["id"]                                    # the full bench run covers every row
+
+
+def test_every_system_has_something_proven_against_it():
+    for system in TABLE["systems"]:
+        assert any(system["id"] in attack["targets"] and attack["outcome"] == "blocked" for attack in TABLE["attacks"]), system["id"]
+
+
+def test_the_page_groups_the_proof_by_system():
+    page = protection.TRADER_SHIELD_PAGE.read_text(encoding="utf-8")
+    assert 'id="systems"' in page and "renderProven(t);" in page

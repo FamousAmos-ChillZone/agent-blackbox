@@ -8,9 +8,13 @@
   (:func:`..detection.found_wallets`: folder names only, nothing inside is read);
 * ``seed_checker`` — whether seed-phrase detection is on (the pinned BIP-39 list loaded);
 * ``protected_paths`` — the operator's protected file patterns, and ``terminal_reads``
-  — whether reads of those through the terminal are blocked yet (not yet: KI-363);
-* ``events`` — the latest wallet-related findings (vault access, seed phrases,
-  labelled private keys), each blocked or flagged, newest first.
+  — how reads of those through the terminal are treated (``"blocked"``: same rule as
+  the file tools; older daemons answered ``"logged"``);
+* ``own_addresses`` — how many of the operator's own addresses are listed (a raw
+  key opening one is recognised; the addresses themselves are never sent here);
+* ``exchanges`` — the exchanges whose API keys may only go to their own site;
+* ``events`` — the latest Trader Shield findings (vault access, seed phrases,
+  private keys, exchange keys, token approvals, the macOS keychain), newest first.
 
 ``GET /api/wallet-protection/events`` is the full local report behind the panel's
 "Wallet events" window (:mod:`.events`: every event with its session timeline).
@@ -60,7 +64,8 @@ def wallet_protection_payload() -> Dict[str, Any]:
         wallets = []
     return {
         "enabled": mode.enabled,                 # the panel shows only while Web3 wallet protection is on
-        "wallet_mode": mode.as_json(),
+        # The mode without the operator's addresses: only the Settings editor needs those.
+        "wallet_mode": {key: value for key, value in mode.as_json().items() if key != "addresses"},
         "mode": "block" if cfg.block_enabled else "audit",
         "block_severity": safe_text(cfg.block_severity, 16),
         # Folder names found on THIS machine: cleaned, never defanged (a Firefox profile is "x.default-release").
@@ -71,7 +76,9 @@ def wallet_protection_payload() -> Dict[str, Any]:
         "seed_checker": bool(crypto_secrets.wordlist_ready()),
         "private_keys": True,
         "protected_paths": [safe_text(p, 120) for p in (cfg.protected_paths or ())][:20],
-        "terminal_reads": "logged",   # KI-363: terminal reads of protected paths are not blocked yet
+        "terminal_reads": "blocked",   # FIX-0103: the terminal follows the same protected-path rule
+        "own_addresses": len(mode.addresses),
+        "exchanges": [entry.exchange for entry in crypto_secrets.exchange_keys.EXCHANGE_KEY_HEADERS],
         "events": _events(),
     }
 
@@ -81,6 +88,8 @@ def wallet_protection_payload() -> Dict[str, Any]:
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 TRADER_SHIELD_PAGE = STATIC_DIR / "trader-shield.html"
 ATTACK_TABLE = STATIC_DIR / "trader-shield-attacks.json"
+#: What the verified graph knows about crypto, counted by scripts/blackbox-trader-graph-counts.py.
+GRAPH_COUNTS = STATIC_DIR / "trader-shield-graph.json"
 WALLET_LOGOS = STATIC_DIR / "wallets"
 NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
 
@@ -100,6 +109,10 @@ def register_protection_routes(app: Any) -> None:
     @app.get("/trader-shield/attacks.json")
     def trader_shield_attacks() -> Any:
         return FileResponse(str(ATTACK_TABLE), media_type="application/json", headers=NO_CACHE)
+
+    @app.get("/trader-shield/graph.json")
+    def trader_shield_graph() -> Any:
+        return FileResponse(str(GRAPH_COUNTS), media_type="application/json", headers=NO_CACHE)
 
     @app.get("/wallets/{wallet}.svg")
     def wallet_logo(wallet: str) -> Any:

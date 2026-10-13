@@ -49,7 +49,7 @@ def test_a_machine_without_a_wallet_lists_none(home):
 def test_the_panel_says_whether_it_blocks_or_only_watches(home, monkeypatch, mode, shown):
     monkeypatch.setattr(protection, "load_blackbox_config", lambda: BlackboxConfig(mode=mode))
     payload = protection.wallet_protection_payload()
-    assert payload["mode"] == shown and payload["seed_checker"] is True and payload["terminal_reads"] == "logged"
+    assert payload["mode"] == shown and payload["seed_checker"] is True and payload["terminal_reads"] == "blocked"
 
 
 def test_only_wallet_events_are_listed_with_blocked_or_flagged(home, monkeypatch):
@@ -78,7 +78,7 @@ from plugins.blackbox.kernel.crypto_secrets import wallet_mode
 
 def test_the_mode_is_off_by_default_and_governs_only_wallet_findings():
     mode = wallet_mode.from_entry({})
-    assert mode.enabled is False and mode.wallets == ("metamask", "phantom")
+    assert mode.enabled is False and mode.wallets == tuple(wallet_mode.SUPPORTED_WALLETS)
     vault = {"identifier": "fileaccess:terminal:crypto-wallet", "fields": {"wallet": "metamask"}}
     assert not mode.allows_finding(vault) and not mode.allows_finding({"identifier": "secret:seed-phrase"})
     assert mode.allows_finding({"identifier": "dep:npm:evil@1.0.0"})   # not a wallet finding: untouched
@@ -91,7 +91,7 @@ def test_engaging_protects_every_supported_wallet_unless_wallets_were_already_ch
     earlier choice (e.g. MetaMask only) is kept, so engaging never widens it silently."""
     updates, errors = wallet_mode.validate({"wallet_protection": True})
     assert updates == {"wallet_protection": True} and errors == []
-    assert wallet_mode.from_entry(updates).wallets == ("metamask", "phantom")
+    assert wallet_mode.from_entry(updates).wallets == tuple(wallet_mode.SUPPORTED_WALLETS)
     earlier = {"wallet_protection": True, "protected_wallets": ["metamask"]}
     assert wallet_mode.from_entry(earlier).wallets == ("metamask",)
 
@@ -209,3 +209,40 @@ def test_a_firefox_profile_name_is_shown_as_it_is_not_defanged(home, monkeypatch
     monkeypatch.setattr(wallet_files.EXISTING_STORES, "get", lambda: [(store, wallet_files.FIREFOX_EXTENSION)])
     [shown] = protection.wallet_protection_payload()["wallets"]
     assert shown["profile"] == "ab12.default-release" and "[.]" not in str(shown)
+
+
+def test_the_panel_states_todays_rules(home, monkeypatch):
+    # Terminal reads follow the protected-path rule (FIX-0103); the exchange list and the
+    # own-address COUNT are shown — never the addresses themselves.
+    own = wallet_mode.WalletProtection(enabled=True, addresses=("0x" + "ab" * 20,))
+    monkeypatch.setattr(wallet_mode, "current", lambda: own)
+    payload = protection.wallet_protection_payload()
+    assert payload["terminal_reads"] == "blocked" and payload["own_addresses"] == 1
+    assert "Binance" in payload["exchanges"] and "ab" * 20 not in str(payload)
+
+
+def test_keychain_and_approval_findings_are_trader_shield_events():
+    for identifier in ("fileaccess:terminal:macos-keychain", "secret:token-approval-drainer", "secret:exchange-api-key"):
+        assert wallet_mode.belongs_to_mode(identifier), identifier
+    assert not wallet_mode.belongs_to_mode("fileaccess:terminal:user-protected")
+
+
+def test_each_protection_state_has_its_own_mark():
+    # Green check = secured (blocked), amber = watched only (audit mode), grey = not protected,
+    # red = needs attention; the panel carries a legend for them, and green is its own token.
+    page = (protection.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert 'var on = block ? ["✓", "ok"] : ["~", "watch"];' in page
+    assert "--secure:" in page and ".wp-ic.ok { color: var(--secure)" in page
+    assert all(word in page for word in ("secured — blocked", "watched — flagged only", "not protected", "needs attention"))
+
+
+def test_the_event_list_scrolls_inside_its_column():
+    page = (protection.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert ".wp-evlist { max-height:" in page and "overflow-y: auto" in page.split(".wp-evlist {", 1)[1].split("}", 1)[0]
+    assert '<div class="wp-evlist" tabindex="0"' in page
+
+
+def test_the_blocking_badge_is_green_and_watching_is_amber():
+    page = (protection.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert ".wp-mode.block { background: var(--secure-soft); color: var(--secure)" in page
+    assert ".wp-mode.audit { background: var(--caution-soft); color: var(--caution)" in page

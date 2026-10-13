@@ -11,7 +11,8 @@ from __future__ import annotations
 import hashlib
 import re
 from typing import Any, Dict, List, Optional
-from . import shell_files, shell_shapes
+from . import shell_shapes
+from .paths import shell_files
 
 # ---------------------------------------------------------------------------
 # Sensitive file-access categories (discovery layer)
@@ -275,7 +276,7 @@ def parse_shell_reads(command: str) -> List[str]:
 
     Completes the audit trail for the shell channel: ``cat ~/.ssh/id_rsa`` is a
     file read that the dedicated file tools would log, but a raw shell tool would
-    otherwise miss. The parsing lives in :mod:`.shell_files` (quotes and escapes
+    otherwise miss. The parsing lives in :mod:`.paths.shell_files` (quotes and escapes
     respected); this keeps the paths only. Pure/deterministic.
     """
     return [arg.path for arg in shell_files.shell_file_args(command)]

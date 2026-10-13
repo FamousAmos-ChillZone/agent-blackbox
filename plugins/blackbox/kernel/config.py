@@ -25,9 +25,8 @@ logger = logging.getLogger(__name__)
 _TRUE = {"1", "true", "yes", "on"}
 _FALSE = {"0", "false", "no", "off"}
 
-#: Sensible out-of-the-box protected paths — high-signal credential stores an
-#: agent rarely has a legitimate reason to read. Applied only when the config
-#: key is absent; an explicit (even empty) ``protected_paths`` list wins.
+#: Sensible out-of-the-box protected paths — high-signal credential stores an agent rarely has a
+#: legitimate reason to read. Applied only when the config key is absent; an explicit (even empty) list wins.
 DEFAULT_PROTECTED_PATHS: Tuple[str, ...] = (
     "~/.ssh/*",          # SSH private keys
     ".env",              # environment files (any directory)

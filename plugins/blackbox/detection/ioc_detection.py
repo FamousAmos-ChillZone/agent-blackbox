@@ -12,6 +12,7 @@ from . import action_parsing
 from . import content_scanners
 from .finding import Finding, _rule_source, mark_answered_by, rule_subject
 from .injection_detection import injection_scan_text
+from ..kernel import crypto_secrets
 
 
 def ioc_context(tool_name: str, args: Any) -> Optional[str]:
@@ -43,6 +44,14 @@ def ioc_rules(ruleset: Any, identifiers: List[str]) -> Dict[str, Dict[str, Any]]
     return {ident: compiled[ident] for ident in identifiers if ident in compiled}
 
 
+def _known_protocol_contract(identifier: str) -> bool:
+    """A wallet/contract candidate that is a well-known exchange router (Uniswap, PancakeSwap…):
+    never looked up, never flagged. STOPGAP for KI-370 — the verified graph lists seven
+    routers as wallets; the root fix is a curator correction of those entries."""
+    parts = identifier.split(":", 2)
+    return len(parts) == 3 and parts[1] in ("wallet", "contract") and bool(crypto_secrets.protocol_contract(parts[2]))
+
+
 def detect_ioc(tool_name: str, args: Any, ruleset: Any, context: Optional[str] = None) -> List[Finding]:
     """Match indicators (domain/url/ip/hash/wallet/contract) in the tool args.
 
@@ -59,7 +68,7 @@ def detect_ioc(tool_name: str, args: Any, ruleset: Any, context: Optional[str] =
     text = injection_scan_text(args)
     if not text:
         return []
-    candidates = content_scanners.iter_ioc_candidates(text)
+    candidates = [ident for ident in content_scanners.iter_ioc_candidates(text) if not _known_protocol_contract(ident)]
     rules = ioc_rules(ruleset, candidates)
     out: List[Finding] = []
     seen: set = set()

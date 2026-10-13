@@ -9,6 +9,7 @@ checked against the ruleset by identifier.
 from __future__ import annotations
 
 import re
+from urllib.parse import unquote_plus
 from typing import Dict, List
 from . import shell_shapes
 from ..kernel import crypto_secrets, redaction, threat_ids
@@ -160,6 +161,31 @@ def _seed_phrase_severity(text: str) -> str:
 def looks_like_egress(text: str) -> bool:
     """True when *text* contains a command that sends data off the machine."""
     return bool(text and _EGRESS_RE.search(text))
+
+
+#: A web address in text (the part a secret would ride in: path, query, fragment).
+_URL = re.compile(r"https?://[^\s'\"<>`]+", re.IGNORECASE)
+#: Script code that talks to the network — an HTTP client, a raw socket, mail. A wallet
+#: secret in the same code is being sent (python requests/httpx/urllib, JS fetch/axios/
+#: http(s).request, PowerShell Invoke-WebRequest/-RestMethod, Ruby Net::HTTP, PHP curl).
+_SCRIPT_SEND_RE = re.compile(
+    r"\brequests\.(?:get|post|put|patch|request)\s*\(|\bhttpx\.(?:get|post|put|patch|request|Client|AsyncClient)\b"
+    r"|\burlopen\s*\(|\burllib\.request\b|\bfetch\s*\(|\baxios(?:\.(?:get|post|put|patch|request))?\s*\("
+    r"|\bhttps?\.(?:request|get)\s*\(|\bXMLHttpRequest\b|\bInvoke-(?:WebRequest|RestMethod)\b|\b(?:iwr|irm)\s"
+    r"|\bsmtplib\b|\bsocket\.(?:connect|create_connection)\b|\bnet\.connect\s*\(|\bNet::HTTP\b|\bcurl_exec\s*\(",
+    re.IGNORECASE,
+)
+
+
+def url_payloads(text: str) -> str:
+    """Every web address in *text*, decoded (``+`` and ``%20`` back to spaces), one per
+    line — what a secret looks like after it has been written into a URL."""
+    return "\n".join(unquote_plus(url) for url in _URL.findall(text or ""))
+
+
+def looks_like_script_send(text: str) -> bool:
+    """True when *text* holds script code that makes a network call."""
+    return bool(text and _SCRIPT_SEND_RE.search(text))
 
 
 # ---------------------------------------------------------------------------

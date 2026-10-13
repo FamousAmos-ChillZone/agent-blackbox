@@ -51,7 +51,7 @@ def local_text(value: Any, limit: int) -> str:
 
 def is_wallet_identifier(identifier: str) -> bool:
     """Whether a finding identifier is a Trader Shield (wallet) event."""
-    return identifier in wallet_mode.WALLET_SECRET_IDENTIFIERS or identifier.endswith(wallet_mode.WALLET_FILE_SUFFIX)
+    return wallet_mode.belongs_to_mode(identifier)
 
 
 def _last_request(context: Optional[Dict[str, Any]]) -> str:

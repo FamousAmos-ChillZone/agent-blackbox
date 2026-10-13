@@ -51,12 +51,19 @@ _FILE: Dict[str, Classification] = {
     "system-shadow": Classification("credential-theft", "system-accounts", "T1003.008"),
     # A browser wallet's key store: the encrypted vault, cracked offline once copied (ATT&CK: Credentials from Web Browsers).
     "crypto-wallet": Classification("wallet-drain", "wallet-keys", "T1555.003"),
+    # The macOS keychain: saved passwords and the browsers' Safe Storage keys (ATT&CK: Keychain).
+    "macos-keychain": Classification("credential-theft", "password-store", "T1555.001"),
 }
 #: A secret the agent handled or sent (local-only findings): which secret type -> what it opens.
 _SECRET: Dict[str, Classification] = {
     "seed-phrase": Classification("wallet-drain", "wallet-keys", "T1552.001"),
     "wallet-private-key": Classification("wallet-drain", "wallet-keys", "T1552.001"),
     "solana-private-key": Classification("wallet-drain", "wallet-keys", "T1552.001"),
+    # An exchange's API key sent to a host that is not the exchange: it trades and withdraws as the account.
+    "exchange-api-key": Classification("wallet-drain", "api-keys", "T1552.001"),
+    # A token approval: the signature a drainer needs to move the tokens (ATT&CK: Financial Theft).
+    "token-approval-drainer": Classification("wallet-drain", "funds", "T1657"),
+    "token-approval-unlimited": Classification("wallet-drain", "funds", "T1657"),
 }
 #: Dangerous command shape -> what running it does.
 _COMMAND: Dict[str, Classification] = {

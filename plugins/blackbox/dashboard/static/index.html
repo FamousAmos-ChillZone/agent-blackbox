@@ -86,6 +86,9 @@
        never orange. Signal Orange is reserved for live and flagged states. */
     --mint: #F1EFE9;
     --teal: #BBB8B1;
+    /* Protection states (Trader Shield panel): secured = green, watched only = amber. */
+    --secure: #4CC38A; --secure-soft: rgba(76,195,138,0.14);
+    --caution: #E3B341; --caution-soft: rgba(227,179,65,0.14);
     --critical: #FF4F00;
     --high: #FF4F00;
     --medium: #F1EFE9;
@@ -134,6 +137,8 @@
     --signal-soft: rgba(198,60,0,0.10);
     --mint: #171719;
     --teal: #484540;
+    --secure: #1E8A55; --secure-soft: rgba(30,138,85,0.12);
+    --caution: #9A6512; --caution-soft: rgba(154,101,18,0.12);
     --critical: #C63C00;
     --high: #C63C00;
     --medium: #343230;
@@ -830,20 +835,33 @@
 
   /* ---------- Wallet protection panel + settings (trader rules) ---------- */
   .wallet-picks { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
+  .set-addresses { width: 100%; max-width: 520px; box-sizing: border-box; margin-top: 8px; font: 12px/1.5 var(--mono, ui-monospace, monospace);
+    background: var(--panel-2, transparent); color: inherit; border: 1px solid var(--line, #444); border-radius: 6px; padding: 6px 8px; resize: vertical; }
+  .set-addresses-note { font-size: 12px; margin-top: 4px; opacity: .8; }
+  .set-addresses-note.bad { color: var(--danger, #e5534b); opacity: 1; }
+  .set-optional { font-size: 11px; font-weight: 400; opacity: .65; margin-left: 4px; }
   .wallet-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
   .wallet-pick.soon { color: var(--muted); cursor: default; }
   .wallet-pick.soon span { font-size: 11px; }
   .wp-mode { font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 4px 10px; border-radius: 999px; }
-  .wp-mode.block { background: color-mix(in srgb, var(--mint) 18%, transparent); color: var(--mint); }
-  .wp-mode.audit { background: color-mix(in srgb, #d99a1e 20%, transparent); color: #b7791f; }
+  .wp-mode.block { background: var(--secure-soft); color: var(--secure); box-shadow: inset 0 0 0 1px var(--secure); }   /* green: secured */
+  .wp-mode.audit { background: var(--caution-soft); color: var(--caution); box-shadow: inset 0 0 0 1px var(--caution); }  /* amber: watched only */
   .wp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0; }
   .wp-col { padding: 16px 20px; border-right: 1px solid var(--border); display: grid; gap: 10px; align-content: start; }
   .wp-col:last-child { border-right: 0; }
   .wp-h { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
   .wp-row { display: grid; grid-template-columns: 18px 1fr; gap: 8px; font-size: 13px; line-height: 1.45; align-items: start; }
-  .wp-ic { font-weight: 700; text-align: center; }
-  .wp-ic.ok { color: var(--mint); } .wp-ic.warn { color: #c9821a; } .wp-ic.none { color: var(--muted); }
+  .wp-ic { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 800; line-height: 1; margin-top: 1px; }
+  .wp-ic.ok { color: var(--secure); background: var(--secure-soft); box-shadow: inset 0 0 0 1px var(--secure); }
+  .wp-ic.watch { color: var(--caution); background: var(--caution-soft); box-shadow: inset 0 0 0 1px var(--caution); }
+  .wp-ic.none { color: var(--muted); box-shadow: inset 0 0 0 1px var(--border-strong, var(--muted)); }
+  .wp-ic.warn { color: var(--signal); background: var(--signal-soft); box-shadow: inset 0 0 0 1px var(--signal); }
+  .wp-legend { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 18px; border-top: 1px solid var(--border);
+    font-size: 12px; color: var(--muted); }
+  .wp-legend > span { display: inline-flex; align-items: center; gap: 6px; }
   .wp-sub { color: var(--muted); font-size: 12px; }
+  /* The event list scrolls inside its column instead of growing the panel down the page. */
+  .wp-evlist { max-height: min(340px, 55vh); overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; display: grid; align-content: start; }
   .wp-ev { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 12.5px; padding: 6px 0; border-bottom: 1px solid var(--border); }
   .wp-ev:last-child { border-bottom: 0; }
   .wp-ev .o { font-weight: 700; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
@@ -5276,6 +5294,8 @@
                          : "Wallet threats are recorded and shown, but not stopped. Turn on Block in Settings to stop them.";
     }
     var guard = block ? "protected — blocked if the agent reaches for it" : "watched — flagged, not blocked (audit mode)";
+    // One mark per state: secured (blocked) / watched only (audit mode) / not protected / needs attention.
+    var on = block ? ["✓", "ok"] : ["~", "watch"];
     // One row per WALLET (protected in every browser it is in), listing the browsers — not one
     // row per browser profile.
     var found = walletGroups(d.wallets).map(function (g) {
@@ -5283,30 +5303,42 @@
       var where = g.id === "any-extension"
         ? "every extension's storage in " + g.profiles + " Firefox profile" + (g.profiles === 1 ? "" : "s")
         : g.areas.join(", ");
-      return wpRow(g.protected ? "✓" : "–", g.protected ? "ok" : "none", walletLogoByName(g.wallet) + "<b>" + esc(name) + "</b> · " +
+      return wpRow(g.protected ? on[0] : "–", g.protected ? on[1] : "none", walletLogoByName(g.wallet) + "<b>" + esc(name) + "</b> · " +
         esc(g.browsers.join(", ")) + '<div class="wp-sub">' + esc(where) + " — " +
         (g.protected ? guard : "not selected in Settings, so not protected") + "</div>");
     });
-    if (!found.length) found.push(wpRow("–", "none", "No browser wallet found on this machine." +
-      '<div class="wp-sub">Blackbox checks the usual browser folders by name every few minutes; it never opens a vault.</div>'));
+    if (!found.length) found.push(wpRow("–", "none", "No wallet found on this machine." +
+      '<div class="wp-sub">Blackbox checks the usual browser and wallet-app folders by name every few minutes; it never opens a vault.</div>'));
     var col1 = '<div class="wp-col"><div class="wp-h">Found on this machine ' +
-      wpHelp("Wallets whose key store (the encrypted vault holding your keys) exists in a browser profile here. Blackbox only checks that the folder exists — it never opens or reads it.") +
+      wpHelp("Wallets whose key store (the encrypted vault holding your keys) exists here: in a browser profile, a desktop wallet's folder (Exodus, Electrum) or the Solana command line's key file. Blackbox only checks that the folder exists — it never opens or reads it.") +
       "</div>" + found.join("") + "</div>";
+    // Optional fields (LES-018): a daemon older than this page sends neither.
+    var ownAddresses = typeof d.own_addresses === "number" ? d.own_addresses : 0;
+    var exchanges = Array.isArray(d.exchanges) ? d.exchanges.map(String).slice(0, 10) : [];
     var watch = [
-      wpRow(d.seed_checker ? "✓" : "!", d.seed_checker ? "ok" : "warn", "<b>Seed phrases</b> " +
+      wpRow(d.seed_checker ? on[0] : "!", d.seed_checker ? on[1] : "warn", "<b>Seed phrases</b> " +
         wpHelp("12–24 word recovery phrases are recognised by their built-in checksum. A phrase with a cue like 'seed:', or 18+ words, is blocked in block mode; any phrase sent off the machine is blocked.") +
         '<div class="wp-sub">' + (d.seed_checker ? "checker on — 2,048-word list, checksum verified" : "checker OFF — the word list did not load") + "</div>"),
-      wpRow("✓", "ok", "<b>Private keys</b> " +
-        wpHelp("A key written next to a label like PRIVATE_KEY= or pk: is recognised. Handling it is only flagged, because trading configs legitimately hold one; sending it off the machine is blocked.") +
-        '<div class="wp-sub">labelled keys flagged · blocked if sent off the machine</div>'),
-      wpRow("✓", "ok", "<b>Protected files</b> " +
-        wpHelp("Your protected file patterns from Settings. Reading a matching file through a file tool is flagged critical and blocked in block mode.") +
-        '<div class="wp-sub">' + esc((d.protected_paths || []).slice(0, 6).join(" · ")) + ((d.protected_paths || []).length > 6 ? " …" : "") + "</div>"),
+      wpRow(on[0], on[1], "<b>Private keys</b> " +
+        wpHelp("A key written next to a label like PRIVATE_KEY= or pk: is recognised, and so is a Solana key. Handling one is only flagged, because trading configs legitimately hold one; sending it off the machine is blocked — by a command, in a web address, or from a script. A bare 64-character key is recognised when it opens one of the addresses you list in Settings.") +
+        '<div class="wp-sub">labelled and Solana keys · blocked if sent · ' +
+        (ownAddresses ? ownAddresses + " own address" + (ownAddresses === 1 ? "" : "es") + " listed for raw keys"
+                      : "list your addresses in Settings to catch raw keys") + "</div>"),
+      exchanges.length ? wpRow(on[0], on[1], "<b>Exchange API keys</b> " +
+        wpHelp("An exchange's key header may only go to that exchange. Sent anywhere else, it is blocked.") +
+        '<div class="wp-sub">' + esc(exchanges.join(" · ")) + " — only to their own site</div>") : "",
+      exchanges.length ? wpRow(on[0], on[1], "<b>Token approvals</b> " +
+        wpHelp("The approval a drainer needs. An approval to a wallet the verified threat graph lists as a drainer is blocked; any unlimited approval is flagged so you see it.") +
+        '<div class="wp-sub">known drainer blocked · unlimited approvals flagged</div>') : "",
+      wpRow(on[0], on[1], "<b>Protected files</b> " +
+        wpHelp("Your protected file patterns from Settings. Reading a matching file through a file tool or the terminal is flagged critical and blocked in block mode. The macOS keychain is guarded as well while Trader Shield is on.") +
+        '<div class="wp-sub">' + esc((d.protected_paths || []).slice(0, 6).join(" · ")) + ((d.protected_paths || []).length > 6 ? " …" : "") +
+        (d.terminal_reads === "logged" ? "" : " · file tools and terminal") + "</div>"),
       d.terminal_reads === "logged" ? wpRow("!", "warn", "<b>Not yet:</b> reading a protected file through the terminal (e.g. <code>cat .env</code>) is logged, not blocked " +
-        wpHelp("A known gap that is being fixed: the protected-files rule only checks file tools so far. Wallet vaults are already covered in the terminal.")) : ""
+        wpHelp("This Blackbox version checks protected files only for file tools. Update Blackbox to cover the terminal too.")) : ""
     ];
     var col2 = '<div class="wp-col"><div class="wp-h">Always watching</div>' + watch.join("") + "</div>";
-    var events = (d.events || []).slice(0, 6).map(function (e) {
+    var events = (d.events || []).slice(0, 20).map(function (e) {
       return '<button type="button" class="wp-ev" data-wev-open="' + esc(e.identifier) + '" data-wev-ts="' + esc(String(e.ts || "")) +
         '" title="Open the full report"><span class="o ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span><span>" + walletLogoHTML(e) + esc(e.title || e.identifier) +
         '</span><span class="wp-sub">' + esc(shortWhen(e.ts)) + "</span><span class=\"wp-sub\">" + esc(e.tool ? "via " + e.tool : "") + "</span></button>";
@@ -5314,8 +5346,14 @@
     var col3 = '<div class="wp-col"><div class="wp-h">Recent wallet events ' +
       wpHelp("The latest times your agent reached for a wallet, a seed phrase or a private key, and what Blackbox did. Click one for the full story.") +
       (events.length ? '<button type="button" class="wev-all" data-wev-open="">View all →</button>' : "") + "</div>" +
-      (events.length ? events.join("") : '<div class="wp-sub">Nothing yet — no agent has reached for a wallet or key.</div>') + "</div>";
-    $("wp-body").innerHTML = col1 + col2 + col3;
+      (events.length ? '<div class="wp-evlist" tabindex="0" aria-label="Recent wallet events (scrolls)">' + events.join("") + "</div>"
+                     : '<div class="wp-sub">Nothing yet — no agent has reached for a wallet or key.</div>') + "</div>";
+    var legend = '<div class="wp-legend" aria-label="What the marks mean">' +
+      '<span><span class="wp-ic ok">✓</span>secured — blocked</span>' +
+      '<span><span class="wp-ic watch">~</span>watched — flagged only (audit mode)</span>' +
+      '<span><span class="wp-ic none">–</span>not protected</span>' +
+      '<span><span class="wp-ic warn">!</span>needs attention</span></div>';
+    $("wp-body").innerHTML = col1 + col2 + col3 + legend;
   }
   function loadWalletProtection() {
     if (!$("wp-body")) return;
@@ -5507,7 +5545,10 @@
   var WALLET_WHY = {
     vault: "The vault holds your seed phrase and private keys, encrypted with your wallet password. Copied off this machine it can be cracked offline, and whoever cracks it can empty the wallet.",
     seed: "A seed phrase IS the wallet: anyone who has the words controls every account in it, on any device, forever.",
-    key: "A private key signs transactions for its account. Whoever holds it can move the funds."
+    key: "A private key signs transactions for its account. Whoever holds it can move the funds.",
+    keychain: "The keychain holds every password macOS saved and the key each browser uses to lock its saved passwords and cookies — including your exchange logins.",
+    approval: "A token approval lets the spender move your tokens whenever it likes, without asking again. An unlimited one covers every token you will ever hold of that kind — it is how most wallets are drained.",
+    exchange: "An exchange API key trades — and, if withdrawals are allowed, withdraws — as your account. A key sent anywhere but its own exchange has been handed to someone else."
   };
   // The wallet an event is about, recognisable at a glance: a vault event shows that wallet's
   // logo (served from /wallets/<id>.svg, allowlisted); a seed phrase or key — which belongs to
@@ -5531,6 +5572,9 @@
     if (/:crypto-wallet$/.test(id)) return "vault";
     if (id === "secret:seed-phrase") return "seed";
     if (id === "secret:wallet-private-key" || id === "secret:solana-private-key") return "key";
+    if (id === "secret:exchange-api-key") return "exchange";
+    if (/:macos-keychain$/.test(id)) return "keychain";
+    if (id === "secret:token-approval-drainer" || id === "secret:token-approval-unlimited") return "approval";
     return "";
   }
   function walletRows(f) {
@@ -5541,6 +5585,11 @@
     var how = /^copy/.test(String(f.evidence || "")) ? "by copying or archiving a folder that contains it" : "by reading it directly";
     if (kind === "vault") rows.push(["Reached for", wallet + "'s vault (the wallet's key store), " + how]);
     if (kind === "seed") rows.push(["Reached for", "a seed phrase (wallet recovery words) in what the agent was handling or sending"]);
+    if (kind === "keychain") rows.push(["Reached for", "the macOS keychain (" + how.replace("it directly", "it directly, or with the security tool") + ")"]);
+    if (kind === "approval") rows.push(["Reached for", String(f.identifier || "") === "secret:token-approval-drainer"
+      ? "a token approval to an address listed as a wallet drainer" : "an unlimited token approval (approve MAX or approve-all)"]);
+    if (kind === "exchange") rows.push(["Reached for", "an exchange API key, in the header only that exchange uses, sent to " +
+      "a different site (" + ((/\(([^)]+)\)/.exec(String(f.title || "")) || [])[1] || "an exchange") + ")"]);
     if (kind === "key") rows.push(["Reached for", String(f.identifier || "") === "secret:solana-private-key"
       ? "a Solana secret key (what Phantom's \"Export private key\" shows, or a Solana CLI key file)"
       : "a wallet private key, written next to a key label"]);
@@ -7829,7 +7878,7 @@
       discover: true, osv_lookup: true,
       categories: cats, protected_paths: [],
       category_labels: {},
-      wallet_protection: false, protected_wallets: ["metamask", "phantom"],
+      wallet_protection: false, protected_wallets: ["metamask", "phantom"], wallet_addresses: [],
       wallet_supported: [{ id: "metamask", name: "MetaMask" }, { id: "phantom", name: "Phantom" }], wallet_planned: []
     };
   }
@@ -7847,6 +7896,7 @@
     var wp = (data.wallet_protection && typeof data.wallet_protection === "object") ? data.wallet_protection : {};
     out.wallet_protection = wp.enabled === true;
     if (Array.isArray(wp.wallets)) out.protected_wallets = wp.wallets.slice(0, 20);
+    if (Array.isArray(wp.addresses)) out.wallet_addresses = wp.addresses.slice(0, 50).map(String);   // optional field (LES-018)
     if (Array.isArray(wp.supported) && wp.supported.length) out.wallet_supported = wp.supported;
     if (Array.isArray(wp.planned)) out.wallet_planned = wp.planned;
     var cats = (data.categories && typeof data.categories === "object") ? data.categories : {};
@@ -8014,7 +8064,35 @@
       rows.push('<label class="wallet-pick soon"><input type="checkbox" disabled /> ' + esc(name) + ' <span>coming soon</span></label>');
     });
     $("set-wallets").innerHTML = rows.join("");
+    var box = $("set-wallet-addresses");
+    if (box && document.activeElement !== box) box.value = (setState.wallet_addresses || []).join("\n");
+    if (box) box.disabled = !setState.wallet_protection;
+    renderAddressNote();
     renderPathsUI();   // the Trader Shield rows under Protected files follow the switch
+  }
+  // The address box: one 0x address per line; anything else is shown, never sent.
+  var ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+  function walletAddressList() {
+    var box = $("set-wallet-addresses");
+    var lines = (box ? box.value : (setState.wallet_addresses || []).join("\n")).split(/[\s,]+/).filter(Boolean);
+    var valid = [], bad = [];
+    lines.forEach(function (line) {
+      if (ADDRESS_RE.test(line)) { if (valid.indexOf(line.toLowerCase()) < 0) valid.push(line.toLowerCase()); }
+      else bad.push(line);
+    });
+    return { valid: valid.slice(0, 50), bad: bad };
+  }
+  function renderAddressNote() {
+    var note = $("set-wallet-addresses-note");
+    if (!note) return;
+    var list = walletAddressList();
+    note.className = "set-addresses-note" + (list.bad.length ? " bad" : "");
+    var pastedKey = list.bad.some(function (b) { return /^(0x)?[0-9a-fA-F]{64}$/.test(b); });
+    note.textContent = pastedKey
+      ? "That looks like a PRIVATE KEY, not an address — it is not saved. Remove it, and only ever list public addresses."
+      : list.bad.length
+      ? "Not an address (left out): " + list.bad.slice(0, 3).map(function (b) { return b.slice(0, 14) + (b.length > 14 ? "…" : ""); }).join(", ")
+      : (list.valid.length ? list.valid.length + " address" + (list.valid.length === 1 ? "" : "es") + " — raw keys that open them are recognised." : "");
   }
 
   function setStatus(msg, kind) {
@@ -8046,7 +8124,8 @@
       categories: cats,
       protected_paths: setState.protected_paths.slice(0, 100),
       wallet_protection: !!setState.wallet_protection,
-      protected_wallets: (setState.protected_wallets || []).slice(0, 20)
+      protected_wallets: (setState.protected_wallets || []).slice(0, 20),
+      wallet_addresses: walletAddressList().valid
     };
   }
 
@@ -8231,6 +8310,9 @@
     });
     $("set-wallet").addEventListener("change", function () {
       if (!setState) return; setState.wallet_protection = this.checked; renderWalletUI(); markDirty();
+    });
+    if ($("set-wallet-addresses")) $("set-wallet-addresses").addEventListener("input", function () {
+      if (!setState) return; setState.wallet_addresses = walletAddressList().valid; renderAddressNote(); markDirty();
     });
     $("set-wallets").addEventListener("change", function (e) {
       var id = e.target && e.target.getAttribute("data-wallet");
@@ -8700,7 +8782,7 @@
         <div class="set-row">
           <div class="set-rl">
             <div class="set-rt">Engage Trader Shield</div>
-            <div class="set-rh"><a href="/trader-shield" class="ts-link">What is Trader Shield?</a> Keep your AI agent away from your wallets: it cannot open a wallet's key store (the encrypted vault in your browser), and seed phrases and private keys it handles are flagged, and blocked if it tries to send them off this machine. Your own trading tools keep working. Seed phrases and keys are always kept out of Blackbox's logs, whether this is on or off.</div>
+            <div class="set-rh"><a href="/trader-shield" class="ts-link">What is Trader Shield?</a> Keep your AI agent away from your wallets: it cannot open a wallet's key store (the encrypted vault in your browser or wallet app), and seed phrases and private keys it handles are flagged, and blocked if it tries to send them off this machine. Your own trading tools keep working. Seed phrases and keys are always kept out of Blackbox's logs, whether this is on or off.</div>
           </div>
           <div class="set-rc">
             <label class="set-toggle"><input type="checkbox" id="set-wallet" /><span class="set-track"></span></label>
@@ -8711,6 +8793,14 @@
             <div class="set-rt">Wallets to protect</div>
             <div class="set-rh">Choose the wallets installed on this machine.</div>
             <div class="wallet-picks" id="set-wallets"></div>
+          </div>
+        </div>
+        <div class="set-row">
+          <div class="set-rl">
+            <div class="set-rt">Your wallet addresses <span class="set-optional">optional</span></div>
+            <div class="set-rh">A raw private key is 64 characters that look exactly like a transaction hash. List your own public addresses (0x…, one per line) and Trader Shield recognises a raw key that opens one of them — and blocks it if your agent tries to send it out. Addresses stay on this machine; they are never logged, reported or shared.</div>
+            <textarea id="set-wallet-addresses" class="set-addresses" rows="3" spellcheck="false" autocomplete="off" placeholder="0x…"></textarea>
+            <div class="set-addresses-note" id="set-wallet-addresses-note"></div>
           </div>
         </div>
       </div>
