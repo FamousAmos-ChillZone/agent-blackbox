@@ -60,3 +60,24 @@ def test_the_injection_in_a_responses_api_tool_result_is_flagged(monkeypatch):
     hooks.on_pre_api_request(session_id="s", model="gpt-4.1-mini", user_message="Read airdrop.md", request_messages=request)
 
     assert any(f.category == "injection" for f in findings), [f.identifier for f in findings]
+
+
+def test_where_an_injection_was_found_is_recorded_as_a_closed_word(tmp_path, monkeypatch):
+    """The dashboard says WHERE an injection was met (a file the agent read, a page, the
+    typed message) instead of showing the user's own request as if it held the injection.
+    Only the closed INJECTION_CONTEXTS word is kept — never content."""
+    from plugins.blackbox import audit
+
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bb"))
+    monkeypatch.setattr(hooks, "_config", lambda: config_mod.BlackboxConfig(mode="block", report=False))
+    monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: Ruleset())
+    monkeypatch.setattr(guard_background, "_spawn_llm_review", lambda *a, **k: None)
+    request = _chat_messages_to_responses_input(_chat("read_file", POISON))
+
+    # Its own session: the hook reports each injection once per turn, and the test above used "s".
+    hooks.on_pre_api_request(session_id="found-in", model="gpt-4.1-mini", user_message="Read airdrop.md", request_messages=request)
+
+    [row] = [r for r in audit.read_findings(limit=10) if r["category"] == "injection"][:1]
+    assert row["found_in"] == "in-tool-output"
+    forged = {"identifier": "injection:x", "fields": {"context": "anything the attacker wrote"}}
+    assert audit.findings._found_in(forged) == ""   # not a closed word: nothing kept

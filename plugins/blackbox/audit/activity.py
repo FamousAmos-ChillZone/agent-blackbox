@@ -191,6 +191,7 @@ def _threat_row(row: Dict[str, Any], finding: Dict[str, Any], detail: Dict[str, 
         "tool": finding.get("tool_name") or detail.get("tool_name"),
         "ts": row.get("ts") or 0,
         "profile": finding.get("sighting") or {},   # threat profiles: goal, at risk, outcome…
+        "found_in": finding.get("found_in") or "",  # where an injection was met (a closed word)
         "evidence": finding.get("evidence") or "",
         "decision": detail.get("decision") or "",
         # What led to it (the turn that asked), redacted and size-capped; local only.
