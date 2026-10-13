@@ -209,7 +209,6 @@
   .brands { display: flex; flex-wrap: wrap; gap: 8px; }
   .brands span { font-size: 13.5px; border: 1px solid var(--border); background: var(--panel); border-radius: 999px; padding: 5px 11px; color: var(--muted-strong); }
   .brands span b { font-variant-numeric: tabular-nums; color: var(--text); margin-left: 4px; }
-  .fine { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 
   /* Proven, system by system (from /trader-shield/attacks.json: targets + evidence) */
   .proven-total { display: flex; flex-wrap: wrap; gap: 8px 22px; font-family: var(--mono); font-size: 13px; color: var(--muted-strong); }
@@ -339,7 +338,6 @@
     <div class="card"><span class="k">Fake sites that name a crypto brand</span>
       <p id="known-brands-lead">Phishing and drainer sites whose address names the brand they imitate.</p>
       <div class="brands" id="known-brands"></div></div>
-    <p class="fine" id="known-fine"></p>
   </section>
 
   <!-- Proven, system by system: the same table, grouped by what each attack goes after -->
@@ -487,8 +485,6 @@
     document.getElementById("known-brands").innerHTML = (g.brand_sites || []).slice(0, 18).map(function (b) {
       return "<span>" + esc(b.brand) + "<b>" + n(b.sites) + "</b></span>";
     }).join("");
-    document.getElementById("known-fine").textContent = "Counted " + g.as_of + " on " + g.counted_on + ". Sources: " +
-      (g.sources || []).join(", ") + ". Sites and wallets are flagged; packages, skills and approvals to a listed drainer are blocked in block mode.";
   }).catch(function () {
     document.getElementById("known-stats").innerHTML = '<p class="muted">Open this page from your Blackbox dashboard to see the counts.</p>';
   });
