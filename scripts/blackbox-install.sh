@@ -1614,7 +1614,10 @@ cfg_path, network, context_graph_id, graph_peer_id, dkg_url, dkg_home, dkg_bin =
 # Optional (older callers pass seven arguments): the community graph + its owner peer id, and the checkout.
 community_graph_id, community_graph_peer_id, repo_dir = (sys.argv[8:11] + ["", "", ""])[:3]
 try:
-    import yaml
+    try:
+        import hermes_yaml as yaml  # Hermes 0.21.7+: YAML through ruamel (PyYAML left the host)
+    except ImportError:
+        import yaml  # older Hermes: PyYAML
 except Exception:
     print("  (PyYAML unavailable — skipping config update; run 'blackbox status' to configure)")
     sys.exit(0)
@@ -1763,7 +1766,10 @@ read_blackbox_mode() {
 import sys, os
 cfg_path = sys.argv[1]
 try:
-    import yaml
+    try:
+        import hermes_yaml as yaml  # Hermes 0.21.7+: YAML through ruamel (PyYAML left the host)
+    except ImportError:
+        import yaml  # older Hermes: PyYAML
 except Exception:
     print("audit")
     sys.exit(0)
@@ -1788,7 +1794,10 @@ write_blackbox_mode() {
 import sys, os
 cfg_path, mode = sys.argv[1], sys.argv[2]
 try:
-    import yaml
+    try:
+        import hermes_yaml as yaml  # Hermes 0.21.7+: YAML through ruamel (PyYAML left the host)
+    except ImportError:
+        import yaml  # older Hermes: PyYAML
 except Exception:
     print("  (PyYAML unavailable — could not save protection mode)")
     sys.exit(1)

@@ -4,7 +4,10 @@ import json
 from pathlib import Path
 
 import pytest
-import yaml
+try:
+    import hermes_yaml as yaml  # Hermes 0.21.7+ reads YAML through ruamel
+except ImportError:  # older Hermes
+    import yaml
 
 from _blackbox_loader import load_blackbox
 

@@ -104,7 +104,7 @@ def _run_unix_blackbox_config_writer(
         text=True,
         env={**os.environ, **(env or {})},
     )
-    import yaml
+    import hermes_yaml as yaml
 
     return yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
 

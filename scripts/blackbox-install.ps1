@@ -1258,7 +1258,10 @@ function Enable-AndConfigure {
 import sys, os
 cfg_path, dkg_url, dkg_home, dkg_bin, context_graph_id, graph_peer_id = sys.argv[1:7]
 try:
-    import yaml
+    try:
+        import hermes_yaml as yaml  # Hermes 0.21.7+: YAML through ruamel (PyYAML left the host)
+    except ImportError:
+        import yaml  # older Hermes: PyYAML
 except Exception:
     print("  (PyYAML unavailable - skipping config update; run 'blackbox status' to configure)")
     sys.exit(0)
@@ -1394,7 +1397,10 @@ function Get-BlackboxMode {
 import sys, os
 cfg_path = sys.argv[1]
 try:
-    import yaml
+    try:
+        import hermes_yaml as yaml  # Hermes 0.21.7+: YAML through ruamel (PyYAML left the host)
+    except ImportError:
+        import yaml  # older Hermes: PyYAML
 except Exception:
     print("audit")
     sys.exit(0)
@@ -1423,7 +1429,10 @@ function Set-BlackboxMode {
 import sys, os
 cfg_path, mode = sys.argv[1], sys.argv[2]
 try:
-    import yaml
+    try:
+        import hermes_yaml as yaml  # Hermes 0.21.7+: YAML through ruamel (PyYAML left the host)
+    except ImportError:
+        import yaml  # older Hermes: PyYAML
 except Exception:
     print("  (PyYAML unavailable - could not save protection mode)")
     sys.exit(1)
