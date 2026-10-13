@@ -1018,6 +1018,7 @@ def test_interrupted_but_completed_reference_keeps_real_accounting(monkeypatch):
 def test_late_completing_interrupted_reference_feeds_accounting_sink(monkeypatch):
     """A reference still in flight at interrupt time gets a placeholder in
     the results, but its eventual REAL accounting must reach the sink."""
+    import time
     import threading
 
     from agent import moa_loop
