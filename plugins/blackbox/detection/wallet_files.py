@@ -49,6 +49,7 @@ from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple
 
 from ..kernel import threat_ids
+from ..kernel.crypto_secrets import wallet_mode
 from . import action_parsing, shell_files, shell_shapes
 from .finding import Finding
 
@@ -75,6 +76,8 @@ WALLETS: Tuple[WalletStore, ...] = (
 
 #: The file category these findings carry (a closed name, never a path).
 WALLET_CATEGORY = "crypto-wallet"
+#: Shown for Firefox extension storage, which no folder name ties to one wallet.
+FIREFOX_EXTENSION = "a Firefox extension"
 #: How long the list of key stores found on this machine is reused.
 _EXISTING_TTL_SECONDS = 300.0
 _FIREFOX_STORAGE = r"storage/default/moz-extension\+\+\+[^/]*\^usercontextid=4294967295"
@@ -111,7 +114,7 @@ def wallet_in_path(path: str) -> Optional[str]:
         if pattern.search(normalized):
             return name
     if _FIREFOX_PATTERN.search(normalized):
-        return "a Firefox extension"
+        return FIREFOX_EXTENSION
     return None
 
 
@@ -244,7 +247,8 @@ def _finding(tool: str, mode: str, wallet: str) -> Finding:
         evidence=f"{mode} {WALLET_CATEGORY} ({wallet})",
         confirmed=False,
         source="secret",   # built-in, local-only, blockable — never shared (it names this machine's wallet)
-        fields={"tool_name": tool, "file_category": WALLET_CATEGORY, "wallet": wallet.lower()},
+        fields={"tool_name": tool, "file_category": WALLET_CATEGORY,
+                "wallet": wallet_mode.ANY_EXTENSION_WALLET if wallet == FIREFOX_EXTENSION else wallet.lower()},
     )
 
 

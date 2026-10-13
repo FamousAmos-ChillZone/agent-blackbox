@@ -34,6 +34,10 @@ PLANNED_WALLETS: Tuple[str, ...] = ("Phantom", "Rabby", "Coinbase Wallet", "Trus
 WALLET_SECRET_IDENTIFIERS = frozenset({"secret:seed-phrase", "secret:wallet-private-key", "secret:solana-private-key"})
 #: …and key-store access, which names its wallet in ``fields["wallet"]``.
 WALLET_FILE_SUFFIX = ":crypto-wallet"
+#: ``fields["wallet"]`` of a Firefox extension key store: Firefox names each install's
+#: storage by a random UUID, so the folder cannot be tied to one wallet. It belongs to
+#: EVERY chosen wallet — counted whenever the mode is on with any wallet chosen.
+ANY_EXTENSION_WALLET = "any-extension"
 
 
 @dataclass(frozen=True)
@@ -51,8 +55,10 @@ class WalletProtection:
             return self.enabled
         if identifier.endswith(WALLET_FILE_SUFFIX):
             fields = finding.get("fields")
-            wallet = fields.get("wallet") if isinstance(fields, Mapping) else None
-            return self.enabled and str(wallet or "").lower() in self.wallets
+            wallet = str((fields.get("wallet") if isinstance(fields, Mapping) else None) or "").lower()
+            if wallet == ANY_EXTENSION_WALLET:
+                return self.enabled and bool(self.wallets)
+            return self.enabled and wallet in self.wallets
         return True
 
     def as_json(self) -> Dict[str, Any]:

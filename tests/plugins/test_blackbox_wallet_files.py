@@ -132,3 +132,16 @@ def test_hook_blocks_a_terminal_read_of_metamask_in_block_mode(monkeypatch):
     assert hooks.on_pre_tool_call(tool_name="terminal", args={"command": command}) is None
     monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=True, wallets=()))
     assert hooks.on_pre_tool_call(tool_name="terminal", args={"command": command}) is None
+
+
+def test_a_firefox_vault_read_counts_while_trader_shield_is_on():
+    """KI-366: Firefox storage cannot be tied to one wallet, so it was named "a Firefox
+    extension" — which no chosen wallet matched, and the gate dropped every Firefox read."""
+    from plugins.blackbox.kernel.crypto_secrets import wallet_mode
+
+    path = "~/.mozilla/firefox/ab12.default/storage/default/moz-extension+++0b6f^userContextId=4294967295/idb/x.sqlite"
+    [finding] = detect_wallet_files("read_file", {"path": path})
+    as_dict = {"identifier": finding.identifier, "fields": finding.fields}
+    assert wallet_mode.WalletProtection(enabled=True).allows_finding(as_dict)
+    assert not wallet_mode.WalletProtection(enabled=False).allows_finding(as_dict)
+    assert not wallet_mode.WalletProtection(enabled=True, wallets=()).allows_finding(as_dict)
