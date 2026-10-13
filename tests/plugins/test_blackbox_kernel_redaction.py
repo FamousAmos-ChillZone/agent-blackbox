@@ -82,12 +82,13 @@ def test_redaction_stays_fast_on_hostile_text(hostile):
     assert time.perf_counter() - started < 3.0
 
 
-@pytest.mark.parametrize("text, kept_name", [
-    ("DB_PASSWORD=supersecret123", "DB_PASSWORD="),
-    ('"api_key": "abcd1234efgh"', '"api_key": '),
-    ("x_tokens_y: 12345678abcd", "x_tokens_y: "),
-    ("MY-CLIENT-SECRET=abcdefgh1234", "MY-CLIENT-SECRET="),
+@pytest.mark.parametrize("template, kept_name", [
+    ("DB_PASSWORD={v}", "DB_PASSWORD="),
+    ('"api_key": "{v}"', '"api_key": '),
+    ("x_tokens_y: {v}", "x_tokens_y: "),
+    ("MY-CLIENT-SECRET={v}", "MY-CLIENT-SECRET="),
 ])
-def test_the_faster_rule_still_removes_named_secrets(text, kept_name):
-    redacted = redact_secret_values(text)
+def test_the_faster_rule_still_removes_named_secrets(template, kept_name):
+    fake_value = "q" * 6 + "7" * 6   # built at run time: no secret-shaped literal in the repo (LES-022)
+    redacted = redact_secret_values(template.format(v=fake_value))
     assert redacted.startswith(kept_name) and "[REDACTED" in redacted
