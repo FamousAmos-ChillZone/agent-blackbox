@@ -241,6 +241,15 @@ _NODE_SETTINGS = {
 }
 
 
+def _installed_dkg_bin(tmp_path) -> str:
+    """A stand-in node binary: register_boot_service registers nothing for a missing one."""
+    dkg = tmp_path / "dkg" / "node_modules" / ".bin" / "dkg"
+    dkg.parent.mkdir(parents=True)
+    dkg.write_text("#!/bin/sh\nexit 0\n")
+    dkg.chmod(0o755)
+    return str(dkg)
+
+
 def _register_boot_service(tmp_path, os_name: str):
     """Run the real register_boot_service in a sandbox shaped like *os_name*."""
     import shutil
@@ -259,6 +268,7 @@ def _register_boot_service(tmp_path, os_name: str):
         "secure_dkg_token_perms() { :; }", "id() { echo 1000; }",
         f"HOME={tmp_path}",
         *(f"{key}='{value}'" for key, value in _NODE_SETTINGS.items()),
+        f"BLACKBOX_DKG_BIN='{_installed_dkg_bin(tmp_path)}'",
         _top_level_function("xml_escape"),
         _top_level_function("register_boot_service"),
         "register_boot_service",
@@ -320,6 +330,7 @@ def test_a_plist_value_is_escaped_as_xml_text(tmp_path):
         "set -euo pipefail", "ok() { :; }", "warn() { :; }", "step() { :; }", "heading() { :; }",
         "secure_dkg_token_perms() { :; }", f"HOME={tmp_path}",
         *(f"{key}='{value}'" for key, value in settings_with_markup.items()),
+        f"BLACKBOX_DKG_BIN='{_installed_dkg_bin(tmp_path)}'",
         _top_level_function("xml_escape"), _top_level_function("register_boot_service"), "register_boot_service",
     ])
     subprocess.run(["bash", "-c", script], check=True, env={"PATH": f"{stubs}:/usr/bin:/bin"})

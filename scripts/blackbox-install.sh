@@ -1096,6 +1096,7 @@ install_python_env() {
         # in embedded mode and launch `hermes setup` ourselves only if needed.
         if HERMES_EMBEDDED_INSTALL=1 bash "$REPO_DIR/setup-hermes.sh"; then
             ok "Base environment ready via setup-hermes.sh"
+            use_hermes_selected_venv
         else
             warn "setup-hermes.sh did not complete cleanly — falling back to a minimal venv install."
             minimal_python_env
@@ -1105,6 +1106,25 @@ install_python_env() {
     fi
     ensure_web_extra
     HERMES_BIN="$VENV_DIR/bin/hermes"
+}
+
+# Hermes 0.21.7+ builds its environment with pm OUTSIDE the checkout
+# ($HERMES_HOME/installs/<install>/environments/<generation>/venv) instead of
+# $REPO_DIR/venv. Ask Hermes which generation is selected, through its own
+# runner (scripts/run-in-hermes-env + pm.environments.selected_venv), and point
+# VENV_DIR there. Older checkouts have no runner and keep $REPO_DIR/venv.
+use_hermes_selected_venv() {
+    [ -x "$REPO_DIR/scripts/run-in-hermes-env" ] || return 0
+    local selected
+    selected="$(cd "$REPO_DIR" && scripts/run-in-hermes-env python3 -c \
+        'from pathlib import Path; from pm.environments import selected_venv; print(selected_venv(Path(".").resolve()))' \
+        2>/dev/null | tail -n 1)"
+    if [ -n "$selected" ] && [ -x "$selected/bin/python" ]; then
+        VENV_DIR="$selected"
+        step "Hermes environment: $VENV_DIR"
+    else
+        warn "Could not ask Hermes where its environment is; assuming $VENV_DIR"
+    fi
 }
 
 # The dashboard needs fastapi/uvicorn (the `[web]` extra, already part of
@@ -2048,6 +2068,12 @@ xml_escape() {
 
 register_boot_service() {
     heading "Registering the DKG node to start on boot"
+    # No node to start (--skip-dkg, or its install failed): a boot service would
+    # only fail at every login (launchd exit 78) or restart-loop under systemd.
+    if [ ! -x "$BLACKBOX_DKG_BIN" ]; then
+        warn "No DKG node at $BLACKBOX_DKG_BIN — not registering a boot service."
+        return 0
+    fi
     local node_bin_dir
     node_bin_dir="$(dirname "$(command -v node)")"
     secure_dkg_token_perms
