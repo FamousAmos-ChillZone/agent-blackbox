@@ -78,7 +78,7 @@ from plugins.blackbox.kernel.crypto_secrets import wallet_mode
 
 def test_the_mode_is_off_by_default_and_governs_only_wallet_findings():
     mode = wallet_mode.from_entry({})
-    assert mode.enabled is False and mode.wallets == ("metamask", "phantom")
+    assert mode.enabled is False and mode.wallets == tuple(wallet_mode.SUPPORTED_WALLETS)
     vault = {"identifier": "fileaccess:terminal:crypto-wallet", "fields": {"wallet": "metamask"}}
     assert not mode.allows_finding(vault) and not mode.allows_finding({"identifier": "secret:seed-phrase"})
     assert mode.allows_finding({"identifier": "dep:npm:evil@1.0.0"})   # not a wallet finding: untouched
@@ -91,7 +91,7 @@ def test_engaging_protects_every_supported_wallet_unless_wallets_were_already_ch
     earlier choice (e.g. MetaMask only) is kept, so engaging never widens it silently."""
     updates, errors = wallet_mode.validate({"wallet_protection": True})
     assert updates == {"wallet_protection": True} and errors == []
-    assert wallet_mode.from_entry(updates).wallets == ("metamask", "phantom")
+    assert wallet_mode.from_entry(updates).wallets == tuple(wallet_mode.SUPPORTED_WALLETS)
     earlier = {"wallet_protection": True, "protected_wallets": ["metamask"]}
     assert wallet_mode.from_entry(earlier).wallets == ("metamask",)
 

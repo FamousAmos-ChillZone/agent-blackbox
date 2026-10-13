@@ -1,4 +1,5 @@
-"""Crypto wallet key stores an agent must never read — MetaMask and Phantom.
+"""Crypto wallet key stores an agent must never read — browser wallets (MetaMask,
+Phantom) here, app wallets (Exodus, Electrum, the Solana CLI) in :mod:`.app_wallets`.
 
 A browser wallet keeps its encrypted vault (the seed and keys, locked by the
 user's password) in the browser profile. Copied off the machine, the vault can
@@ -52,7 +53,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..kernel import threat_ids
 from ..kernel.crypto_secrets import wallet_mode
-from . import action_parsing, firefox_extensions, shell_shapes
+from . import action_parsing, app_wallets, firefox_extensions, shell_shapes
 from .paths import shell_files
 from .finding import Finding
 
@@ -148,7 +149,7 @@ def wallet_in_path(path: str) -> Optional[str]:
             return name
     if _FIREFOX_PATTERN.search(normalized):
         return _firefox_wallet(path)
-    return None
+    return app_wallets.app_wallet_at(normalized)
 
 
 # -- key stores that exist on this machine (for whole-folder copies) ---------
@@ -217,7 +218,7 @@ class _ExistingStores:
                     wallet = wallet_in_path(match)
                     if wallet:
                         found.append((normalize_path(match), wallet))
-        return found
+        return found + app_wallets.existing_app_wallets()
 
 
 def _store_globs(root: str) -> List[str]:
@@ -252,8 +253,9 @@ def found_wallets() -> List[dict]:
     grouped: dict = {}
     for path, wallet in EXISTING_STORES.get():
         low = path.lower()
-        browser = next((label for key, label in _BROWSERS if key in low), "Browser")
-        area = next((label for key, label in _AREAS if key.lower() in low), "storage")
+        browser = app_wallets.KINDS.get(wallet) or next((label for key, label in _BROWSERS if key in low), "Browser")
+        area = ("key file" if low.endswith(".json") else "wallet folder") if wallet in app_wallets.KINDS else \
+            next((label for key, label in _AREAS if key.lower() in low), "storage")
         parts = path.split("/")
         anchor = next((i for i, part in enumerate(parts) if part in ("local extension settings", "sync extension settings",
                                                                     "indexeddb", "storage")), len(parts))   # paths are lower-cased
@@ -285,10 +287,16 @@ def wallets_inside_folder(path: str) -> List[str]:
 
 # -- the detector -------------------------------------------------------------
 
+#: Display name -> settings id (``"Solana CLI"`` -> ``"solana-cli"``).
+_IDS = {name: wallet_id for wallet_id, name in wallet_mode.SUPPORTED_WALLETS.items()}
+
+
 def wallet_id(wallet: str) -> str:
     """The settings id of a wallet display name: ``"MetaMask"`` → ``"metamask"``; a Firefox
     extension store → ``wallet_mode.ANY_EXTENSION_WALLET`` (no folder name ties it to one)."""
-    return wallet_mode.ANY_EXTENSION_WALLET if wallet == FIREFOX_EXTENSION else wallet.lower()
+    if wallet == FIREFOX_EXTENSION:
+        return wallet_mode.ANY_EXTENSION_WALLET
+    return _IDS.get(wallet, wallet.lower())
 
 
 def _finding(tool: str, mode: str, wallet: str) -> Finding:

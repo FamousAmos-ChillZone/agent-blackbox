@@ -17,7 +17,7 @@ settings writer calls (:func:`validate`).
 Usage::
 
     mode = current()
-    mode.enabled, mode.wallets           # False, ("metamask", "phantom")
+    mode.enabled, mode.wallets           # False, ("metamask", "phantom", "exodus", ...)
     mode.allows_finding(finding_dict)    # False while the mode is off
 """
 
@@ -27,7 +27,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Tuple
 
 #: Wallets Blackbox can protect today: id -> display name.
-SUPPORTED_WALLETS: Dict[str, str] = {"metamask": "MetaMask", "phantom": "Phantom"}
+SUPPORTED_WALLETS: Dict[str, str] = {"metamask": "MetaMask", "phantom": "Phantom",
+                                     "exodus": "Exodus", "electrum": "Electrum", "solana-cli": "Solana CLI"}
 #: Wallets on the way (key-store IDs verified, rules not written yet) — shown as "coming soon".
 PLANNED_WALLETS: Tuple[str, ...] = ("Rabby", "Coinbase Wallet", "Trust Wallet", "OKX Wallet", "Keplr", "Solflare")
 #: Findings that belong to the mode: seed phrases, labelled private keys and Solana keys (any wallet)…
