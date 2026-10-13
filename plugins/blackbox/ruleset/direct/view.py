@@ -146,6 +146,22 @@ def ready_sample(cfg, *, client=None, cursor=None):
     return sample_rules(cfg, client=client, cursor=cursor).source_count("public")
 
 
+def _sample_partitions(cfg, client, cursor, category):
+    after = f'FILTER(STR(?sourceGraph) > {literal(cursor["after"])})' if cursor.get("after") else ''
+    # Sort only partition identities, not all matching entity identities.
+    # Keep GRAPH variables at top level for the DKG scope guard.
+    scope_body = confirmed_scope(cfg.context_graph_id)
+    if category:
+        # Existential selection returns at most one match per partition.
+        # Enumerating all matching threats here consumes the shared read
+        # deadline before their selected properties can be fetched.
+        # Existence only needs matching entities. Binding an unused literal
+        # here sends Blazegraph through MockTermResolverOp inside EXISTS.
+        scope_body += f' GRAPH ?sourceGraph {{ FILTER EXISTS {{ {_entity_patterns(category, bind_category=False)} }} }}'
+    return client.page(f'SELECT DISTINCT ?sourceGraph WHERE {{ {scope_body} {after} }} ORDER BY ?sourceGraph',
+                       cfg.context_graph_id, limit=1)
+
+
 def sample_rules(cfg, *, client=None, cursor=None, category=""):
     """Compile a bounded partition sample, with the same corrections/authority.
 
@@ -163,19 +179,7 @@ def sample_rules(cfg, *, client=None, cursor=None, category=""):
     from .. import curator_tier
     for _ in range(4):
         if not cursor.get("graph"):
-            after = f'FILTER(STR(?sourceGraph) > {literal(cursor["after"])})' if cursor.get("after") else ''
-            # Sort only partition identities, not all matching entity identities.
-            # Keep GRAPH variables at top level for the DKG scope guard.
-            scope_body = confirmed_scope(cfg.context_graph_id)
-            if category:
-                # Existential selection returns at most one match per partition.
-                # Enumerating all matching threats here consumes the shared read
-                # deadline before their selected properties can be fetched.
-                # Existence only needs matching entities. Binding an unused literal
-                # here sends Blazegraph through MockTermResolverOp inside EXISTS.
-                scope_body += f' GRAPH ?sourceGraph {{ FILTER EXISTS {{ {_entity_patterns(category, bind_category=False)} }} }}'
-            partitions = client.page(f'SELECT DISTINCT ?sourceGraph WHERE {{ {scope_body} {after} }} ORDER BY ?sourceGraph',
-                                     cfg.context_graph_id, limit=1)
+            partitions = _sample_partitions(cfg, client, cursor, category)
             rows = partitions["result"]["bindings"]
             if not rows:
                 cursor["exhausted"] = True
