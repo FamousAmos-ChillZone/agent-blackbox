@@ -76,6 +76,8 @@ def _cases() -> list[str]:
         "Café " + _phrase(12) + " 😀 " + _phrase(13, start=99),      # non-ASCII around runs
         "phantom export " + phantom + " then tx " + lookalike + " ok",  # the key goes, the signature stays
         "id.json " + keyfile + " end",
+        "https://x.example/c?d=" + _phrase(12, separator="+") + "&ok=1",     # a web address spells spaces as +
+        "GET /collect/" + _phrase(12, separator="%20") + " HTTP/1.1",         # …or as %20
         "cut off " + _base58(_solana_key())[:60],                     # truncated at the end: still removed
         "word " * 3 + "the " + _phrase(12, start=3) + " and AKIA" + "ABCDEFGHIJKLMNOP",
         "PRIVATE" + "_KEY=0x" + _HEX + " and " + '{"privateKey": "' + _HEX + '"}',

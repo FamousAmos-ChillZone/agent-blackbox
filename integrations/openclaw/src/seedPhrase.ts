@@ -19,7 +19,7 @@ const WORDLIST_SHA256 = "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2e
 const MIN_WORDS = 12;
 const WORD_RE = /[A-Za-z]+/g;
 // Same ASCII class as the Python `_GAP`.
-const GAP_RE = /^[ \t\n\r\f\v,;.:)(\-"'`0-9]{1,8}$/;
+const GAP_RE = /^[ \t\n\r\f\v,;.:)(\-"'`0-9+%_/]{1,8}$/;
 
 let wordlist: ReadonlySet<string> | null | undefined;
 

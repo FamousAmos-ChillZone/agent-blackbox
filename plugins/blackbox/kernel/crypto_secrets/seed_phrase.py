@@ -9,8 +9,8 @@ How a phrase is recognised (BIP-39, github.com/bitcoin/bips bip-0039):
 * every word is on the 2048-word English list, which ships next to this file
   and is pinned by its SHA-256 (:data:`WORDLIST_SHA256`) — a changed or
   truncated list disables detection loudly instead of silently;
-* the words stand together: only spaces, commas, line breaks and list
-  numbering ("1.", "2)") between them. Ordinary English breaks such a run
+* the words stand together: only spaces, commas, line breaks, list
+  numbering ("1.", "2)") or a web address's spaces ("+", "%20") between them. Ordinary English breaks such a run
   within a few words ("the", "of", "is" are not on the list);
 * the last word carries a checksum: of the n×11 bits the words encode, the
   final n/3 bits must equal the first bits of SHA-256 of the rest. A random
@@ -53,10 +53,11 @@ MARKER = "[REDACTED_SEED_PHRASE]"
 
 _WORD = re.compile(r"[A-Za-z]+")
 #: What may stand between two words of one phrase: spaces, commas, line
-#: breaks, list numbering — at most a few characters.
-#: ASCII only, spelled out — the OpenClaw bridge's copy (redact.ts) uses the
+#: breaks, list numbering, and the way a web address spells a space (``+``,
+#: ``%20``) or a path or name joins words (``/``, ``_``) — at most a few characters.
+#: ASCII only, spelled out — the OpenClaw bridge's copy (seedPhrase.ts) uses the
 #: same class, and Python's and JavaScript's \s / \d differ outside ASCII.
-_GAP = re.compile(r"[ \t\n\r\f\v,;.:)(\-\"'`0-9]{1,8}")
+_GAP = re.compile(r"[ \t\n\r\f\v,;.:)(\-\"'`0-9+%_/]{1,8}")
 _CUE = re.compile(r"\b(?:seed|mnemonic|recovery|phrase|secret|backup|srp|words?|wallet)\b", re.IGNORECASE)
 _CUE_WINDOW = 80
 
