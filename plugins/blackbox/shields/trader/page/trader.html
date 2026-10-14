@@ -183,13 +183,13 @@
   .tally span { font-family: var(--mono); font-size: 12px; letter-spacing: .06em; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); }
   .tally .blocked { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: var(--ok-soft); }
   .tally .flagged { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-soft); }
-  .tally .missed { color: var(--signal); border-style: dashed; }
-  .tally .allowed { color: var(--muted-strong); border-style: dashed; }
+  .tally .missed { color: var(--signal); border-style: dashed; } .tally .allowed { color: var(--muted-strong); border-style: dashed; }
   .agroup { display: grid; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
-  .agroup > header { padding: 16px 18px 12px; border-bottom: 1px solid var(--border); }
-  .agroup > header b { font-size: 16px; } .agroup > header p { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
-  .arow { display: grid; grid-template-columns: 92px 1fr; gap: 6px 14px; padding: 12px 18px; border-bottom: 1px solid var(--border); align-items: start; }
-  .arow:last-child { border-bottom: 0; }
+  .agroup header { padding: 16px 18px 12px; border-bottom: 1px solid var(--border); }
+  .agroup header b { font-size: 16px; } .agroup header p { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
+  .agroup > summary { cursor: pointer; list-style: none; } .agroup > summary::-webkit-details-marker { display: none; }
+  .agroup > summary b::after { content: " \25B8"; color: var(--muted); } .agroup[open] > summary b::after { content: " \25BE"; }
+  .arow { display: grid; grid-template-columns: 92px 1fr; gap: 6px 14px; padding: 12px 18px; border-bottom: 1px solid var(--border); align-items: start; } .arow:last-child { border-bottom: 0; }
   .arow .o { justify-self: start; font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
   .arow .o.blocked { color: #fff; background: var(--ok); } .arow .o.flagged { color: #111; background: var(--warn); }
   .arow .o.missed { color: var(--signal); border: 1px dashed color-mix(in srgb, var(--signal) 55%, transparent); }
@@ -203,8 +203,7 @@
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
   .stat { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: grid; gap: 6px; align-content: start; }
   .stat .num { font-size: clamp(26px, 3.4vw, 34px); font-weight: 850; font-stretch: 110%; letter-spacing: -.01em; font-variant-numeric: tabular-nums; line-height: 1.05; }
-  .stat .lbl { font-weight: 700; font-size: 14.5px; }
-  .stat .act { font-family: var(--mono); font-size: 11.5px; letter-spacing: .04em; color: var(--muted); }
+  .stat .lbl { font-weight: 700; font-size: 14.5px; } .stat .act { font-family: var(--mono); font-size: 11.5px; letter-spacing: .04em; color: var(--muted); }
   .stat .act b { color: var(--signal); font-weight: 600; } .stat .act i { color: var(--warn); font-style: normal; }
   .brands { display: flex; flex-wrap: wrap; gap: 8px; }
   .brands span { font-size: 13.5px; border: 1px solid var(--border); background: var(--panel); border-radius: 999px; padding: 5px 11px; color: var(--muted-strong); }
@@ -215,8 +214,7 @@
   .proven-total b { color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
   .systems { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
   .sys { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: grid; gap: 10px; align-content: start; }
-  .sys header { display: flex; align-items: center; gap: 10px; }
-  .sys header img { width: 26px; height: 26px; }
+  .sys header { display: flex; align-items: center; gap: 10px; } .sys header img { width: 26px; height: 26px; }
   .sys header b { font-size: 16px; } .sys header small { display: block; font-size: 12px; color: var(--muted); }
   .sys .big { font-size: 28px; font-weight: 850; font-variant-numeric: tabular-nums; line-height: 1; }
   .sys .big span { font-size: 13px; font-weight: 600; color: var(--muted-strong); margin-left: 6px; }
@@ -233,8 +231,7 @@
   .qs li { counter-increment: qs; display: grid; grid-template-columns: 28px 1fr; gap: 12px; font-size: 14.5px; color: var(--muted-strong); }
   .qs li::before { content: counter(qs); width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--shield-edge); color: var(--signal);
     font-family: var(--mono); font-size: 12px; display: grid; place-items: center; }
-  .qs li b { color: var(--text); }
-  .qs code { font-family: var(--mono); font-size: 12.5px; background: var(--elevated); padding: 2px 7px; border-radius: 3px; overflow-wrap: anywhere; }
+  .qs li b { color: var(--text); } .qs code { font-family: var(--mono); font-size: 12.5px; background: var(--elevated); padding: 2px 7px; border-radius: 3px; overflow-wrap: anywhere; }
   @media (max-width: 900px) {
     .hero { grid-template-columns: 1fr; } .stage { height: 360px; }
     .flow { grid-template-columns: 1fr 1fr; } .fstep:not(:last-child)::after { display: none; }
@@ -429,10 +426,7 @@
   var HERE = location.pathname.replace(/\/?$/, "/");
   var ID = HERE.split("/").slice(-2)[0];
   function getJSON(url) {   // a non-2xx answer rejects: a failed fetch never renders as empty lists or zero counts
-    return fetch(HERE + url, { cache: "no-store", headers: { Accept: "application/json" } }).then(function (r) {
-      if (!r.ok) throw new Error(url + " answered " + r.status);
-      return r.json();
-    });
+    return fetch(HERE + url, { cache: "no-store", headers: { Accept: "application/json" } }).then(function (r) { if (!r.ok) throw new Error(url + " answered " + r.status); return r.json(); });
   }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function item(pair) { return "<li><span><b>" + esc(pair[0]) + "</b> — " + esc(pair[1]) + "</span></li>"; }
@@ -447,9 +441,7 @@
     var who = document.getElementById("quote-who");
     who.textContent = c.testimonial.who;
     if (c.testimonial.link) who.innerHTML += ' · <a href="' + esc(c.testimonial.link) + '" target="_blank" rel="noopener">Read the article</a>';
-  }).catch(function () {
-    document.getElementById("can").innerHTML = '<li class="muted">Open this page from your Blackbox dashboard to see what it covers.</li>';
-  });
+  }).catch(function () { document.getElementById("can").innerHTML = '<li class="muted">Open this page from your Blackbox dashboard to see what it covers.</li>'; });
   Promise.all([page, table]).then(function (both) {   // the count is the served table's, never typed
     document.getElementById("version").textContent = (both[0].version || "") + " · " + (both[1].attacks || []).length + " attacks tested";
   }).catch(function () {});
@@ -518,11 +510,12 @@
     document.getElementById("attacks").innerHTML = t.groups.map(function (g) {
       var rows = t.attacks.filter(function (a) { return a.group === g.id; });
       if (!rows.length) return "";
-      return '<div class="agroup"><header><b>' + esc(g.title) + "</b><p>" + esc(g.intro) + "</p></header>" + rows.map(function (a) {
+      var box = g.fold ? ["details", "<summary>", "</summary>"] : ["div", "", ""];   // a folded group (one generated row per browser folder) opens on click
+      return "<" + box[0] + ' class="agroup">' + box[1] + "<header><b>" + esc(g.title) + "</b><p>" + esc(g.intro) + "</p></header>" + box[2] + rows.map(function (a) {
         return '<div class="arow"><span class="o ' + esc(a.outcome) + '">' + esc(OUTCOME_WORD[a.outcome] || a.outcome) + "</span><div>" +
           '<div class="t">' + esc(a.title) + '<span class="proof">' + (a.proof === "bench" ? "proven on a bench node" : "checked by the tests") + "</span></div>" +
           '<div class="h">' + esc(a.how) + "</div>" + (a.next ? '<div class="n"><b>How we\'ll add it:</b> ' + esc(a.next) + "</div>" : "") + "</div></div>";
-      }).join("") + "</div>";
+      }).join("") + "</" + box[0] + ">";
     }).join("");
   }).catch(function () {
     document.getElementById("attacks").innerHTML = '<p class="muted">Open this page from your Blackbox dashboard to see the tested attacks.</p>';
