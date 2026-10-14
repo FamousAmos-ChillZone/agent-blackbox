@@ -275,16 +275,7 @@ def _apply(entry: dict[str, Any], updates: dict[str, Any]) -> None:
     """
     for key, value in updates.items():
         if key == "detection" and isinstance(value, dict):
-            existing = entry.get("detection")
-            if not isinstance(existing, dict):
-                existing = {}
-                entry["detection"] = existing
-            for cat, setting in value.items():
-                cur = existing.get(cat)
-                if not isinstance(cur, dict):
-                    cur = {}
-                    existing[cat] = cur
-                cur.update(setting)
+            _merge_per_id(entry, key, value)
         elif key == "llm" and isinstance(value, dict):
             existing = entry.get("llm")
             if not isinstance(existing, dict):
@@ -295,3 +286,21 @@ def _apply(entry: dict[str, Any], updates: dict[str, Any]) -> None:
                 existing.pop(cleared, None)   # KI-371: a replaced key copy is removed, not left behind
         else:
             entry[key] = value
+
+
+def _merge_per_id(entry: dict[str, Any], key: str, sections: dict[str, dict[str, Any]]) -> None:
+    """Merge each ``{id: section}`` of *sections* into ``entry[key][id]`` field by field.
+
+    Never wholesale: an id absent from *sections* keeps its stored section untouched,
+    and a field absent from a section keeps its stored value.
+    """
+    existing = entry.get(key)
+    if not isinstance(existing, dict):
+        existing = {}
+        entry[key] = existing
+    for section_id, section in sections.items():
+        current = existing.get(section_id)
+        if not isinstance(current, dict):
+            current = {}
+            existing[section_id] = current
+        current.update(section)
