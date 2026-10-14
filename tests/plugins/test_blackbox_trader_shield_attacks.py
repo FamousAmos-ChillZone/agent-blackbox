@@ -1,5 +1,10 @@
 """Trader Shield's attack table (dashboard/static/trader-shield-attacks.json) stays true.
 
+The page's table and what each row DOES are two files joined by row id: the plugin ships
+the table (title, how, outcome, targets, evidence); the tool calls live beside this test
+in ``trader_shield_attack_scenarios.json`` — attack commands are test data, and a plugin
+that ships them reads as an attack to Hermes's install scanner (plugin catalog).
+
 The Trader Shield page shows people which Web3 attacks are blocked, flagged or not covered.
 That table is the single source: every ``proof: "test"`` scenario is driven here through the
 REAL pre-execution hook (Trader Shield on for MetaMask, block mode, block at critical, the
@@ -12,7 +17,6 @@ no secret-shaped literal lives in the repo (LES-022).
 from __future__ import annotations
 
 import hashlib
-import json
 import random
 import os
 import secrets
@@ -21,6 +25,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
+from _trader_attack_table import ATTACKS, SCENARIO_FIELDS, SCENARIOS, TABLE
 from plugins.blackbox import ruleset as ruleset_mod
 from plugins.blackbox.dashboard import protection
 from plugins.blackbox.detection import wallet_files
@@ -28,11 +33,11 @@ from plugins.blackbox.guard import background as guard_background
 from plugins.blackbox.guard import hooks
 from plugins.blackbox.guard import reporting as guard_reporting
 from plugins.blackbox.kernel import config as config_mod
-from plugins.blackbox.kernel import crypto_secrets
-from plugins.blackbox.kernel.crypto_secrets import seed_phrase, wallet_mode
+from plugins.blackbox.kernel import crypto_secrets, threat_ids
+from plugins.blackbox.kernel.crypto_secrets import seed_phrase
+from plugins.blackbox.shields.trader import mode as trader_mode
 from plugins.blackbox.ruleset import Ruleset
 
-TABLE = json.loads((protection.TRADER_SHIELD_PAGE.parent / "trader-shield-attacks.json").read_text(encoding="utf-8"))
 METAMASK = "nkbihfbeogaeaoehlefnkodbefgpgknn"
 PHANTOM = "bfnaelmomeimhlpmgjnjophhpkkoljpa"
 #: blocked / flagged / missed (a gap); allowed = a harmless look-alike that must raise nothing.
@@ -56,6 +61,10 @@ def _base58(data: bytes) -> str:
         number, digit = divmod(number, 58)
         out = BASE58[digit] + out
     return "1" * (len(data) - len(data.lstrip(b"\0"))) + out
+
+
+def _base58check(payload: bytes) -> str:
+    return _base58(payload + hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4])
 
 
 def _solana_key() -> bytes:
@@ -84,8 +93,8 @@ def shield(tmp_path, monkeypatch):
     monkeypatch.setattr(guard_reporting, "_report_and_audit", lambda cfg, event, found, detail: findings.extend(found))
     seed12, seed24, key = _phrase(os.urandom(16)), _phrase(os.urandom(32)), "0x" + secrets.token_hex(32)
     # Every supported wallet chosen, and @KEY@'s address listed as the trader's own (settings).
-    own = wallet_mode.WalletProtection(enabled=True, addresses=(crypto_secrets.address_of(bytes.fromhex(key[2:])),))
-    monkeypatch.setattr(wallet_mode, "current", lambda: own)
+    own = trader_mode.build(enabled=True, addresses=(crypto_secrets.address_of(bytes.fromhex(key[2:])),))
+    monkeypatch.setattr(trader_mode, "current", lambda: own)
     solana = _solana_key()
     values = {"@SEED12PLUS@": seed12.replace(" ", "+"), "@SEED12@": seed12, "@SEED24@": seed24, "@KEY@": key,
               "@HEX@": key[2:], "@TXHASH@": secrets.token_hex(32), "@APIKEY@": secrets.token_hex(32), "@VAULTFILE@": str(vault / "000003.log"),
@@ -94,6 +103,14 @@ def shield(tmp_path, monkeypatch):
               "@PHANTOM@": "~/.config/google-chrome/Default/Local\\ Extension\\ Settings/" + PHANTOM,
               "@SOLKEY@": _base58(solana), "@SOLFILE@": "[" + ",".join(str(b) for b in solana) + "]",
               "@SOLSIG@": _base58(random.randbytes(64))}
+    # KI-380: more key shapes (Bitcoin WIF / xprv, a Solana key as hex, a key behind 100 decoys).
+    values.update({"@WIF@": _base58check(b"\x80\x01" + os.urandom(31) + b"\x01"), "@SOLHEX@": solana.hex(),
+                   "@XPRV@": _base58check(bytes.fromhex("0488ade4") + bytes(9) + os.urandom(32) + b"\x00\x01" + os.urandom(31)),
+                   "@SOLDECOYS@": " ".join(_base58(random.randbytes(64)) for _ in range(100))})
+    # KI-378: the same 12 words spelled to slip past a word matcher.
+    values.update({"@SEED12ZW@": "\u200b|".join(seed12.split()), "@SEED12CAMEL@": "".join(w.capitalize() for w in seed12.split())})
+    values["@FILLER@"] = "lorem ipsum " * 5000   # KI-376: 60,000 characters of padding
+    values.update({f"@W{i + 1}@": word for i, word in enumerate(seed12.split())})   # KI-377: one word per item
 
     def fill(value):
         if isinstance(value, str):
@@ -108,12 +125,26 @@ def shield(tmp_path, monkeypatch):
     wallet_files.EXISTING_STORES.reset()
 
 
-LOCAL = [attack for attack in TABLE["attacks"] if attack["proof"] == "test"]
+LOCAL = [attack for attack in ATTACKS if attack["proof"] == "test"]
+
+
+def _scenario_setting(attack, monkeypatch):
+    """A row may list one address in the threat graph (``graph``: wallet + trust tier) and
+    lower the block threshold (``block_severity``) — e.g. "a community-listed drainer never
+    blocks, even at block_severity high" (KI-385)."""
+    listed = attack.get("graph")
+    if listed:
+        rules = {threat_ids.ioc_identifier("wallet", listed["wallet"]): {"source": listed["source"], "severity": "critical"}}
+        monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: Ruleset(ioc=rules))
+    if attack.get("block_severity"):
+        config = config_mod.BlackboxConfig(mode="block", report=False, block_severity=attack["block_severity"])
+        monkeypatch.setattr(hooks, "_config", lambda: config)
 
 
 @pytest.mark.parametrize("attack", LOCAL, ids=[attack["id"] for attack in LOCAL])
-def test_each_attack_has_the_outcome_the_page_claims(shield, attack):
+def test_each_attack_has_the_outcome_the_page_claims(shield, attack, monkeypatch):
     fill, findings = shield
+    _scenario_setting(attack, monkeypatch)
     result = hooks.on_pre_tool_call(tool_name=attack["tool"], args=fill(attack["args"]), session_id="matrix")
     outcome = "blocked" if result and result.get("action") == "block" else ("flagged" if findings else "missed")
     expected = "missed" if attack["outcome"] == "allowed" else attack["outcome"]   # allowed: nothing raised, by design
@@ -124,10 +155,17 @@ def test_the_table_is_well_formed():
     groups = {group["id"] for group in TABLE["groups"]}
     ids = [attack["id"] for attack in TABLE["attacks"]]
     assert len(ids) == len(set(ids))
-    for attack in TABLE["attacks"]:
+    for attack in ATTACKS:
         assert attack["group"] in groups and attack["outcome"] in OUTCOMES and attack["proof"] in ("test", "bench")
         assert attack["title"] and attack["how"] and attack["args"]
     assert TABLE.get("bench_run")
+
+
+def test_every_row_has_exactly_one_scenario_and_ships_none():
+    rows = [attack["id"] for attack in TABLE["attacks"]]
+    assert set(SCENARIOS) == set(rows)
+    shipped = {attack["id"]: sorted(SCENARIO_FIELDS & set(attack)) for attack in TABLE["attacks"]}
+    assert {row: fields for row, fields in shipped.items() if fields} == {}
 
 
 def test_every_gap_says_what_would_close_it():
@@ -152,7 +190,8 @@ def test_every_attack_says_what_it_targets_and_how_it_was_proven():
         assert attack["targets"] and set(attack["targets"]) <= systems, attack["id"]
         assert attack["evidence"] and set(attack["evidence"]) <= set(EVIDENCE), attack["id"]
         assert ("tests" in attack["evidence"]) == (attack["proof"] == "test"), attack["id"]   # the suite runs exactly these
-        assert "bench" in attack["evidence"], attack["id"]                                    # the full bench run covers every row
+        # the full bench run covers every row — except rows added since it, marked until the next run
+        assert "bench" in attack["evidence"] or attack.get("bench_pending") is True, attack["id"]
 
 
 def test_every_system_has_something_proven_against_it():

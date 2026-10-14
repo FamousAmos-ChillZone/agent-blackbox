@@ -8,7 +8,9 @@ the next :func:`config.load_blackbox_config`.
 Everything is best-effort and validated: :func:`read_settings` always returns a
 complete, defaulted view (even with no config file), and :func:`write_settings`
 only ever persists known keys with validated values, preserving every unrelated
-config key. Writing prefers the hermes config writer (comment/format-preserving)
+config key. A save is all-or-nothing (KI-389): one invalid value and NOTHING is
+persisted — a half-applied save once turned wallet protection off while reporting
+an error about an unrelated field. Writing prefers the hermes config writer (comment/format-preserving)
 and falls back to a plain YAML read-modify-write for standalone installs.
 """
 
@@ -16,15 +18,41 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Tuple
 
-from . import constants, crypto_secrets
+from . import constants
 from . import yaml_files
 from .config import DETECTION_CATEGORIES, load_blackbox_config
 
 logger = logging.getLogger(__name__)
 
 _GEAR_KEYS = ("plugins", "entries", "blackbox")
+#: Most protected paths a save may list (each is matched on every file-access call).
+MAX_PROTECTED_PATHS = 100
+
+
+class ShieldSettings(NamedTuple):
+    """What one shield's settings validator answers for a settings payload.
+
+    *section* is the shield's validated fields (empty = the payload does not touch
+    this shield); the kernel stores it at ``shields.<shield_id>``, merged field by
+    field. *supersedes* names top-level entry keys the section replaces; they are
+    deleted in the same write, and only when the section is written. A validator may
+    return a plain ``(shield_id, section, errors)`` tuple instead.
+    """
+
+    shield_id: str
+    section: dict[str, Any]
+    errors: list[str]
+    supersedes: tuple[str, ...] = ()
+
+
+#: A shield's settings validator: ``validator(payload) -> ShieldSettings``. The caller
+#: hands these in (dependency injection) so the kernel never imports a shield.
+SettingsValidator = Callable[[dict[str, Any]], tuple[Any, ...]]
+
+#: Marks a superseded key in the updates for :func:`_apply` to delete.
+_SUPERSEDED = object()
 
 
 def read_settings() -> dict[str, Any]:
@@ -42,7 +70,6 @@ def read_settings() -> dict[str, Any]:
         "osv_lookup": cfg.osv_lookup,
         "categories": categories,
         "protected_paths": list(cfg.protected_paths),
-        "wallet_protection": crypto_secrets.wallet_mode.current().as_json(),   # Web3 wallet protection (trader rules)
         "llm": {
             "enabled": cfg.llm_enabled,
             "provider": cfg.llm_provider,
@@ -66,9 +93,9 @@ def read_settings() -> dict[str, Any]:
 def _validate(payload: dict[str, Any], *, sharing_consent: bool = False) -> tuple[dict[str, Any], list[str]]:
     """Coerce a settings *payload* into a validated ``blackbox`` config subtree.
 
-    Returns ``(entry_updates, errors)``. Unknown keys and invalid values are
-    dropped (with an error note) rather than persisted, so a malformed request
-    can never corrupt the config. *sharing_consent* (R13, injected by the caller —
+    Returns ``(entry_updates, errors)``. Unknown keys are ignored; an invalid value
+    is an error (and :func:`write_settings` then persists nothing), so a malformed
+    request can never corrupt the config. *sharing_consent* (R13, injected by the caller —
     the kernel never asks a feature): without it ``report: true`` is refused.
     """
     errors: list[str] = []
@@ -127,53 +154,77 @@ def _validate(payload: dict[str, Any], *, sharing_consent: bool = False) -> tupl
 
     if "protected_paths" in payload:
         raw = payload["protected_paths"]
-        if isinstance(raw, list):
+        if isinstance(raw, list) and len(raw) <= MAX_PROTECTED_PATHS:
             paths: list[str] = []
             for item in raw:
                 text = str(item or "").strip()
                 if text and text not in paths:
                     paths.append(text)
-            updates["protected_paths"] = paths[:100]
+            updates["protected_paths"] = paths
         else:
-            errors.append("protected_paths must be a list")
+            errors.append(f"protected_paths must be a list of up to {MAX_PROTECTED_PATHS} paths")
 
     if "llm" in payload:
-        raw = payload["llm"]
-        llm: dict[str, Any] = {}
-        if isinstance(raw, dict):
-            if "enabled" in raw:
-                if isinstance(raw["enabled"], bool):
-                    llm["enabled"] = raw["enabled"]
-                else:
-                    errors.append("llm.enabled must be a boolean")
-            if "provider" in raw:
-                prov = str(raw["provider"]).strip().lower()
-                if prov in ("openai", "anthropic", ""):
-                    llm["provider"] = prov
-                else:
-                    errors.append(f"invalid llm.provider: {raw['provider']!r}")
-            if "model" in raw:
-                llm["model"] = str(raw["model"]).strip()
-            if "api_key" in raw:
-                llm["api_key"] = str(raw["api_key"]).strip()
-            if llm:
-                updates["llm"] = llm
-        else:
-            errors.append("llm must be an object")
+        llm = _validate_llm(payload["llm"], errors)
+        if llm:
+            updates["llm"] = llm
 
     return updates, errors
 
 
-def write_settings(payload: dict[str, Any], *, sharing_consent: bool = False) -> dict[str, Any]:
+def _validate_llm(raw: Any, errors: list[str]) -> dict[str, Any]:
+    """The valid ``llm`` reviewer fields of *raw*; each problem is appended to *errors*.
+
+    The key is stored ONE way (KI-371): ``api_key_env`` (the name of the variable that
+    holds it, e.g. ``OPENAI_API_KEY`` from ~/.hermes/.env) or ``api_key`` (a key typed
+    in). Saving one clears the other — ``None`` here means "remove it" (see :func:`_apply`).
+    """
+    llm: dict[str, Any] = {}
+    if not isinstance(raw, dict):
+        errors.append("llm must be an object")
+        return llm
+    if "enabled" in raw:
+        if isinstance(raw["enabled"], bool):
+            llm["enabled"] = raw["enabled"]
+        else:
+            errors.append("llm.enabled must be a boolean")
+    if "provider" in raw:
+        prov = str(raw["provider"]).strip().lower()
+        if prov in ("openai", "anthropic", ""):
+            llm["provider"] = prov
+        else:
+            errors.append(f"invalid llm.provider: {raw['provider']!r}")
+    if "model" in raw:
+        llm["model"] = str(raw["model"]).strip()
+    if "api_key" in raw:
+        llm["api_key"] = str(raw["api_key"]).strip()
+        llm["api_key_env"] = None
+    if raw.get("api_key_env"):
+        name = str(raw["api_key_env"]).strip()
+        if name.isascii() and name.isidentifier():
+            llm["api_key_env"] = name
+            llm["api_key"] = None
+        else:
+            errors.append(f"invalid llm.api_key_env: {raw['api_key_env']!r}")
+    return llm
+
+
+def write_settings(payload: dict[str, Any], *, sharing_consent: bool = False,
+                   validators: Iterable[SettingsValidator] = ()) -> dict[str, Any]:
     """Validate *payload* and persist it under ``plugins.entries.blackbox``.
 
     Returns ``{"ok": bool, "errors": [...], "settings": <new read_settings>}``.
-    Never raises — a write failure is reported in the result.
+    All-or-nothing: with any error nothing is persisted and ``ok`` is False (the
+    dashboard answers 400). Never raises — a write failure is reported in the result.
+    Each of *validators* (see :class:`ShieldSettings`) checks its own shield's section;
+    without one, a ``shields`` key in *payload* is dropped, never written (fail-closed).
     """
     updates, errors = _validate(payload, sharing_consent=sharing_consent)
-    wallet_updates, wallet_errors = crypto_secrets.wallet_mode.validate(payload)   # Web3 wallet protection
-    updates.update(wallet_updates)
-    errors.extend(wallet_errors)
+    shield_updates, shield_errors = _shield_updates(payload, validators)
+    updates.update(shield_updates)
+    errors.extend(shield_errors)
+    if errors:
+        return {"ok": False, "errors": errors, "settings": read_settings()}
     if not updates:
         return {"ok": False, "errors": errors or ["nothing to update"], "settings": read_settings()}
 
@@ -181,6 +232,52 @@ def write_settings(payload: dict[str, Any], *, sharing_consent: bool = False) ->
     if not persisted:
         errors.append("could not persist settings (config not writable)")
     return {"ok": persisted, "errors": errors, "settings": read_settings()}
+
+
+def _shield_updates(payload: dict[str, Any],
+                    validators: Iterable[SettingsValidator]) -> tuple[dict[str, Any], list[str]]:
+    """``(updates, errors)`` from running each handed-in shield validator on *payload*.
+
+    The kernel composes ``{"shields": {shield_id: section}}`` itself, so validators can
+    never overwrite each other, and marks each superseded key for deletion. A validator
+    that raises or answers malformed is an error (the save then writes nothing).
+    """
+    updates: dict[str, Any] = {}
+    sections: dict[str, dict[str, Any]] = {}
+    errors: list[str] = []
+    for validator in validators:
+        try:
+            result = ShieldSettings(*validator(payload))
+        except Exception as exc:   # a broken shield must fail the save, never the dashboard
+            logger.warning("blackbox.settings: a shield settings validator failed (%s)", type(exc).__name__)
+            errors.append("shield settings could not be checked")
+            continue
+        if not _is_error_list(result.errors):   # never extend by None, nor a str letter by letter
+            errors.append(f"invalid shield settings from {result.shield_id!r}")
+            continue
+        errors.extend(result.errors)
+        if not result.section:
+            continue
+        if not _well_formed(result) or result.shield_id in sections:
+            errors.append(f"invalid shield settings from {result.shield_id!r}")
+            continue
+        sections[result.shield_id] = dict(result.section)
+        updates.update(dict.fromkeys(result.supersedes, _SUPERSEDED))
+    if sections:
+        updates["shields"] = sections
+    return updates, errors
+
+
+def _well_formed(result: ShieldSettings) -> bool:
+    """True when *result* has a named shield, a dict section and string superseded keys."""
+    return (isinstance(result.shield_id, str) and bool(result.shield_id)
+            and isinstance(result.section, dict) and isinstance(result.supersedes, (tuple, list))
+            and all(isinstance(key, str) and key != "shields" for key in result.supersedes))
+
+
+def _is_error_list(errors: Any) -> bool:
+    """True when *errors* is a list or tuple of strings (what the dashboard shows)."""
+    return isinstance(errors, (list, tuple)) and all(isinstance(error, str) for error in errors)
 
 
 #: KI-030: settings persistence is read-modify-write; concurrent dashboard
@@ -244,27 +341,41 @@ def _dig(root: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
 def _apply(entry: dict[str, Any], updates: dict[str, Any]) -> None:
     """Apply validated *updates* onto the blackbox config *entry* in place.
 
-    ``detection`` and ``llm`` are deep-merged (so setting the model never drops
-    the key, and tuning one category never drops another); every other key is a
-    straight overwrite.
+    ``detection``, ``shields`` and ``llm`` are deep-merged (so setting the model never
+    drops the key, tuning one category never drops another, and saving one shield never
+    touches another's section); a key marked superseded is deleted; every other key is
+    a straight overwrite.
     """
     for key, value in updates.items():
-        if key == "detection" and isinstance(value, dict):
-            existing = entry.get("detection")
-            if not isinstance(existing, dict):
-                existing = {}
-                entry["detection"] = existing
-            for cat, setting in value.items():
-                cur = existing.get(cat)
-                if not isinstance(cur, dict):
-                    cur = {}
-                    existing[cat] = cur
-                cur.update(setting)
+        if value is _SUPERSEDED:
+            entry.pop(key, None)
+        elif key in ("detection", "shields") and isinstance(value, dict):
+            _merge_per_id(entry, key, value)
         elif key == "llm" and isinstance(value, dict):
             existing = entry.get("llm")
             if not isinstance(existing, dict):
                 existing = {}
                 entry["llm"] = existing
             existing.update(value)
+            for cleared in [name for name, setting in value.items() if setting is None]:
+                existing.pop(cleared, None)   # KI-371: a replaced key copy is removed, not left behind
         else:
             entry[key] = value
+
+
+def _merge_per_id(entry: dict[str, Any], key: str, sections: dict[str, dict[str, Any]]) -> None:
+    """Merge each ``{id: section}`` of *sections* into ``entry[key][id]`` field by field.
+
+    Never wholesale: an id absent from *sections* keeps its stored section untouched,
+    and a field absent from a section keeps its stored value.
+    """
+    existing = entry.get(key)
+    if not isinstance(existing, dict):
+        existing = {}
+        entry[key] = existing
+    for section_id, section in sections.items():
+        current = existing.get(section_id)
+        if not isinstance(current, dict):
+            current = {}
+            existing[section_id] = current
+        current.update(section)

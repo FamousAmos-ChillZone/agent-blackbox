@@ -60,7 +60,8 @@ def _row_identity(row: dict[str, Any]) -> tuple:
         ioc_type = extract_binding(row.get("category")).strip().lower()
         ioc_value = extract_binding(row.get("iocValue"))
         if ioc_type and ioc_value:
-            identifier = f"ioc:{ioc_type}:{ioc_value}"
+            # KI-387: the shared id (EVM addresses lower-case), as detection derives it.
+            identifier = threat_ids.ioc_identifier(ioc_type, ioc_value)
     elif not identifier and rdf_type == constants.SOURCE_OBSERVATION_TYPE_IRI:
         lifecycle = extract_binding(row.get("lifecycleStatus")).strip().lower()
         ioc_type = extract_binding(row.get("canonicalType")).strip().lower()

@@ -1,0 +1,7 @@
+{
+  "id": "solflare",
+  "name": "Solflare",
+  "kind": "browser-extension",
+  "status": "planned",
+  "order": 160
+}

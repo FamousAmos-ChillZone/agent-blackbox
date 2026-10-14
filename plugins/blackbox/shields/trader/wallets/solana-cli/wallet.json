@@ -1,0 +1,19 @@
+{
+  "id": "solana-cli",
+  "name": "Solana CLI",
+  "kind": "cli-key-file",
+  "status": "supported",
+  "order": 50,
+  "verified": "2026-10-13",
+  "source": "Solana CLI 4.3.0 (Anza installer) on bench bb-trader-1, Ubuntu 24.04",
+  "places": [
+    "$XDG_CONFIG_HOME/solana/*.json",
+    "~/.config/solana/*.json"
+  ],
+  "pointer": {
+    "config": "$XDG_CONFIG_HOME/solana/cli/config.yml",
+    "key": "keypair_path",
+    "max_bytes": 65536
+  },
+  "label": "Command line"
+}

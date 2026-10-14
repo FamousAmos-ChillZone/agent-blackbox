@@ -120,37 +120,37 @@ def test_hook_blocks_a_terminal_read_of_metamask_in_block_mode(monkeypatch):
     monkeypatch.setattr(guard_reporting, "_report_and_audit", lambda *a, **k: None)
     monkeypatch.setattr(guard_background, "_spawn_osv_discovery", lambda *a, **k: None)
     command = f"base64 ~/.config/google-chrome/Default/Local\\ Extension\\ Settings/{CHROME_ID}/000003.log"
-    from plugins.blackbox.kernel.crypto_secrets import wallet_mode
-    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=True))   # Web3 wallet protection on
+    from plugins.blackbox.shields.trader import mode as trader_mode
+    monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=True))   # Web3 wallet protection on
 
     result = hooks.on_pre_tool_call(tool_name="terminal", args={"command": command})
 
     assert result and result["action"] == "block"
     assert hooks.on_pre_tool_call(tool_name="terminal", args={"command": "cat README.md"}) is None
     # Mode off (the default), or MetaMask not chosen: the same read is not blocked.
-    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=False))
+    monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=False))
     assert hooks.on_pre_tool_call(tool_name="terminal", args={"command": command}) is None
-    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=True, wallets=()))
+    monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=True, wallets=()))
     assert hooks.on_pre_tool_call(tool_name="terminal", args={"command": command}) is None
 
 
 def test_a_firefox_vault_read_counts_while_trader_shield_is_on():
     """KI-366: Firefox storage cannot be tied to one wallet, so it was named "a Firefox
     extension" — which no chosen wallet matched, and the gate dropped every Firefox read."""
-    from plugins.blackbox.kernel.crypto_secrets import wallet_mode
+    from plugins.blackbox.shields.trader import mode as trader_mode
 
     path = "~/.mozilla/firefox/ab12.default/storage/default/moz-extension+++0b6f^userContextId=4294967295/idb/x.sqlite"
     [finding] = detect_wallet_files("read_file", {"path": path})
     as_dict = {"identifier": finding.identifier, "fields": finding.fields}
-    assert wallet_mode.WalletProtection(enabled=True).allows_finding(as_dict)
-    assert not wallet_mode.WalletProtection(enabled=False).allows_finding(as_dict)
-    assert not wallet_mode.WalletProtection(enabled=True, wallets=()).allows_finding(as_dict)
+    assert trader_mode.allows_finding(as_dict, trader_mode.build(enabled=True))
+    assert not trader_mode.allows_finding(as_dict, trader_mode.build(enabled=False))
+    assert not trader_mode.allows_finding(as_dict, trader_mode.build(enabled=True, wallets=()))
 
 
 def test_archiving_a_folder_with_several_wallets_names_every_one(monkeypatch):
     """KI-367: the archive check named only the FIRST wallet inside, so with that
     wallet unticked the gate dropped the finding and a ticked wallet's vault left."""
-    from plugins.blackbox.kernel.crypto_secrets import wallet_mode
+    from plugins.blackbox.shields.trader import mode as trader_mode
 
     profile = wallet_files.normalize_path("~/.config/google-chrome/Default")
     stores = [(profile + "/local extension settings/" + CHROME_ID, "MetaMask"),
@@ -160,8 +160,8 @@ def test_archiving_a_folder_with_several_wallets_names_every_one(monkeypatch):
     findings = detect_wallet_files("terminal", {"command": "tar czf /tmp/x.tgz ~/.config/google-chrome"})
 
     assert sorted(f.fields["wallet"] for f in findings) == ["metamask", "secondwallet"]
-    only_second = wallet_mode.WalletProtection(enabled=True, wallets=("secondwallet",))
-    kept = [f for f in findings if only_second.allows_finding({"identifier": f.identifier, "fields": f.fields})]
+    only_second = trader_mode.build(enabled=True, wallets=("secondwallet",))
+    kept = [f for f in findings if trader_mode.allows_finding({"identifier": f.identifier, "fields": f.fields}, only_second)]
     assert [f.fields["wallet"] for f in kept] == ["secondwallet"]
 
 
