@@ -30,19 +30,15 @@ EDGE_ID = "ejbalbakoplchlghecdalmeeeajnimhm"
 PHANTOM_ID = "bfnaelmomeimhlpmgjnjophhpkkoljpa"
 MAC_CHROME = "~/Library/Application Support/Google/Chrome"
 EVERY_PACK = trader_mode.build(enabled=True)
-#: Wallets of the app-folder kinds: the old detector names them, the new one from S4b.
-APP_FOLDER_WALLETS = {pack.id for pack in trader_mode.wallet_packs()
-                      if pack.status == "supported" and pack.kind != browser_extension.KIND}
 
 
 def _same_apart_from_pack(new, old):
-    """The new findings equal the old browser-extension ones once ``pack`` is taken out,
-    and ``pack``, when present, is the wallet's id."""
-    browser_old = [finding for finding in old if finding.fields["wallet"] not in APP_FOLDER_WALLETS]
+    """The new findings equal the old ones once ``pack`` is taken out (every kind, since the
+    app-folder kinds joined in S4b), and ``pack``, when present, is the wallet's id."""
     for finding in new:
         assert finding.fields.get("pack", finding.fields["wallet"]) == finding.fields["wallet"]
     stripped = [dataclasses.replace(f, fields={k: v for k, v in f.fields.items() if k != "pack"}) for f in new]
-    assert stripped == browser_old
+    assert stripped == old
 
 
 def _detect(tool, args, active=EVERY_PACK):
@@ -320,7 +316,5 @@ def test_the_attack_table_has_vault_and_firefox_rows():
 def test_every_vault_and_firefox_row_gives_the_same_findings(attack_home, row):
     args = {key: attack_home(value) if isinstance(value, str) else value for key, value in row["args"].items()}
     new = _detect(row["tool"], args)
-    old = detect_wallet_files(row["tool"], args)
-    if row["outcome"] == "blocked" and not new:
-        # Only an app-folder wallet's row may have nothing from this kind yet (it joins in S4b).
-        assert old and {f.fields["wallet"] for f in old} <= APP_FOLDER_WALLETS, row["id"]
+    if row["outcome"] == "blocked":
+        assert new, row["id"]
