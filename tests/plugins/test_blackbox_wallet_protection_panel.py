@@ -11,12 +11,11 @@ import json
 import pytest
 
 from plugins.blackbox.dashboard import protection
-from plugins.blackbox.detection import wallet_files
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.shields.trader import detectors as trader_detectors, status as trader_status
-from plugins.blackbox.shields.trader.detectors.browser_extension import Owner
+from plugins.blackbox.shields.trader.detectors.browser_extension import FIREFOX_EXTENSION, Owner, normalize_path
 
-METAMASK_CHROME = wallet_files.WALLETS[0].chromium_ids[0]
+METAMASK_CHROME = "nkbihfbeogaeaoehlefnkodbefgpgknn"
 
 
 @pytest.fixture
@@ -24,10 +23,8 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
     monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bb"))
-    wallet_files.EXISTING_STORES.reset()
     trader_detectors.EXISTING_STORES.reset()   # the panel reads Trader Shield's own scan since S5
     yield tmp_path
-    wallet_files.EXISTING_STORES.reset()
     trader_detectors.EXISTING_STORES.reset()
 
 
@@ -41,18 +38,6 @@ def _vault(home, *parts):
     folder = home.joinpath(".config", "google-chrome", "Default", *parts)
     folder.mkdir(parents=True)
     (folder / "000003.log").write_text("placeholder", encoding="utf-8")
-
-
-def test_a_metamask_vault_on_this_machine_is_listed_by_browser_profile_and_area(home):
-    _vault(home, "Local Extension Settings", METAMASK_CHROME)
-    _vault(home, "IndexedDB", f"chrome-extension_{METAMASK_CHROME}_0.indexeddb.leveldb")
-    [found] = wallet_files.found_wallets()
-    assert (found["wallet"], found["browser"], found["profile"]) == ("MetaMask", "Chrome", "default")   # paths are lower-cased
-    assert sorted(found["areas"]) == ["backup copy", "vault"]
-
-
-def test_a_machine_without_a_wallet_lists_none(home):
-    assert wallet_files.found_wallets() == []
 
 
 @pytest.mark.parametrize("mode, shown", [("block", "block"), ("audit", "audit")])
@@ -173,9 +158,9 @@ def test_wallet_threats_show_their_wallet_logo_everywhere_they_appear():
 def test_the_panel_calls_a_store_protected_exactly_when_the_gate_would_count_it(home, monkeypatch):
     """The panel used its own copy of the rule and labelled a Firefox store "not protected"
     while the gate (FIX-0100) protected it. Both now read the gate's own rule (trader mode.protects)."""
-    stores = [(wallet_files.normalize_path("~/.mozilla/firefox/a.default/storage/default/moz-extension+++x^usercontextid=4294967295"),
-               Owner("", wallet_files.FIREFOX_EXTENSION)),
-              (wallet_files.normalize_path(f"~/.config/google-chrome/Default/local extension settings/{METAMASK_CHROME}"),
+    stores = [(normalize_path("~/.mozilla/firefox/a.default/storage/default/moz-extension+++x^usercontextid=4294967295"),
+               Owner("", FIREFOX_EXTENSION)),
+              (normalize_path(f"~/.config/google-chrome/Default/local extension settings/{METAMASK_CHROME}"),
                Owner("metamask", "MetaMask"))]
     monkeypatch.setattr(trader_detectors.EXISTING_STORES, "get", lambda: stores)
     for chosen, expected in ((["metamask"], {"a Firefox extension": True, "MetaMask": True}),
@@ -189,9 +174,9 @@ def test_the_panel_calls_a_store_protected_exactly_when_the_gate_would_count_it(
 def test_a_firefox_profile_name_is_shown_as_it_is_not_defanged(home, monkeypatch):
     """Seen on a macOS lab run: the panel showed "lab[.]default" — local folder names went
     through the community-text sanitizer, which defangs anything shaped like a domain."""
-    store = wallet_files.normalize_path(
+    store = normalize_path(
         "~/Library/Application Support/Firefox/Profiles/ab12.default-release/storage/default/moz-extension+++x^usercontextid=4294967295")
-    monkeypatch.setattr(trader_detectors.EXISTING_STORES, "get", lambda: [(store, Owner("", wallet_files.FIREFOX_EXTENSION))])
+    monkeypatch.setattr(trader_detectors.EXISTING_STORES, "get", lambda: [(store, Owner("", FIREFOX_EXTENSION))])
     [shown] = protection.wallet_protection_payload()["wallets"]
     assert shown["profile"] == "ab12.default-release" and "[.]" not in str(shown)
 

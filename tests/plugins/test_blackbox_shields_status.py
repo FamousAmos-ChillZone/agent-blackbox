@@ -323,23 +323,6 @@ def test_the_old_panel_and_api_shields_agree_field_for_field(home, monkeypatch, 
     assert old["terminal_reads"] == "blocked" and watching["Protected files"].endswith("file tools and terminal")
 
 
-def test_the_moved_scan_answers_what_the_old_one_did(home):
-    """Equivalence with detection.found_wallets while it lives (S5b deletes it and this check)."""
-    wallet_files = pytest.importorskip("plugins.blackbox.detection.wallet_files")
-    _vault(home, "Local Extension Settings", METAMASK_CHROME)
-    _vault(home, "IndexedDB", f"chrome-extension_{METAMASK_CHROME}_0.indexeddb.leveldb", browser="BraveSoftware/Brave-Browser")
-    (home / ".electrum" / "wallets").mkdir(parents=True)
-    (home / ".electrum" / "wallets" / "default_wallet").write_text("x", encoding="utf-8")
-    (home / ".config" / "solana").mkdir(parents=True)
-    (home / ".config" / "solana" / "id.json").write_text("[]", encoding="utf-8")
-    wallet_files.EXISTING_STORES.reset()
-    try:
-        old = sorted(wallet_files.found_wallets(), key=json.dumps)
-    finally:
-        wallet_files.EXISTING_STORES.reset()
-    assert old and sorted(trader_status.found_wallets(), key=json.dumps) == old
-
-
 # ------------------------------------------------------------------ the captured payload (S7 replay, S8)
 
 

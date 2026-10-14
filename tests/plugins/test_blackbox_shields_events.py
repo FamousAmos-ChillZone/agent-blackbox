@@ -21,7 +21,6 @@ from fastapi.testclient import TestClient
 from plugins.blackbox import audit, shields
 from plugins.blackbox import ruleset as ruleset_mod
 from plugins.blackbox.dashboard import shields_routes
-from plugins.blackbox.detection import wallet_files
 from plugins.blackbox.guard import background as guard_background
 from plugins.blackbox.guard import hooks
 from plugins.blackbox.kernel import config as config_mod
@@ -162,7 +161,6 @@ def shielded(tmp_path, monkeypatch):
     vault = tmp_path / ".config" / "google-chrome" / "Default" / "Local Extension Settings" / CHROME_ID
     vault.mkdir(parents=True)
     (vault / "000003.log").write_text("vault", encoding="utf-8")
-    wallet_files.EXISTING_STORES.reset()
     detectors.EXISTING_STORES.reset()
     block = config_mod.BlackboxConfig(mode="block", report=False)
     monkeypatch.setattr(hooks, "_config", lambda: block)
@@ -172,7 +170,6 @@ def shielded(tmp_path, monkeypatch):
     monkeypatch.setattr(guard_background, "_spawn_auto_attach", lambda *a, **k: None)
     monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=True))
     yield tmp_path
-    wallet_files.EXISTING_STORES.reset()
     detectors.EXISTING_STORES.reset()
 
 
