@@ -22,9 +22,9 @@ community threat intelligence, and flags or blocks it before damage is done.
 | **Catches** | prompt injection, dangerous commands, sensitive-file access, secret exposure, malicious packages, unsafe skills, known-bad indicators |
 | **Learns from** | Umanitek's **verified graph** (may block) and the open **community graph** (flags only) on the OriginTrail DKG |
 | **Shows** | every finding in a local dashboard and audit trail |
-| **Shares** | nothing until you consent **and** set `report: true`; then signed, privacy-safe statements only |
+| **Shares** | signed, privacy-safe threat statements with the community graph — on by default, one command to turn off (`blackbox report --disable-sharing`) |
 
-_This README documents the mainline as of 2026-10-03 (commit `de670b5081`, the Community Graph Refine build)._
+_This README documents the mainline as of 2026-10-14. The file inventory below is generated from the code (`scripts/blackbox-readme-inventory.py`)._
 
 **Contents:** [How it works](#how-it-works) · [Install](#install) · [Commands](#commands) ·
 [What it catches](#what-it-catches) · [The three tiers of intelligence](#the-three-tiers-of-intelligence) ·
@@ -46,7 +46,7 @@ flowchart LR
     D -->|built-in heuristic| G[FLAG]
     D -->|clean| H[Allow]
     E & F & G --> I[Record locally<br/>dashboard + audit trail]
-    G -->|opted in| J[Share a signed report<br/>to the community graph]
+    G -->|sharing on| J[Share a signed report<br/>to the community graph]
 ```
 
 | Step | What happens | Where |
@@ -56,7 +56,7 @@ flowchart LR
 | **Check** | The identifier is looked up in the compiled ruleset: verified rules, community rules, built-in heuristics | `detection/`, `ruleset/` |
 | **Respond** | Audit mode records. Block mode stops verified threats at or above `block_severity`, plus your protected paths and secret exfiltration | `guard/hooks.py` |
 | **Record** | Every finding is written to the local audit trail and shown live in the dashboard | `audit/`, `dashboard/` |
-| **Share** | If you opted in, a signed privacy-safe statement goes to the community graph | `community/` |
+| **Share** | Unless you turned sharing off, a signed privacy-safe statement goes to the community graph | `community/` |
 
 Everything is local and offline on the hot path, in microseconds. A Blackbox fault never breaks the
 agent: every boundary fails open.
@@ -157,16 +157,17 @@ bash blackbox-install.sh
 | `blackbox attach` / `detach` | protect every local agent at once / turn it off |
 | `blackbox setup-llm` | optional second-opinion LLM reviewer for prompt injection (flags only, verdicts stay local) |
 
-### Community graph (all opt-in; nothing leaves the machine until you consent)
+### Community graph (sharing is on by default)
 
 | Command | What it does |
 |---|---|
-| `blackbox report --consent` | read the reporter terms and record consent; then set `report: true` |
-| `blackbox report --withdraw-consent` | sharing stops on the next action; retractions still work |
+| `blackbox report --disable-sharing` | sharing stops on the next action; retractions still work |
+| `blackbox report --enable-sharing` | sharing back on |
+| `blackbox report --consent` | read the reporter terms |
 | `blackbox report --type ioc --ioc-type domain --value evil.example --context fetched-by-tool --severity high` | file a report by hand (same gates, signer and ledger as automatic sharing) |
 | `blackbox report --status` | every report you shared: outcome, current stage and reason |
 | `blackbox report --standing` | whether you are a trusted reporter yet, your progress toward it (confirmed reports of 5, days of 14), and a co-sighting estimate |
-| `blackbox report --retract IDENTIFIER` | withdraw your own report; allowed even with consent withdrawn |
+| `blackbox report --retract IDENTIFIER` | withdraw your own report; allowed even with sharing off |
 | `blackbox report --false-positive IDENTIFIER --reason tolerable` | dispute a community threat (closed reasons: `internal-mirror`, `unreachable`, `tolerable`, `fixed`, `wrong`) |
 | `blackbox report --export FILE` | key backup, share ledger, consent record, keep-alive memory, retry queue, sighting tally |
 | `blackbox report --erase-identity --confirm` | erase the signing key and every local share record |
@@ -234,7 +235,7 @@ In the default audit mode every one is flagged and logged, nothing is stopped. S
 | Category | Identifier shape | Example | In block mode |
 |---|---|---|---|
 | Malicious or vulnerable dependency | `dep:<ecosystem>:<name>@<version>` | `dep:npm:event-stream@3.3.6` | verified **malware** blocks; a vulnerability never blocks |
-| Prompt injection | `injection:<pattern hash>` | `injection:a202ee6e402bb4a0ae16157a` | verified rules block |
+| Prompt injection | `injection:<pattern hash>` | `injection:2146bcb99d8ef90a53e99b08` | verified rules block |
 | Dangerous command | `escalation:<tool>:<arg shape>` | `escalation:terminal:remote-script-pipe` | verified rules block |
 | Sensitive file access | `fileaccess:<tool>:<category>` | `fileaccess:read_file:ssh-private-key` | verified rules block |
 | Suspicious skill | `skill:<name>@<version>` (registry) · `skill:artifact:<sha256>:<shape>` (local) | `skill:sneaky-skill@1.0.0` | verified rules block |
@@ -259,7 +260,7 @@ medium, alert-only risk.
 | Tier | Who writes it | Where it lives | Enforcement | Shown as |
 |---|---|---|---|---|
 | **Verified** | Umanitek's curator only | the verified graph (`context_graph_id`), DKG verifiable memory | FLAG, and BLOCK in block mode | Verifiable |
-| **Community** | every protected node that opted in, under its own signature | the community graph (`community_graph_id`), DKG shared working memory | FLAG only, never block | Community |
+| **Community** | every protected node with sharing on, under its own signature | the community graph (`community_graph_id`), DKG shared working memory | FLAG only, never block | Community |
 | **Local** | this machine (heuristics, protected paths, secret exposure) | the local audit trail | FLAG; protected paths and secret exfiltration BLOCK in block mode | Local |
 
 Threats should not have to be rediscovered one agent at a time: a verified rule protects every node
@@ -282,7 +283,7 @@ sequenceDiagram
     participant NB as B's DKG node
     participant B as Agent B (Blackbox)
     A->>A: finding → closed-schema report (no prompt, path or content)
-    A->>A: gates: consent · source · severity · schema · identity
+    A->>A: gates: sharing on · source · severity · schema · identity
     A->>A: sign (Ed25519, reporter key on this machine)
     A->>NA: write + seal + share to shared working memory
     NA-->>NB: DKG replication (seconds)
@@ -448,7 +449,7 @@ voice. A failed read keeps the last good state instead of wiping the tier.
 | Retry queue | built in | a refused share is retried with backoff (a fresh node is refused for minutes on mainnet) |
 | Author budget | built in | caps what one signer can add per day on the reader's side |
 | Allowlist and warninglist | shipped; local additions in `$BLACKBOX_HOME/allowlist.json` | holds reports that name an allowlisted domain or a popular package wholesale; supports reports of look-alike names |
-| Daily cap | `daily_report_limit` (20) | bounds outbound reports; never "no cap" |
+| Daily cap | `daily_report_limit` (100) | bounds outbound reports; never "no cap" |
 | Shadow mode | `community_shadow: false` | computes stages exactly but enforces only MONITOR, logging what would have flagged |
 
 ### Finding the graph
@@ -477,7 +478,7 @@ flowchart TB
             GU --> DE[detection<br/>pure detectors]
             DE --> RU[(ruleset<br/>compiled lookups)]
             GU --> AU[(audit<br/>local logs)]
-            GU -->|opted in| CO[community<br/>gate, sign, share]
+            GU -->|sharing on| CO[community<br/>gate, sign, share]
         end
         DA[dashboard<br/>127.0.0.1:9700] --> AU
         DA --> RU
@@ -486,7 +487,7 @@ flowchart TB
         SY[sync<br/>keeps the node current] --> NO
     end
     VG[Verified graph<br/>Umanitek's curator writes] -->|syncs down, read only| NO
-    NO <-->|signed statements| CG[Community graph<br/>every opted-in node writes]
+    NO <-->|signed statements| CG[Community graph<br/>every sharing node writes]
 ```
 
 Two graphs live on one isolated local DKG node, so Blackbox never replaces or modifies another DKG
@@ -495,25 +496,26 @@ installation.
 | Graph | Config key | DKG memory tier | Who writes | Power |
 |---|---|---|---|---|
 | Verified | `context_graph_id` | verifiable memory | Umanitek's curator only | may block |
-| Community | `community_graph_id` | shared working memory | every opted-in node, signed | flags only |
+| Community | `community_graph_id` | shared working memory | every sharing node, signed | flags only |
 
-**Modules** (`plugins/blackbox/`, twelve feature modules and one kernel)
+**Modules** (`plugins/blackbox/`, thirteen feature modules and one kernel)
 
 | Module | Owns | May depend on |
 |---|---|---|
-| `guard` | the five Hermes hooks, the flag/block decision, automatic sharing, the kill-list check | `kernel`, `attach`, `audit`, `community`, `detection`, `ruleset`, `killlist`, `overrides` |
-| `detection` | pure detectors, action parsing, content scanners, OSV lookups, the optional LLM reviewer | `kernel`, `attach` |
+| `guard` | the five Hermes hooks, the flag/block decision, automatic sharing, the kill-list check | `kernel`, `attach`, `audit`, `community`, `detection`, `ruleset`, `killlist`, `overrides`, `shields` |
+| `detection` | pure detectors, action parsing, content scanners, protected paths, wallet and token-approval checks, OSV lookups, the optional LLM reviewer | `kernel`, `attach` |
+| `shields` | opt-in protection packs: the shield contract and pack loader; Trader Shield's wallets, browser folders and setting | `kernel`, `detection`, `audit` |
 | `ruleset` | compiling verified, community and curator tiers into O(1) lookups; refresh; the pulse | `kernel`, `community`, `killlist` |
 | `community` | report schema, builder, signer, consent, share gate, stages, statements, keep-alive, retry, reputation, allowlist, shadow, membership, `blackbox report` | `kernel`, `audit`, `detection` |
 | `sync` | the managed DKG node and the verified-graph catch-up; `blackbox sync` | `kernel`, `ruleset`, `community` |
 | `audit` | local findings and activity logs, the share ledger, the private audit record | `kernel` |
-| `dashboard` | the loopback web UI and its API | `kernel`, `attach`, `audit`, `community`, `ruleset`, `sync` |
+| `dashboard` | the loopback web UI and its API | `kernel`, `attach`, `audit`, `community`, `detection`, `ruleset`, `sync`, `shields` |
 | `attach` | finding and wiring Hermes homes and OpenClaw workspaces | `kernel` |
 | `overrides` | the local release valve, `blackbox rules` | `kernel` |
 | `killlist` | the curators' signed kill list for skills and MCP servers | `kernel`, `detection` |
 | `curate` | the curator node's tooling | `kernel`, `audit`, `community`, `detection`, `killlist` |
 | `chat` | `blackbox chat` | `kernel`, `attach` |
-| `kernel` | config, constants and ontology IRIs, the DKG client, signing, redaction, threat identifiers, identity | nothing |
+| `kernel` | config, constants and ontology IRIs, the DKG client, signing, redaction, wallet-secret recognition, credentials through Hermes, threat identifiers, identity | nothing |
 
 The map is `plugins/blackbox/ARCHITECTURE.md`. Three guards in the test suite keep it true: the map
 matches the disk, imports point one way (modules to kernel, never the reverse), and file and function
@@ -532,14 +534,14 @@ agent-blackbox/
 │
 │  ◆ = Agent Blackbox (the product)        ○ = inherited Hermes host runtime
 │
-├── ◆ plugins/blackbox/                 the product: Python plugin, 155 files, 27,096 lines
-├── ◆ integrations/openclaw/            the OpenClaw bridge: TypeScript, 16 source files, 4,938 lines
+├── ◆ plugins/blackbox/                 the product: Python plugin, 326 files, 54,526 lines
+├── ◆ integrations/openclaw/            the OpenClaw bridge: TypeScript, 21 source files, 5,408 lines
 ├── ◆ scripts/blackbox-install.sh       what `curl blackbox.umanitek.ai | bash` runs
 ├── ◆ scripts/blackbox-install.ps1      the same installer for Windows
 ├── ◆ scripts/blackbox-*                node store launcher, runtime fingerprint, curator helpers
 ├── ◆ scripts/sync_blackbox_plugin.py   refresh the installed plugin copy after editing the source
-├── ◆ tests/plugins/test_blackbox_*.py  66 test files
-├── ◆ tests/test_blackbox_*.py          3 test files: installer and dashboard chat
+├── ◆ tests/plugins/test_blackbox_*.py  166 test files
+├── ◆ tests/test_blackbox_*.py          7 test files: installers and dashboard chat
 ├── ◆ tests/parity/                     fixtures that hold Python and TypeScript to the same output
 ├── ◆ docs/  legal/                     README images, terms of service, privacy policy
 ├── ◆ README.md  .gitleaksignore        this file, reviewed secret-scan exceptions
@@ -564,6 +566,12 @@ plugins/blackbox/
 │
 ├── guard/               ① WATCH     the hooks: every action passes here first
 ├── detection/           ② CHECK     name the action, match it against the ruleset
+│   ├── paths/                       protected paths, shell file arguments, the keychain
+│   ├── transactions/                token approvals, permits, calldata, chains
+│   ├── secrets_handled/             secrets read, exposed or sent off the machine
+│   └── reviewer_setup/              `blackbox setup-llm`
+├── shields/             opt-in protection packs
+│   └── trader/                      Trader Shield: its setting, wallet packs, browser roots, detectors
 ├── ruleset/             ②           the compiled lookups detection reads
 ├── audit/               ③ RECORD    local logs, share ledger
 ├── community/           ④ SHARE     build, sign, send, read, verify, stage
@@ -591,29 +599,37 @@ plugins/blackbox/
 │
 ├── kernel/              shared by all, depends on nothing
 │   ├── signing/                     the one signed envelope, key manifests, the two authorities, pinned roots
+│   ├── crypto_secrets/              seed phrases, wallet keys, exchange keys, known exchange routers
+│   ├── host_secrets/                credentials read only through Hermes
+│   ├── bounded_files/               small settings files read safely on the hot path
+│   ├── browser_boundary/            Host/Origin checks and the change token for the web apps
+│   ├── store/                       read-only client for the node's local triple store
 │   ├── health/                      operator alarms
 │   └── public_suffix/               vendored Public Suffix List
 │
 └── docs/                reporter terms, impact assessment, controller map
 ```
 
+<!-- blackbox-inventory:start -->
+
 ### Inside the plugin: module sizes
 
-193 Python files, 31,810 lines, measured on branch `feat/community-curation` on 2026-10-03.
+326 Python files, 54,526 lines, counted from the code on 2026-10-14 (`scripts/blackbox-readme-inventory.py`).
 
 | Module | Files | Lines | Share of the code |
 |---|---:|---:|---|
-| `community/` | 59 | 8,553 | `████████████████████` |
-| `curate/` | 37 | 4,549 | `███████████` |
-| `kernel/` | 24 | 4,469 | `██████████` |
-| `dashboard/` | 9 | 2,828 | `███████` |
-| `ruleset/` | 15 | 2,573 | `██████` |
-| `detection/` | 12 | 2,368 | `██████` |
-| `sync/` | 5 | 2,082 | `█████` |
-| `attach/` | 8 | 1,238 | `███` |
-| `audit/` | 7 | 1,185 | `███` |
-| `guard/` | 5 | 770 | `██` |
-| `killlist/` | 5 | 489 | `█` |
+| `curate/` | 83 | 13,834 | `████████████████████` |
+| `community/` | 68 | 10,188 | `███████████████` |
+| `kernel/` | 41 | 7,179 | `██████████` |
+| `ruleset/` | 29 | 5,182 | `███████` |
+| `detection/` | 33 | 4,634 | `███████` |
+| `dashboard/` | 18 | 3,910 | `██████` |
+| `sync/` | 11 | 2,789 | `████` |
+| `shields/` | 9 | 2,013 | `███` |
+| `audit/` | 8 | 1,396 | `██` |
+| `attach/` | 8 | 1,238 | `██` |
+| `guard/` | 6 | 924 | `█` |
+| `killlist/` | 5 | 504 | `█` |
 | `chat/` | 2 | 287 | `█` |
 | `overrides/` | 3 | 184 | `█` |
 
@@ -622,150 +638,219 @@ plugins/blackbox/
 Click a module to open its file list.
 
 <details>
-<summary><b><code>guard/</code></b> · 5 files · 770 lines · The hooks. Every tool call and model request passes here first.</summary>
+<summary><b><code>guard/</code></b> · 6 files · 924 lines · The hooks. Every tool call and model request passes here first.</summary>
 
 | File | What it does |
 |---|---|
-| `__init__.py` | Guard: the CHECK hot path: intercept every action the agent is about to take |
+| `__init__.py` | Guard — the CHECK hot path: intercept every action the agent is about to take |
 | `background.py` | Background work the hooks start but never wait for |
-| `hooks.py` | The five Hermes hook entry points: every tool call and model request passes here |
+| `hooks.py` | The five Hermes hook entry points — every tool call and model request passes here |
+| `injection_sites.py` | The site a verified prompt injection was found on, as its own finding (threat-profiles D8) |
 | `reporting.py` | What happens to findings once detection fires: filter, record, share |
 | `session_context.py` | Bounded per-session conversation memory used as finding context |
 
 </details>
 
 <details>
-<summary><b><code>detection/</code></b> · 12 files · 2,368 lines · Is this action a threat? Pure functions, no I/O on the hot path.</summary>
+<summary><b><code>detection/</code></b> · 33 files · 4,634 lines · Is this action a threat? Pure functions, no I/O on the hot path.</summary>
 
 | File | What it does |
 |---|---|
-| `__init__.py` | Detection: the CHECK hot path: is this tool call / model request a threat? |
+| `__init__.py` | Detection — the CHECK hot path: is this tool call / model request a threat? |
 | `action_parsing.py` | Action parsing: what a tool call DOES, extracted from its arguments |
+| `app_wallets.py` | Wallets that live in an app's own folder — desktop wallets and the Solana command line |
 | `content_scanners.py` | Content scanners: what is IN the text an agent is about to act on |
-| `detectors.py` | Pure, testable matchers over the compiled `Ruleset` |
+| `detectors.py` | Pure, testable matcher over a :class:`~plugins.blackbox.ruleset.Ruleset` |
 | `finding.py` | The detection result type, shared by every detector |
-| `injection_detection.py` | Prompt-injection detection: graph patterns, built-in heuristics, and the text a tool call is scanned as |
-| `ioc_detection.py` | Indicator-of-compromise detection: known-bad domains, URLs, IPs, hashes, wallets and contracts named in a tool call's arguments, and where each was met |
+| `firefox_extensions.py` | Which Firefox add-on owns an extension storage folder — read from Firefox's own map |
+| `injection_detection.py` | Prompt-injection detection: graph patterns, built-in heuristics, and the |
+| `ioc_detection.py` | Indicator-of-compromise detection: known-bad domains, URLs, IPs, hashes, |
 | `osv.py` | Client-side OSV vulnerability lookup for dependency auto-discovery |
+| `paths/__init__.py` | Which paths an action touches, and which of them the operator protects |
+| `paths/keychain.py` | The macOS keychain: saved passwords and the browsers' master keys |
+| `paths/protected.py` | The user's protected paths: a file an agent must not touch unless the operator says so |
+| `paths/shell_files.py` | Which files a shell command reads, copies or packs up — the shell channel's file view |
 | `reviewer.py` | Optional LLM reviewer for prompt-injection (opt-in, fail-open) |
-| `reviewer_setup.py` | `blackbox setup-llm`: configure the opt-in LLM second-opinion reviewer |
+| `reviewer_setup/__init__.py` | ``blackbox setup-llm`` — configure the opt-in LLM second-opinion reviewer |
+| `reviewer_setup/discovery.py` | Find an LLM reviewer key the operator already gave Hermes: its model config + a key variable |
+| `secrets_handled/__init__.py` | Secrets an agent handles or sends (:mod:`.exposure`) |
+| `secrets_handled/exposure.py` | Secrets an agent handles or sends: API keys, wallet secrets, exchange keys |
+| `secrets_handled/sending.py` | How a secret leaves the machine: commands that send, web addresses, network-calling scripts |
 | `shell_shapes.py` | Escalation shapes: turn a shell tool call into a stable arg-shape signature |
-| `skill_detection.py` | Skill detection: known-bad skill versions from the graph, and dangerous code or over-broad permissions in a skill being installed or modified |
+| `skill_detection.py` | Skill detection: known-bad skill versions from the graph, and dangerous |
+| `transactions/__init__.py` | What a transaction the agent is about to send would do (:mod:`.approvals`, which |
+| `transactions/amounts.py` | How much an approval gives away: "unlimited" in every spelling an agent writes it |
+| `transactions/approval_calls.py` | What an approval is, and the contract calls that make one — shared by every form parser |
+| `transactions/approval_forms.py` | Every form a token approval is written in — the parsing half of :mod:`.approvals` |
+| `transactions/approvals.py` | Token approvals: the signature a wallet drainer actually needs |
+| `transactions/calldata.py` | Approvals written as raw calldata: a selector from :data:`.approval_calls.APPROVAL_CALLS` |
+| `transactions/cast_forms.py` | Approvals written as command-line tools write them: Foundry's ``cast`` and ``spl-token`` |
+| `transactions/chains.py` | Which chain a transaction is for, as far as the call itself says |
+| `transactions/permits.py` | Approvals by signature: EIP-712 typed data whose primary type is a permit |
+| `transactions/script_forms.py` | Approvals written as script code: ethers, web3.py and viem |
+| `wallet_files.py` | Crypto wallet key stores an agent must never read — browser wallets (MetaMask, |
 
 </details>
 
 <details>
-<summary><b><code>ruleset/</code></b> · 15 files · 2,573 lines · Compiles graph rows into O(1) lookups and keeps them fresh.</summary>
+<summary><b><code>ruleset/</code></b> · 29 files · 5,182 lines · Compiles graph rows into O(1) lookups and keeps them fresh.</summary>
 
 | File | What it does |
 |---|---|
-| `__init__.py` | Ruleset: the locally compiled threat ruleset detection matches against |
-| `anchors.py` | Legacy proof anchors: backward compatibility for proof-era VM data |
-| `community_tier.py` | The community tier of a ruleset: merging community reports in, and making the matchable ones O(1)-lookup rules |
+| `__init__.py` | Ruleset — the locally compiled threat ruleset detection matches against |
+| `anchors.py` | Legacy anchors — what the verified graph held before curator envelopes |
+| `community_tier.py` | The community tier of a ruleset: merging community reports in, and making |
 | `compiler.py` | The compiled ruleset and how rows become one |
-| `curator_tier.py` | The curator overlay on the verified ruleset: revocations |
-| `disk_cache.py` | The on-disk ruleset cache (`ruleset.json`) and its lock-file path |
-| `errors.py` | Ruleset refresh outcomes that callers branch on |
+| `curator_tier.py` | The curator overlay on the verified ruleset — revocations (Refine R2) |
+| `disk_cache.py` | The on-disk ruleset cache (``ruleset.json``) and its lock-file path |
+| `errors.py` | Ruleset refresh outcomes callers branch on (raised by :mod:`.refresh_cycle`) |
 | `fetching.py` | Paged reads of the verified graph from the local DKG node |
 | `graph_queries.py` | SPARQL builders for reading the VERIFIED threat graph |
+| `live/__init__.py` | Live verified lookups — the graph is the rule store (DKG-lookup build) |
+| `live/answering.py` | What a ruleset generation ANSWERS at check time — the live side of :class:`Ruleset` |
+| `live/asset_facts.py` | Per-asset facts — counts and package spellings — read ONCE per verified asset |
+| `live/browse.py` | Browsing the live tiers: one page of verified dependency / IOC threats from the store |
+| `live/corrections.py` | Which verified-graph corrections a reader honours (trust-and-threat-lab R3) |
+| `live/envelope_tier.py` | An asset's tier decided ONCE from its rows' signed promotion envelopes (trust-and-threat-lab R2, §03.4) |
+| `live/fallback_index.py` | The optional on-disk fallback for live lookups — OFF by default, last resort |
+| `live/health.py` | What the live lookups could and could not answer — the record every surface reads |
+| `live/lookup.py` | Exact verified-rule lookups against the node's local store |
+| `live/scope.py` | The verified scope: what a live lookup is allowed to believe |
 | `locks.py` | Cross-process refresh locking (fcntl on POSIX, msvcrt on Windows) |
 | `memory_cache.py` | The process's in-memory ruleset generation, kept in step with the disk cache |
-| `pulse_beat.py` | The community pulse beat: between full refreshes, retry refused shares and re-apply the community tier when the community graph changed |
-| `refresh_cycle.py` | Refreshing the compiled ruleset: fetch to compile to merge community tier to cache |
-| `row_adapters.py` | Row adapters: one verified-graph result row to one rule / graph entry |
-| `safe_regex.py` | Compile a scanning regex only if it cannot blow up (ReDoS hardening) |
+| `partitions/__init__.py` | Verified partitions: the row builder, refresh progress, download totals |
+| `partitions/growth_watch.py` | Notice, within seconds, that the node holds a verified asset the last refresh did not read |
+| `partitions/reader.py` | Verified-graph progress and download totals for status, health and the meter |
+| `partitions/rows.py` | One verified partition's triples rebuilt into threat rows (Builder) |
+| `pulse_beat.py` | The community pulse beat (R16): between full refreshes, retry refused shares |
+| `refresh_cycle.py` | Refreshing the compiled ruleset: fetch -> compile -> merge community tier -> cache |
+| `row_adapters.py` | Row adapters: one verified-graph result row -> one rule / graph entry |
+| `safe_regex.py` | Compile a scanning regex only if it cannot blow up (G6 — ReDoS hardening) |
 
 </details>
 
 <details>
-<summary><b><code>community/</code></b> · 59 files · 8,553 lines · Everything about the community graph: write, sign, read, verify, stage.</summary>
+<summary><b><code>shields/</code></b> · 9 files · 2,013 lines · Opt-in protection packs; Trader Shield's wallets and browser folders as data.</summary>
 
 | File | What it does |
 |---|---|
-| `__init__.py` | Community: the shared community threat graph |
+| `__init__.py` | Shields — named, opt-in protection packs; this is the registry and the only public entry |
+| `contract.py` | What every shield provides, and the typed records it answers with |
+| `packs.py` | One loader for any shield's pack folders and its ``browsers.json`` (validate, then use) |
+| `trader/__init__.py` | Trader Shield — opt-in protection for people who hold crypto: wallet key stores, seed |
+| `trader/detectors/__init__.py` | Trader Shield's detector table: which pack kinds it serves and how each kind's block is checked |
+| `trader/detectors/app_folder.py` | Trader Shield's ``desktop-app`` and ``cli-key-file`` kinds: wallets that live in an app's own folder |
+| `trader/detectors/browser_extension.py` | Trader Shield's ``browser-extension`` kind: a browser wallet's key store, found in a path |
+| `trader/detectors/firefox_map.py` | Which Firefox add-on owns an extension storage folder — read from Firefox's own map (Trader Shield) |
+| `trader/mode.py` | Trader Shield's setting: an opt-in mode, the wallets the operator chose, their own addresses |
+
+</details>
+
+<details>
+<summary><b><code>community/</code></b> · 68 files · 10,188 lines · Everything about the community graph: write, sign, read, verify, stage.</summary>
+
+| File | What it does |
+|---|---|
+| `__init__.py` | Community — the shared community threat graph |
 | `aggregation.py` | Aggregating verified community reports into community rules |
-| `consent.py` | The sharing consent record |
-| `digest.py` | The seen-again counter: a weekly sighting digest per reporter |
-| `graph_stats.py` | Graph-wide statistics over the community graph: the dashboard's read model |
-| `membership.py` | Community-graph membership: dial the owner, subscribe, join at most once |
-| `pulse.py` | The community pulse: did the community graph change between full refreshes? |
+| `allowlist/__init__.py` | Allowlist, warninglist and canaries (Refine R9, plan §06) |
+| `allowlist/canaries.py` | Canaries — planted identifiers that only a scraper or a liar would report (R9) |
+| `allowlist/tables.py` | The allowlist and warninglist tables (R9) — immutable after load |
+| `allowlist/verdicts.py` | The allowlist verdict on one threat identifier (R9, plan §06, look-alike rule inverted) |
+| `consent.py` | Whether this machine may share with the community graph — the ONE gate |
+| `digest.py` | The seen-again counter — a weekly sighting digest per reporter (Refine R2b) |
+| `graph_stats.py` | Graph-wide statistics over the community graph — the dashboard's read model |
+| `keep_alive/__init__.py` | Keep-alive (Refine R5): each author keeps its own live reports on the network |
+| `keep_alive/epochs.py` | Epoch naming for keep-alive copies (R5) — pure |
+| `keep_alive/publisher.py` | The keep-alive publish step and the two hooks that feed it (R5) |
+| `keep_alive/store.py` | The live-reports memory — what this node must keep alive on the network (R5) |
+| `membership.py` | Community-graph membership — subscribe and join at most once, on the node's word |
+| `pool/__init__.py` | Pool — the confirmed pool and how it is handed on (Community Curation C8) |
+| `pool/bundle.py` | The export bundle — the confirmed pool as one file a stranger can check (Community Curation C8, plan §08) |
+| `pool/confirmed.py` | The confirmed pool — a VIEW over signed statements (Community Curation C8; plan §05, §08) |
+| `pulse.py` | The community pulse — "did the community graph change?" between full refreshes (R16, KI-202) |
 | `reader.py` | Reading the community graph: fetch, verify, and the three-state read |
-| `report_builder.py` | Report quads: a finding to the privacy-safe statements shared to the community graph |
-| `report_schema.py` | Validated community report records: an unvalidated report cannot be built |
-| `report_signer.py` | Signing community statements: proof of who sent a report or dispute |
-| `share_retry.py` | Retrying refused community shares, so a new node's first reports are not lost |
-| `sharing.py` | The share path: which findings may leave the machine, and sending them |
-| `stages.py` | Local stages for community threats, from the counted-author list |
-| `verification.py` | Verifying community reports: the only door from a raw row to a counted report |
-| `allowlist/__init__.py` | Allowlist, warninglist and canaries |
-| `allowlist/canaries.py` | Canaries: planted identifiers that only a scraper or a liar would report |
-| `allowlist/tables.py` | The allowlist and warninglist tables, immutable after load |
-| `allowlist/verdicts.py` | The allowlist verdict on one threat identifier, including the inverted look-alike rule |
-| `keep_alive/__init__.py` | Keep-alive: each author keeps its own live reports on the network |
-| `keep_alive/epochs.py` | Epoch naming for keep-alive copies (pure) |
-| `keep_alive/publisher.py` | The keep-alive publish step and the two hooks that feed it |
-| `keep_alive/store.py` | The live-reports memory: what this node must keep alive on the network |
-| `pool/__init__.py` | Pool: the confirmed pool and how it is handed on |
-| `pool/bundle.py` | The export bundle: the confirmed pool as one file a stranger can check offline |
-| `pool/confirmed.py` | The confirmed pool: a view over signed statements |
+| `report_builder.py` | Report quads: a finding -> the privacy-safe statements shared to the community graph |
 | `report_cli/__init__.py` | The reporter's command line: `blackbox report` and its verbs |
-| `report_cli/report_command.py` | `blackbox report`: file, dispute and review this node's community reports |
-| `report_cli/report_rights.py` | The operator's rights over this node's reporter identity |
-| `report_cli/report_tracking.py` | Lifecycle TRACK for a reporter: what happened to each report, and its standing |
-| `report_cli/statement_verbs.py` | `blackbox report --false-positive` and `--retract`, and the send-and-record step every manual statement shares |
-| `report_cli/submission_gate.py` | The gates a manual `blackbox report` passes before anything is sent |
-| `reputation/__init__.py` | Reputation: automated graduation, hardened novelty, partners, collusion |
-| `reputation/bands.py` | Reputation bands and a reporter's standing |
-| `reputation/collusion.py` | Cluster collapse and the collusion DETECTOR |
-| `reputation/graduation.py` | Automated graduation and demotion to counted-author statements |
-| `reputation/ledger.py` | The curator-PRIVATE reputation ledger |
-| `reputation/novelty.py` | Hardened novelty credit |
-| `reputation/partners.py` | PARTNER organisations: grants, partner reputation, suspension, sponsorship |
-| `reputation/scoring.py` | Beta reputation with forgetting, graduation and demotion rules |
-| `shadow/__init__.py` | Shadow phase: stages computed and logged on the real network, only MONITOR enforced |
-| `shadow/metrics.py` | Shadow-phase metrics: measured, never guessed |
+| `report_cli/report_command.py` | ``blackbox report`` — file, dispute and review this node's community reports |
+| `report_cli/report_rights.py` | The operator's rights over this node's reporter identity (Refine R1) |
+| `report_cli/report_tracking.py` | Lifecycle TRACK for a reporter: what happened to each report, and its standing (Refine R10) |
+| `report_cli/statement_verbs.py` | Statements about reports — `blackbox report --false-positive` and |
+| `report_cli/submission_gate.py` | The gates a manual `blackbox report` passes before anything is sent (R13, LES-016) |
+| `report_schema.py` | Validated community report records — an unvalidated report cannot be built (Refine R1) |
+| `report_signer.py` | Signing community statements — proof of who sent a report or dispute (R0b) |
+| `reputation/__init__.py` | Reputation (Refine R4): automated graduation, hardened novelty, partners, collusion |
+| `reputation/bands.py` | Reputation bands and a reporter's standing (Refine R4, plan §05 / §10) |
+| `reputation/collusion.py` | Cluster collapse and the collusion DETECTOR (R4, plan §05 COLLUSION) |
+| `reputation/graduation.py` | Automated graduation and demotion → counted-author statements (R4) |
+| `reputation/ledger.py` | The curator-PRIVATE reputation ledger (R4, plan §10 / §13 data protection) |
+| `reputation/novelty.py` | Hardened novelty credit (R4, plan §05 NOVELTY) |
+| `reputation/partners.py` | PARTNER organisations: grants, partner reputation, suspension, sponsorship (R4, plan §05) |
+| `reputation/scoring.py` | Beta reputation with forgetting, graduation and demotion rules (R4, plan §05) |
+| `reputation/sealed_index.py` | The ledger's index, sealed (Community Curation C11, KI-257) |
+| `shadow/__init__.py` | Shadow phase (Refine R15): stages computed and logged on the real network, only MONITOR enforced |
+| `shadow/metrics.py` | Shadow-phase metrics (Refine R15, plan §12) — measured, never guessed |
+| `share_retry.py` | Retrying refused community shares — a new node's first reports are not lost (R16, KI-202) |
+| `sharing.py` | The share path: which findings may leave the machine, and sending them |
+| `sighting/__init__.py` | What a report says about the sighting beside its evidence (threat-profiles, 2026-10-12) |
+| `sighting/classification.py` | What a threat goes after: goal, resource at risk, ATT&CK technique (threat-profiles §03.2) |
+| `sighting/fields.py` | The sighting a report carries beside its evidence (threat-profiles §03.2) |
+| `sighting/hosts.py` | The site a prompt injection was found on, as a reportable indicator (threat-profiles D8) |
+| `sighting/vocab.py` | The closed vocabularies a sighting is described with (threat-profiles §03.2) |
+| `stages.py` | Local stages for community threats, from the counted-author list (Refine R3) |
 | `statements/__init__.py` | Statements about reports and threats, and how readers honour them |
-| `statements/author_budget.py` | One per-author budget over ALL community statements, enforced by readers |
-| `statements/curator_statements.py` | Curator statements on the wire: build, sign, and parse |
-| `statements/curator_view.py` | What the curator has said, as this node can verify it |
-| `statements/digests.py` | Reading sighting digests and estimating heat |
-| `statements/disputes.py` | Disputes (false-positive statements) and how readers count them |
-| `statements/lifetimes.py` | How long a community statement lives, per threat type |
-| `statements/retractions.py` | Retractions: a reporter withdrawing its own report |
-| `statements/tombstones.py` | Pending tombstones: withdrawals whose target this reader has not seen |
-| `trust/__init__.py` | Trust: everything a reader does to know whom to trust |
-| `trust/authority_read.py` | Reading what the curators of both authorities have said, from the graphs |
-| `trust/bounded_read.py` | Looking trust statements up by identifier in a graph anyone can write |
-| `trust/combine.py` | Two authorities' views in, the one view readers act on out |
-| `trust/manifests.py` | Which key manifest a reader acts on: time-lock, conflicts |
-| `trust/panel.py` | The trust layer as one read model, for the dashboard and `blackbox status` |
-| `trust/raising_budget.py` | The reader's daily cap on what the community curators can raise |
-| `trust/trust_store.py` | The reader's own copy of the trust statements it verified |
+| `statements/author_budget.py` | One per-author budget over ALL community statements, enforced by readers (Refine R2) |
+| `statements/curator_statements.py` | Curator statements on the wire — build, sign, and parse (Refine R2) |
+| `statements/curator_view.py` | What the curator has said, as this node can verify it (Refine R2) |
+| `statements/digests.py` | Reading sighting digests and estimating heat (Refine R2b) |
+| `statements/disputes.py` | Disputes (``g:FalsePositive``) — the reader the plugin never had (Refine R2, KI-092) |
+| `statements/lifetimes.py` | How long a community statement lives, per threat type (plan §03 table) |
+| `statements/retractions.py` | Retractions — a reporter withdrawing its own report (Refine R1, lifecycle RETRACT) |
+| `statements/tombstones.py` | Pending tombstones — withdrawals whose target this reader has not seen (Refine R2) |
+| `trust/__init__.py` | Trust — everything a READER does to know whom to trust |
+| `trust/active_graph.py` | Which verified graph is active — the configured one or its successor (T2) |
+| `trust/authority_read.py` | Reading what the curators have said, from the graphs (Refine R2, Community Curation) |
+| `trust/bounded_read.py` | Looking trust statements up in a graph anyone can write (Community Curation C3) |
+| `trust/combine.py` | Two authorities' views in, the one view readers act on out (Community Curation) |
+| `trust/manifest_history.py` | The verified authority's manifest HISTORY, and which list was in force on a day (trust-and-threat-lab §03.4, F-050) |
+| `trust/manifests.py` | Which key manifest a reader acts on (reader policy, Refine R7b) |
+| `trust/migrations.py` | Which graph migration a reader follows (reader policy, T2) |
+| `trust/panel.py` | The trust layer as one read model (Community Curation C10, plan §11 TRACK) |
+| `trust/raising_budget.py` | The reader's daily cap on what the community curators can RAISE (Community Curation C3) |
+| `trust/trust_store.py` | The reader's own copy of the trust statements it verified (Community Curation C3) |
+| `verification.py` | Verifying community reports — the only door from a raw row to a counted report (R0c) |
 
 </details>
 
 <details>
-<summary><b><code>sync/</code></b> · 5 files · 2,082 lines · Runs the local DKG node and catches up the verified graph.</summary>
+<summary><b><code>sync/</code></b> · 11 files · 2,789 lines · Runs the local DKG node and catches up the verified graph.</summary>
 
 | File | What it does |
 |---|---|
-| `__init__.py` | Sync: keeping this node's copy of the verified threat graph current |
-| `command.py` | `blackbox sync`: bring this node's copy of the verified graph up to date |
+| `__init__.py` | Sync — keeping this node's copy of the verified threat graph current |
+| `catchup_job.py` | Reading the node's durable catch-up job: denied, which job, and its status |
+| `command.py` | ``blackbox sync`` — bring this node's copy of the verified graph up to date |
 | `managed_node.py` | The managed local DKG node: its sync settings, process and restarts |
+| `native.py` | The native route for Umanitek's default public graph (DKG 10.0.21+) |
+| `node_process.py` | Which running process is this installation's managed DKG node |
+| `node_profile.py` | The managed DKG node's sync profile: which sync settings it should run with |
+| `process_limits.py` | The DKG node's process limits: settings it can only get from its environment |
 | `progress.py` | Read durable-sync progress emitted by the managed DKG daemon |
+| `side_subscriptions.py` | The graphs a sync keeps subscribed BESIDE the configured verified graph |
 | `state.py` | Cross-process status for the authoritative Blackbox graph transfer |
 
 </details>
 
 <details>
-<summary><b><code>audit/</code></b> · 7 files · 1,185 lines · What Blackbox saw, kept locally and redacted.</summary>
+<summary><b><code>audit/</code></b> · 8 files · 1,396 lines · What Blackbox saw, kept locally and redacted.</summary>
 
 | File | What it does |
 |---|---|
-| `__init__.py` | Audit: the RECORD flow: what Blackbox saw, kept locally and redacted |
+| `__init__.py` | Audit — the RECORD flow: what Blackbox saw, kept locally and redacted |
 | `activity.py` | The merged local activity timeline the dashboard shows |
 | `findings.py` | Recording and reading findings (what Blackbox flagged or blocked) |
-| `log_store.py` | The local JSONL log files under `$BLACKBOX_HOME` and their size cap |
+| `local_graph.py` | This machine's own private graph for the local audit record |
+| `log_store.py` | The local JSONL log files under ``$BLACKBOX_HOME`` and their size cap |
 | `private_ka.py` | The private working-memory audit record kept in the local DKG node |
 | `redaction.py` | Redaction for anything written to the local audit logs |
 | `share_ledger.py` | Outbound-report bookkeeping: the share ledger, per-threat cooldown, daily cap |
@@ -773,22 +858,28 @@ Click a module to open its file list.
 </details>
 
 <details>
-<summary><b><code>dashboard/</code></b> · 9 files · 2,828 lines · The loopback web UI and its API.</summary>
+<summary><b><code>dashboard/</code></b> · 18 files · 3,910 lines · The loopback web UI and its API.</summary>
 
 | File | What it does |
 |---|---|
-| `__init__.py` | Dashboard: the local web UI (FastAPI, loopback-only, 127.0.0.1:9700) |
-| `command.py` | `blackbox dashboard`: start the local dashboard (replacing a stale one on the port) |
-| `community_routes.py` | The dashboard's community endpoints: statistics, the reports board, statements |
-| `node_probe.py` | One probe of the DKG node for `GET /api/graph-status` (cached by the route's SWR wrapper) |
+| `__init__.py` | Dashboard — the local web UI (FastAPI, loopback-only, 127.0.0.1:9700) |
+| `command.py` | ``blackbox dashboard`` — start the local dashboard (replacing a stale one on the port) |
+| `community_routes.py` | The dashboard's community endpoints — statistics, the reports board, statements |
+| `graph_pages.py` | The dashboard's graph pages: how a tier's threats become one page |
+| `lifecycle.py` | Startup and shutdown hooks for the dashboard app, without FastAPI's deprecated ``on_event`` |
+| `network_sync.py` | The command line the dashboard runs for its verified-graph sync |
+| `node_probe.py` | The dashboard's probes of the local DKG node: is it answering, and how is its sync |
+| `protection/__init__.py` | The dashboard's wallet-protection panel: what Blackbox found to protect, and how (trader rules) |
+| `protection/events.py` | Trader Shield's full event report: every wallet event, with the session around it (local only) |
+| `pulse_driver.py` | The community pulse keeps beating while the dashboard runs, browser or not (KI-283) |
 | `safe_payloads.py` | Making community- and graph-derived values safe to serve (the dashboard's one sanitizer) |
-| `server.py` | Standalone Blackbox dashboard: a tiny FastAPI app bound to loopback |
-| `sync_labels.py` | Sync-state presentation for `GET /api/graph-status` (the `sync_progress` labels) |
-| `sync_timing.py` | When the dashboard's ruleset worker runs its first refresh |
-| `trust_routes.py` | The trust panel endpoint: who curates, who is trusted, what is confirmed |
-| `assets/` | Logo, icon and the two bundled fonts |
-| `static/index.html` | The whole dashboard UI: one page, no build step |
-| `static/vendor/` | Vendored force-graph library for the threat-graph view |
+| `server.py` | Standalone Blackbox dashboard — a tiny FastAPI app bound to loopback |
+| `shields_routes/__init__.py` | The dashboard's side of shields: what the settings routes add for every registered shield |
+| `sync_labels.py` | Sync-state presentation for ``GET /api/graph-status`` (the ``sync_progress`` labels) |
+| `sync_meter.py` | The dashboard's verified-sync meter — how much of Umanitek's verified threat |
+| `sync_timing.py` | When the dashboard's ruleset worker runs its first refresh (KI-205) |
+| `threat_detail_fields.py` | Predicate IRI -> the field name the dashboard's single-threat view shows it under |
+| `trust_routes.py` | The dashboard's trust panel endpoint (Community Curation C10) |
 
 </details>
 
@@ -797,12 +888,12 @@ Click a module to open its file list.
 
 | File | What it does |
 |---|---|
-| `__init__.py` | Attach: wire Blackbox protection into every agent on this machine |
-| `command.py` | `blackbox attach` and `blackbox detach`, and the report rows they print |
+| `__init__.py` | Attach — wire Blackbox protection into every agent on this machine |
+| `command.py` | ``blackbox attach`` / ``blackbox detach`` — and the report rows they print |
 | `hermes_homes.py` | Protecting Hermes agents: discover homes, enable/disable Blackbox in each |
 | `openclaw_bridge.py` | Protecting OpenClaw workspaces through the bundled JS bridge plugin |
 | `openclaw_discovery.py` | Finding OpenClaw workspaces and reading their config and version |
-| `openclaw_json5.py` | A minimal JSON5 to JSON converter for OpenClaw's config files |
+| `openclaw_json5.py` | A minimal JSON5 -> JSON converter for OpenClaw's config files |
 | `plugin_copy.py` | Copying the plugin into an agent home, and finding where it came from |
 | `sweep.py` | Attach / detach everything this machine has, in one call |
 
@@ -813,67 +904,113 @@ Click a module to open its file list.
 
 | File | What it does |
 |---|---|
-| `__init__.py` | Local overrides: the operator's release valve, reduction-only |
-| `cli.py` | `blackbox rules`: the operator's local release valve |
-| `store.py` | Local overrides: `blackbox rules unblock` |
+| `__init__.py` | Local overrides (Refine R7b): the operator's release valve, reduction-only |
+| `cli.py` | `blackbox rules` — the operator's local release valve (R7b) |
+| `store.py` | Local overrides — `blackbox rules unblock` (Refine R7b, plan §06 ASYMMETRIC SAFETY) |
 
 </details>
 
 <details>
-<summary><b><code>killlist/</code></b> · 5 files · 489 lines · Curator-signed disable or warn for installed skills and MCP servers.</summary>
+<summary><b><code>killlist/</code></b> · 5 files · 504 lines · Curator-signed disable or warn for installed skills and MCP servers.</summary>
 
 | File | What it does |
 |---|---|
-| `__init__.py` | Kill list: curator-signed DISABLE / WARN for installed skills and MCP servers |
-| `check.py` | Matching a tool call against the kill list, in the hook: microseconds, offline |
-| `gates.py` | Blast-radius gates and the last-good rule (pure) |
-| `statement.py` | The kill list on the wire: build, sign, parse |
-| `store.py` | The last-good kill list on disk: what the hook enforces |
+| `__init__.py` | Kill list (Refine R14, plan §06): curator-signed DISABLE / WARN for installed skills and MCP servers |
+| `check.py` | Matching a tool call against the kill list, in the hook (R14) — microseconds, offline |
+| `gates.py` | Blast-radius gates and last-good (R14, plan §06 KILL LIST) — pure |
+| `statement.py` | The kill list on the wire — build, sign, parse (Refine R14, plan §06 KILL LIST) |
+| `store.py` | The last-good kill list on disk (R14) — what the hook enforces |
 
 </details>
 
 <details>
-<summary><b><code>curate/</code></b> · 37 files · 4,549 lines · The curator node's tooling.</summary>
+<summary><b><code>curate/</code></b> · 83 files · 13,834 lines · The curator node's tooling.</summary>
 
 | File | What it does |
 |---|---|
-| `__init__.py` | `curate`: the curator node's tooling |
-| `catalog_import.py` | Threat-catalog import helpers, curator side; currently unused |
-| `commands.py` | `blackbox curate`: the curator's CLI |
-| `consent.py` | Consent for outward curator writes, made mechanical |
-| `context.py` | What every `blackbox curate` verb needs resolved once |
-| `dossier.py` | The evidence dossier and the promotion checklist |
-| `intake.py` | Intake: the curator node watches the community tier and notifies |
-| `keys.py` | The curator's keys and private working directory |
-| `node_ui_views.py` | Saved queries for the DKG node's own UI: the curator's read side |
-| `parser.py` | The `blackbox curate` argument parser: every verb and its options |
-| `promotion.py` | Promotion: a threat enters the verified tier |
-| `proposal.py` | Curator proposals and their two-key lifecycle |
-| `queue.py` | The curator's queue: the delta view and its lanes |
-| `transport.py` | Proposals travel between curator nodes by private point-to-point message |
-| `verbs.py` | The curator's write verbs: propose, approve, publish, nominate, manifest |
-| `handoff/__init__.py` | Hand-off: the valve between the confirmed pool and the verified graph's owner |
-| `handoff/commands.py` | `blackbox curate pool`, `export`, `verify-bundle`, and the dossier's confirmation line |
-| `handoff/live_pool.py` | The confirmed pool as this node sees it, ready to hand on |
-| `ladder/__init__.py` | Ladder: the reporter ladder runs itself |
-| `ladder/novelty_facts.py` | Gathering the facts the novelty rule judges |
-| `ladder/outcomes.py` | Crediting reporters from the public record |
-| `publishing/__init__.py` | Publishing: the last step of every curator verb |
-| `publishing/errors.py` | The error every curator verb raises when it refuses |
-| `publishing/publish.py` | Publishing an approved proposal: quorum check, consent, the write, the read-back |
-| `publishing/sequences.py` | Sequence numbers for curator statements |
-| `service/__init__.py` | Service: the curator node's own routine work |
-| `service/beat.py` | One beat of the curator service: the fixed order of steps |
-| `service/budget.py` | The service's own daily limit on what it signs |
-| `service/commands.py` | `blackbox curate policy` and `blackbox curate run` |
-| `service/evidence.py` | What this node establishes by itself before the service signs |
-| `service/inbox.py` | Which received proposals are a curator's, and which of its own are finished |
-| `service/policy.py` | The automation policy: what the service may sign on its own |
-| `service/policy_consent.py` | Standing consent to the automation policy, bound to its exact text |
-| `service/report.py` | What one beat did, and its working state |
-| `upkeep/__init__.py` | Upkeep: keeping an authority's word alive on the network |
-| `upkeep/heartbeat.py` | The curator heartbeat: this key is alive |
-| `upkeep/published.py` | What this curator node published and must keep alive |
+| `__init__.py` | ``curate`` — the curator node's tooling (Community Graph Refine, R6; Community Curation) |
+| `catalog_import.py` | Threat-catalog import helpers (curator side) — currently UNUSED |
+| `commands.py` | ``blackbox curate`` — the curator's CLI (Refine R6, curator tooling lite) |
+| `consent.py` | Consent for outward curator writes, made mechanical (Refine R6, plan §09) |
+| `console/__init__.py` | Console — the curator node's key console: a small web app over the existing ``curate`` verbs |
+| `console/app.py` | The key console web app and its three server-side gates (trust-and-threat-lab C2, §03.1) |
+| `console/commands.py` | ``blackbox curate console`` — run the key console (trust-and-threat-lab C3, §03.2) |
+| `console/metrics.py` | The pipeline's running numbers — one typed record for the console and the Slack monitor (trust-and-threat-lab C4, §03.4, F-035) |
+| `console/root_signer.py` | Sign ONE prepared manifest with root A, then discard the key (trust-and-threat-lab C1, §03.2) |
+| `console/root_store.py` | Root A at rest: the core root's private half, encrypted (trust-and-threat-lab C1, §03.1/§03.2) |
+| `console/roster.py` | The key console's roster decisions: join requests, the next key list, renewal (trust-and-threat-lab C3, §03.2) |
+| `console/routes.py` | The key console's routes: join requests, approve/decline, removal, renewal (trust-and-threat-lab C3, §03.2), |
+| `console/session.py` | Login sessions for the key console (trust-and-threat-lab C2, §03.1 gate 2) |
+| `context.py` | What every `blackbox curate` verb needs resolved once (Refine R6, Community Curation C4) |
+| `dossier.py` | The evidence dossier and the promotion checklist (Refine R6, plan §09) |
+| `handoff/__init__.py` | Hand-off — the valve between the community's confirmed pool and whoever owns the verified graph (Community Curation C8) |
+| `handoff/commands.py` | ``blackbox curate pool \| export \| verify-bundle`` and the dossier's confirmation line (Community Curation C8) |
+| `handoff/live_pool.py` | The confirmed pool as THIS node sees it, ready to hand on (Community Curation C8) |
+| `intake.py` | Intake — what reaches the curator: new community threats (Refine R6), alarms (trust-and-threat-lab W3) and public disputes (§03.3) |
+| `keys.py` | The curator's keys and private working directory (Refine R6) |
+| `lab/__init__.py` | Lab — the curator side of the threat lab: sends jobs to the lab and pulls back evidence |
+| `lab/commands.py` | ``blackbox curate lab`` — ask the threat lab about one threat, and see the lab |
+| `lab/controller.py` | LabController — the only code that talks to the lab (proposal §03.5, D28, F-024, F-034) |
+| `lab/evidence_schema.py` | The lab's evidence contract — one typed format, written by the lab runner, |
+| `lab/extractor.py` | The Evidence Extractor — raw lab output → typed :class:`Evidence` (proposal §03.5, F-015) |
+| `lab/jobs.py` | Lab jobs — what the curator asked the lab to test, and where each request stands |
+| `lab/transport.py` | The link to the lab — a small HTTP client over the SSH tunnel's loopback port |
+| `lab/trigger.py` | The lab trigger — which queue items earn a lab job, and at which levels |
+| `ladder/__init__.py` | Ladder — the reporter ladder runs itself (Community Curation C6) |
+| `ladder/novelty_facts.py` | Gathering the facts the novelty rule judges (Community Curation C6) |
+| `ladder/outcomes.py` | Crediting reporters from the public record (Community Curation C6) |
+| `node_ui_views.py` | Saved queries for the DKG node's own UI — the curator's read side (Refine R6, decision 26) |
+| `parser.py` | The ``blackbox curate`` argument parser — every verb and its options |
+| `promotion.py` | Promotion — a threat enters the verified tier (Refine R6; scope: dependency, kind=malware) |
+| `proposal.py` | Curator proposals and their two-key lifecycle (Refine R6) |
+| `publishing/__init__.py` | Publishing — the last step of every curator verb: number it, check its |
+| `publishing/batch.py` | The batch publisher — beat step 8 on the wallet node (trust-and-threat-lab §03.4, D27) |
+| `publishing/commands.py` | ``blackbox curate correct`` and ``blackbox curate never-flag`` — signed corrections (trust-and-threat-lab P5, §03.4) |
+| `publishing/errors.py` | The errors the publishing step raises when it refuses |
+| `publishing/ledger.py` | The publish ledger — every verified-graph batch as a state machine (pattern: State) |
+| `publishing/never_flag.py` | The never-flag batch: exact known-good addresses, published as corrections (trust-and-threat-lab P5, §03.4) |
+| `publishing/precheck.py` | The batch-time pre-check: the last look at the verified graph before a PAID publish |
+| `publishing/publish.py` | Publishing an APPROVED curator proposal: quorum check, consent, the write, the read-back |
+| `publishing/row_builders.py` | Row builders — the quads a quorum-signed promotion is written as (§03.4) |
+| `publishing/sequences.py` | Sequence numbers for curator statements — which number the next one takes |
+| `queue.py` | The curator's queue — the delta view and its lanes (Refine R6, plan §09) |
+| `service/__init__.py` | Service — the curator node's own routine work (Community Curation C9, plan §07) |
+| `service/beat.py` | One beat of the curator service (Community Curation C9, plan §07) |
+| `service/budget.py` | The service's own daily limit on what it signs (Community Curation C9, plan §07) |
+| `service/commands.py` | ``blackbox curate policy`` and ``blackbox curate run`` (Community Curation C9) |
+| `service/disputes.py` | The dispute lane — what a curator does with a public-page dispute (trust-and-threat-lab §03.3, SVC3) |
+| `service/evidence.py` | What this node establishes BY ITSELF before the service signs (Community Curation C9, plan §07) |
+| `service/inbox.py` | Which proposals the service takes in, and which of its own are finished (Community Curation C9) |
+| `service/never_promote.py` | Never promote a bare IP on shared infrastructure (trust-and-threat-lab §03.4, F-031) |
+| `service/policy.py` | The automation policy — what the curator service may sign on its own (Community Curation C9, plan §07) |
+| `service/policy_consent.py` | Standing consent to the automation policy, bound to its exact text (Community Curation C9, plan §07) |
+| `service/report.py` | What one beat of the curator service did, and its working state (Community Curation C9) |
+| `service/self_test.py` | The curator self-test and auto-suspend (trust-and-threat-lab §03.2, F-020) |
+| `service/steps.py` | The beat's trust-and-threat-lab steps (§03.4, SVC4): each is ONE line in :meth:`.beat.Beat.run` |
+| `service/verdicts.py` | The verdict rules — how a curator decides confirmed, rejected or not proven (trust-and-threat-lab §03.3) |
+| `sources/__init__.py` | Sources — look-ups against outside threat sources for the curator's dossier and beat |
+| `sources/abusech.py` | abuse.ch — URLhaus, ThreatFox and MalwareBazaar as sources (§03.3, F-004, F-005, D20) |
+| `sources/budget.py` | How much the beat may ask outside sources: the per-beat budget and each source's token bucket (§03.3, F-029) |
+| `sources/cache.py` | The "not listed" cache: a source's CLEAN answer, remembered for 24 hours (§03.3, F-029) |
+| `sources/client.py` | The one HTTP client every outside-source adapter talks through (§03.3) |
+| `sources/credentials.py` | Source API keys (abuse.ch Auth-Key, PhishTank app key…) for the curator node only (§03.3, F-005) |
+| `sources/osv.py` | OSV / GHSA malicious-package advisories as a source (§03.3) |
+| `sources/phishtank.py` | PhishTank as a source (§03.3, F-004, F-005) |
+| `sources/protocol.py` | The source Strategy and the registry that asks every source within a beat's budget (§03.3, F-029) |
+| `sources/scamsniffer.py` | ScamSniffer scam-database as a source — LOOK-UP ONLY (§03.3, F-004, D20) |
+| `sources/urlscan.py` | urlscan.io as a source — the level-3 "visit", bought not built (§03.5, F-012, D22) |
+| `sources/withdrawal.py` | The source-withdrawal watcher and the 180-day address expiry (§03.3, F-007, F-022) |
+| `transport.py` | Proposals travel between curator nodes by private point-to-point message (Refine R6) |
+| `upkeep/__init__.py` | Upkeep — keeping an authority's word alive on the network (Community Curation C5) |
+| `upkeep/heartbeat.py` | The curator heartbeat — "this key is alive" (Community Curation C5) |
+| `upkeep/published.py` | What this curator node published in the community graph and must keep alive |
+| `verbs.py` | The curator's write verbs: propose, approve, publish, nominate, manifest (Refine R6) |
+| `watch/__init__.py` | Watch — this node's checks of what was published against what it signed |
+| `watch/delivery.py` | Delivery — where this node's announcements, alarms and metrics go (trust-and-threat-lab W3, §03.1) |
+| `watch/graph_watch.py` | Verified-graph watch — every new asset must be explained by a record this node keeps |
+| `watch/reconciler.py` | Signature reconciler — statements published under this node's key vs its signing log |
+| `watch/signing_log.py` | SigningLog — this node's own record of every signature its keys made |
+| `watch/wallet_watch.py` | Wallet watch — the publishing wallet's TRAC on chain vs what the publish ledger spent |
 
 </details>
 
@@ -882,64 +1019,66 @@ Click a module to open its file list.
 
 | File | What it does |
 |---|---|
-| `__init__.py` | Chat: `blackbox chat`: a Hermes session preconfigured as the Blackbox assistant |
-| `command.py` | `blackbox chat`: a Hermes chat session preconfigured as the Blackbox assistant |
+| `__init__.py` | Chat — ``blackbox chat``: a Hermes session preconfigured as the Blackbox assistant |
+| `command.py` | ``blackbox chat`` — a Hermes chat session preconfigured as the Blackbox assistant |
 
 </details>
 
 <details>
-<summary><b><code>kernel/</code></b> · 24 files · 4,469 lines · Shared infrastructure owned by no feature. Depends on nothing.</summary>
+<summary><b><code>kernel/</code></b> · 41 files · 7,179 lines · Shared infrastructure owned by no feature. Depends on nothing.</summary>
 
 | File | What it does |
 |---|---|
-| `__init__.py` | Kernel: shared infrastructure owned by no feature |
+| `__init__.py` | Kernel — shared infrastructure owned by no feature |
+| `bounded_files/__init__.py` | Reading a small settings file safely on the hot path — one bounded reader |
+| `browser_boundary/__init__.py` | The browser boundary two web apps share (KI-028 / LES-006) |
 | `config.py` | Blackbox configuration loading |
 | `constants.py` | Static constants for the Agent Blackbox plugin |
-| `display_safety.py` | Safe display of untrusted text: ONE implementation for CLI, dashboard and logs |
+| `crypto_secrets/__init__.py` | Crypto secrets — wallet secrets recognised in text by their own structure |
+| `crypto_secrets/base58.py` | Base58 — the Bitcoin alphabet many wallets write keys in (Solana keys, Bitcoin WIF, xprv) |
+| `crypto_secrets/bitcoin_key.py` | Bitcoin private keys — WIF keys and BIP-32 extended private keys — proven by their checksum |
+| `crypto_secrets/destinations.py` | Where a command sends what it carries: every host a request could reach |
+| `crypto_secrets/evm_key.py` | Raw Ethereum private keys, recognised by the address they open |
+| `crypto_secrets/exchange_keys.py` | Exchange API keys: an exchange's key header may only go to that exchange |
+| `crypto_secrets/known_contracts.py` | Well-known exchange contracts: never treated as a drainer, never flagged as a bad address |
+| `crypto_secrets/seed_phrase.py` | BIP-39 seed phrases (a wallet's Secret Recovery Phrase) found in text |
+| `crypto_secrets/solana_key.py` | Solana secret keys — recognised by their own proof, not by their shape |
+| `crypto_secrets/text_view.py` | A normalised reading of a text that remembers where every character came from |
+| `display_safety.py` | Safe display of untrusted text — ONE implementation for CLI, dashboard and logs (R8) |
 | `dkg_client.py` | Stdlib HTTP client for the local DKG v10 node |
 | `dkg_version.py` | DKG runtime compatibility required by Blackbox recovery |
-| `identity.py` | This node's reporting identity: the agent address it speaks for |
-| `node_routes.py` | Node routes the curator uses that the hot path never does |
+| `health/__init__.py` | Operator health — ONE health item for both surfaces (Refine R10, plan §12 alarms) |
+| `health/community_authority.py` | Operator alarms about the COMMUNITY authority (Community Curation C10, plan §11 OBSERVE) |
+| `health/manifest_watch.py` | The manifest watcher's health items (trust-and-threat-lab W1, F-003) |
+| `host_secrets/__init__.py` | Reading a credential the way Hermes hands it out — the one route for secrets |
+| `identity.py` | This node's reporting identity — the agent address it speaks for |
+| `node_routes.py` | Node routes the curator uses that the hot path never does (Refine R6) |
+| `public_suffix/__init__.py` | The Public Suffix List — registrable domains and shared-hosting suffixes (R9) |
 | `rdf_terms.py` | N-Triples terms and quads, with the DKG's literal-size limits enforced |
-| `redaction.py` | Redaction: THE one implementation that scrubs secret values out of text |
-| `reporter_key.py` | This node's reporter key: the private key that signs its community reports |
+| `redaction.py` | Redaction — THE one implementation that scrubs secret values out of text |
+| `reporter_key.py` | This node's reporter key — the private key that signs its community reports |
 | `settings.py` | Read/write the user-tunable Blackbox detection policy |
+| `signing/__init__.py` | Signing — the one envelope every signed Blackbox statement uses |
+| `signing/authority.py` | The two trust authorities — who may say what, and in which graph |
+| `signing/envelope.py` | Signed statements — the one envelope every signed Blackbox statement uses |
+| `signing/graph_migration.py` | The graph migration statement — the authority may name a successor graph |
+| `signing/key_manifest.py` | The curator key manifest — which keys may sign what, per environment (Refine R7a) |
+| `signing/statement_order.py` | Curator statement types and which statement about a threat is current (Refine R7a) |
+| `signing/trust_anchors.py` | Trust anchors — which root keys this node trusts, per authority |
 | `sparql_text.py` | SPARQL helpers shared by every reader of the graph |
-| `threat_ids.py` | Deterministic threat identifiers and URIs: the shared naming vocabulary |
-| `yaml_files.py` | YAML config files (Hermes `config.yaml` and friends), read and written safely |
-| `health/__init__.py` | Operator health: one alarm type for `blackbox status` and the dashboard |
-| `health/community_authority.py` | Operator alarms about the community authority |
-| `public_suffix/__init__.py` | The Public Suffix List: registrable domains and shared-hosting suffixes |
-| `public_suffix/public_suffix_list.dat` | The vendored Public Suffix List data |
-| `signing/__init__.py` | Signing: the one envelope every signed Blackbox statement uses |
-| `signing/authority.py` | The two trust authorities: who may say what, and in which graph |
-| `signing/envelope.py` | Signed statements: the one envelope every signed Blackbox statement uses |
-| `signing/key_manifest.py` | The curator key manifest: which keys may sign what, per environment |
-| `signing/statement_order.py` | Curator statement types and which statement about a threat is current |
-| `signing/trust_anchors.py` | Trust anchors: which root keys this node trusts, per authority |
+| `store/__init__.py` | Store — read-only SPARQL access to the DKG node's LOCAL triple store |
+| `store/client.py` | The read-only SPARQL client for the node's local store |
+| `threat_ids.py` | Deterministic threat identifiers and URIs — the shared naming vocabulary |
+| `yaml_files.py` | YAML config files (Hermes ``config.yaml`` and friends), read and written safely |
 
 </details>
 
-<details>
-<summary><b>plugin root</b> · wiring only</summary>
-
-| File | What it does |
-|---|---|
-| `__init__.py` | Plugin entry: registers the five hooks and the `blackbox` command |
-| `cli.py` | The `blackbox` command: argument parsing and dispatch only |
-| `plugin.yaml` | The plugin manifest Hermes reads |
-| `ARCHITECTURE.md` | The map the structure tests enforce |
-| `README.md` | Plugin-level reference: every option and command |
-| `docs/REPORTER_TERMS.md` | The reporter terms your consent is bound to |
-| `docs/DPIA.md` | The data-protection impact assessment |
-| `docs/CONTROLLER_MAP.md` | Who controls which data, and where it lives |
-
-</details>
+<!-- blackbox-inventory:end -->
 
 ### The OpenClaw bridge
 
 <details>
-<summary><b><code>integrations/openclaw/</code></b> · 16 source files · 4,938 lines · the TypeScript mirror of the hot path and the share path</summary>
+<summary><b><code>integrations/openclaw/</code></b> · 21 source files · 5,408 lines · the TypeScript mirror of the hot path and the share path</summary>
 
 | File | What it does | Mirrors |
 |---|---|---|
@@ -959,6 +1098,12 @@ Click a module to open its file list.
 | `src/audit.ts` | Local findings log | `audit/` |
 | `src/osv.ts` | OSV dependency lookup | `detection/osv.py` |
 | `src/hookTypes.ts` | Hook types derived from the public OpenClaw plugin API | |
+| `src/seedPhrase.ts` | Seed-phrase redaction | `kernel/crypto_secrets/seed_phrase.py` |
+| `src/solanaKey.ts` | Solana secret-key redaction | `kernel/crypto_secrets/solana_key.py` |
+| `src/bitcoinKey.ts` | Bitcoin WIF and extended-key redaction | `kernel/crypto_secrets/bitcoin_key.py` |
+| `src/base58.ts` | The Base58 alphabet those keys are written in | `kernel/crypto_secrets/base58.py` |
+| `src/textView.ts` | The normalised reading of a text that keeps original offsets | `kernel/crypto_secrets/text_view.py` |
+| `src/generated/` | The wallet fixture generated from the shield's packs and roots | `shields/trader/` |
 | `test/parity.mjs` and friends | Cross-runtime parity: identifiers, redaction, signing, report quads | `tests/parity/` |
 
 </details>
@@ -974,7 +1119,7 @@ default protected paths, so an agent reaching into it is flagged, and blocked in
 | `findings.jsonl`, `audit.jsonl` | what was flagged or blocked; every checked action, redacted | `audit/` |
 | `file_access.jsonl`, `dependencies.jsonl` | sensitive-file reads and package installs seen | `audit/` |
 | `reporter_key.pem` | the private key that signs your community statements | `kernel/reporter_key.py` |
-| `sharing_consent.json` | your consent record, bound to the terms text | `community/consent.py` |
+| `sharing_consent.json` | your sharing choice (written when you turn sharing off or back on) | `community/consent.py` |
 | `reports_log.jsonl`, `report_rate.json` | the share ledger, cooldowns and the daily cap | `audit/share_ledger.py` |
 | `live_reports.json` | reports this node keeps alive on the network | `community/keep_alive/` |
 | `share_retry.json` | refused shares waiting for a retry | `community/share_retry.py` |
@@ -1064,11 +1209,11 @@ environment override, for example `BLACKBOX_MODE` or `BLACKBOX_REPORT`.
 | `dkg_home` | `<agent-blackbox>/.dkg` | isolated DKG node config, token, pid and cache |
 | `context_graph_id` | `0x37b1Fdfd…/agent-blackbox-vm` | the verified threat graph |
 | `graph_peer_id` | bundled publisher peer | authoritative source for the verified graph |
-| `community_graph_id` | `""` (dormant) | the community graph this node reads and writes; empty keeps every community path off |
+| `community_graph_id` | `0x37b1Fdfd…/agent-blackbox-community` | the community graph this node reads and writes; empty keeps every community path off |
 | `community_graph_peer_id` | `""` | peer id of the node that owns the community graph; dialled before the first subscribe; ships as a pair with the graph id |
-| `report` | `false` | share privacy-safe reports to the community graph (opt-in; a consent record is also required) |
+| `report` | `true` | share privacy-safe reports to the community graph (on by default; `blackbox report --disable-sharing` turns it off) |
 | `report_min_severity` | `high` | lowest severity a built-in discovery candidate must reach to be flagged or shared |
-| `daily_report_limit` | `20` | cap on outbound reports per day; never "no cap" |
+| `daily_report_limit` | `100` | cap on outbound reports per day; never "no cap" |
 | `community_poll_interval` | `20` | seconds between community-graph pulses (0 off) |
 | `community_keepalive_epoch_days` | `10` | re-publish cadence for your own reports (0 off) |
 | `community_shadow` | `false` | compute stages, enforce only monitor, log what would have flagged |
@@ -1088,16 +1233,16 @@ pair) and writes them into the config.
 
 ## Privacy and your rights
 
-Sharing is privacy by design and by default. The reporter terms, the data-protection impact assessment
+Sharing is privacy by design: a report has no field that could carry a prompt, command, path or file, and secrets never leave. It is on by default and one command turns it off. The reporter terms, the data-protection impact assessment
 and the controller map ship in `plugins/blackbox/docs/`.
 
 | Right | Command | What actually happens |
 |---|---|---|
-| Consent, opt-in | `blackbox report --consent` | records a consent bound to the exact text of the terms; a changed text invalidates it |
-| Objection | `blackbox report --withdraw-consent` | automatic sharing, manual reports, keep-alive, retries and digests stop on the next action |
+| Objection | `blackbox report --disable-sharing` | automatic sharing, manual reports, keep-alive, retries and digests stop on the next action |
+| Information | `blackbox report --consent` | shows the reporter terms; sharing is on by default under them |
 | Access and portability | `blackbox report --export FILE` | key backup, share ledger, consent record, keep-alive memory, retry queue, sighting tally, as JSON |
-| Rectification | `--retract`, `--false-positive` | always allowed, even with consent withdrawn; stops a statement counting on every current reader |
-| Erasure | `blackbox report --erase-identity --confirm` | destroys the signing key, ledger, keep-alive memory, retry queue, consent record and tally |
+| Rectification | `--retract`, `--false-positive` | always allowed, even with sharing off; stops a statement counting on every current reader |
+| Erasure | `blackbox report --erase-identity --confirm` | destroys the signing key, ledger, keep-alive memory, retry queue, sharing record and tally; sharing stays off afterwards |
 
 What erasure cannot do: statements already replicated by other nodes stay in their copies (a shared
 graph cannot delete); a retraction stops them counting. Erasure rotates your signing key; the node's
