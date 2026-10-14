@@ -151,6 +151,14 @@ def _own_key_findings(raw: list[detection.Finding], tool_name: str, args: Any) -
     return [f for f in found if rank.get(f.severity, -1) > have]
 
 
+def _raw_findings(cfg: BlackboxConfig, rs: Any, tool_name: str, args: Any) -> list[detection.Finding]:
+    """All raw findings for one call, gathered here so new detectors join without growing the hook body."""
+    raw = detection.detect_all(tool_name, args, rs, discover=cfg.discover)
+    raw += detection.detect_custom_fileaccess(tool_name, args, cfg.protected_paths) + _own_key_findings(raw, tool_name, args)
+    raw += _kill_list_findings(rs, tool_name, args)   # R14: curator-signed DISABLE / WARN, last-good list
+    return raw
+
+
 def on_pre_tool_call(
     tool_name: str = "",
     args: Any = None,
@@ -168,9 +176,7 @@ def on_pre_tool_call(
         rs = ruleset.get(cfg)
         # Visibility: log every file-access tool call (best-effort).
         _record_activity(tool_name, args)
-        raw = detection.detect_all(tool_name, args, rs, discover=cfg.discover)
-        raw += detection.detect_custom_fileaccess(tool_name, args, cfg.protected_paths) + _own_key_findings(raw, tool_name, args)
-        raw += _kill_list_findings(rs, tool_name, args)   # R14: curator-signed DISABLE / WARN, last-good list
+        raw = _raw_findings(cfg, rs, tool_name, args)
         findings = reporting._flag_worthy(cfg, raw)
         detail = {"tool_name": tool_name, "session_id": session_id, "task_id": task_id,
                   "tool_call_id": tool_call_id, "args": audit.redact(args)}
