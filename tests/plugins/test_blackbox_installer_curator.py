@@ -286,7 +286,7 @@ def test_the_console_names_the_ptrace_host_step_when_the_host_lacks_it(tmp_path,
     done = _install(tmp_path, {"BLACKBOX_KEY_CONSOLE": "1"}, call="register_key_console", root=True, ptrace=scope)
     assert "blackbox-console" in done.system_units and done.useradd == ""          # the user already exists
     assert "WARN kernel.yama.ptrace_scope is" in done.out
-    assert "kernel.yama.ptrace_scope = 2' > /etc/sysctl.d/60-blackbox-ptrace.conf" in done.out
+    assert "set kernel.yama.ptrace_scope = 2 in a file under /etc/sysctl.d/" in done.out
 
 
 @pytest.mark.parametrize("system, root", [("Linux", False), ("Darwin", True)])

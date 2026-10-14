@@ -2602,7 +2602,7 @@ CONSOLE_UNIT
     case "$scope" in
         2|3) ok "kernel.yama.ptrace_scope is $scope" ;;
         *) warn "kernel.yama.ptrace_scope is ${scope:-unavailable}; the key console needs 2 or more. On this host run:"
-           step "  echo 'kernel.yama.ptrace_scope = 2' > /etc/sysctl.d/60-blackbox-ptrace.conf && sysctl --system" ;;
+           step "  set kernel.yama.ptrace_scope = 2 in a file under /etc/sysctl.d/ (for example 60-blackbox-ptrace.conf), then run: sysctl --system" ;;
     esac
     step "  give $user access:  setfacl -R -m u:$user:rwX $BLACKBOX_HOME/curate  (and read access to the Hermes install)"
     step "  write $BLACKBOX_HOME/curate/console_settings.json (tailscaleLogin, magicDnsHost, loginPassphraseHash)"
