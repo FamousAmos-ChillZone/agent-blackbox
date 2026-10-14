@@ -73,8 +73,6 @@ def test_browsers_json_states_the_31_roots():
     assert len(entries) == 31 and engines.count("firefox") == 7 and engines.count("chromium") == 24
 
 
-@pytest.mark.xfail(strict=True, reason="BLOCKED: S1's template rule (two folders below the root, the first "
-                   "literal) drops the five $XDG_CONFIG_HOME/<browser> roots; needs a founder decision")
 def test_registry_loads_31_browser_roots_none_dropped():
     assert (len(ROOTS), ROOT_HEALTH) == (31, ())
 
