@@ -1283,12 +1283,33 @@ use_running_hermes() {
     export PATH="$VENV_DIR/bin:$PATH"
 }
 
+# Earlier runs of this installer linked ~/.local/bin/hermes to a Hermes Python environment.
+# Hermes 0.21.7+ publishes its own launcher there and will not replace a link that points
+# outside its checkout ("launcher publication failed"), so every re-run stopped in Hermes's
+# setup. Such a link (into some venv/bin/hermes) is removed before that setup runs; any other
+# file there is left alone.
+release_old_hermes_link() {
+    local link="$HOME/.local/bin/hermes" target
+    [ -L "$link" ] || return 0
+    target="$(readlink "$link")"
+    case "$target" in
+        */venv/bin/hermes)
+            rm -f "$link"
+            step "Removed the hermes link an earlier Blackbox install made ($target); Hermes publishes its own."
+            ;;
+    esac
+}
+
 link_hermes() {
     local link_dir="$HOME/.local/bin"
     mkdir -p "$link_dir"
     if [ -x "$HERMES_BIN" ]; then
-        ln -sf "$HERMES_BIN" "$link_dir/hermes"
-        ok "Linked hermes → $link_dir/hermes"
+        if [ -x "$REPO_DIR/scripts/run-in-hermes-env" ]; then
+            ok "hermes → $link_dir/hermes (Hermes's own launcher)"
+        else   # an older Hermes publishes no launcher: link it
+            ln -sf "$HERMES_BIN" "$link_dir/hermes"
+            ok "Linked hermes → $link_dir/hermes"
+        fi
         install_blackbox_shim "$link_dir"
         case ":$PATH:" in
             *":$link_dir:"*) : ;;
@@ -2712,6 +2733,7 @@ main() {
         ensure_node
 
         resolve_repo
+        release_old_hermes_link
         install_python_env
         link_hermes
         refresh_blackbox_plugin_copy

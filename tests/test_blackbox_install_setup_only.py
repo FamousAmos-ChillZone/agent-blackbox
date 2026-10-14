@@ -23,7 +23,7 @@ import pytest
 
 INSTALL_SH = Path(__file__).resolve().parents[1] / "scripts" / "blackbox-install.sh"
 
-HERMES_STEPS = ["check_git", "check_python", "resolve_repo", "install_python_env", "link_hermes",
+HERMES_STEPS = ["check_git", "check_python", "resolve_repo", "release_old_hermes_link", "install_python_env", "link_hermes",
                 "refresh_blackbox_plugin_copy", "run_hermes_setup"]
 
 
@@ -55,8 +55,8 @@ main
 def test_curl_install_runs_every_step_in_the_same_order_as_before():
     steps = _main_steps(setup_only=False)
 
-    assert steps[:9] == ["banner", "detect_os", "check_git", "check_python", "ensure_node", "resolve_repo",
-                         "install_python_env", "link_hermes", "refresh_blackbox_plugin_copy"]
+    assert steps[:10] == ["banner", "detect_os", "check_git", "check_python", "ensure_node", "resolve_repo",
+                          "release_old_hermes_link", "install_python_env", "link_hermes", "refresh_blackbox_plugin_copy"]
     assert steps.index("run_hermes_setup") < steps.index("install_dkg")
 
 
@@ -321,3 +321,65 @@ def test_a_blocked_install_script_stops_the_install_with_the_package_named(tmp_p
 
     assert result.returncode == 1
     assert "npm blocked install scripts the DKG node needs: new-native-dep@1.0.0" in result.stdout
+
+
+
+def _link_steps(tmp_path: Path, *, pm_checkout: bool, existing: str | None) -> Path:
+    """release_old_hermes_link then link_hermes, as a curl install runs them; returns ~/.local/bin/hermes."""
+    home = tmp_path / "home"
+    (home / ".local" / "bin").mkdir(parents=True)
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    if pm_checkout:
+        runner = repo / "scripts" / "run-in-hermes-env"
+        runner.write_text("#!/bin/sh\n", encoding="utf-8")
+        runner.chmod(0o755)
+    venv_hermes = tmp_path / "installs" / "env" / "venv" / "bin" / "hermes"
+    venv_hermes.parent.mkdir(parents=True)
+    venv_hermes.write_text("#!/bin/sh\n", encoding="utf-8")
+    venv_hermes.chmod(0o755)
+    link = home / ".local" / "bin" / "hermes"
+    if existing == "old-link":
+        link.symlink_to(venv_hermes)
+    elif existing == "hermes-launcher":
+        link.write_text("#!/bin/sh\nexec /somewhere/.hermes/bin/hermes \"$@\"\n", encoding="utf-8")
+    script = f"""
+ok() {{ :; }}
+warn() {{ :; }}
+step() {{ :; }}
+install_blackbox_shim() {{ :; }}
+release_old_hermes_link() {{
+{_body("release_old_hermes_link")}
+}}
+link_hermes() {{
+{_body("link_hermes")}
+}}
+HOME={shlex.quote(str(home))}
+REPO_DIR={shlex.quote(str(repo))}
+HERMES_BIN={shlex.quote(str(venv_hermes))}
+VENV_DIR={shlex.quote(str(venv_hermes.parent.parent))}
+release_old_hermes_link
+link_hermes
+"""
+    subprocess.run(["bash", "-c", script], check=True, capture_output=True, text=True)
+    return link
+
+
+def test_on_hermes_0_21_7_the_installer_leaves_hermes_its_own_launcher(tmp_path):
+    """Hermes publishes ~/.local/bin/hermes itself and refuses to replace a link pointing outside its
+    checkout, so a link made here broke every re-run ("launcher publication failed", 2026-10-14)."""
+    link = _link_steps(tmp_path, pm_checkout=True, existing="hermes-launcher")
+
+    assert not link.is_symlink() and "/.hermes/bin/hermes" in link.read_text(encoding="utf-8")
+
+
+def test_an_old_link_from_an_earlier_install_is_removed_so_hermes_can_publish(tmp_path):
+    link = _link_steps(tmp_path, pm_checkout=True, existing="old-link")
+
+    assert not link.exists() and not link.is_symlink()
+
+
+def test_an_older_hermes_without_a_launcher_still_gets_the_link(tmp_path):
+    link = _link_steps(tmp_path, pm_checkout=False, existing=None)
+
+    assert link.is_symlink()
