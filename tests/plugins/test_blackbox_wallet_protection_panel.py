@@ -72,43 +72,14 @@ def test_only_wallet_events_are_listed_with_blocked_or_flagged(home, monkeypatch
 
 
 from plugins.blackbox.community.sighting import classify
-from plugins.blackbox.kernel import settings
-from plugins.blackbox.kernel.crypto_secrets import wallet_mode
-
-
-def test_the_mode_is_off_by_default_and_governs_only_wallet_findings():
-    mode = wallet_mode.from_entry({})
-    assert mode.enabled is False and mode.wallets == tuple(wallet_mode.SUPPORTED_WALLETS)
-    vault = {"identifier": "fileaccess:terminal:crypto-wallet", "fields": {"wallet": "metamask"}}
-    assert not mode.allows_finding(vault) and not mode.allows_finding({"identifier": "secret:seed-phrase"})
-    assert mode.allows_finding({"identifier": "dep:npm:evil@1.0.0"})   # not a wallet finding: untouched
-    chosen = wallet_mode.from_entry({"wallet_protection": True, "protected_wallets": ["MetaMask", "not-a-wallet"]})
-    assert chosen.wallets == ("metamask",) and chosen.allows_finding(vault)   # unsupported names are dropped
-
-
-def test_engaging_protects_every_supported_wallet_unless_wallets_were_already_chosen():
-    """Engage sends only the switch: a first engage protects MetaMask and Phantom; an
-    earlier choice (e.g. MetaMask only) is kept, so engaging never widens it silently."""
-    updates, errors = wallet_mode.validate({"wallet_protection": True})
-    assert updates == {"wallet_protection": True} and errors == []
-    assert wallet_mode.from_entry(updates).wallets == tuple(wallet_mode.SUPPORTED_WALLETS)
-    earlier = {"wallet_protection": True, "protected_wallets": ["metamask"]}
-    assert wallet_mode.from_entry(earlier).wallets == ("metamask",)
-
-
-def test_settings_accept_the_mode_and_refuse_an_unknown_wallet():
-    assert wallet_mode.validate({"wallet_protection": True, "protected_wallets": ["metamask"]}) == (
-        {"wallet_protection": True, "protected_wallets": ["metamask"]}, [])
-    _, errors = wallet_mode.validate({"protected_wallets": ["not-a-wallet"]})
-    assert errors and wallet_mode.validate({"wallet_protection": "yes"})[1]
-    assert "wallet_protection" in settings.read_settings()
+from plugins.blackbox.shields.trader import mode as trader_mode
 
 
 def test_the_panel_is_off_until_the_mode_is_on(home, monkeypatch):
     monkeypatch.setattr(protection, "load_blackbox_config", lambda: BlackboxConfig(mode="block"))
-    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=False))
+    monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=False))
     assert protection.wallet_protection_payload()["enabled"] is False
-    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=True))
+    monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=True))
     _vault(home, "Local Extension Settings", METAMASK_CHROME)
     wallet_files.EXISTING_STORES.reset()   # the folder scan is cached for minutes
     payload = protection.wallet_protection_payload()
@@ -126,7 +97,7 @@ def test_a_wallet_event_names_its_goal_instead_of_unknown(finding, goal):
 
 
 def test_the_trader_shield_page_is_served_with_its_get_started_button():
-    """The dashboard's "Learn more" opens /trader-shield; its Engage button uses the same settings keys."""
+    """The dashboard's "Learn more" opens /trader-shield; its Engage button posts the shields settings shape."""
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -134,7 +105,7 @@ def test_the_trader_shield_page_is_served_with_its_get_started_button():
     protection.register_protection_routes(app)
     page = TestClient(app).get("/trader-shield")
     assert page.status_code == 200 and "Engage Trader Shield" in page.text
-    assert "var body = { wallet_protection: true };" in page.text and "protected_wallets" not in page.text
+    assert "var body = { shields: { trader: { enabled: true } } };" in page.text and "wallet_protection" not in page.text
     assert "https://" not in page.text.split("<script>")[0].split("</style>")[0]   # no external fonts or styles: works offline
 
 
@@ -188,15 +159,15 @@ def test_wallet_threats_show_their_wallet_logo_everywhere_they_appear():
 
 def test_the_panel_calls_a_store_protected_exactly_when_the_gate_would_count_it(home, monkeypatch):
     """The panel used its own copy of the rule and labelled a Firefox store "not protected"
-    while the gate (FIX-0100) protected it. Both now read WalletProtection.protects()."""
+    while the gate (FIX-0100) protected it. Both now read the gate's own rule (trader mode.protects)."""
     stores = [(wallet_files.normalize_path("~/.mozilla/firefox/a.default/storage/default/moz-extension+++x^usercontextid=4294967295"),
                wallet_files.FIREFOX_EXTENSION),
               (wallet_files.normalize_path(f"~/.config/google-chrome/Default/local extension settings/{METAMASK_CHROME}"), "MetaMask")]
     monkeypatch.setattr(wallet_files.EXISTING_STORES, "get", lambda: stores)
     for chosen, expected in ((["metamask"], {"a Firefox extension": True, "MetaMask": True}),
                              ([], {"a Firefox extension": False, "MetaMask": False})):
-        monkeypatch.setattr(protection.crypto_secrets.wallet_mode, "current",
-                            lambda chosen=chosen: wallet_mode.WalletProtection(enabled=True, wallets=tuple(chosen)))
+        monkeypatch.setattr(trader_mode, "current",
+                            lambda chosen=chosen: trader_mode.build(enabled=True, wallets=tuple(chosen)))
         shown = {w["wallet"]: w["protected"] for w in protection.wallet_protection_payload()["wallets"]}
         assert shown == expected
 
@@ -214,8 +185,8 @@ def test_a_firefox_profile_name_is_shown_as_it_is_not_defanged(home, monkeypatch
 def test_the_panel_states_todays_rules(home, monkeypatch):
     # Terminal reads follow the protected-path rule (FIX-0103); the exchange list and the
     # own-address COUNT are shown — never the addresses themselves.
-    own = wallet_mode.WalletProtection(enabled=True, addresses=("0x" + "ab" * 20,))
-    monkeypatch.setattr(wallet_mode, "current", lambda: own)
+    own = trader_mode.build(enabled=True, addresses=("0x" + "ab" * 20,))
+    monkeypatch.setattr(trader_mode, "current", lambda: own)
     payload = protection.wallet_protection_payload()
     assert payload["terminal_reads"] == "blocked" and payload["own_addresses"] == 1
     assert "Binance" in payload["exchanges"] and "ab" * 20 not in str(payload)
@@ -223,8 +194,8 @@ def test_the_panel_states_todays_rules(home, monkeypatch):
 
 def test_keychain_and_approval_findings_are_trader_shield_events():
     for identifier in ("fileaccess:terminal:macos-keychain", "secret:token-approval-drainer", "secret:exchange-api-key"):
-        assert wallet_mode.belongs_to_mode(identifier), identifier
-    assert not wallet_mode.belongs_to_mode("fileaccess:terminal:user-protected")
+        assert trader_mode.belongs_to_mode(identifier), identifier
+    assert not trader_mode.belongs_to_mode("fileaccess:terminal:user-protected")
 
 
 def test_each_protection_state_has_its_own_mark():

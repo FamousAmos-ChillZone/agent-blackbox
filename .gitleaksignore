@@ -237,3 +237,8 @@ f0b01a0080e66ee51aca7b4effdd9032682d92e3:tests/tui_gateway/test_diagnostics_shar
 f8b66c75318ab5ad84a5b904b8488000bc4a5155:tests/hermes_cli/test_web_server.py:generic-api-key:2239
 f907520593512545a213c6dbc127e02d2d6ce3d4:tests/hermes_cli/test_debug.py:generic-api-key:493
 fd9498122e5135106ce388f8106a5912a6f76a2c:tests/agent/test_mid_turn_compaction_turn_boundary.py:generic-api-key:90
+
+# 2026-10-13 — fake test values (no real secret) in the KI-373 redaction test, pushed before the scan finished; the test now builds them at run time.
+40ee5fbe50e55709a6ed5e9e171216c56802e197:tests/plugins/test_blackbox_kernel_redaction.py:generic-api-key:87
+40ee5fbe50e55709a6ed5e9e171216c56802e197:tests/plugins/test_blackbox_kernel_redaction.py:generic-api-key:88
+40ee5fbe50e55709a6ed5e9e171216c56802e197:tests/plugins/test_blackbox_kernel_redaction.py:generic-api-key:89

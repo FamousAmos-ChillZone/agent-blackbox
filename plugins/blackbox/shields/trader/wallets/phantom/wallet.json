@@ -1,0 +1,22 @@
+{
+  "id": "phantom",
+  "name": "Phantom",
+  "kind": "browser-extension",
+  "status": "supported",
+  "order": 20,
+  "verified": "2026-10-13",
+  "source": "Chrome Web Store listing (2026-10-12); addons.mozilla.org phantom-app (2026-10-13)",
+  "stores": {
+    "chromium": [
+      "bfnaelmomeimhlpmgjnjophhpkkoljpa"
+    ],
+    "firefox": [
+      "{7c42eea1-b3e4-4be4-a56f-82a5852b12dc}"
+    ]
+  },
+  "logo": {
+    "file": "logo.svg",
+    "terms": "NOTICE.md",
+    "source": "Phantom_SVG_Icon.svg, docs.phantom.com/resources/assets (integration style guide)"
+  }
+}

@@ -29,13 +29,25 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
-from ... import audit, detection
+from ... import audit, detection, shields
 from ...kernel import crypto_secrets
 from ...kernel.config import load_blackbox_config
 from ..safe_payloads import safe_identifier, safe_text
 from .events import is_wallet_identifier, local_text, wallet_event_report
 
 MAX_EVENTS = 20
+
+
+# Transitional (S2b): this panel reads Trader Shield through the shields public surface
+# only — its mode, its gate and its supported wallets. The whole sub-package goes in S7.
+def _guarded(trader: shields.Shield, mode: shields.ShieldMode, wallet_id: str) -> bool:
+    """Whether the gate counts a key-store finding for *wallet_id* under *mode* (the gate's own rule)."""
+    return trader.allows({"identifier": "fileaccess:file:crypto-wallet", "fields": {"wallet": wallet_id}}, mode)
+
+
+def _supported_wallets(trader: shields.Shield) -> set[str]:
+    """The wallet ids Trader Shield protects today (its Settings field's supported options)."""
+    return {option.id for field in trader.settings_fields() for option in field.options if option.status == "supported"}
 
 
 def _events() -> list[dict[str, Any]]:
@@ -57,27 +69,27 @@ def _events() -> list[dict[str, Any]]:
 def wallet_protection_payload() -> dict[str, Any]:
     """What the panel shows (see the module doc). Fail-open: a part that cannot be read is empty."""
     cfg = load_blackbox_config()
-    mode = crypto_secrets.wallet_mode.current()
+    trader = shields.get("trader")
+    mode = trader.mode()
     try:
         wallets = detection.found_wallets()
     except Exception:   # a filesystem error means "none found", never a broken page
         wallets = []
     return {
         "enabled": mode.enabled,                 # the panel shows only while Web3 wallet protection is on
-        # The mode without the operator's addresses: only the Settings editor needs those.
-        "wallet_mode": {key: value for key, value in mode.as_json().items() if key != "addresses"},
+        "wallet_mode": mode.as_json(),   # without the operator's addresses: only the Settings editor needs those
         "mode": "block" if cfg.block_enabled else "audit",
         "block_severity": safe_text(cfg.block_severity, 16),
         # Folder names found on THIS machine: cleaned, never defanged (a Firefox profile is "x.default-release").
         "wallets": [{**{key: (local_text(value, 64) if isinstance(value, str) else [local_text(a, 32) for a in value])
                         for key, value in wallet.items()},
-                     "protected": mode.protects(str(wallet.get("id") or ""))}   # the gate's own rule
+                     "protected": _guarded(trader, mode, str(wallet.get("id") or ""))}
                     for wallet in wallets],
         "seed_checker": bool(crypto_secrets.wordlist_ready()),
         "private_keys": True,
         "protected_paths": [safe_text(p, 120) for p in (cfg.protected_paths or ())][:20],
         "terminal_reads": "blocked",   # FIX-0103: the terminal follows the same protected-path rule
-        "own_addresses": len(mode.addresses),
+        "own_addresses": len(mode.options.get("addresses", ())),
         "exchanges": [entry.exchange for entry in crypto_secrets.exchange_keys.EXCHANGE_KEY_HEADERS],
         "events": _events(),
     }
@@ -117,7 +129,7 @@ def register_protection_routes(app: Any) -> None:
     @app.get("/wallets/{wallet}.svg")
     def wallet_logo(wallet: str) -> Any:
         # Allowlisted by the supported-wallet table, so the name never becomes a free path.
-        if wallet not in crypto_secrets.wallet_mode.SUPPORTED_WALLETS:
+        if wallet not in _supported_wallets(shields.get("trader")):
             return JSONResponse({"error": "not found"}, status_code=404)
         return FileResponse(str(WALLET_LOGOS / f"{wallet}.svg"), media_type="image/svg+xml",
                             headers={"Cache-Control": "public, max-age=86400"})

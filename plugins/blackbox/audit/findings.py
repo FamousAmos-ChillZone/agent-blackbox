@@ -281,8 +281,9 @@ def record_file_access(tool: str, path: str, mode: str) -> None:
     their agent touched.
 
     Visibility log, distinct from findings: local-only, NEVER shared to SWM.
-    The path is truncated but not redacted (it is the point of the log).
-    Best-effort and fail-open.
+    The path is the point of the log, but a URL can carry a secret (a seed phrase in
+    its query or its path, KI-377): it goes through the one redactor like every other
+    logged text — an ordinary path comes out unchanged. Best-effort and fail-open.
     """
     try:
         now = time.time()
@@ -290,7 +291,7 @@ def record_file_access(tool: str, path: str, mode: str) -> None:
             "ts": now,
             "iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
             "tool": str(tool or "")[:120],
-            "path": str(path or "")[:1000],
+            "path": redaction.sanitize_text(str(path or ""), 1000),
             "mode": str(mode or "")[:16],
             "workspace": str(constants.hermes_home()),
         })
