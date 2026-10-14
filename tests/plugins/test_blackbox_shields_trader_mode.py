@@ -75,13 +75,12 @@ def test_an_unknown_wallet_id_is_refused_and_nothing_is_written():
 
 
 def test_only_the_settings_editor_view_carries_an_address():
-    protection = load_blackbox("dashboard.protection")
-    events = load_blackbox("dashboard.protection.events")
+    shields_routes = load_blackbox("dashboard.shields_routes")
     _write_entry(LEGACY)
     mode = TRADER.mode()
     elsewhere = {
-        "panel status": protection.wallet_protection_payload(),
-        "events report": events.wallet_event_report(),
+        "dashboard cards": shields_routes.statuses_payload(),
+        "events report": shields_routes.events_payload("trader"),
         "shield statuses": [status.as_json() for status in shields.statuses()],
         "shield card": TRADER.status(mode).as_json(),
         "snapshot": shields.snapshot().as_json(),

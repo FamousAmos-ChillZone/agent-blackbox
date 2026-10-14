@@ -64,7 +64,11 @@ LEGACY_KEYS = ("wallet_protection", "protected_wallets", "wallet_addresses")
 #: Most addresses an operator may list (each costs a key derivation only when a 64-hex
 #: value appears in a call, ~2 ms; the list is matched as a set).
 MAX_WALLET_ADDRESSES = 50
-_ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
+#: One own address: what Settings accepts per line (the page reads it from the field).
+ADDRESS_PATTERN = "^0x[0-9a-fA-F]{40}$"
+_ADDRESS = re.compile(ADDRESS_PATTERN)
+#: The dashboard route of a pack's logo; both ids are resolved through the registry there.
+LOGO_URL = "/shields/trader/packs/{pack}/logo.svg"
 
 
 #: Trader's wallet packs in display order, handed in once by the shield (:func:`use_packs`).
@@ -80,6 +84,13 @@ def use_packs(packs: Iterable[Pack]) -> None:
 def wallet_packs() -> tuple[Pack, ...]:
     """Every wallet pack in display order: supported, planned, then unavailable ones."""
     return _packs
+
+
+def logo_url(pack_id: str) -> str:
+    """Where the dashboard serves *pack_id*'s logo (``GET /shields/trader/packs/{pack}/logo.svg``),
+    when it is a supported pack that ships one; "" otherwise (the page then draws its glyph)."""
+    return next((LOGO_URL.format(pack=pack.id) for pack in _packs
+                 if pack.id == pack_id and pack.status == "supported" and pack.logo is not None), "")
 
 
 def supported_wallets() -> dict[str, str]:

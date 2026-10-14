@@ -869,8 +869,6 @@ Click a module to open its file list.
 | `lifecycle.py` | Startup and shutdown hooks for the dashboard app, without FastAPI's deprecated ``on_event`` |
 | `network_sync.py` | The command line the dashboard runs for its verified-graph sync |
 | `node_probe.py` | The dashboard's probes of the local DKG node: is it answering, and how is its sync |
-| `protection/__init__.py` | The dashboard's wallet-protection panel: what Blackbox found to protect, and how (trader rules) |
-| `protection/events.py` | Trader Shield's full event report: every wallet event, with the session around it (local only) |
 | `pulse_driver.py` | The community pulse keeps beating while the dashboard runs, browser or not (KI-283) |
 | `safe_payloads.py` | Making community- and graph-derived values safe to serve (the dashboard's one sanitizer) |
 | `server.py` | Standalone Blackbox dashboard — a tiny FastAPI app bound to loopback |

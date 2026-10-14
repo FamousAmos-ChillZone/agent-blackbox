@@ -3,10 +3,13 @@
 The kernel's settings stay shield-free (it never imports a shield); the dashboard composes
 each shield's Settings view onto what the kernel answers (F-017), on GET and POST alike, so
 the page re-renders from one shape. A sub-package because ``dashboard/`` is at its file
-limit; the rest of the shield routes of §3.6 join it here.
+limit. The page draws every shield from these routes alone (``static/shields.js``); no
+shield is named in the dashboard's own markup or script.
 
-``GET /api/shields`` answers every registered shield's card (``shields.statuses()``),
-sanitised ONCE here, at the serving boundary (F-002: a shield clamps its own text but never
+``GET /api/shields`` answers every registered shield's card (``shields.statuses()``) with
+what the page needs to draw it — the shield's ``name``, ``tagline``, ``beta``, its ``page``
+address and ``claims`` (the finding identifier patterns it owns, so the page can tell its
+findings apart) — sanitised ONCE here, at the serving boundary (F-002: a shield clamps its own text but never
 imports the dashboard), and served through the server's stale-while-revalidate cache for
 :data:`STATUS_TTL_SECONDS`, so N shields cost one read per 2 s however many tabs poll (F-021).
 
@@ -28,6 +31,8 @@ campaign addresses ``/trader-shield``, ``/trader-shield/attacks.json`` and
 ``/trader-shield/graph.json`` are permanent 307 aliases with FIXED Locations (D-07), never
 built from the request. All of it sits behind the app-wide browser boundary.
 
+``GET /shields.js`` is the dashboard's shield code (``static/shields.js``, one fixed file).
+
 Usage::
 
     return shields_routes.with_shields(settings.read_settings())   # GET /api/settings
@@ -46,7 +51,6 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from ... import shields
-from .. import protection
 from ...kernel.display_safety import strip_controls
 from ..safe_payloads import safe_identifier, safe_text
 
@@ -58,13 +62,17 @@ STATUS_TTL_SECONDS = 2.0
 MAX_CARD_TEXT = 1000
 #: The longest text an event carries (its story: the asked request, escaped, plus the prose).
 MAX_EVENT_TEXT = 8000
-#: A card's ``logo``: a path on this dashboard (``/wallets/metamask.svg``), served as is or not at all.
+#: A card's ``logo`` and ``page``: a path on this dashboard (``/shields/trader/packs/metamask/logo.svg``),
+#: served as is or not at all.
+LOCAL_PATHS = ("logo", "page")
 LOCAL_URL = re.compile(r"/[A-Za-z0-9_-]+(?:[./][A-Za-z0-9_-]+)*")
 #: A pack logo is an image, never a document: opened directly, its script cannot run (F-054).
 LOGO_HEADERS = {"X-Content-Type-Options": "nosniff",
                 "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
                 "Cache-Control": "public, max-age=86400"}
 NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+#: The page's shield code (``GET /shields.js``): it ships with the page, so it is never cached either.
+SHIELDS_SCRIPT = Path(__file__).resolve().parents[1] / "static" / "shields.js"
 #: The campaign addresses of Trader Shield's page (D-07): permanent, each to a FIXED Location.
 ALIASES = {"/trader-shield": "/shields/trader",
            "/trader-shield/attacks.json": "/shields/trader/attacks.json",
@@ -107,22 +115,31 @@ def _local_text(value: str) -> str:
 
 def sanitised(value: Any, text: Callable[[str], str] = _card_text) -> Any:
     """*value* (plain JSON) with every string passed through *text* (by default
-    ``safe_payloads.safe_text`` — the dashboard's one sanitiser), except a ``logo``, which is
-    a local path kept only when it is one (defanging would break it), and an ``identifier``,
+    ``safe_payloads.safe_text`` — the dashboard's one sanitiser), except a ``logo`` or a
+    ``page``, each a local path kept only when it is one (defanging would break it), and an ``identifier``,
     which goes through ``safe_identifier``; keys are the record's own field names."""
     if isinstance(value, str):
         return text(value)
     if isinstance(value, dict):
-        return {key: _local_url(item) if key == "logo" else safe_identifier(item) if key == "identifier"
+        return {key: _local_url(item) if key in LOCAL_PATHS else safe_identifier(item) if key == "identifier"
                 else sanitised(item, text) for key, item in value.items()}
     if isinstance(value, list):
         return [sanitised(item, text) for item in value]
     return value
 
 
+def card(status: shields.ShieldStatus) -> dict[str, Any]:
+    """*status* as the page draws it: the card, plus its shield's descriptive fields."""
+    shield = shields.get(status.shield_id)
+    described = {} if shield is None else {
+        "name": shield.name, "tagline": shield.tagline, "beta": shield.beta, "page": f"/shields/{shield.id}",
+        "claims": [kind.identifier for kind in shield.finding_kinds if kind.identifier]}
+    return {**status.as_json(), **described}
+
+
 def statuses_payload() -> list[Any]:
-    """Every shield's card as served: ``[ShieldStatus.as_json()]``, sanitised once."""
-    return [sanitised(status.as_json()) for status in shields.statuses()]
+    """Every shield's card as served: ``[card(ShieldStatus)]``, sanitised once."""
+    return [sanitised(card(status)) for status in shields.statuses()]
 
 
 def events_payload(shield_id: str) -> list[Any] | None:
@@ -189,13 +206,16 @@ def shield_file(shield_id: str, name: str) -> Optional[Path]:
 
 
 def register(app: Any, swr: Cache) -> None:
-    """Add ``GET /api/shields`` (cached through *swr*), ``GET /api/shields/{id}/events``,
-    every shield's page and its files (:func:`register_pages`) to *app*, and (until S7
-    removes it) the old wallet-protection panel's routes."""
-    from fastapi.responses import JSONResponse
+    """Add ``GET /api/shields`` (cached through *swr*), ``GET /api/shields/{id}/events``, the
+    page's ``GET /shields.js`` and every shield's page and its files (:func:`register_pages`)
+    to *app*."""
+    from fastapi.responses import FileResponse, JSONResponse
 
-    protection.register_protection_routes(app)   # transitional: the old panel, until S7
     register_pages(app)
+
+    @app.get("/shields.js")
+    def shields_script() -> Any:
+        return FileResponse(str(SHIELDS_SCRIPT), media_type="application/javascript", headers=NO_CACHE)
 
     @app.get("/api/shields")
     def shield_statuses() -> Any:
