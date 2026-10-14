@@ -11,12 +11,11 @@ the attack table's vault and Firefox rows are run through both the same way.
 from __future__ import annotations
 
 import dataclasses
-import json
 import os
 
 import pytest
 
-from plugins.blackbox.dashboard import protection
+from _trader_attack_table import ATTACKS
 from plugins.blackbox.detection import wallet_files
 from plugins.blackbox.detection.wallet_files import detect_wallet_files
 from plugins.blackbox.shields.contract import Pack
@@ -291,8 +290,7 @@ def test_roots_and_store_globs_equal_todays(monkeypatch, tmp_path, env):
 
 # -- the attack table's vault and Firefox rows, through both detectors ----------------------------
 
-TABLE = json.loads((protection.TRADER_SHIELD_PAGE.parent / "trader-shield-attacks.json").read_text(encoding="utf-8"))
-VAULT_ROWS = [row for row in TABLE["attacks"]
+VAULT_ROWS = [row for row in ATTACKS   # page rows with their tool calls (_trader_attack_table)
               if row["proof"] == "test" and (row["group"] == "vault" or "firefox" in row["id"])]
 
 

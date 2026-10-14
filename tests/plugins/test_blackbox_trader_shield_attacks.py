@@ -17,16 +17,15 @@ no secret-shaped literal lives in the repo (LES-022).
 from __future__ import annotations
 
 import hashlib
-import json
 import random
 import os
 import secrets
-from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
+from _trader_attack_table import ATTACKS, SCENARIO_FIELDS, SCENARIOS, TABLE
 from plugins.blackbox import ruleset as ruleset_mod
 from plugins.blackbox.dashboard import protection
 from plugins.blackbox.detection import wallet_files
@@ -39,12 +38,6 @@ from plugins.blackbox.kernel.crypto_secrets import seed_phrase
 from plugins.blackbox.shields.trader import mode as trader_mode
 from plugins.blackbox.ruleset import Ruleset
 
-TABLE = json.loads((protection.TRADER_SHIELD_PAGE.parent / "trader-shield-attacks.json").read_text(encoding="utf-8"))
-SCENARIOS = json.loads(Path(__file__).with_name("trader_shield_attack_scenarios.json").read_text(encoding="utf-8"))["scenarios"]
-#: Each page row with its scenario (tool, args, hook, graph, block_severity) — what the tests drive.
-ATTACKS = [{**row, **SCENARIOS.get(row["id"], {})} for row in TABLE["attacks"]]
-#: Scenario fields: they belong to the tests and never ship in the plugin's table.
-SCENARIO_FIELDS = {"tool", "hook", "args", "graph", "block_severity"}
 METAMASK = "nkbihfbeogaeaoehlefnkodbefgpgknn"
 PHANTOM = "bfnaelmomeimhlpmgjnjophhpkkoljpa"
 #: blocked / flagged / missed (a gap); allowed = a harmless look-alike that must raise nothing.
