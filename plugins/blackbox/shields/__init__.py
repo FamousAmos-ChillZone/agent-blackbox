@@ -9,8 +9,9 @@ every shield and apply the rules no shield may opt out of:
   behalf — a mode is read only by the shield's own ``mode()``, only in ``snapshot()``
   and the dashboard views.
 * ``check()`` runs every ENABLED shield's ``detect`` and marks each finding
-  ``source="secret"`` (local only: the community gate refuses that source), and a
-  shield whose ``detect`` raises contributes nothing (fail-open, WARNING).
+  ``source="secret"`` (local only: the community gate refuses that source); a finding
+  whose ``fields["pack"]`` names no pack of its shield is dropped, and a shield whose
+  ``detect`` raises contributes nothing (fail-open, WARNING each).
 * ``allows()`` is the gate: a finding no shield claims is always allowed; a claimed
   one only while that shield is enabled and its ``allows`` agrees. A shield whose
   ``claims`` or ``allows`` raises is read as "claims and refuses" — opt-in
@@ -85,6 +86,9 @@ def _load_all(shields: Iterable[Shield]) -> dict[str, ShieldData]:
 
 
 _DATA: dict[str, ShieldData] = _load_all(_SHIELDS)
+#: Every pack id each shield loaded: a finding's ``fields["pack"]`` must be one of its shield's.
+_PACK_IDS: dict[str, frozenset[str]] = {shield_id: frozenset(pack.id for pack in data.packs)
+                                        for shield_id, data in _DATA.items()}
 
 
 def all_shields() -> tuple[Shield, ...]:
@@ -111,7 +115,8 @@ def snapshot() -> ShieldsSnapshot:
 
 
 def check(tool_name: str, args: Any, active: ShieldsSnapshot) -> list[Finding]:
-    """Every enabled shield's own findings for this call, each marked local-only."""
+    """Every enabled shield's own findings for this call, each marked local-only; a finding
+    naming a pack its shield does not have is a detector fault and is dropped."""
     findings: list[Finding] = []
     for shield, mode in active.entries:
         if not mode.enabled:
@@ -122,6 +127,11 @@ def check(tool_name: str, args: Any, active: ShieldsSnapshot) -> list[Finding]:
             logger.warning("blackbox: shield %s detect failed: %s", shield.id, exc)
             continue
         for finding in raised:
+            pack = finding.fields.get("pack")
+            if pack is not None and pack not in _PACK_IDS.get(shield.id, frozenset()):
+                logger.warning("blackbox: shield %s finding %s names unknown pack %r; dropped",
+                               shield.id, finding.identifier, pack)
+                continue
             if finding.source != LOCAL_ONLY_SOURCE:
                 logger.warning("blackbox: shield %s finding %s had source %r; made local-only",
                                shield.id, finding.identifier, finding.source)

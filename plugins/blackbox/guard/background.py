@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict
-from .. import audit, detection
+from .. import audit, detection, shields
 from ..kernel import threat_ids
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig
@@ -26,9 +26,8 @@ def _spawn_osv_discovery(cfg: BlackboxConfig, rs: Any, tool_name: str, args: Any
 
     def _run() -> None:
         try:
-            findings = reporting._flag_worthy(
-                cfg, detection.discover_dependency_candidates(tool_name, args, rs, osv.lookup)
-            )
+            found = detection.discover_dependency_candidates(tool_name, args, rs, osv.lookup)
+            findings = reporting._flag_worthy(cfg, found, shields.snapshot()) if found else []   # one snapshot per task
             if findings:
                 reporting._report_and_audit(cfg, "osv_discovery", findings, {"tool_name": tool_name})
         except Exception as exc:  # pragma: no cover - fail open
@@ -66,7 +65,7 @@ def _spawn_llm_review(cfg: BlackboxConfig, text: str, detail: dict[str, Any]) ->
                 confirmed=False,
                 source="llm",
             )
-            worthy = reporting._flag_worthy(cfg, [finding])
+            worthy = reporting._flag_worthy(cfg, [finding], shields.snapshot())   # one snapshot per task
             if worthy:
                 review_detail = {**detail, "llm": True}
                 # Give the LLM finding the same context; when the pattern scan

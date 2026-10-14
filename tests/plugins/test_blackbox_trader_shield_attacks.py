@@ -35,7 +35,7 @@ from plugins.blackbox.guard import reporting as guard_reporting
 from plugins.blackbox.kernel import config as config_mod
 from plugins.blackbox.kernel import crypto_secrets, threat_ids
 from plugins.blackbox.kernel.crypto_secrets import seed_phrase
-from plugins.blackbox.shields.trader import mode as trader_mode
+from plugins.blackbox.shields.trader import detectors, mode as trader_mode
 from plugins.blackbox.ruleset import Ruleset
 
 METAMASK = "nkbihfbeogaeaoehlefnkodbefgpgknn"
@@ -86,6 +86,7 @@ def shield(tmp_path, monkeypatch):
         folder.mkdir(parents=True)
         (folder / "000003.log").write_text("vault", encoding="utf-8")
     wallet_files.EXISTING_STORES.reset()
+    detectors.EXISTING_STORES.reset()   # the hook asks the shield's detectors
     monkeypatch.setattr(hooks, "_config", lambda: config_mod.BlackboxConfig(mode="block", report=False))
     monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: Ruleset())
     monkeypatch.setattr(guard_background, "_spawn_osv_discovery", lambda *a, **k: None)
@@ -123,6 +124,7 @@ def shield(tmp_path, monkeypatch):
 
     yield fill, findings
     wallet_files.EXISTING_STORES.reset()
+    detectors.EXISTING_STORES.reset()   # the hook asks the shield's detectors
 
 
 LOCAL = [attack for attack in ATTACKS if attack["proof"] == "test"]
