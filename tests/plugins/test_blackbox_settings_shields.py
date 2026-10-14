@@ -8,6 +8,7 @@ exists yet. ``HERMES_HOME``/``BLACKBOX_HOME`` are per-test tmpdirs (root conftes
 
 import json
 
+import pytest
 from _blackbox_loader import load_blackbox
 
 
@@ -107,3 +108,41 @@ def test_a_validator_that_raises_fails_the_save_closed():
 
     assert result["ok"] is False and result["errors"] == ["shield settings could not be checked"]
     assert not _config_path().exists() or "shields" not in _entry()
+
+
+@pytest.mark.parametrize("answer", [
+    ("alpha", {"enabled": True}, None),                       # errors not a list: never raises
+    ("alpha", {"enabled": True}, "bad"),                      # a str is never split into letters
+    ("alpha", {"enabled": True}, [404]),                      # errors must be strings
+    ("alpha", ["enabled"], []),                               # section must be a dict
+    ("", {"enabled": True}, []),                              # a shield needs a name
+    (5, {"enabled": True}, []),
+    ("alpha", {"enabled": True}, [], "wallet_protection"),    # supersedes is a tuple, not a str
+    ("alpha", {"enabled": True}, [], ("shields",)),           # a shield may never supersede shields
+    ("alpha", {"enabled": True}),                             # too short to be an answer
+])
+def test_a_malformed_validator_answer_fails_the_save_closed(answer):
+    assert settings.write_settings({"wallet_protection": True})["ok"] is True
+    before = _config_path().read_bytes()
+
+    result = settings.write_settings({"mode": "block"}, validators=(lambda payload: answer,))
+
+    assert result["ok"] is False and len(result["errors"]) == 1
+    assert all(isinstance(error, str) for error in result["errors"])
+    assert _config_path().read_bytes() == before
+
+
+def test_two_validators_claiming_one_shield_id_fail_the_save_closed():
+    result = settings.write_settings({"shields": {"alpha": {"enabled": True}}}, validators=(ALPHA, ALPHA))
+
+    assert result["ok"] is False and result["errors"] == ["invalid shield settings from 'alpha'"]
+    assert not _config_path().exists() or "shields" not in _entry()
+
+
+def test_an_untouched_shield_does_not_apply_its_superseded_keys():
+    assert settings.write_settings({"wallet_protection": True})["ok"] is True
+    alpha = _fake_shield("alpha", supersedes=("wallet_protection",))
+
+    assert settings.write_settings({"mode": "block"}, validators=(alpha,))["ok"] is True
+
+    assert _entry()["wallet_protection"] is True and "shields" not in _entry()
