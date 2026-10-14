@@ -9,10 +9,12 @@ Two checks, run from anywhere inside the git repository:
 
 1. **Every body, compared by name.** Every function and method under the
    plugin is parsed at ``<old-rev>`` and in the working tree and keyed by
-   ``module::Qualified.name``. Bodies are compared as ASTs (line numbers,
-   comments, formatting and a leading docstring do not count). A body found
-   unchanged under another module or name is listed as *moved*; a body that
-   kept its name but not its content is *changed*, wherever it now lives.
+   ``module::Qualified.name`` (a repeated name, such as a property setter,
+   gets ``#2``; a def under a module-level ``if``/``try``/``with`` counts).
+   Bodies are compared as ASTs (line numbers, comments, formatting and a
+   leading docstring do not count). A body found unchanged under another
+   module or name is listed as *moved*; a body that kept its name but not its
+   content is *changed*, wherever it now lives.
 2. **Every module imports, lazy imports included.** The working-tree plugin is
    imported module by module, and every relative import written inside a
    function (which only runs when the function is called) is resolved now, so
@@ -36,6 +38,7 @@ import os
 import subprocess
 import sys
 import types
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -46,6 +49,7 @@ os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 EXIT_CLEAN, EXIT_CHANGED, EXIT_USAGE, EXIT_BROKEN_IMPORT = 0, 1, 2, 3
 _IMPORT_ROOT = "hermes_plugins"  # the package the plugin loader mounts plugins under
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
+_BLOCKS = (ast.If, ast.Try, ast.TryStar, ast.With)  # statements whose bodies can define functions at import time
 
 
 class ProofError(Exception):
@@ -86,13 +90,22 @@ def _bodies(source: str, module: str, origin: str) -> dict[str, str]:
     except SyntaxError as exc:
         raise ProofError(f"cannot parse {origin}: {exc}") from exc
     found: dict[str, str] = {}
+    seen: Counter[str] = Counter()
 
     def visit(nodes: list[ast.stmt], prefix: str) -> None:
         for node in nodes:
             if isinstance(node, _FUNCTIONS):
-                found[f"{module}::{prefix}{node.name}"] = _fingerprint(node)
+                key = f"{module}::{prefix}{node.name}"
+                seen[key] += 1
+                # A property setter or a conditional twin reuses the name: number it, never overwrite it.
+                found[key if seen[key] == 1 else f"{key}#{seen[key]}"] = _fingerprint(node)
             elif isinstance(node, ast.ClassDef):
                 visit(node.body, f"{prefix}{node.name}.")
+            elif isinstance(node, _BLOCKS):  # a def under ``if``/``try``/``with`` is still a module or class body
+                for block in (node.body, getattr(node, "orelse", []), getattr(node, "finalbody", [])):
+                    visit(block, prefix)
+                for handler in getattr(node, "handlers", []):
+                    visit(handler.body, prefix)
 
     visit(tree.body, "")
     return found

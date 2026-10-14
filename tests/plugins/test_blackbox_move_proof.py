@@ -86,3 +86,30 @@ def test_broken_lazy_import_inside_a_function_is_reported(repo: Path) -> None:
     assert result.returncode == 3, result.stdout + result.stderr
     assert "changed (0):" in result.stdout
     assert "broken imports (1):\n  caller:2: from .math_ops import add -> ModuleNotFoundError" in result.stdout
+
+
+def test_a_changed_property_getter_is_not_hidden_by_its_setter(repo: Path) -> None:
+    # Getter and setter share one qualified name; neither may overwrite the other.
+    holder = "class Box:\n    @property\n    def size(self):\n        return {}\n\n    @size.setter\n    def size(self, value):\n        self._size = value\n"
+    (repo / PLUGIN / "box.py").write_text(holder.format("self._size"), encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "box")
+    (repo / PLUGIN / "box.py").write_text(holder.format("0"), encoding="utf-8")
+
+    result = _move_proof(repo)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "changed (1):\n  box::Box.size\n" in result.stdout
+
+
+def test_a_function_defined_under_a_module_level_if_or_try_is_compared(repo: Path) -> None:
+    guarded = "import sys\n\nif sys.platform:\n    def pick():\n        return {}\n\ntry:\n    import json\nexcept ImportError:\n    def load():\n        return None\n"
+    (repo / PLUGIN / "guarded.py").write_text(guarded.format("1"), encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "guarded")
+    (repo / PLUGIN / "guarded.py").write_text(guarded.format("2"), encoding="utf-8")
+
+    result = _move_proof(repo)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "changed (1):\n  guarded::pick\n" in result.stdout
