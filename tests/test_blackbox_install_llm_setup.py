@@ -134,9 +134,13 @@ def test_unix_installer_creates_global_blackbox_launcher(tmp_path: Path) -> None
     hermes_bin.chmod(0o755)
 
     body = _extract_function_body("link_hermes")
+    shim_body = _extract_function_body("install_blackbox_shim")
     command = f"""
 ok() {{ :; }}
 warn() {{ :; }}
+install_blackbox_shim() {{
+{shim_body}
+}}
 link_hermes() {{
 {body}
 }}
@@ -183,9 +187,13 @@ def test_unix_installer_does_not_replace_unmanaged_blackbox_command(tmp_path: Pa
     hermes_bin.chmod(0o755)
 
     body = _extract_function_body("link_hermes")
+    shim_body = _extract_function_body("install_blackbox_shim")
     command = f"""
 ok() {{ :; }}
 warn() {{ :; }}
+install_blackbox_shim() {{
+{shim_body}
+}}
 link_hermes() {{
 {body}
 }}

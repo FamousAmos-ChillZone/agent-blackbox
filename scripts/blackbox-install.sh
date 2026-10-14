@@ -1220,26 +1220,33 @@ minimal_python_env() {
 }
 
 # ── hermes + blackbox commands on PATH (~/.local/bin) ────────────────────────
-link_hermes() {
-    local link_dir="$HOME/.local/bin"
+# The `blackbox` command: a small script beside `hermes` that runs `hermes blackbox`.
+# An existing `blackbox` that this installer did not write is left alone.
+install_blackbox_shim() {
+    local link_dir="$1"
     local blackbox_bin="$link_dir/blackbox"
-    mkdir -p "$link_dir"
-    if [ -x "$HERMES_BIN" ]; then
-        ln -sf "$HERMES_BIN" "$link_dir/hermes"
-        ok "Linked hermes → $link_dir/hermes"
-        if { [ -e "$blackbox_bin" ] || [ -L "$blackbox_bin" ]; } &&
-           ! grep -q 'managed-by: agent-blackbox-installer' "$blackbox_bin" 2>/dev/null; then
-            warn "Not replacing existing command at $blackbox_bin; remove or rename it, then re-run the installer."
-        else
-            cat > "$blackbox_bin" <<'SH'
+    if { [ -e "$blackbox_bin" ] || [ -L "$blackbox_bin" ]; } &&
+       ! grep -q 'managed-by: agent-blackbox-installer' "$blackbox_bin" 2>/dev/null; then
+        warn "Not replacing existing command at $blackbox_bin; remove or rename it, then re-run the installer."
+    else
+        cat > "$blackbox_bin" <<'SH'
 #!/bin/sh
 # managed-by: agent-blackbox-installer
 bin_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 exec "$bin_dir/hermes" blackbox "$@"
 SH
-            chmod 755 "$blackbox_bin"
-            ok "Installed blackbox → hermes blackbox ($blackbox_bin)"
-        fi
+        chmod 755 "$blackbox_bin"
+        ok "Installed blackbox → hermes blackbox ($blackbox_bin)"
+    fi
+}
+
+link_hermes() {
+    local link_dir="$HOME/.local/bin"
+    mkdir -p "$link_dir"
+    if [ -x "$HERMES_BIN" ]; then
+        ln -sf "$HERMES_BIN" "$link_dir/hermes"
+        ok "Linked hermes → $link_dir/hermes"
+        install_blackbox_shim "$link_dir"
         case ":$PATH:" in
             *":$link_dir:"*) : ;;
             *) warn "Add $link_dir to your PATH for the hermes and blackbox commands:  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
