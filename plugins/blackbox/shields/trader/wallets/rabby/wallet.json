@@ -1,0 +1,7 @@
+{
+  "id": "rabby",
+  "name": "Rabby",
+  "kind": "browser-extension",
+  "status": "planned",
+  "order": 110
+}

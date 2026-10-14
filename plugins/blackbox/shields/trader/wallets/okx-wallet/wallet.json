@@ -1,0 +1,7 @@
+{
+  "id": "okx-wallet",
+  "name": "OKX Wallet",
+  "kind": "browser-extension",
+  "status": "planned",
+  "order": 140
+}
