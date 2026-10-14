@@ -106,6 +106,18 @@ def test_a_pack_without_a_logo_is_404(app, pack_id):
         assert client.get(f"/shields/trader/packs/{pack_id}/logo.svg").status_code == 404
 
 
+def test_an_unavailable_pack_serves_no_logo_even_when_it_carries_one(app, monkeypatch):
+    # A pack demoted to unavailable (say, a duplicate id) keeps its validated logo record;
+    # the route still refuses it, because an unavailable pack is never shown.
+    data = shields._DATA["trader"]
+    demoted = tuple(dataclasses.replace(pack, status="unavailable") if pack.id == "metamask" else pack
+                    for pack in data.packs)
+    monkeypatch.setitem(shields._DATA, "trader", dataclasses.replace(data, packs=demoted))
+    assert shields.pack_logo("trader", "metamask") is None
+    with TestClient(app, base_url=LOCAL) as client:
+        assert client.get("/shields/trader/packs/metamask/logo.svg").status_code == 404
+
+
 LOGO_PACKS = [(shield.id, pack.id) for shield in shields.all_shields() for pack in shields.loaded_packs(shield.id)
               if pack.status == "supported" and pack.logo is not None]
 
