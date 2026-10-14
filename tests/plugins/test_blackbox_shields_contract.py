@@ -251,8 +251,12 @@ def test_order_must_be_unique_among_usable_packs(tmp_path):
 @pytest.mark.parametrize("template", [
     "~", "~/*", "~/.config", "~/**/wallets", "~/../etc/keys", "/etc/wallets/keys", "~//wallets", "$HOME/.x/y",
     "~/./x/y", "~/.electrum/wallets/", "%APPDATA%\\Electrum\\wallets", "~/*/wallets", "", None,
+    "$XDG_CONFIG_HOME", "$XDG_CONFIG_HOME/*", "$XDG_CONFIG_HOME/*chrome", "$XDG_CONFIG_HOME/google-chrome*/Default",
+    "~/.config*", "%APPDATA%/Opera*", "%LOCALAPPDATA%/Chromium",
 ], ids=["home", "home-star", "home-config", "double-star", "dot-dot", "absolute", "empty-segment",
-        "unknown-variable", "dot", "trailing-slash", "backslash", "first-folder-wildcard", "empty", "not-text"])
+        "unknown-variable", "dot", "trailing-slash", "backslash", "first-folder-wildcard", "empty", "not-text",
+        "xdg-config", "xdg-config-star", "xdg-leading-wildcard", "xdg-wildcard-then-deeper",
+        "home-one-folder-wildcard", "appdata-one-folder", "localappdata-one-folder"])
 def test_forbidden_template_shapes_are_refused(template):
     with pytest.raises(PackError):
         check_template(template)
@@ -262,6 +266,14 @@ def test_forbidden_template_shapes_are_refused(template):
     "~/.electrum/wallets", "$XDG_CONFIG_HOME/solana/*.json", "%APPDATA%/Mozilla/Firefox/Profiles/*",
     "%LOCALAPPDATA%/Google/Chrome/User Data", "~/.mozilla/firefox/*"])
 def test_valid_templates_pass(template):
+    assert check_template(template) == template
+
+
+# R25 / F-046 with the S3 roots: $XDG_CONFIG_HOME is ~/.config, already one folder below
+# home, so one named folder below it is as narrow as ~/.electrum/wallets.
+@pytest.mark.parametrize("template", [
+    "$XDG_CONFIG_HOME/chromium", "$XDG_CONFIG_HOME/google-chrome*", "$XDG_CONFIG_HOME/BraveSoftware/Brave-Browser*"])
+def test_one_named_folder_below_xdg_config_home_passes(template):
     assert check_template(template) == template
 
 

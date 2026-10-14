@@ -25,8 +25,9 @@ pack contains, so a stray edit or a bad copy is never half-used:
 A **path template** starts at ``~``, ``$XDG_CONFIG_HOME``, ``%APPDATA%`` or
 ``%LOCALAPPDATA%`` (a closed list), uses ``/``, lets ``*`` match within one segment,
 refuses ``**``, ``..``, ``.``, empty segments and absolute paths, and names at least
-two segments below its root, the first of them literal — a typo must never protect
-the whole home folder.
+two folders below home (``$XDG_CONFIG_HOME`` is ``~/.config``, so one below it), the
+first literal or, when it is the last, literal text then ``*`` — a typo must never protect
+the whole home folder (``~``, ``~/*``, ``~/.config``, ``$XDG_CONFIG_HOME/*`` are refused).
 """
 
 from __future__ import annotations
@@ -56,6 +57,9 @@ PACK_ID = re.compile(r"[a-z0-9-]{2,32}")
 POINTER_KEY = re.compile(r"[a-z_]{1,32}")    # matched later as a literal line prefix, never compiled
 BROWSER_ID = re.compile(r"[a-z0-9-]{2,32}")
 TEMPLATE_ROOTS = ("~", "$XDG_CONFIG_HOME", "%APPDATA%", "%LOCALAPPDATA%")
+#: Folders a template names below its root ($XDG_CONFIG_HOME is ~/.config, one below home).
+TEMPLATE_MIN_FOLDERS = {"~": 2, "$XDG_CONFIG_HOME": 1, "%APPDATA%": 2, "%LOCALAPPDATA%": 2}
+_FOLDER_COUNT_WORDS = {1: "one folder", 2: "two folders"}
 SENTINEL_IDS = frozenset({"any-extension", "all", "none"})
 PACK_STATUSES = ("supported", "planned")
 COMMON_FIELDS = frozenset({"id", "name", "kind", "status", "order", "verified", "source", "logo"})
@@ -173,9 +177,11 @@ def check_template(template: Any) -> str:
     for segment in below:
         if segment in ("", ".", "..") or "**" in segment:
             raise PackError(f"path template {template!r} has a refused segment {segment!r}")
-    if len(below) < 2:
-        raise PackError(f"path template {template!r} must name at least two folders below {root}")
-    if "*" in below[0]:
+    if len(below) < TEMPLATE_MIN_FOLDERS[root]:
+        words = _FOLDER_COUNT_WORDS[TEMPLATE_MIN_FOLDERS[root]]
+        raise PackError(f"path template {template!r} must name at least {words} below {root}")
+    # Only a last folder may end in a wildcard after literal text ($XDG_CONFIG_HOME/google-chrome*).
+    if below[0].startswith("*") or ("*" in below[0] and len(below) > 1):
         raise PackError(f"path template {template!r} must name its first folder below {root} literally")
     return template
 
