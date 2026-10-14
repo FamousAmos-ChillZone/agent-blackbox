@@ -455,3 +455,43 @@ def test_a_working_sqlite_module_is_not_rebuilt(tmp_path):
     _, calls = _install_with_sqlite(tmp_path, built_before=True, rebuild_works=True)
 
     assert not any(call.startswith("rebuild") for call in calls)
+
+
+def _docker_available(tmp_path: Path, *, docker: str | None, os_name: str = "linux") -> int:
+    """blackbox_docker_available with a stub docker: None = not installed, "up" = running, "down" = stopped."""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir(parents=True, exist_ok=True)
+    if docker is not None:
+        stub = fake_bin / "docker"
+        stub.write_text(f"#!/bin/sh\nexit {0 if docker == 'up' else 1}\n", encoding="utf-8")
+        stub.chmod(0o755)
+    script = f"""
+blackbox_docker_available() {{
+{_body("blackbox_docker_available")}
+}}
+OS={os_name}
+HOME={shlex.quote(str(tmp_path))}
+PATH={shlex.quote(str(fake_bin))}:/usr/bin:/bin
+blackbox_docker_available
+"""
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True).returncode
+
+
+def test_docker_counts_as_available_only_when_it_can_run_the_store(tmp_path):
+    assert _docker_available(tmp_path / "a", docker=None) != 0
+    assert _docker_available(tmp_path / "b", docker="down") != 0
+    assert _docker_available(tmp_path / "c", docker="up") == 0
+
+
+def test_catalog_setup_without_docker_uses_oxigraph_and_curl_keeps_asking():
+    """Founder decision 2026-10-14: `hermes blackbox setup` picks Oxigraph by itself when Docker is
+    missing; the one-line installer keeps its ask-first fallback (unchanged since the first commit)."""
+    body = _body("provision_blackbox_store")
+    setup_only = body.index('if [ "$BLACKBOX_SETUP_ONLY" = true ] && [ "$BLACKBOX_DKG_STORE_BACKEND" = "auto" ] && ! blackbox_docker_available; then')
+    ask_first = body.index('if ! require_docker_for_blazegraph; then')
+
+    assert setup_only < ask_first
+    assert "use_blackbox_oxigraph" in body[setup_only:ask_first]
+    assert 'confirm_oxigraph_fallback "Blazegraph cannot be installed because Docker is unavailable."' in body[ask_first:]
+    windows = _ps1_function("Initialize-BlackboxStore")
+    assert windows.index('if ($SetupOnly -and $StoreBackend -eq "auto" -and -not $dockerRunning)') < windows.index("if (-not (Test-DockerForBlazegraph))")

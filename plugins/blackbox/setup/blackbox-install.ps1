@@ -695,6 +695,19 @@ function Initialize-BlackboxStore {
         }
         Write-Warn2 "The managed Blazegraph endpoint is down; attempting Docker recovery."
     }
+    # `hermes blackbox setup` (a Hermes plugin-catalog install) needs no Docker: without it the store is
+    # the DKG-managed Oxigraph, chosen rather than asked about. The iex installer keeps asking first.
+    $dockerRunning = $false
+    if (Get-Command docker -ErrorAction SilentlyContinue) {
+        & docker info *> $null
+        $dockerRunning = ($LASTEXITCODE -eq 0)
+    }
+    if ($SetupOnly -and $StoreBackend -eq "auto" -and -not $dockerRunning) {
+        Write-Step "Docker is not available here, so setup uses the DKG-managed Oxigraph store (no Docker needed)."
+        Write-Step "To move to Blazegraph later: install Docker, then run: hermes blackbox setup --store blazegraph"
+        Use-BlackboxOxigraph
+        return $true
+    }
     if (-not (Test-DockerForBlazegraph)) {
         if ($StoreBackend -eq "auto" -and
             (Confirm-OxigraphFallback "Blazegraph cannot be installed because Docker is unavailable.")) {

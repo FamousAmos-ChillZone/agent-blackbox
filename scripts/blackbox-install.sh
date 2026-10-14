@@ -488,6 +488,14 @@ require_docker_for_blazegraph() {
     ok "Docker engine is ready for Blazegraph"
 }
 
+# Whether Docker can run the Blazegraph store: running now, or Docker Desktop installed on a Mac
+# (require_docker_for_blazegraph starts it).
+blackbox_docker_available() {
+    command -v docker >/dev/null 2>&1 || return 1
+    docker info >/dev/null 2>&1 && return 0
+    [ "$OS" = "macos" ] && { [ -d "/Applications/Docker.app" ] || [ -d "$HOME/Applications/Docker.app" ]; }
+}
+
 use_blackbox_oxigraph() {
     BLACKBOX_DOCKER_REQUIRED=false
     BLACKBOX_DKG_SELECTED_STORE_BACKEND="oxigraph-server"
@@ -626,6 +634,15 @@ PYEOF
             fi
         fi
         warn "The managed Blazegraph endpoint is down; attempting Docker recovery."
+    fi
+    # `hermes blackbox setup` (a Hermes plugin-catalog install) needs no Docker: without it the store
+    # is the DKG-managed Oxigraph, chosen here rather than asked about. The one-line installer keeps
+    # asking first (founder decision 2026-10-14).
+    if [ "$BLACKBOX_SETUP_ONLY" = true ] && [ "$BLACKBOX_DKG_STORE_BACKEND" = "auto" ] && ! blackbox_docker_available; then
+        step "Docker is not available here, so setup uses the DKG-managed Oxigraph store (no Docker needed)."
+        step "To move to Blazegraph later: install Docker, then run: hermes blackbox setup --store blazegraph"
+        use_blackbox_oxigraph
+        return 0
     fi
     if ! require_docker_for_blazegraph; then
         if [ "$BLACKBOX_DKG_STORE_BACKEND" = "auto" ] &&
