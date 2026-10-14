@@ -27,14 +27,54 @@ remain available during the initial sync.
 
 ## Compatibility
 
-- Hermes builds dated 2026-04-13 or later are supported. The installer uses a
-  compatible Hermes build.
+- Hermes 0.21.7 or later is supported (`requires_hermes: ">=0.21.7"`). The
+  installer uses a compatible Hermes build.
 - OpenClaw 2026.6.11 or later is supported. Older releases do not provide the
   stable plugin hooks Blackbox requires.
 
 Standard Hermes profiles and OpenClaw profiles are attached automatically. A
 running OpenClaw Gateway must be restarted once after its plugin config changes.
 For a remote or containerized agent, install Blackbox on the Gateway host.
+
+## What Blackbox does on your machine
+
+Read this before installing. Blackbox sends no telemetry or usage data.
+
+- **Checks every action.** Its hooks see each tool call and model request
+  before it runs and match them against the threat ruleset locally. In `block`
+  mode it refuses matching tool calls; in `audit` mode it only records them.
+- **Network calls.**
+  - Blackbox's own DKG node keeps a copy of the public verified threat graph
+    current, syncing with DKG network peers.
+  - **Community sharing is on by default.** Blackbox shares privacy-safe threat
+    reports with the open community graph: the threat's name and severity,
+    never prompts, commands, file contents or secrets. It also reads other
+    nodes' reports, which only ever flag and never block. Turn sharing off with
+    `blackbox report --disable-sharing`, the dashboard toggle, or `report: false`
+    (`BLACKBOX_REPORT=0`).
+  - Package installs are looked up on OSV.dev (`api.osv.dev`): the package name
+    and version are sent. Turn this off with `osv_lookup: false`.
+  - The optional AI reviewer is off until you set it up. Once on, it sends the
+    text your agent reads to the provider you chose (OpenAI or Anthropic).
+- **Background processes.**
+  - The installer sets up the DKG node (npm package `@origintrail-official/dkg`,
+    listening on 127.0.0.1) as a login service, and Blackbox restarts it if it
+    stops.
+  - `blackbox dashboard` runs a loopback-only web server on 127.0.0.1:9700.
+- **Files outside its own folder.** To protect wallets and keys, Blackbox
+  matches the paths an agent touches against protected locations: browser
+  wallet extension folders, wallet apps, `~/.ssh`, `~/.aws`, `.env` files. To
+  locate wallets it reads two small settings files: a Firefox profile's
+  `prefs.js` (which add-on lives in which folder) and the Solana CLI's
+  `config.yml` (where its keypair is). It never reads wallet contents or keys.
+  `blackbox attach` writes Blackbox's plugin entry into the Hermes homes and
+  OpenClaw workspaces you choose to protect.
+- **Stored credentials.** These live in Blackbox's own folder
+  (`$BLACKBOX_HOME`, default `~/.hermes/blackbox`): this node's DKG identity
+  and API token, and the reporter signing key (`reporter_key.pem`, mode 0600).
+  The AI reviewer's key is saved as the name of the variable that holds it, or
+  as itself in `config.yaml` if you paste it. API keys are read only through
+  Hermes, never from `.env` files or another program's login.
 
 ## Use
 
@@ -104,15 +144,16 @@ works; the next save from the dashboard moves them under `shields.trader`.
 The Trader Shield page lists every attack it was tested against, and what the verified threat
 graph already knows about crypto (counted with `scripts/blackbox-trader-graph-counts.py`).
 
-## Community graph (sharing is opt-in)
+## Community graph (sharing is on by default)
 
-Nothing leaves your machine until you read the reporter terms and consent;
-withdrawing is one command and stops sharing on the next action.
+A fresh install shares privacy-safe threat reports with the community graph.
+Turning it off is one command and stops sharing on the next action; turning it
+back on is one command too.
 
 ```bash
-blackbox report --consent               # read the terms, record consent (sharing stays off)
-blackbox report --enable-sharing        # turn sharing on (needs consent); --disable-sharing turns it off
-blackbox report --withdraw-consent      # sharing stops
+blackbox report --disable-sharing       # sharing stops (or report: false / BLACKBOX_REPORT=0)
+blackbox report --enable-sharing        # sharing back on
+blackbox report --consent               # read the reporter terms
 blackbox report --type ioc --ioc-type domain --value evil.example --context fetched-by-tool
 blackbox report --status                # what happened to each report, and its community stage
 blackbox report --standing              # counted or probation, with a co-sighting estimate
@@ -153,8 +194,8 @@ Blackbox currently uses one shared graph:
 - The **community graph** is the open collective-defense layer: any protected
   agent contributes privacy-safe threat reports and learns from other agents'
   reports (aggregated with honest distinct-reporter counts). Community rules
-  FLAG only — they can never block. Active when a community graph address is
-  configured; sharing additionally requires `report: true` (`blackbox report --enable-sharing`).
+  FLAG only — they can never block. On by default (`report: true`); turn it
+  off with `blackbox report --disable-sharing`.
 
 Raw prompts, commands, file contents, secrets, and your local audit trail are
 never published — reports carry only deterministic threat names and the
@@ -171,13 +212,13 @@ to change them is through the dashboard settings page.
 |---|---:|---|
 | `mode` | `audit` | Warn only (`audit`) or stop confirmed threats (`block`) |
 | `block_severity` | `critical` | Minimum severity blocked in block mode |
-| `report` | `false` | Share privacy-safe threat reports with the community graph |
+| `report` | `true` | Share privacy-safe threat reports with the community graph |
 | `report_min_severity` | `high` | Minimum severity for heuristic candidates to flag/share |
 | `detection.<category>.enabled` | `true` | Enable or disable a detection category |
 | `detection.<category>.min_severity` | `info` | Minimum visible severity for a category |
 | `protected_paths` | `[]` | Local file globs that always block and are never shared |
 | `context_graph_id` | `0x37b1Fdfd…/agent-blackbox-vm` | Public verified threat graph |
-| `community_graph_id` | *(empty until launch)* | Community graph address; empty keeps sharing dormant |
+| `community_graph_id` | `0x37b1Fdfd…/agent-blackbox-community` | Community graph address; empty keeps sharing dormant |
 | `daily_report_limit` | `100` | Daily cap on outbound community reports (cannot be switched off; 0 means the default) |
 | `graph_peer_id` | bundled publisher peer | Authoritative threat-data sync source |
 
