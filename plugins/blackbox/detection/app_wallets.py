@@ -35,7 +35,9 @@ import os
 import re
 import threading
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
+
+from ..kernel.bounded_files import read_small_text
 
 @dataclass(frozen=True)
 class AppWallet:
@@ -121,13 +123,8 @@ class _SolanaKeyFile:
 
     @staticmethod
     def _read(config_path: str) -> Optional[str]:
-        try:
-            if os.path.getsize(config_path) > _MAX_CONFIG_BYTES:
-                return None
-            with open(config_path, encoding="utf-8-sig", errors="replace") as handle:
-                match = _KEYPAIR_PATH.search(handle.read())
-        except OSError:
-            return None
+        text = read_small_text(config_path, _MAX_CONFIG_BYTES)
+        match = _KEYPAIR_PATH.search(text) if text is not None else None
         return _absolute(match.group("path").strip()) if match else None
 
     def reset(self) -> None:
