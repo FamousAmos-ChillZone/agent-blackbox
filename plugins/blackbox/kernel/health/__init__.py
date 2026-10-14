@@ -65,8 +65,9 @@ STALE_INTERVALS = 2.0
 CURATOR_SILENCE_DAYS = 14
 #: A curator key without a heartbeat this long → INFO (plan §09: >48 h).
 HEARTBEAT_SILENCE_DAYS = 2
-#: What to do without a DKG node for Blackbox. A Hermes plugin-catalog install brings the plugin only.
-NODE_INSTALL_HINT = ("install it with the Blackbox installer (blackbox.umanitek.ai); until then the built-in rules "
+#: What to do without a DKG node for Blackbox: a Hermes plugin-catalog install brings the plugin
+#: only, and `blackbox setup` installs the rest (the same installer curl runs).
+NODE_INSTALL_HINT = ("finish the install: hermes blackbox setup — until then the built-in rules "
                      "(protected paths, secrets, Trader Shield) still protect")
 
 _CURATOR = "curator"
@@ -146,8 +147,8 @@ def _trust(inputs: HealthInputs) -> list[HealthItem]:
 
 def _node_and_ruleset(inputs: HealthInputs) -> list[HealthItem]:
     if not inputs.node_installed:   # nothing to sync and nothing to restart: the alarms below would mislead
-        return [HealthItem(_OPERATOR, HealthClass.ACTION, "Blackbox's DKG node is not installed: the verified threat "
-                           "graph is not loaded", NODE_INSTALL_HINT)]
+        return [HealthItem(_OPERATOR, HealthClass.ACTION, "Blackbox setup has not run: no DKG node, so the verified "
+                           "threat graph is not loaded", NODE_INSTALL_HINT)]
     items = []
     stale = inputs.ruleset_age_s is None or inputs.ruleset_age_s > STALE_INTERVALS * max(1.0, inputs.sync_interval_s)
     if not inputs.node_reachable or stale:

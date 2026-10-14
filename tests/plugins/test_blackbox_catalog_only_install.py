@@ -49,7 +49,7 @@ def test_without_a_node_the_one_alarm_says_how_to_install_it():
     node_items = [item for item in items if "DKG node" in item.message or "ruleset" in item.message]
 
     assert [item.message for item in node_items] == [
-        "Blackbox's DKG node is not installed: the verified threat graph is not loaded"]
+        "Blackbox setup has not run: no DKG node, so the verified threat graph is not loaded"]
     assert node_items[0].what_to_do == health.NODE_INSTALL_HINT
     assert not any("blackbox sync" in item.what_to_do for item in items)
 
@@ -82,7 +82,7 @@ def test_sync_without_a_node_says_how_to_install_it_and_does_not_wait(tmp_path, 
 
     assert code == 2
     out = capsys.readouterr().out
-    assert "DKG node is not installed" in out and "Blackbox installer" in out
+    assert "setup has not run" in out and "hermes blackbox setup" in out
 
 
 def test_sync_with_a_node_runs_the_sync(tmp_path, monkeypatch):

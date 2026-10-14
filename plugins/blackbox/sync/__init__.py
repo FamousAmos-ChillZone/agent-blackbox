@@ -34,7 +34,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
     is not there (exit 2 with ``--wait``); otherwise :func:`.command.cmd_sync`."""
     cfg = load_blackbox_config()
     if not health.node_installed(cfg, DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home).reachable()):
-        print("Blackbox's DKG node is not installed, so there is no threat graph to sync. "
-              f"To load it, {health.NODE_INSTALL_HINT}.")
+        print("Blackbox setup has not run, so there is no DKG node and no threat graph to sync. "
+              f"To {health.NODE_INSTALL_HINT}.")
         return 2 if getattr(args, "wait", False) else 0
     return _sync_with_node(args)
