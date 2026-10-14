@@ -835,14 +835,17 @@ gateway = ["assets/**/*"]
 # without it the rule cannot answer and no bare IP is ever promoted.
 # The exchange-router list (known_contracts.json): without it no router is exempt and every swap
 # naming one is flagged. The BIP-39 wordlist: without it no seed phrase is recognised. The dashboard
-# page, its assets and the reporter terms the consent step shows. Every file a Blackbox module opens
-# next to itself must be listed: tests/plugins/test_blackbox_package_data.py scans for them.
+# page, its assets and the reporter terms the consent step shows. Shield packs (manifests, logos and
+# their terms), browser roots, attack tables and pages under blackbox/shields/. Every file a Blackbox
+# module opens next to itself must be listed: tests/plugins/test_blackbox_package_data.py scans for them.
 plugins = ["**/plugin.yaml", "**/plugin.yml", "blackbox/kernel/public_suffix/*.dat", "blackbox/ruleset/legacy_assets.txt",
            "blackbox/curate/service/never_promote_ranges.json",
            "blackbox/kernel/crypto_secrets/known_contracts.json",
            "blackbox/kernel/crypto_secrets/bip39_english.txt",
            "blackbox/dashboard/static/**/*", "blackbox/dashboard/assets/**/*",
-           "blackbox/docs/REPORTER_TERMS.md"]
+           "blackbox/docs/REPORTER_TERMS.md",
+           "blackbox/shields/**/*.json", "blackbox/shields/**/*.svg", "blackbox/shields/**/*.md",
+           "blackbox/shields/**/*.html"]
 # pm/lock.json is the runtime pin table (uv/python/tool versions + sha256s).
 # Without it a sealed wheel installs the pm package but has no pins to
 # realize — the pm store would be empty.
