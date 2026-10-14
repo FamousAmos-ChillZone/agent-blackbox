@@ -263,7 +263,7 @@
     <div class="hero-copy">
       <span class="beta"><i aria-hidden="true"></i>New · Trader Shield beta</span>
       <h1>Your agent trades.<br />It never touches your keys.</h1>
-      <p class="lead">Trader Shield sits between your AI agent and your crypto wallets. Your agent keeps placing trades through its own tools, but it can't open your wallet's vault, handle your seed phrase, or send your private keys anywhere.</p>
+      <p class="lead">Trader Shield sits between your AI agent and your crypto wallets. Your agent keeps placing trades through its own tools, but it can't open your wallet's vault, handle your seed phrase, or send your private keys anywhere. It guards AI agents attached to Blackbox through Hermes; agents run through OpenClaw are not covered today.</p>
       <div class="cta-row">
         <a class="btn primary" href="#start">Get started with the beta</a>
         <a class="btn ghost" href="#how">How it works</a>
@@ -353,7 +353,7 @@
   <section id="tested" aria-label="Tested attack by attack">
     <div class="eyebrow">Tested, attack by attack</div>
     <h2>Every Web3 attack we tried, and what happened</h2>
-    <p class="muted">Each one was run through Blackbox's real checks with Trader Shield on and Blackbox in block mode. This list is the same file Blackbox's tests check, so it can't say more than the code does. <span class="mono" id="bench-run"></span></p>
+    <p class="muted">Each one was run through Blackbox's real checks<span id="tested-with"></span>. This list is the same file Blackbox's tests check, so it can't say more than the code does. <span class="mono" id="bench-run"></span></p>
     <div class="tally" id="tally"></div>
     <div class="attacks" id="attacks"><p class="muted">Loading the tested attacks…</p></div>
   </section>
@@ -424,50 +424,32 @@
 </div>
 
 <script>
-  // ---- Page content: update this block as Trader Shield gains features ----
-  var SHIELD = {
-    version: "Beta · updated 2026-10-13 · 49 attacks tested",
-    can: [
-      ["Keep your agent out of your wallets", "MetaMask and Phantom in Chrome, Brave, Edge, Opera, Vivaldi, Arc and Firefox; Exodus and Electrum on the desktop; the Solana CLI key file — through file tools, the terminal, find, one-line scripts, copies and archives"],
-      ["Recognise real seed phrases", "12 to 24 words, checked with the phrase's own checksum, so ordinary text doesn't trigger it — even written into a web address"],
-      ["Stop a seed phrase or wallet key leaving", "however it goes: curl, wget or nc, a web address the agent opens, or a script that posts it — in block mode"],
-      ["Recognise your own raw private key", "list your public addresses in Settings and a bare 64-character key that opens one is caught; transaction hashes are left alone"],
-      ["Spot a labelled private key or a Solana key", "PRIVATE_KEY=, pk:, \"privateKey\": and similar, and any real Solana key; flagged, because your own trading config may hold one, and blocked when sent"],
-      ["Keep exchange API keys with their exchange", "a Binance, OKX, Bybit, Coinbase Exchange or KuCoin key header sent anywhere but that exchange is blocked"],
-      ["Catch the approval a drainer needs", "an approval to a wallet the verified threat graph lists as a drainer is blocked; any unlimited approval is flagged so you see it"],
-      ["Guard your other secrets", ".env files, SSH keys, key files and the macOS keychain (its file and the security tool), through file tools and the terminal"],
-      ["Keep secrets out of Blackbox's logs", "phrases and keys are scrubbed before anything is recorded"],
-      ["Explain every event", "what the agent reached for, why it matters, and what led to it"]
-    ],
-    cannot: [
-      ["Other wallets yet", "Rabby, Coinbase Wallet, Solflare, Bitcoin Core and others are coming"],
-      ["Every exchange", "Kraken and Bitget use header names many other services share, so their keys are not matched yet"],
-      ["Stop malware outside your agent", "Trader Shield guards what your AI agent does, not other programs"],
-      ["Block links or addresses on their own", "known scam sites and wallets are flagged; only an approval to a known drainer is blocked"],
-      ["Read a path a script builds piece by piece", "quoted paths and the usual home-folder joins are read; a path assembled character by character is not"]
-    ],
-    coming: ["Rabby", "Coinbase Wallet", "Solflare", "Bitcoin Core", "More exchanges", "Safari wallets"],
-    // Set to {text: "...", who: "<name> · <role>", link: "https://…"} once a write-up is published.
-    testimonial: null
-  };
-
+  // ---- Page content: page/content.json beside this page (edit that file as Trader Shield gains features) ----
+  // Every address is relative to this page's own folder, so the page never knows where it is mounted.
+  var HERE = location.pathname.replace(/\/?$/, "/");
+  var ID = HERE.split("/").slice(-2)[0];
+  function getJSON(url) { return fetch(HERE + url, { cache: "no-store", headers: { Accept: "application/json" } }).then(function (r) { return r.json(); }); }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function item(pair) { return "<li><span><b>" + esc(pair[0]) + "</b> — " + esc(pair[1]) + "</span></li>"; }
-  document.getElementById("can").innerHTML = SHIELD.can.map(item).join("");
-  document.getElementById("cannot").innerHTML = SHIELD.cannot.map(item).join("");
-  document.getElementById("coming").innerHTML = SHIELD.coming.map(function (c) { return '<span class="chip">' + esc(c) + "</span>"; }).join("");
-  document.getElementById("version").textContent = SHIELD.version;
-  if (SHIELD.testimonial) {
+  var page = getJSON("content.json"), table = getJSON("attacks.json");
+  page.then(function (c) {
+    document.getElementById("can").innerHTML = (c.can || []).map(item).join("");
+    document.getElementById("cannot").innerHTML = (c.cannot || []).map(item).join("");
+    document.getElementById("coming").innerHTML = (c.coming || []).map(function (x) { return '<span class="chip">' + esc(x) + "</span>"; }).join("");
+    if (!c.testimonial) return;
     document.getElementById("quote").classList.remove("pending");
-    document.getElementById("quote-text").textContent = SHIELD.testimonial.text;
+    document.getElementById("quote-text").textContent = c.testimonial.text;
     var who = document.getElementById("quote-who");
-    who.textContent = SHIELD.testimonial.who;
-    if (SHIELD.testimonial.link) who.innerHTML += ' · <a href="' + esc(SHIELD.testimonial.link) + '" target="_blank" rel="noopener">Read the article</a>';
-  }
+    who.textContent = c.testimonial.who;
+    if (c.testimonial.link) who.innerHTML += ' · <a href="' + esc(c.testimonial.link) + '" target="_blank" rel="noopener">Read the article</a>';
+  }).catch(function () {});
+  Promise.all([page, table]).then(function (both) {   // the count is the served table's, never typed
+    document.getElementById("version").textContent = (both[0].version || "") + " · " + (both[1].attacks || []).length + " attacks tested";
+  }).catch(function () {});
 
   // ---- What the verified graph knows about crypto (counted by scripts/blackbox-trader-graph-counts.py) ----
   function n(x) { return Number(x || 0).toLocaleString("en-US"); }
-  fetch("/trader-shield/graph.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (g) {
+  getJSON("graph.json").then(function (g) {
     var pk = g.crypto_packages || {};
     var stats = [
       [n(g.drainer_phishing_domains), "Web3 phishing and wallet-drainer sites", "flagged when your agent goes there", "flag"],
@@ -503,7 +485,7 @@
       if (!mine.length) return "";
       mine.sort(function (a, b) { return (b.evidence || []).length - (a.evidence || []).length; });
       var agent = mine.filter(function (a) { return (a.evidence || []).indexOf("real-agent") >= 0; }).length;
-      var logo = sys.logo ? '<img src="/wallets/' + esc(sys.id) + '.svg" alt="" />' : "";
+      var logo = sys.logo ? '<img src="' + esc(HERE + "packs/" + sys.id + "/logo.svg") + '" alt="" />' : "";
       return '<div class="sys"><header>' + logo + "<div><b>" + esc(sys.name) + "</b>" + (sys.note ? "<small>" + esc(sys.note) + "</small>" : "") +
         '</div></header><div class="big">' + mine.length + "<span>blocked" + (agent ? " · " + agent + " by a real agent" : "") + "</span></div><ul>" +
         mine.slice(0, 6).map(function (a) {
@@ -517,12 +499,13 @@
 
   // ---- Tested, attack by attack (the file the test suite checks) ----
   var OUTCOME_WORD = { blocked: "Blocked", flagged: "Flagged", missed: "Coming", allowed: "Left alone" };
-  fetch("/trader-shield/attacks.json", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (t) {
+  table.then(function (t) {
     var count = { blocked: 0, flagged: 0, missed: 0, allowed: 0 };
     t.attacks.forEach(function (a) { count[a.outcome] += 1; });
     document.getElementById("tally").innerHTML = ["blocked", "flagged", "missed", "allowed"].filter(function (o) { return count[o]; }).map(function (o) {
       return '<span class="' + o + '">' + count[o] + " " + OUTCOME_WORD[o].toLowerCase() + "</span>";
     }).join("");
+    document.getElementById("tested-with").textContent = t.tested_with ? " with " + t.tested_with : "";
     document.getElementById("bench-run").textContent = t.bench_run ? "Last full run: " + t.bench_run + "." : "";
     renderProven(t);
     document.getElementById("attacks").innerHTML = t.groups.map(function (g) {
@@ -549,23 +532,25 @@
     }, 1400);
   })();
 
-  // ---- Live status from this machine ----
-  function getJSON(url) { return fetch(url, { cache: "no-store", headers: { Accept: "application/json" } }).then(function (r) { return r.json(); }); }
+  // ---- Live status from this machine: this shield's card in the dashboard's /api/shields ----
   function renderStatus(d) {
     var el = document.getElementById("status");
-    if (!d || !d.enabled) {
+    if (!d || !d.mode || !d.mode.enabled) {
       el.innerHTML = '<span class="state off">Not engaged</span><span class="detail">Trader Shield is off on this machine.</span>';
       return;
     }
-    // The wallets themselves are listed on the dashboard's panel; here only the state, and a note if none is guarded.
-    var guarded = (d.wallets || []).some(function (w) { return w.protected; });
-    el.innerHTML = '<span class="state on">● Engaged · ' + (d.mode === "block" ? "blocking" : "watching only (audit mode)") + "</span>" +
+    // The wallets themselves are listed on the dashboard's card; here only the state, and a note if none is guarded.
+    var found = ((d.sections || [])[0] || {}).rows || [];
+    var guarded = found.some(function (row) { return row.state === "ok" || row.state === "watch"; });
+    el.innerHTML = '<span class="state on">● Engaged · ' + (d.blocking ? "blocking" : "watching only (audit mode)") + "</span>" +
       (guarded ? "" : '<span class="detail">No protected wallet found on this machine yet</span>');
     var engage = document.getElementById("engage");
     engage.textContent = "Trader Shield is engaged";
     engage.disabled = true;
   }
-  function loadStatus() { getJSON("/api/wallet-protection").then(renderStatus).catch(function () {
+  function loadStatus() { getJSON("../../api/shields").then(function (all) {
+    renderStatus((all || []).filter(function (d) { return d.shield_id === ID; })[0]);
+  }).catch(function () {
     document.getElementById("status").innerHTML = '<span class="state off">Status unavailable</span><span class="detail">Is the Blackbox dashboard running?</span>';
   }); }
   loadStatus();
@@ -576,8 +561,8 @@
     btn.disabled = true; note.className = "note"; note.textContent = "Engaging…";
     var body = { shields: { trader: { enabled: true } } };   // a first engage protects every supported wallet
     if (document.getElementById("opt-block").checked) body.mode = "block";
-    getJSON("/api/session").then(function (s) {
-      return fetch("/api/settings", { method: "POST", cache: "no-store",
+    getJSON("../../api/session").then(function (s) {
+      return fetch(HERE + "../../api/settings", { method: "POST", cache: "no-store",
         headers: { "Content-Type": "application/json", Accept: "application/json", "X-Blackbox-Token": (s && s.token) || "" },
         body: JSON.stringify(body) });
     }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); }).then(function (res) {

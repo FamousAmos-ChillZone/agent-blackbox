@@ -107,12 +107,15 @@ def test_a_wallet_event_names_its_goal_instead_of_unknown(finding, goal):
 
 
 def test_the_trader_shield_page_is_served_with_its_get_started_button():
-    """The dashboard's "Learn more" opens /trader-shield; its Engage button posts the shields settings shape."""
+    """The dashboard's "Learn more" opens /trader-shield (an alias of /shields/trader); its Engage
+    button posts the shields settings shape."""
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
+    from plugins.blackbox.dashboard import shields_routes
+
     app = FastAPI()
-    protection.register_protection_routes(app)
+    shields_routes.register_pages(app)
     page = TestClient(app).get("/trader-shield")
     assert page.status_code == 200 and "Engage Trader Shield" in page.text
     assert "var body = { shields: { trader: { enabled: true } } };" in page.text and "wallet_protection" not in page.text
@@ -120,20 +123,20 @@ def test_the_trader_shield_page_is_served_with_its_get_started_button():
 
 
 def test_the_dashboard_announces_trader_shield_only_while_it_is_off():
-    html = (protection.TRADER_SHIELD_PAGE.parent / "index.html").read_text(encoding="utf-8")
+    html = (protection.STATIC_DIR / "index.html").read_text(encoding="utf-8")
     assert 'id="ts-banner" hidden' in html and 'href="/trader-shield"' in html
     assert "banner.hidden = !!(d && d.enabled) || !tsBannerDue()" in html and "TS_BANNER_DAYS = 7" in html
 
 
 def test_the_panel_opens_settings_at_the_trader_shield_section():
-    html = (protection.TRADER_SHIELD_PAGE.parent / "index.html").read_text(encoding="utf-8")
+    html = (protection.STATIC_DIR / "index.html").read_text(encoding="utf-8")
     assert 'id="wp-edit"' in html and 'id="set-trader-shield"' in html
     wiring = html[html.index('var wpEdit = $("wp-edit")'):]
     assert wiring.index("openSettings()") < wiring.index('$("set-trader-shield")')
 
 
 def test_every_panel_event_opens_the_full_local_report_window():
-    html = (protection.TRADER_SHIELD_PAGE.parent / "index.html").read_text(encoding="utf-8")
+    html = (protection.STATIC_DIR / "index.html").read_text(encoding="utf-8")
     assert 'class="wp-ev" data-wev-open="' in html and 'data-wev-open="">View all' in html
     assert 'id="wallet-events" hidden' in html and ".wev-overlay[hidden] { display: none; }" in html
     assert 'getJSON("/api/wallet-protection/events")' in html
@@ -141,7 +144,7 @@ def test_every_panel_event_opens_the_full_local_report_window():
 
 
 def test_protected_files_lists_what_trader_shield_guards_read_only():
-    html = (protection.TRADER_SHIELD_PAGE.parent / "index.html").read_text(encoding="utf-8")
+    html = (protection.STATIC_DIR / "index.html").read_text(encoding="utf-8")
     rows = html[html.index("function shieldPathRows()"):html.index("function renderWalletUI()")]
     assert "if (!setState || !setState.wallet_protection) return" in rows   # only while engaged
     assert "path-del" not in rows   # read-only: no remove button
@@ -150,7 +153,7 @@ def test_protected_files_lists_what_trader_shield_guards_read_only():
 
 def test_a_new_wallet_finding_refreshes_trader_shield_on_the_main_poll():
     """Real time: the 4 s findings poll, not the panel's 30 s timer, brings wallet events in."""
-    html = (protection.TRADER_SHIELD_PAGE.parent / "index.html").read_text(encoding="utf-8")
+    html = (protection.STATIC_DIR / "index.html").read_text(encoding="utf-8")
     notify = html[html.index("function processThreatNotifications(data)"):html.index("function setThreatAlertsEnabled(")]
     assert notify.index("onWalletEvent()") < notify.index("if (!threatAlertsEnabled || !fresh.length) return;")
     assert "var POLL_MS = 4000;" in html
@@ -159,7 +162,7 @@ def test_a_new_wallet_finding_refreshes_trader_shield_on_the_main_poll():
 def test_wallet_threats_show_their_wallet_logo_everywhere_they_appear():
     """At a glance: the panel, the events window, the threats table, the alert and the finding
     detail all draw the wallet's logo for a wallet event."""
-    html = (protection.TRADER_SHIELD_PAGE.parent / "index.html").read_text(encoding="utf-8")
+    html = (protection.STATIC_DIR / "index.html").read_text(encoding="utf-8")
     assert "'<td>' + walletLogoHTML(f) + typeTag(" in html                      # threats table
     assert "icon.innerHTML = walletLogoHTML(newest, \"big\") ||" in html          # threat alert
     assert '$("tm-ico").innerHTML = walletLogoHTML(f, "big") ||' in html          # finding detail

@@ -5,13 +5,12 @@ wallets into packs cannot quietly change what Settings and the page promise (D-1
 the data is held to today's code (code -> data, §06 step 3a): the eleven packs load, and
 the ids, names, extension ids, places and browser globs they state equal the Python
 tables in detection/wallet_files.py and detection/app_wallets.py under Linux, macOS and
-Windows layouts with mixed-case input. A supported pack must have earned it: a blocked
-``vault`` row in the attack table names it.
+Windows layouts with mixed-case input. That a supported pack has earned it (a blocked
+``vault`` row names it) is checked with every shield's attack table, in
+test_blackbox_trader_shield_attacks.py.
 """
 
 import json
-import re
-from pathlib import Path
 
 import pytest
 from _blackbox_loader import load_blackbox
@@ -28,10 +27,6 @@ PACKS = packs_loader.load_packs(TRADER)
 ROOTS, ROOT_HEALTH = packs_loader.load_browser_roots(TRADER)
 SUPPORTED = {pack.id: pack for pack in PACKS if pack.status == "supported"}
 
-PLUGIN = Path(__file__).resolve().parents[2] / "plugins" / "blackbox"
-#: The page's "Coming soon" chips (S6b re-points this to shields/trader/page/content.json).
-PAGE = PLUGIN / "dashboard" / "static" / "trader-shield.html"
-
 
 def test_settings_coming_soon_is_unchanged():
     fields = shields.settings_view()["trader"]["fields"]
@@ -41,10 +36,16 @@ def test_settings_coming_soon_is_unchanged():
 
 
 def test_page_coming_next_is_unchanged():
-    match = re.search(r"^\s*coming:\s*(\[.*?\]),\s*$", PAGE.read_text(encoding="utf-8"), re.MULTILINE)
-    assert match, "SHIELD.coming not found in trader-shield.html"
-    assert json.loads(match.group(1)) == ["Rabby", "Coinbase Wallet", "Solflare", "Bitcoin Core",
-                                          "More exchanges", "Safari wallets"]
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    routes = load_blackbox("dashboard.shields_routes")
+    app = FastAPI()
+    routes.register_pages(app)
+    content = TestClient(app).get("/shields/trader/content.json")   # the page's "Coming soon" chips, as served
+    assert content.status_code == 200
+    assert content.json()["coming"] == ["Rabby", "Coinbase Wallet", "Solflare", "Bitcoin Core",
+                                        "More exchanges", "Safari wallets"]
 
 
 # ------------------------------------------------------------------ what loads
@@ -172,13 +173,3 @@ def test_browser_roots_match_today_on_every_layout(layout):
     entries = json.loads((TRADER.folder / "browsers.json").read_text(encoding="utf-8"))
     data = {_mixed_case(_expand(entry["path"], layout)).lower() for entry in entries}
     assert data == today
-
-
-# ------------------------------------------------------------ supported is earned
-
-
-def test_every_supported_pack_has_a_blocked_vault_row():
-    table = json.loads((PLUGIN / "dashboard" / "static" / "trader-shield-attacks.json").read_text(encoding="utf-8"))
-    earned = {target for row in table["attacks"] if row["group"] == "vault" and row["outcome"] == "blocked"
-              for target in row["targets"]}
-    assert set(SUPPORTED) <= earned, sorted(set(SUPPORTED) - earned)

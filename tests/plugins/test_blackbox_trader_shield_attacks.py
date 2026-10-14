@@ -1,33 +1,39 @@
-"""Trader Shield's attack table (dashboard/static/trader-shield-attacks.json) stays true.
+"""Every registered shield's attack table (``shields/<id>/attacks.json``) stays true.
 
-The page's table and what each row DOES are two files joined by row id: the plugin ships
-the table (title, how, outcome, targets, evidence); the tool calls live beside this test
-in ``trader_shield_attack_scenarios.json`` — attack commands are test data, and a plugin
-that ships them reads as an attack to Hermes's install scanner (plugin catalog).
+The page's table and what each row DOES are two files joined by row id: a shield ships the
+table (title, how, outcome, targets, evidence); the tool calls live beside this test in
+``<id>_shield_attack_scenarios.json`` (``_trader_attack_table``) — attack commands are test
+data, and a plugin that ships them reads as an attack to Hermes's install scanner.
 
-The Trader Shield page shows people which Web3 attacks are blocked, flagged or not covered.
-That table is the single source: every ``proof: "test"`` scenario is driven here through the
-REAL pre-execution hook (Trader Shield on for MetaMask, block mode, block at critical, the
-local rules only) and must give exactly the outcome the page claims. ``proof: "bench"``
-scenarios need the verified threat graph or live OSV and are proven on a bench node (the
-run is stamped in ``bench_run``). Placeholders are filled with values made at test time —
-no secret-shaped literal lives in the repo (LES-022).
+A shield's page shows people which attacks are blocked, flagged or left alone. That table is
+the single source: every ``proof: "test"`` row is driven here through the REAL pre-execution
+hook and must give exactly the outcome the page claims. The setup is DERIVED from the packs,
+never typed: every ``supported`` pack is chosen, one store per supported pack is laid out
+from its manifest inside a temporary HOME (a Chromium store per browser-extension pack, the
+place of a desktop-app pack, a key file plus its pointer config for a cli-key-file pack),
+and Blackbox runs in block mode at the table's ``tested_severity`` (the local rules only).
+``proof: "bench"`` rows need the verified threat graph or live OSV and are proven on a bench
+node (the run is stamped in ``bench_run``). Placeholders are filled with values made at test
+time — no secret-shaped literal lives in the repo (LES-022).
 """
 
 from __future__ import annotations
 
 import hashlib
-import random
+import json
 import os
+import random
+import re
 import secrets
+from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from _trader_attack_table import ATTACKS, SCENARIO_FIELDS, SCENARIOS, TABLE
+from _trader_attack_table import ATTACKS, SCENARIO_FIELDS, TABLES
 from plugins.blackbox import ruleset as ruleset_mod
-from plugins.blackbox.dashboard import protection
+from plugins.blackbox import shields
 from plugins.blackbox.detection import wallet_files
 from plugins.blackbox.guard import background as guard_background
 from plugins.blackbox.guard import hooks
@@ -35,15 +41,22 @@ from plugins.blackbox.guard import reporting as guard_reporting
 from plugins.blackbox.kernel import config as config_mod
 from plugins.blackbox.kernel import crypto_secrets, threat_ids
 from plugins.blackbox.kernel.crypto_secrets import seed_phrase
-from plugins.blackbox.shields.trader import detectors, mode as trader_mode
 from plugins.blackbox.ruleset import Ruleset
+from plugins.blackbox.shields.trader import detectors, mode as trader_mode
 
-METAMASK = "nkbihfbeogaeaoehlefnkodbefgpgknn"
-PHANTOM = "bfnaelmomeimhlpmgjnjophhpkkoljpa"
 #: blocked / flagged / missed (a gap); allowed = a harmless look-alike that must raise nothing.
 OUTCOMES = {"blocked", "flagged", "missed", "allowed"}
+#: How far an attack was proven, weakest to strongest (each table's ``evidence_levels``).
+EVIDENCE = ("tests", "bench", "real-software", "real-agent")
 BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 WORDS = seed_phrase.WORDLIST_FILE.read_text(encoding="ascii").split()
+#: Where a browser-extension pack's store is laid out (one Chromium profile under the home).
+CHROME_PROFILE = (".config", "google-chrome", "Default")
+SHIELD_IDS = [shield.id for shield in shields.all_shields()]
+
+
+def _supported(shield_id: str) -> list:
+    return [pack for pack in shields.loaded_packs(shield_id) if pack.status == "supported"]
 
 
 def _phrase(entropy: bytes) -> str:
@@ -73,35 +86,70 @@ def _solana_key() -> bytes:
     return private.private_bytes_raw() + private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
 
 
-@pytest.fixture
-def shield(tmp_path, monkeypatch):
-    """MetaMask and Phantom installed in Chrome, Trader Shield on for both, block mode; returns a
-    placeholder filler and the list the hook's findings land in."""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bb"))
-    vault = tmp_path / ".config" / "google-chrome" / "Default" / "Local Extension Settings" / METAMASK
-    phantom = vault.parent / PHANTOM
-    backup = tmp_path / ".config" / "google-chrome" / "Default" / "IndexedDB" / f"chrome-extension_{PHANTOM}_0.indexeddb.leveldb"
-    for folder in (vault, phantom, backup):
-        folder.mkdir(parents=True)
-        (folder / "000003.log").write_text("vault", encoding="utf-8")
-    wallet_files.EXISTING_STORES.reset()
-    detectors.EXISTING_STORES.reset()   # the hook asks the shield's detectors
-    monkeypatch.setattr(hooks, "_config", lambda: config_mod.BlackboxConfig(mode="block", report=False))
-    monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: Ruleset())
-    monkeypatch.setattr(guard_background, "_spawn_osv_discovery", lambda *a, **k: None)
-    findings: list = []
-    monkeypatch.setattr(guard_reporting, "_report_and_audit", lambda cfg, event, found, detail: findings.extend(found))
-    seed12, seed24, key = _phrase(os.urandom(16)), _phrase(os.urandom(32)), "0x" + secrets.token_hex(32)
-    # Every supported wallet chosen, and @KEY@'s address listed as the trader's own (settings).
-    own = trader_mode.build(enabled=True, addresses=(crypto_secrets.address_of(bytes.fromhex(key[2:])),))
+# ------------------------------------------------------------- setup from the packs
+
+
+def _posix_place(templates, home: Path) -> Path:
+    """The first ``~`` / ``$XDG_CONFIG_HOME`` template of a pack, expanded under *home*
+    (``*`` becomes one plausible name) — where the app keeps its store on Linux."""
+    for template in templates:
+        for root, base in (("~/", home), ("$XDG_CONFIG_HOME/", home / ".config")):
+            if template.startswith(root):
+                return base / template[len(root):].replace("*", "id")
+    pytest.fail(f"no Linux place among {templates}")
+
+
+def _materialise(pack, home: Path, key_file_text: str) -> Path:
+    """Lay one store of *pack* out under *home*, from its manifest; answers the store."""
+    if pack.kind == "browser-extension":
+        extension = pack.data["stores"]["chromium"][0]
+        profile = home.joinpath(*CHROME_PROFILE)
+        store = profile / "Local Extension Settings" / extension
+        backup = profile / "IndexedDB" / f"chrome-extension_{extension}_0.indexeddb.leveldb"
+        for folder in (store, backup):
+            folder.mkdir(parents=True)
+            (folder / "000003.log").write_text("vault", encoding="utf-8")
+        return store
+    if pack.kind == "desktop-app":
+        store = _posix_place(pack.data["places"], home)
+        store.mkdir(parents=True)
+        (store / "default_wallet").write_text("wallet", encoding="utf-8")
+        return store
+    if pack.kind == "cli-key-file":
+        store = _posix_place(pack.data["places"], home)
+        store.parent.mkdir(parents=True, exist_ok=True)
+        store.write_text(key_file_text, encoding="utf-8")
+        pointer = pack.data["pointer"]
+        config = _posix_place([pointer["config"]], home)
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(f"{pointer['key']}: {store}\n", encoding="utf-8")
+        return store
+    pytest.fail(f"supported pack {pack.id} has kind {pack.kind}, which this test cannot lay out")
+
+
+def _trader_setup(monkeypatch, chosen: tuple[str, ...], values: dict[str, str]) -> None:
+    """Trader Shield on for *chosen*, with @KEY@'s address listed as the trader's own."""
+    own = trader_mode.build(enabled=True, wallets=chosen,
+                            addresses=(crypto_secrets.address_of(bytes.fromhex(values["@HEX@"])),))
     monkeypatch.setattr(trader_mode, "current", lambda: own)
-    solana = _solana_key()
+
+
+#: How each shield is switched on for its table (its option names are its own).
+SETUPS = {"trader": _trader_setup}
+
+
+def _shell_path(path: Path, home: Path) -> str:
+    """*path* the way a person types it: from ``~``, spaces escaped."""
+    return ("~/" + path.relative_to(home).as_posix()).replace(" ", "\\ ")
+
+
+def _values(home: Path, stores: dict[str, Path], solana: bytes) -> dict[str, str]:
+    """Every placeholder the scenarios use, made now (stores named by the scenarios' packs)."""
+    seed12, seed24, key = _phrase(os.urandom(16)), _phrase(os.urandom(32)), "0x" + secrets.token_hex(32)
     values = {"@SEED12PLUS@": seed12.replace(" ", "+"), "@SEED12@": seed12, "@SEED24@": seed24, "@KEY@": key,
-              "@HEX@": key[2:], "@TXHASH@": secrets.token_hex(32), "@APIKEY@": secrets.token_hex(32), "@VAULTFILE@": str(vault / "000003.log"),
-              "@VAULT@": "~/.config/google-chrome/Default/Local\\ Extension\\ Settings/" + METAMASK,
-              "@PHANTOMFILE@": str(phantom / "000003.log"),
-              "@PHANTOM@": "~/.config/google-chrome/Default/Local\\ Extension\\ Settings/" + PHANTOM,
+              "@HEX@": key[2:], "@TXHASH@": secrets.token_hex(32), "@APIKEY@": secrets.token_hex(32),
+              "@VAULTFILE@": str(stores["metamask"] / "000003.log"), "@VAULT@": _shell_path(stores["metamask"], home),
+              "@PHANTOMFILE@": str(stores["phantom"] / "000003.log"), "@PHANTOM@": _shell_path(stores["phantom"], home),
               "@SOLKEY@": _base58(solana), "@SOLFILE@": "[" + ",".join(str(b) for b in solana) + "]",
               "@SOLSIG@": _base58(random.randbytes(64))}
     # KI-380: more key shapes (Bitcoin WIF / xprv, a Solana key as hex, a key behind 100 decoys).
@@ -112,6 +160,34 @@ def shield(tmp_path, monkeypatch):
     values.update({"@SEED12ZW@": "\u200b|".join(seed12.split()), "@SEED12CAMEL@": "".join(w.capitalize() for w in seed12.split())})
     values["@FILLER@"] = "lorem ipsum " * 5000   # KI-376: 60,000 characters of padding
     values.update({f"@W{i + 1}@": word for i, word in enumerate(seed12.split())})   # KI-377: one word per item
+    return values
+
+
+def _block_config(severity: str) -> config_mod.BlackboxConfig:
+    return config_mod.BlackboxConfig(mode="block", report=False, block_severity=severity)
+
+
+@pytest.fixture
+def shield(tmp_path, monkeypatch):
+    """Every registered shield on for every supported pack, one store per supported pack laid
+    out from its manifest in a temporary HOME, block mode; returns a placeholder filler and
+    the list the hook's findings land in."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bb"))
+    solana = _solana_key()
+    key_file = "[" + ",".join(str(b) for b in solana) + "]"
+    stores = {pack.id: _materialise(pack, tmp_path, key_file) for shield_id in SHIELD_IDS for pack in _supported(shield_id)}
+    values = _values(tmp_path, stores, solana)
+    for shield_id in SHIELD_IDS:
+        SETUPS[shield_id](monkeypatch, tuple(pack.id for pack in _supported(shield_id)), values)
+    wallet_files.EXISTING_STORES.reset()
+    detectors.EXISTING_STORES.reset()   # the hook asks the shield's detectors
+    monkeypatch.setattr(hooks, "_config", lambda: _block_config(shields.DEFAULT_TESTED_SEVERITY))
+    monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: Ruleset())
+    monkeypatch.setattr(guard_background, "_spawn_osv_discovery", lambda *a, **k: None)
+    findings: list = []
+    monkeypatch.setattr(guard_reporting, "_report_and_audit", lambda cfg, event, found, detail: findings.extend(found))
 
     def fill(value):
         if isinstance(value, str):
@@ -124,26 +200,27 @@ def shield(tmp_path, monkeypatch):
 
     yield fill, findings
     wallet_files.EXISTING_STORES.reset()
-    detectors.EXISTING_STORES.reset()   # the hook asks the shield's detectors
-
-
-LOCAL = [attack for attack in ATTACKS if attack["proof"] == "test"]
+    detectors.EXISTING_STORES.reset()
 
 
 def _scenario_setting(attack, monkeypatch):
-    """A row may list one address in the threat graph (``graph``: wallet + trust tier) and
-    lower the block threshold (``block_severity``) — e.g. "a community-listed drainer never
-    blocks, even at block_severity high" (KI-385)."""
+    """Block mode at the row's shield's ``tested_severity``; a row may also list one address in
+    the threat graph (``graph``: wallet + trust tier) and lower the block threshold
+    (``block_severity``) — e.g. "a community-listed drainer never blocks, even at
+    block_severity high" (KI-385)."""
     listed = attack.get("graph")
     if listed:
         rules = {threat_ids.ioc_identifier("wallet", listed["wallet"]): {"source": listed["source"], "severity": "critical"}}
         monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: Ruleset(ioc=rules))
-    if attack.get("block_severity"):
-        config = config_mod.BlackboxConfig(mode="block", report=False, block_severity=attack["block_severity"])
-        monkeypatch.setattr(hooks, "_config", lambda: config)
+    severity = attack.get("block_severity") or TABLES[attack.get("shield", "trader")].table["tested_severity"]
+    config = _block_config(severity)
+    monkeypatch.setattr(hooks, "_config", lambda: config)
 
 
-@pytest.mark.parametrize("attack", LOCAL, ids=[attack["id"] for attack in LOCAL])
+LOCAL = [attack for joined in TABLES.values() for attack in joined.attacks if attack["proof"] == "test"]
+
+
+@pytest.mark.parametrize("attack", LOCAL, ids=[f"{attack['shield']}-{attack['id']}" for attack in LOCAL])
 def test_each_attack_has_the_outcome_the_page_claims(shield, attack, monkeypatch):
     fill, findings = shield
     _scenario_setting(attack, monkeypatch)
@@ -153,54 +230,129 @@ def test_each_attack_has_the_outcome_the_page_claims(shield, attack, monkeypatch
     assert outcome == expected, [f.identifier for f in findings]
 
 
-def test_the_table_is_well_formed():
-    groups = {group["id"] for group in TABLE["groups"]}
-    ids = [attack["id"] for attack in TABLE["attacks"]]
+def test_every_registered_shield_has_a_table_scenarios_and_a_setup():
+    assert set(TABLES) == set(SHIELD_IDS) and set(SETUPS) >= set(SHIELD_IDS)
+
+
+def test_trader_drives_seventy_rows():
+    # The count moves only with a row added or removed: say so in the commit.
+    assert sum(1 for attack in ATTACKS if attack["proof"] == "test") == 70
+
+
+# ------------------------------------------------------------------ the table itself
+
+
+@pytest.mark.parametrize("shield_id", SHIELD_IDS)
+def test_the_table_is_well_formed(shield_id):
+    table = TABLES[shield_id].table
+    groups = {group["id"] for group in table["groups"]}
+    ids = [attack["id"] for attack in table["attacks"]]
     assert len(ids) == len(set(ids))
-    for attack in ATTACKS:
+    for attack in TABLES[shield_id].attacks:
         assert attack["group"] in groups and attack["outcome"] in OUTCOMES and attack["proof"] in ("test", "bench")
         assert attack["title"] and attack["how"] and attack["args"]
-    assert TABLE.get("bench_run")
+    assert table.get("bench_run") and table.get("tested_severity")
 
 
-def test_every_row_has_exactly_one_scenario_and_ships_none():
-    rows = [attack["id"] for attack in TABLE["attacks"]]
-    assert set(SCENARIOS) == set(rows)
-    shipped = {attack["id"]: sorted(SCENARIO_FIELDS & set(attack)) for attack in TABLE["attacks"]}
-    assert {row: fields for row, fields in shipped.items() if fields} == {}
+@pytest.mark.parametrize("shield_id", SHIELD_IDS)
+def test_every_row_has_exactly_one_scenario_and_ships_none(shield_id):
+    shipped = json.loads(shields.get(shield_id).attacks.read_text(encoding="utf-8"))
+    assert set(TABLES[shield_id].scenarios) == {attack["id"] for attack in shipped["attacks"]}
+    carried = {attack["id"]: sorted(SCENARIO_FIELDS & set(attack)) for attack in shipped["attacks"]}
+    assert {row: fields for row, fields in carried.items() if fields} == {}
 
 
-def test_every_gap_says_what_would_close_it():
-    for attack in TABLE["attacks"]:
+@pytest.mark.parametrize("shield_id", SHIELD_IDS)
+def test_what_it_was_tested_on_is_composed_never_typed(shield_id):
+    shipped = json.loads(shields.get(shield_id).attacks.read_text(encoding="utf-8"))
+    assert "systems" not in shipped and "tested_with" not in shipped
+    table, supported = TABLES[shield_id].table, _supported(shield_id)
+    capabilities = [capability.id for capability in shields.get(shield_id).capabilities]
+    assert [system["id"] for system in table["systems"]] == [pack.id for pack in supported] + capabilities
+    assert all(pack.name in table["tested_with"] for pack in supported)
+    assert table["tested_with"].endswith(f"block mode, block at {table['tested_severity']}")
+
+
+@pytest.mark.parametrize("shield_id", SHIELD_IDS)
+def test_every_gap_says_what_would_close_it(shield_id):
+    for attack in TABLES[shield_id].table["attacks"]:
         if attack["outcome"] == "missed":
             assert attack["group"] == "gap" and attack.get("next"), attack["id"]
 
 
-def test_the_page_reads_the_table_it_is_tested_against():
-    page = protection.TRADER_SHIELD_PAGE.read_text(encoding="utf-8")
-    assert 'fetch("/trader-shield/attacks.json"' in page
+@pytest.mark.parametrize("shield_id", SHIELD_IDS)
+def test_every_target_is_a_supported_pack_or_a_capability(shield_id):
+    supported = {pack.id for pack in _supported(shield_id)}
+    unsupported = {pack.id for pack in shields.loaded_packs(shield_id)} - supported
+    capabilities = {capability.id for capability in shields.get(shield_id).capabilities}
+    for attack in TABLES[shield_id].table["attacks"]:
+        assert attack["targets"], attack["id"]
+        assert not set(attack["targets"]) & unsupported, f"{attack['id']} names a pack that is not supported"
+        assert set(attack["targets"]) <= supported | capabilities, attack["id"]
 
 
-#: How far an attack was proven, weakest to strongest (dashboard/static/trader-shield-attacks.json).
-EVIDENCE = ("tests", "bench", "real-software", "real-agent")
-
-
-def test_every_attack_says_what_it_targets_and_how_it_was_proven():
-    systems = {system["id"] for system in TABLE["systems"]}
-    assert set(TABLE["evidence_levels"]) == set(EVIDENCE)
-    for attack in TABLE["attacks"]:
-        assert attack["targets"] and set(attack["targets"]) <= systems, attack["id"]
+@pytest.mark.parametrize("shield_id", SHIELD_IDS)
+def test_every_attack_says_how_it_was_proven(shield_id):
+    table = TABLES[shield_id].table
+    assert set(table["evidence_levels"]) == set(EVIDENCE)
+    for attack in table["attacks"]:
         assert attack["evidence"] and set(attack["evidence"]) <= set(EVIDENCE), attack["id"]
         assert ("tests" in attack["evidence"]) == (attack["proof"] == "test"), attack["id"]   # the suite runs exactly these
         # the full bench run covers every row — except rows added since it, marked until the next run
         assert "bench" in attack["evidence"] or attack.get("bench_pending") is True, attack["id"]
 
 
-def test_every_system_has_something_proven_against_it():
-    for system in TABLE["systems"]:
-        assert any(system["id"] in attack["targets"] and attack["outcome"] == "blocked" for attack in TABLE["attacks"]), system["id"]
+def _blocked_targets(shield_id: str, group: str = "") -> set[str]:
+    return {target for attack in TABLES[shield_id].table["attacks"] if attack["outcome"] == "blocked"
+            and (not group or attack["group"] == group) for target in attack["targets"]}
 
 
-def test_the_page_groups_the_proof_by_system():
-    page = protection.TRADER_SHIELD_PAGE.read_text(encoding="utf-8")
-    assert 'id="systems"' in page and "renderProven(t);" in page
+@pytest.mark.parametrize("shield_id", SHIELD_IDS)
+def test_every_supported_pack_has_earned_it_with_a_blocked_vault_row(shield_id):
+    supported = {pack.id for pack in _supported(shield_id)}
+    assert supported <= _blocked_targets(shield_id, "vault"), sorted(supported - _blocked_targets(shield_id, "vault"))
+
+
+@pytest.mark.parametrize("shield_id", SHIELD_IDS)
+def test_every_capability_that_claims_findings_has_a_blocked_row(shield_id):
+    claiming = {capability.id for capability in shields.get(shield_id).capabilities if capability.claims}
+    assert claiming <= _blocked_targets(shield_id), sorted(claiming - _blocked_targets(shield_id))
+
+
+@pytest.mark.parametrize("shield_id", SHIELD_IDS)
+def test_every_system_has_something_proven_against_it(shield_id):
+    for system in TABLES[shield_id].table["systems"]:
+        assert system["id"] in _blocked_targets(shield_id), system["id"]
+
+
+# ------------------------------------------------------------------ the page
+
+
+def _served(path: str):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from plugins.blackbox.dashboard import shields_routes
+
+    app = FastAPI()
+    shields_routes.register_pages(app)
+    return TestClient(app).get(path)
+
+
+@pytest.mark.parametrize("shield_id", SHIELD_IDS)
+def test_the_page_reads_the_table_it_is_tested_against(shield_id):
+    page = _served(f"/shields/{shield_id}").text
+    assert 'getJSON("attacks.json")' in page and 'id="systems"' in page and "renderProven(t);" in page
+    assert _served(f"/shields/{shield_id}/attacks.json").json() == TABLES[shield_id].table
+
+
+@pytest.mark.parametrize("shield_id", SHIELD_IDS)
+def test_the_page_types_no_count_and_no_address_of_its_own(shield_id):
+    page = shields.get(shield_id).page.read_text(encoding="utf-8")
+    assert not re.search(r"\d+\s+attacks tested", page)
+    assert not re.search(r"""["'](/api/|/trader-shield|/wallets/|/shields/)""", page)   # relative, never mounted
+
+
+def test_the_trader_page_says_which_agents_it_covers():
+    lead = shields.get("trader").page.read_text(encoding="utf-8")
+    assert "attached to Blackbox through Hermes" in lead and "OpenClaw are not covered" in lead

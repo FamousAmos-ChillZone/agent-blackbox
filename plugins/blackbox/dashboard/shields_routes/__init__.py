@@ -16,6 +16,18 @@ sanitised once here too. Its text is the operator's OWN logs (redacted when logg
 is cleaned and clamped but not defanged — ``backup.tgz`` stays ``backup.tgz`` — and the
 ``identifier`` goes through ``safe_identifier``, the token the page hands back.
 
+``GET /shields/{id}`` is the shield's explainer page, which reads everything else by
+RELATIVE address (F-016): its prose (``/shields/{id}/content.json``), its tested attack
+table (``/attacks.json``: the hand-written rows, ``systems`` and ``tested_with`` composed by
+the registry), its figures (``/graph.json``, 404 for a shield that ships none) and its packs'
+logos (``/packs/{pack}/logo.svg``). Every file is found through the registry from ``id`` and
+``pack`` — a value no shield or pack is registered as is 404 before the filesystem is
+touched (R6) — and a logo is served as an image, never a document: ``image/svg+xml``,
+``nosniff`` and a sandboxing CSP, so an SVG opened directly runs nothing (F-054, R30). The
+campaign addresses ``/trader-shield``, ``/trader-shield/attacks.json`` and
+``/trader-shield/graph.json`` are permanent 307 aliases with FIXED Locations (D-07), never
+built from the request. All of it sits behind the app-wide browser boundary.
+
 Usage::
 
     return shields_routes.with_shields(settings.read_settings())   # GET /api/settings
@@ -28,7 +40,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Callable
+from pathlib import Path
+from typing import Any, Callable, Optional
 
 from ... import shields
 from .. import protection
@@ -45,6 +58,15 @@ MAX_CARD_TEXT = 1000
 MAX_EVENT_TEXT = 8000
 #: A card's ``logo``: a path on this dashboard (``/wallets/metamask.svg``), served as is or not at all.
 LOCAL_URL = re.compile(r"/[A-Za-z0-9_-]+(?:[./][A-Za-z0-9_-]+)*")
+#: A pack logo is an image, never a document: opened directly, its script cannot run (F-054).
+LOGO_HEADERS = {"X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+                "Cache-Control": "public, max-age=86400"}
+NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+#: The campaign addresses of Trader Shield's page (D-07): permanent, each to a FIXED Location.
+ALIASES = {"/trader-shield": "/shields/trader",
+           "/trader-shield/attacks.json": "/shields/trader/attacks.json",
+           "/trader-shield/graph.json": "/shields/trader/graph.json"}
 #: ``create_app``'s cache: ``swr(key, producer, default, ttl)`` answers the cached value.
 Cache = Callable[..., Any]
 
@@ -101,12 +123,25 @@ def events_payload(shield_id: str) -> list[Any] | None:
     return [sanitised(event.as_json(), _local_text) for event in shield.events()]
 
 
+def shield_file(shield_id: str, name: str) -> Optional[Path]:
+    """The page-side file *name* (``page``, ``content.json`` or ``graph.json``) of the shield
+    registered as *shield_id*, when it ships one; None otherwise (the id is never a path)."""
+    shield = shields.get(shield_id)
+    if shield is None:
+        return None
+    path = {"page": shield.page, "content.json": shield.page.with_name("content.json"),
+            "graph.json": shield.folder / "graph.json"}[name]
+    return path if path.is_file() else None
+
+
 def register(app: Any, swr: Cache) -> None:
-    """Add ``GET /api/shields`` (cached through *swr*) and ``GET /api/shields/{id}/events``
-    to *app*, and (until S7 removes it) the old wallet-protection panel's routes."""
+    """Add ``GET /api/shields`` (cached through *swr*), ``GET /api/shields/{id}/events``,
+    every shield's page and its files (:func:`register_pages`) to *app*, and (until S7
+    removes it) the old wallet-protection panel's routes."""
     from fastapi.responses import JSONResponse
 
     protection.register_protection_routes(app)   # transitional: the old panel, until S7
+    register_pages(app)
 
     @app.get("/api/shields")
     def shield_statuses() -> Any:
@@ -123,3 +158,54 @@ def register(app: Any, swr: Cache) -> None:
 def _local_url(value: Any) -> str:
     """*value* when it is a plain path on this dashboard, else "" (no scheme, host or ``..``)."""
     return value if isinstance(value, str) and LOCAL_URL.fullmatch(value) else ""
+
+
+def register_pages(app: Any) -> None:
+    """Add ``GET /shields/{id}`` and its relative files, and the three permanent aliases."""
+    from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+
+    def not_found() -> Any:
+        return JSONResponse({"error": "not found"}, status_code=404)
+
+    def served(shield_id: str, name: str, media_type: str) -> Any:
+        path = shield_file(shield_id, name)
+        return FileResponse(str(path), media_type=media_type, headers=NO_CACHE) if path else not_found()
+
+    @app.get("/shields/{shield_id}")
+    def shield_page(shield_id: str) -> Any:
+        return served(shield_id, "page", "text/html")
+
+    @app.get("/shields/{shield_id}/content.json")
+    def shield_content(shield_id: str) -> Any:
+        return served(shield_id, "content.json", "application/json")
+
+    @app.get("/shields/{shield_id}/graph.json")
+    def shield_graph(shield_id: str) -> Any:
+        return served(shield_id, "graph.json", "application/json")
+
+    @app.get("/shields/{shield_id}/attacks.json")
+    def shield_attacks(shield_id: str) -> Any:
+        try:
+            table = shields.attack_table(shield_id)
+        except ValueError as exc:   # the file broke the shield-file rules: say so, never a 500
+            logger.warning("blackbox dashboard: %s attack table unavailable (%s)", shield_id, exc)
+            table = None
+        return JSONResponse(table, headers=NO_CACHE) if table is not None else not_found()
+
+    @app.get("/shields/{shield_id}/packs/{pack_id}/logo.svg")
+    def pack_logo(shield_id: str, pack_id: str) -> Any:
+        logo = shields.pack_logo(shield_id, pack_id)   # the registry's own record, never a free path
+        if logo is None:
+            return not_found()
+        return FileResponse(str(logo), media_type="image/svg+xml", headers=LOGO_HEADERS)
+
+    for alias, location in ALIASES.items():
+        app.add_api_route(alias, _redirect_to(location, RedirectResponse), methods=["GET"],
+                          include_in_schema=False)
+
+
+def _redirect_to(location: str, response: Any) -> Callable[[], Any]:
+    """A handler answering 307 to the fixed *location* (bound here, never read from the request)."""
+    def redirect() -> Any:
+        return response(location, status_code=307)
+    return redirect
