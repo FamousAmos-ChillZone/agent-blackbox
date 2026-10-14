@@ -122,6 +122,17 @@ def test_archiving_a_browser_folder_without_metamask_is_not_found(fake_home):
 def test_non_recursive_read_of_a_parent_folder_is_not_found(fake_home):
     assert _shell("cat ~/Library/Application\\ Support/Google/Chrome/Local\\ State") == []
     assert _shell("ls -la ~/Library/Application\\ Support/Google/Chrome/Default") == []
+    # A plain read of the very folder that holds the vault reads no file inside it.
+    assert _shell("cat ~/Library/Application\\ Support/Google/Chrome/Default") == []
+
+
+def test_a_wallet_with_two_stores_in_one_folder_is_named_once(fake_home):
+    sync = fake_home / "Library" / "Application Support" / "Google" / "Chrome" / "Default" / "Sync Extension Settings" / CHROME_ID
+    sync.mkdir(parents=True)
+    _reset_stores()
+    folder = "~/Library/Application Support/Google/Chrome"
+    assert len([store for store in detectors.EXISTING_STORES.get() if store[1].pack == "metamask"]) == 2
+    assert detectors.wallets_inside_folder(folder) == [Owner("metamask", "MetaMask")]
 
 
 def test_other_extensions_in_chromium_are_not_found():
