@@ -13,6 +13,8 @@ import pytest
 from plugins.blackbox.dashboard import protection
 from plugins.blackbox.detection import wallet_files
 from plugins.blackbox.kernel.config import BlackboxConfig
+from plugins.blackbox.shields.trader import detectors as trader_detectors, status as trader_status
+from plugins.blackbox.shields.trader.detectors.browser_extension import Owner
 
 METAMASK_CHROME = wallet_files.WALLETS[0].chromium_ids[0]
 
@@ -23,8 +25,16 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
     monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bb"))
     wallet_files.EXISTING_STORES.reset()
+    trader_detectors.EXISTING_STORES.reset()   # the panel reads Trader Shield's own scan since S5
     yield tmp_path
     wallet_files.EXISTING_STORES.reset()
+    trader_detectors.EXISTING_STORES.reset()
+
+
+def _config(monkeypatch, mode):
+    """Blackbox's audit/block mode for the panel and for Trader's card, which it reads since S5."""
+    monkeypatch.setattr(protection, "load_blackbox_config", lambda: BlackboxConfig(mode=mode))
+    monkeypatch.setattr(trader_status, "load_blackbox_config", lambda: BlackboxConfig(mode=mode))
 
 
 def _vault(home, *parts):
@@ -47,13 +57,13 @@ def test_a_machine_without_a_wallet_lists_none(home):
 
 @pytest.mark.parametrize("mode, shown", [("block", "block"), ("audit", "audit")])
 def test_the_panel_says_whether_it_blocks_or_only_watches(home, monkeypatch, mode, shown):
-    monkeypatch.setattr(protection, "load_blackbox_config", lambda: BlackboxConfig(mode=mode))
+    _config(monkeypatch, mode)
     payload = protection.wallet_protection_payload()
     assert payload["mode"] == shown and payload["seed_checker"] is True and payload["terminal_reads"] == "blocked"
 
 
 def test_only_wallet_events_are_listed_with_blocked_or_flagged(home, monkeypatch):
-    monkeypatch.setattr(protection, "load_blackbox_config", lambda: BlackboxConfig(mode="block"))
+    _config(monkeypatch, "block")
     findings = home / "bb" / "findings.jsonl"
     findings.parent.mkdir(parents=True)
     rows = [
@@ -76,12 +86,12 @@ from plugins.blackbox.shields.trader import mode as trader_mode
 
 
 def test_the_panel_is_off_until_the_mode_is_on(home, monkeypatch):
-    monkeypatch.setattr(protection, "load_blackbox_config", lambda: BlackboxConfig(mode="block"))
+    _config(monkeypatch, "block")
     monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=False))
     assert protection.wallet_protection_payload()["enabled"] is False
     monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=True))
     _vault(home, "Local Extension Settings", METAMASK_CHROME)
-    wallet_files.EXISTING_STORES.reset()   # the folder scan is cached for minutes
+    trader_detectors.EXISTING_STORES.reset()   # the folder scan is cached for minutes
     payload = protection.wallet_protection_payload()
     assert payload["enabled"] is True and payload["wallets"][0]["protected"] is True
 
@@ -161,9 +171,10 @@ def test_the_panel_calls_a_store_protected_exactly_when_the_gate_would_count_it(
     """The panel used its own copy of the rule and labelled a Firefox store "not protected"
     while the gate (FIX-0100) protected it. Both now read the gate's own rule (trader mode.protects)."""
     stores = [(wallet_files.normalize_path("~/.mozilla/firefox/a.default/storage/default/moz-extension+++x^usercontextid=4294967295"),
-               wallet_files.FIREFOX_EXTENSION),
-              (wallet_files.normalize_path(f"~/.config/google-chrome/Default/local extension settings/{METAMASK_CHROME}"), "MetaMask")]
-    monkeypatch.setattr(wallet_files.EXISTING_STORES, "get", lambda: stores)
+               Owner("", wallet_files.FIREFOX_EXTENSION)),
+              (wallet_files.normalize_path(f"~/.config/google-chrome/Default/local extension settings/{METAMASK_CHROME}"),
+               Owner("metamask", "MetaMask"))]
+    monkeypatch.setattr(trader_detectors.EXISTING_STORES, "get", lambda: stores)
     for chosen, expected in ((["metamask"], {"a Firefox extension": True, "MetaMask": True}),
                              ([], {"a Firefox extension": False, "MetaMask": False})):
         monkeypatch.setattr(trader_mode, "current",
@@ -177,7 +188,7 @@ def test_a_firefox_profile_name_is_shown_as_it_is_not_defanged(home, monkeypatch
     through the community-text sanitizer, which defangs anything shaped like a domain."""
     store = wallet_files.normalize_path(
         "~/Library/Application Support/Firefox/Profiles/ab12.default-release/storage/default/moz-extension+++x^usercontextid=4294967295")
-    monkeypatch.setattr(wallet_files.EXISTING_STORES, "get", lambda: [(store, wallet_files.FIREFOX_EXTENSION)])
+    monkeypatch.setattr(trader_detectors.EXISTING_STORES, "get", lambda: [(store, Owner("", wallet_files.FIREFOX_EXTENSION))])
     [shown] = protection.wallet_protection_payload()["wallets"]
     assert shown["profile"] == "ab12.default-release" and "[.]" not in str(shown)
 

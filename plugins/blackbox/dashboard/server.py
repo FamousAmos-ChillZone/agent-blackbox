@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Set, Tuple
 from ..kernel.browser_boundary import BrowserBoundary
 from .. import shields
 from ..sync import read_durable_progress, state as sync_state
-from . import community_routes, graph_pages, lifecycle, protection, shields_routes, sync_meter, sync_timing
+from . import community_routes, graph_pages, lifecycle, shields_routes, sync_meter, sync_timing
 from .graph_pages import _balanced_graph_entries, _graph_entries
 from .network_sync import network_sync_argv as _network_sync_argv
 from .node_probe import NodeLiveness, RepeatGate, node_sync_probe
@@ -1835,7 +1835,7 @@ def create_app(*, manage_blackbox: bool = False):
 
     community_endpoints = community_routes.register_community_routes(app, community_read=_community_read, node_reachable=_node_reachable)
     sync_meter.register_sync_meter_routes(app, load_config=load_blackbox_config, node_reachable=_node_reachable, verified_rules=lambda cfg: _graph_source_count(ruleset.peek(cfg), "public"))
-    protection.register_protection_routes(app)   # the wallet-protection panel (trader rules)
+    shields_routes.register(app, _swr)   # GET /api/shields, and the old wallet-protection panel until S7
     @app.get("/api/threat")
     def threat(identifier: str = Query(..., min_length=1), tier: str = Query("public")) -> Any:
         """Full detail for ONE threat via a targeted point-lookup.

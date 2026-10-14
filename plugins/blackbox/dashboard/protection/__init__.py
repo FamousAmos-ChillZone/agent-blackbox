@@ -4,8 +4,8 @@
 
 * ``mode`` — ``block`` (wallet threats are stopped) or ``audit`` (recorded only),
   and ``block_severity`` (what severity blocks);
-* ``wallets`` — the browser wallets whose key stores exist here
-  (:func:`..detection.found_wallets`: folder names only, nothing inside is read);
+* ``wallets`` — the wallets whose key stores exist here (Trader Shield's own scan,
+  ``shields/trader/status.found_wallets``: folder names only, nothing inside is read);
 * ``seed_checker`` — whether seed-phrase detection is on (the pinned BIP-39 list loaded);
 * ``protected_paths`` — the operator's protected file patterns, and ``terminal_reads``
   — how reads of those through the terminal are treated (``"blocked"``: same rule as
@@ -21,7 +21,7 @@
 
 Usage::
 
-    register_protection_routes(app)   # from dashboard.server.create_app
+    register_protection_routes(app)   # from dashboard.shields_routes.register until S7
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
-from ... import audit, detection, shields
+from ... import audit, shields
 from ...kernel import crypto_secrets
 from ...kernel.config import load_blackbox_config
 from ..safe_payloads import safe_identifier, safe_text
@@ -38,11 +38,16 @@ from .events import is_wallet_identifier, local_text, wallet_event_report
 MAX_EVENTS = 20
 
 
-# Transitional (S2b): this panel reads Trader Shield through the shields public surface
-# only — its mode, its gate and its supported wallets. The whole sub-package goes in S7.
+# Transitional (S2b, S5): this panel reads Trader Shield through the shields public surface —
+# its mode, its gate, its supported wallets and its card — plus, until S7 deletes this
+# sub-package with the old panel, the per-profile list behind the card's found rows
+# (``shields.trader.status``: the card groups by wallet, the old page groups itself).
+_trader_status = shields.trader.status
+
+
 def _guarded(trader: shields.Shield, mode: shields.ShieldMode, wallet_id: str) -> bool:
     """Whether the gate counts a key-store finding for *wallet_id* under *mode* (the gate's own rule)."""
-    return trader.allows({"identifier": "fileaccess:file:crypto-wallet", "fields": {"wallet": wallet_id}}, mode)
+    return _trader_status.guarded(trader.allows, mode, wallet_id)
 
 
 def _supported_wallets(trader: shields.Shield) -> set[str]:
@@ -71,14 +76,15 @@ def wallet_protection_payload() -> dict[str, Any]:
     cfg = load_blackbox_config()
     trader = shields.get("trader")
     mode = trader.mode()
+    card = trader.status(mode)
     try:
-        wallets = detection.found_wallets()
+        wallets = _trader_status.found_wallets()
     except Exception:   # a filesystem error means "none found", never a broken page
         wallets = []
     return {
-        "enabled": mode.enabled,                 # the panel shows only while Web3 wallet protection is on
-        "wallet_mode": mode.as_json(),   # without the operator's addresses: only the Settings editor needs those
-        "mode": "block" if cfg.block_enabled else "audit",
+        "enabled": card.mode.enabled,            # the panel shows only while Web3 wallet protection is on
+        "wallet_mode": card.mode.as_json(),   # without the operator's addresses: only the Settings editor needs those
+        "mode": "block" if card.blocking else "audit",
         "block_severity": safe_text(cfg.block_severity, 16),
         # Folder names found on THIS machine: cleaned, never defanged (a Firefox profile is "x.default-release").
         "wallets": [{**{key: (local_text(value, 64) if isinstance(value, str) else [local_text(a, 32) for a in value])

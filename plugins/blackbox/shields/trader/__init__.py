@@ -8,8 +8,8 @@ its detectors (the pack kinds in :mod:`.detectors`, built from the wallet packs 
 in :mod:`.detectors.own_keys`), and the gate: ``claims`` is read from :data:`FINDING_KINDS`
 (what its detectors emit AND the core findings it claims — seed phrases, labelled keys,
 exchange keys, token approvals, the keychain), ``allows`` reads a key-store finding's
-``fields["pack"]``. Its card and events report are placeholders that answer empty until
-S5 and S6a fill them.
+``fields["pack"]``. Its dashboard card is :mod:`.status`; its events report is a placeholder
+that answers empty until S6a fills it.
 
 Usage::
 
@@ -30,7 +30,7 @@ from ...kernel import crypto_secrets
 from ..contract import (Capability, FindingKind, SettingField, SettingOption, Shield, ShieldEvent, ShieldMode,
                         ShieldStatus)
 from ..packs import load_packs
-from . import detectors, mode
+from . import detectors, mode, status
 from .detectors import own_keys
 
 HERE = Path(__file__).resolve().parent
@@ -125,11 +125,12 @@ def settings_fields() -> list[SettingField]:
 
 
 def _status(active: ShieldMode) -> ShieldStatus:
-    return ShieldStatus(shield_id="trader", mode=active, blocking=False)   # placeholder: the card arrives in S6a
+    """Trader's dashboard card under *active*, judged by this shield's own gate."""
+    return status.build(active, allows)
 
 
 def _no_events() -> list[ShieldEvent]:
-    return []   # placeholder: the events report moves here in S5
+    return []   # placeholder: the events report moves here in S6a
 
 
 TRADER = Shield(
