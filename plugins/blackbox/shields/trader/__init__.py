@@ -115,14 +115,28 @@ def _detect(tool_name: str, args: Any, active: ShieldMode) -> list[Finding]:
     return detectors.detect(tool_name, args, active) + own_keys.detect(tool_name, args, active)
 
 
+#: Settings' words for Trader's group (the dashboard draws them as given).
+ENGAGE_HELP = ("Keep your AI agent away from your wallets: it cannot open a wallet's key store (the encrypted vault "
+               "in your browser or wallet app), and seed phrases and private keys it handles are flagged, and blocked "
+               "if it tries to send them off this machine. Your own trading tools keep working. Seed phrases and keys "
+               "are always kept out of Blackbox's logs, whether this is on or off.")
+ADDRESSES_HELP = ("A raw private key is 64 characters that look exactly like a transaction hash. List your own public "
+                  "addresses (0x…, one per line) and Trader Shield recognises a raw key that opens one of them — and "
+                  "blocks it if your agent tries to send it out. Addresses stay on this machine; they are never "
+                  "logged, reported or shared. Optional.")
+
+
 def settings_fields() -> list[SettingField]:
-    """How Settings draws Trader's group: the switch, and the wallet packs in display order
-    (supported, then coming soon; a pack that failed to load is left out until S6a shows it)."""
-    options = tuple(SettingOption(id=pack.id, name=pack.name, status=pack.status,
-                                  logo=f"/wallets/{pack.id}.svg" if pack.status == "supported" else "")
+    """How Settings draws Trader's group: the switch, the wallet packs in display order
+    (supported, then coming soon; a pack that failed to load is left out), and the
+    operator's own addresses (one per line, each a ``0x`` address)."""
+    options = tuple(SettingOption(id=pack.id, name=pack.name, status=pack.status, logo=mode.logo_url(pack.id))
                     for pack in mode.wallet_packs() if pack.status != "unavailable")
-    return [SettingField(key="enabled", kind="toggle", label="Trader Shield"),
-            SettingField(key=mode.WALLETS, kind="multi-pick", label="Wallets to protect", options=options)]
+    return [SettingField(key="enabled", kind="toggle", label="Engage Trader Shield", help=ENGAGE_HELP),
+            SettingField(key=mode.WALLETS, kind="multi-pick", label="Wallets to protect",
+                         help="Choose the wallets installed on this machine.", options=options),
+            SettingField(key=mode.ADDRESSES, kind="lines", label="Your wallet addresses", help=ADDRESSES_HELP,
+                         pattern=mode.ADDRESS_PATTERN)]
 
 
 def _status(active: ShieldMode) -> ShieldStatus:

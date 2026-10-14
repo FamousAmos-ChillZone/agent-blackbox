@@ -179,3 +179,20 @@ def test_the_page_treats_a_failed_fetch_as_a_failure_not_an_empty_answer():
     assert get_json and "if (!r.ok) throw" in get_json.group(0)
     # Every read goes through getJSON; the one other fetch is the Engage POST, which reads r.ok itself.
     assert page.count("fetch(") == 2 and 'fetch(HERE + "../../api/settings", { method: "POST"' in page
+
+
+def test_the_old_wallet_routes_are_gone_and_the_shield_routes_answer(app):
+    """S7: the page draws every shield from the shield routes; the wallet panel's routes and
+    its logo folder are removed in the same change, so the page and the server cannot drift."""
+    with TestClient(app, base_url=LOCAL) as client:
+        gone = {path: client.get(path).status_code
+                for path in ("/api/wallet-protection", "/api/wallet-protection/events", "/wallets/metamask.svg")}
+        served = {path: client.get(path).status_code
+                  for path in ("/api/shields", "/api/shields/trader/events", "/shields/trader/packs/metamask/logo.svg")}
+        script = client.get("/shields.js")
+    assert gone == dict.fromkeys(gone, 404)
+    assert served == dict.fromkeys(served, 200)
+    assert script.status_code == 200 and script.headers["content-type"].startswith("application/javascript")
+    assert "no-store" in script.headers["cache-control"] and "BlackboxShields" in script.text
+    plugin = shields_routes.SHIELDS_SCRIPT.parents[2]
+    assert not (plugin / "dashboard" / "protection").exists() and not (plugin / "dashboard" / "static" / "wallets").exists()

@@ -4,9 +4,9 @@ The card says, in the panel's own words, which wallets were found on this machin
 whether each is protected, what is always watched, and two health rows: a chosen pack
 that is not supported right now (F-013) and supported packs a saved list leaves out
 (F-037). The dashboard sanitises the card ONCE where it serves it (F-002), serves it
-through its 2 s cache (F-021), and never carries an address (R27). The old panel route
-answers from the same card until S7. The found-wallet assertions moved here from
-test_blackbox_wallet_protection_panel.py.
+through its 2 s cache (F-021), and never carries an address (R27). Since S7 it is the only
+source of the card's words: the dashboard draws it as given. The found-wallet assertions
+moved here from the old wallet-protection panel's tests.
 """
 
 from __future__ import annotations
@@ -20,14 +20,13 @@ from pathlib import Path
 import pytest
 
 from plugins.blackbox import shields
-from plugins.blackbox.dashboard import protection, shields_routes
+from plugins.blackbox.dashboard import shields_routes
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.shields.contract import Pack, ShieldMode, ShieldStatus, StatusRow, StatusSection
 from plugins.blackbox.shields.trader import detectors, mode as trader_mode, status as trader_status
 from plugins.blackbox.shields.trader.detectors.browser_extension import FIREFOX_EXTENSION, Owner, normalize_path
 
 PLUGIN = Path(trader_status.__file__).resolve().parents[2]
-PAGE = PLUGIN / "dashboard" / "static" / "index.html"
 FIXTURE = Path(__file__).with_name("fixtures") / "shields_api_payload.json"
 TRADER = shields.get("trader")
 METAMASK_CHROME = "nkbihfbeogaeaoehlefnkodbefgpgknn"
@@ -46,9 +45,8 @@ def home(tmp_path, monkeypatch):
 
 
 def _config(monkeypatch, mode="block"):
-    """Blackbox's audit/block mode, for the card and for the old panel."""
-    for module in (trader_status, protection):
-        monkeypatch.setattr(module, "load_blackbox_config", lambda: BlackboxConfig(mode=mode))
+    """Blackbox's audit/block mode, for the card."""
+    monkeypatch.setattr(trader_status, "load_blackbox_config", lambda: BlackboxConfig(mode=mode))
 
 
 def _mode(monkeypatch, **kwargs):
@@ -117,7 +115,7 @@ def test_found_rows_are_one_per_wallet_in_the_panels_words(home, monkeypatch):
     _config(monkeypatch, "block")
     rows = _rows(_card(trader_mode.build(enabled=True, wallets=("metamask",))), "Found on this machine")
     metamask = rows["MetaMask · Chrome, Brave"]
-    assert (metamask.icon, metamask.state, metamask.logo) == ("✓", "ok", "/wallets/metamask.svg")
+    assert (metamask.icon, metamask.state, metamask.logo) == ("✓", "ok", "/shields/trader/packs/metamask/logo.svg")
     assert metamask.sub == "vault, backup copy — protected — blocked if the agent reaches for it"
     firefox = rows["Firefox wallets · Firefox"]
     assert firefox.sub == ("every extension's storage in 2 Firefox profiles — "
@@ -152,21 +150,6 @@ def test_always_watching_rows_say_todays_rules(home, monkeypatch):
 
     rows = _rows(_card(trader_mode.build(enabled=True)), "Always watching")
     assert rows["Private keys"].sub.endswith("list your addresses in Settings to catch raw keys")
-
-
-def test_every_card_sentence_is_the_panels_own_wording():
-    """The card carries today's text verbatim: each fixed phrase is the one index.html renders."""
-    page = PAGE.read_text(encoding="utf-8")
-    for phrase in ("protected — blocked if the agent reaches for it", "watched — flagged, not blocked (audit mode)",
-                   "not selected in Settings, so not protected", "every extension's storage in ",
-                   "No wallet found on this machine.",
-                   "Blackbox checks the usual browser and wallet-app folders by name every few minutes; it never opens a vault.",
-                   trader_status.FOUND_HELP, "checker on — 2,048-word list, checksum verified",
-                   "checker OFF — the word list did not load", "labelled and Solana keys · blocked if sent · ",
-                   " listed for raw keys", "list your addresses in Settings to catch raw keys",
-                   " — only to their own site", "known drainer blocked · unlimited approvals flagged",
-                   " · file tools and terminal", "Found on this machine ", "Always watching"):
-        assert phrase in page, phrase
 
 
 # ------------------------------------------------------------------ health rows
@@ -212,7 +195,7 @@ def test_no_file_under_shields_imports_safe_payloads_or_the_dashboard():
 def test_the_route_sanitises_every_text_once(monkeypatch):
     hostile = ShieldStatus("trader", ShieldMode(True), True, (
         StatusSection("Found \x1b[31mhere", "see http://evil.example/x", (StatusRow("✓", "ok", "a‮b", "evil.example", "javascript:alert(1)"),
-                                                                  StatusRow("✓", "ok", "x", "", "/wallets/metamask.svg"))),))
+                                                                  StatusRow("✓", "ok", "x", "", "/shields/trader/packs/metamask/logo.svg"))),))
     monkeypatch.setattr(shields, "statuses", lambda: [hostile])
     calls = []
     real = shields_routes.safe_text
@@ -221,9 +204,11 @@ def test_the_route_sanitises_every_text_once(monkeypatch):
     section = card["sections"][0]
     assert "\x1b" not in section["title"] and "evil[.]example" in section["help"] and "hxxp" in section["help"]
     assert section["rows"][0]["text"] == "ab" and section["rows"][0]["sub"].startswith("evil[.]example")
-    assert section["rows"][0]["logo"] == "" and section["rows"][1]["logo"] == "/wallets/metamask.svg"   # a path, not text
+    assert section["rows"][0]["logo"] == "" and section["rows"][1]["logo"] == "/shields/trader/packs/metamask/logo.svg"   # a path, not text
+    assert card["page"] == "/shields/trader" and card["name"] == TRADER.name   # the shield's own fields, for the page
     strings = ["trader", "Found \x1b[31mhere", "see http://evil.example/x", "✓", "ok", "a‮b", "evil.example",
-               "✓", "ok", "x", ""]
+               "✓", "ok", "x", "", TRADER.name, TRADER.tagline,
+               *(kind.identifier for kind in TRADER.finding_kinds if kind.identifier)]
     assert sorted(calls) == sorted(strings)   # each string once, and nothing else
 
 
@@ -276,51 +261,6 @@ def test_two_requests_inside_two_seconds_call_the_producer_once(home, monkeypatc
     assert first == second == [{"shield_id": "trader"}]
     assert len(calls) == 1
     assert shields_routes.STATUS_TTL_SECONDS == 2.0
-
-
-# ------------------------------------------------------------------ old and new routes agree
-
-
-def _seed_audit_log(home):
-    findings = home / "bb" / "findings.jsonl"
-    findings.parent.mkdir(parents=True, exist_ok=True)
-    rows = [{"ts": 1, "detail": {"decision": "block"},
-             "finding": {"identifier": "fileaccess:terminal:crypto-wallet", "title": "MetaMask key store", "tool_name": "terminal"}},
-            {"ts": 2, "detail": {}, "finding": {"identifier": "secret:wallet-private-key", "title": "Wallet private key"}}]
-    findings.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
-
-
-@pytest.mark.parametrize("blackbox_mode", ["block", "audit"])
-def test_the_old_panel_and_api_shields_agree_field_for_field(home, monkeypatch, blackbox_mode):
-    pytest.importorskip("fastapi")
-    _config(monkeypatch, blackbox_mode)
-    _mode(monkeypatch, enabled=True, wallets=("metamask", "electrum"), addresses=(OWN,))
-    _seed_audit_log(home)
-    _vault(home, "Local Extension Settings", METAMASK_CHROME)
-    _vault(home, "Local Extension Settings", METAMASK_CHROME, browser="BraveSoftware/Brave-Browser")
-    (home / ".electrum" / "wallets").mkdir(parents=True)
-    (home / ".electrum" / "wallets" / "default_wallet").write_text("x", encoding="utf-8")
-    with _client(monkeypatch, home) as client:
-        old = client.get("/api/wallet-protection").json()
-        [new] = _await_cached(client, "/api/shields")
-
-    assert len(old["events"]) == 2   # the seeded log reaches the old panel; events join /api/shields in S6a
-    assert old["enabled"] is new["mode"]["enabled"] is True and old["wallet_mode"] == new["mode"]
-    assert (old["mode"] == "block") is new["blocking"] is (blackbox_mode == "block")
-    found = {row["text"].split(" · ")[0]: row for row in new["sections"][0]["rows"]}
-    old_wallets = {}
-    for wallet in old["wallets"]:
-        old_wallets.setdefault(wallet["wallet"], []).append(wallet)
-    assert set(found) == set(old_wallets) == {"MetaMask", "Electrum"}
-    for name, entries in old_wallets.items():
-        assert found[name]["text"] == f"{name} · " + ", ".join(entry["browser"] for entry in entries)
-        assert (found[name]["state"] != "none") is all(entry["protected"] for entry in entries)
-    watching = {row["text"]: row["sub"] for row in new["sections"][1]["rows"]}
-    assert f"{old['own_addresses']} own address listed for raw keys" in watching["Private keys"]
-    assert watching["Exchange API keys"] == " · ".join(old["exchanges"]) + " — only to their own site"
-    assert watching["Protected files"].startswith(" · ".join(old["protected_paths"][:6]))
-    assert old["seed_checker"] is (watching["Seed phrases"] == "checker on — 2,048-word list, checksum verified")
-    assert old["terminal_reads"] == "blocked" and watching["Protected files"].endswith("file tools and terminal")
 
 
 # ------------------------------------------------------------------ the captured payload (S7 replay, S8)
