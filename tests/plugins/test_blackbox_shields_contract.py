@@ -541,6 +541,8 @@ def test_a_corrupt_pack_leaves_the_registry_importable_and_the_other_packs_suppo
                       "vanished": "unavailable"}
     assert loaded.roots == () and len(loaded.health) == 1
     assert [shield.id for shield in importlib.reload(shields).all_shields()] == ["trader"]
+    monkeypatch.undo()
+    importlib.reload(shields)   # the reload above loaded the patched packs; later tests need the real ones
 
 
 def test_a_loader_that_raises_leaves_the_shield_with_a_reason(tmp_path, monkeypatch):

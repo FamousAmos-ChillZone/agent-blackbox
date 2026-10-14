@@ -19,7 +19,7 @@ from plugins.blackbox.detection import wallet_files
 from plugins.blackbox.guard import background as guard_background
 from plugins.blackbox.guard import hooks
 from plugins.blackbox.kernel import config as config_mod
-from plugins.blackbox.shields.trader import mode as trader_mode
+from plugins.blackbox.shields.trader import detectors, mode as trader_mode
 from plugins.blackbox.ruleset import Ruleset
 
 CHROME_ID = "nkbihfbeogaeaoehlefnkodbefgpgknn"
@@ -37,6 +37,7 @@ def shielded(tmp_path, monkeypatch):
     vault.mkdir(parents=True)
     (vault / "000003.log").write_text("vault", encoding="utf-8")
     wallet_files.EXISTING_STORES.reset()
+    detectors.EXISTING_STORES.reset()   # the hook asks the shield's detectors
     monkeypatch.setattr(hooks, "_config", lambda: config_mod.BlackboxConfig(mode="block", report=False))
     monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: Ruleset())
     monkeypatch.setattr(guard_background, "_spawn_osv_discovery", lambda *a, **k: None)
@@ -44,6 +45,7 @@ def shielded(tmp_path, monkeypatch):
     monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=True))
     yield tmp_path
     wallet_files.EXISTING_STORES.reset()
+    detectors.EXISTING_STORES.reset()   # the hook asks the shield's detectors
 
 
 def _run_session(command, request=REQUEST, tool_call_id="call_1"):

@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from plugins.blackbox.detection import detect_all, wallet_files
+from plugins.blackbox.detection import wallet_files
 from plugins.blackbox.detection.wallet_files import detect_wallet_files
 
 CHROME_ID = "nkbihfbeogaeaoehlefnkodbefgpgknn"
@@ -89,8 +89,15 @@ def test_ordinary_project_files_are_not_found(fake_home):
     assert detect_wallet_files("read_file", {"path": "src/wallet/metamask.ts"}) == []
 
 
-def test_detect_all_includes_the_wallet_rule_even_with_discovery_off():
-    findings = detect_all("read_file", {"path": f"/x/Default/Local Extension Settings/{CHROME_ID}/a.log"}, None, discover=False)
+def test_the_guard_runs_the_wallet_rule_even_with_discovery_off(monkeypatch):
+    # The rule left detect_all for Trader Shield's own detectors; the guard asks them beside it.
+    from plugins.blackbox import shields
+    from plugins.blackbox.guard import hooks
+    from plugins.blackbox.kernel.config import BlackboxConfig
+    from plugins.blackbox.shields.trader import mode as trader_mode
+    monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=True))
+    path = f"/x/Default/Local Extension Settings/{CHROME_ID}/a.log"
+    findings = hooks._raw_findings(BlackboxConfig(discover=False), None, "read_file", {"path": path}, shields.snapshot())
     assert any(f.fields.get("file_category") == "crypto-wallet" for f in findings)
 
 
