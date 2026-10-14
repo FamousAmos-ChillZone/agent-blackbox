@@ -36,6 +36,12 @@ $ProgressPreference = "SilentlyContinue"
 # ── Configuration (override via env) ────────────────────────────────────────
 $RepoUrl     = if ($env:BLACKBOX_REPO_URL)    { $env:BLACKBOX_REPO_URL }    else { "https://github.com/umanitek/agent-blackbox.git" }
 $RepoBranch  = if ($env:BLACKBOX_REPO_BRANCH) { $env:BLACKBOX_REPO_BRANCH } else { "main" }
+# Setup-only mode: Blackbox is already installed as a plugin (the Hermes plugin catalog), and
+# `hermes blackbox setup` runs this script for everything after Hermes, in the Hermes it runs in.
+# The caller passes HERMES_BIN, VENV_DIR, BLACKBOX_INSTALL_DIR, BLACKBOX_HELPER_DIR and
+# BLACKBOX_PLUGIN_DIR (the same contract as blackbox-install.sh).
+$SetupOnly = $env:BLACKBOX_SETUP_ONLY -eq "true"
+$RepoDir = ""   # set by Resolve-Repo; setup-only mode has no checkout
 $HermesHome  = if ($env:HERMES_HOME)          { $env:HERMES_HOME }          else { "$env:USERPROFILE\.hermes" }
 # Keep the managed npm DKG package and state in the Agent Blackbox checkout. When
 # invoked from a clone, use that clone; when piped through iex, default to an
@@ -72,6 +78,11 @@ $DkgHome     = Join-Path $DefaultRepoDir ".dkg"
 $DkgCliDir   = Join-Path $DefaultRepoDir "dkg"
 $DkgBin      = Join-Path $DkgCliDir "node_modules\.bin\dkg.cmd"
 $DkgPackage  = if ($env:BLACKBOX_DKG_PACKAGE) { $env:BLACKBOX_DKG_PACKAGE } else { "@origintrail-official/dkg@latest" }
+# The npm integrity hash $DkgPackage must have ("sha512-..."); empty = not checked (see the .sh).
+$DkgIntegrity = if ($env:BLACKBOX_DKG_INTEGRITY) { $env:BLACKBOX_DKG_INTEGRITY } else { "" }
+# Packages whose install scripts the DKG node needs; npm 12 runs only those listed under
+# "allowScripts" in the project's package.json (see the .sh for the whole story).
+$DkgAllowScripts = @("@origintrail-official/dkg", "better-sqlite3", "@openuidev/lang-core")
 $DkgDaemonUrl = "http://127.0.0.1:$DkgPort"
 $DkgStoreQueueLimit = if ($env:BLACKBOX_DKG_STORE_QUEUE_LIMIT) { [int]$env:BLACKBOX_DKG_STORE_QUEUE_LIMIT } else { 512 }
 $DkgListContextGraphsProjection = if ($env:BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION) { $env:BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION } else { "1" }
@@ -233,7 +244,7 @@ function Test-NodeJs {
 }
 
 function Initialize-BlackboxDkgProcessEnvironment {
-    $helper = Join-Path $RepoDir "scripts\blackbox-dkg-runtime-fingerprint.py"
+    $helper = Get-BlackboxHelper "blackbox-dkg-runtime-fingerprint.py"
     if (-not (Test-Path $helper)) {
         Write-Warn2 "DKG runtime settings helper is missing: $helper"
         return $false
@@ -331,7 +342,7 @@ function Test-BlackboxDkgState {
 }
 
 function Prepare-BlackboxDkgRuntimeFingerprint {
-    $fingerprinter = Join-Path $RepoDir "scripts\blackbox-dkg-runtime-fingerprint.py"
+    $fingerprinter = Get-BlackboxHelper "blackbox-dkg-runtime-fingerprint.py"
     if (-not (Test-Path $fingerprinter)) {
         $script:InstallIncomplete = $true
         Write-Warn2 "DKG runtime fingerprint helper is missing; loaded npm runtime cannot be verified."
@@ -365,7 +376,7 @@ function Prepare-BlackboxDkgRuntimeFingerprint {
 }
 
 function Save-BlackboxDkgRuntimeFingerprint {
-    $fingerprinter = Join-Path $RepoDir "scripts\blackbox-dkg-runtime-fingerprint.py"
+    $fingerprinter = Get-BlackboxHelper "blackbox-dkg-runtime-fingerprint.py"
     if (-not $script:DkgRuntimeFingerprint) {
         $script:InstallIncomplete = $true
         Write-Warn2 "DKG runtime fingerprint is empty after restart."
@@ -385,7 +396,7 @@ function Save-BlackboxDkgRuntimeFingerprint {
 }
 
 function Wait-BlackboxDkgRuntime {
-    $verifier = Join-Path $RepoDir "scripts\blackbox-dkg-runtime-fingerprint.py"
+    $verifier = Get-BlackboxHelper "blackbox-dkg-runtime-fingerprint.py"
     $expectedCommit = (& $script:VenvPython $verifier commit $DkgCliDir).Trim()
     if ($LASTEXITCODE -ne 0 -or -not $expectedCommit) {
         $script:InstallIncomplete = $true
@@ -521,7 +532,7 @@ function Test-BlackboxDkgPort {
 }
 
 function Test-BlackboxBlazegraph {
-    $helper = Join-Path $RepoDir "scripts\blackbox-blazegraph.mjs"
+    $helper = Get-BlackboxHelper "blackbox-blazegraph.mjs"
     Write-Step "Checking the Blazegraph SPARQL endpoint ..."
     try {
         $output = @(& node $helper check $DkgCliDir $DkgStoreUrl 2>&1)
@@ -606,7 +617,7 @@ function Get-BlackboxStoreDescription {
 }
 
 function Initialize-BlackboxStore {
-    $helper = Join-Path $RepoDir "scripts\blackbox-blazegraph.mjs"
+    $helper = Get-BlackboxHelper "blackbox-blazegraph.mjs"
     $namespace = "agent-blackbox"
     $existingBackend = ""
     $existingUrl = ""
@@ -684,6 +695,19 @@ function Initialize-BlackboxStore {
         }
         Write-Warn2 "The managed Blazegraph endpoint is down; attempting Docker recovery."
     }
+    # `hermes blackbox setup` (a Hermes plugin-catalog install) needs no Docker: without it the store is
+    # the DKG-managed Oxigraph, chosen rather than asked about. The iex installer keeps asking first.
+    $dockerRunning = $false
+    if (Get-Command docker -ErrorAction SilentlyContinue) {
+        & docker info *> $null
+        $dockerRunning = ($LASTEXITCODE -eq 0)
+    }
+    if ($SetupOnly -and $StoreBackend -eq "auto" -and -not $dockerRunning) {
+        Write-Step "Docker is not available here, so setup uses the DKG-managed Oxigraph store (no Docker needed)."
+        Write-Step "To move to Blazegraph later: install Docker, then run: hermes blackbox setup --store blazegraph"
+        Use-BlackboxOxigraph
+        return $true
+    }
     if (-not (Test-DockerForBlazegraph)) {
         if ($StoreBackend -eq "auto" -and
             (Confirm-OxigraphFallback "Blazegraph cannot be installed because Docker is unavailable.")) {
@@ -739,7 +763,7 @@ function Reset-FreshManagedBlazegraph {
         Write-Step "Stop that DKG node or set BLACKBOX_DKG_STORE_URL to an operator-managed store."
         return $false
     }
-    $helper = Join-Path $RepoDir "scripts\blackbox-blazegraph.mjs"
+    $helper = Get-BlackboxHelper "blackbox-blazegraph.mjs"
     Write-Step "Clearing the installer-managed Blazegraph namespace for the fresh DKG identity ..."
     try {
         & node $helper reset $DkgCliDir $DkgStoreUrl $script:DkgStoreNamespace *> $null
@@ -988,6 +1012,26 @@ function Install-PythonEnv {
 }
 
 # ── Global blackbox command (per-user shim) ─────────────────────────────────
+# A helper script shipped beside this installer: scripts\ in a checkout, the plugin's setup\
+# folder in setup-only mode (BLACKBOX_HELPER_DIR).
+function Get-BlackboxHelper([string]$Name) {
+    if ($env:BLACKBOX_HELPER_DIR) { return Join-Path $env:BLACKBOX_HELPER_DIR $Name }
+    return Join-Path $RepoDir "scripts\$Name"
+}
+
+# Setup-only mode: use the Hermes the caller runs in (HERMES_BIN, VENV_DIR).
+function Use-RunningHermes {
+    Write-Heading "Using your Hermes"
+    $script:VenvDir = $env:VENV_DIR
+    $script:VenvPython = Join-Path $env:VENV_DIR "Scripts\python.exe"
+    $script:HermesBin = $env:HERMES_BIN
+    if (-not ($script:HermesBin -and (Test-Path $script:HermesBin)) -or -not (Test-Path $script:VenvPython)) {
+        Write-Err2 "Setup-only mode needs the Hermes it runs in (HERMES_BIN, VENV_DIR); run it as: hermes blackbox setup"
+        exit 1
+    }
+    Write-Ok "Hermes: $script:HermesBin"
+}
+
 function Install-BlackboxCommand {
     $shimDir = Join-Path $HOME ".local\bin"
     $shimPath = Join-Path $shimDir "blackbox.cmd"
@@ -1041,6 +1085,16 @@ function Install-BlackboxDkgPackage {
         return $false
     }
 
+    # A pinned checksum is compared with what the registry publishes BEFORE anything is installed.
+    if ($DkgIntegrity) {
+        $published = (& npm view $DkgPackage dist.integrity 2>$null | Out-String).Trim()
+        if ($published -ne $DkgIntegrity) {
+            Write-Warn2 "The registry's checksum for $DkgPackage ($published) is not the one this Blackbox release pins; it was not installed."
+            return $false
+        }
+        Write-Ok "DKG package checksum matches the pinned one ($DkgPackage)"
+    }
+
     if (Test-Path (Join-Path $DkgCliDir ".git")) {
         $backupDir = "$DkgCliDir.custom-backup-$(Get-Date -Format yyyyMMddHHmmss)"
         Write-Step "Moving the custom DKG checkout to $backupDir"
@@ -1054,6 +1108,16 @@ function Install-BlackboxDkgPackage {
 
     New-Item -ItemType Directory -Force -Path $DkgCliDir | Out-Null
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $npmLog) | Out-Null
+    # npm 12's allow list lives in the project's package.json: merge ours in (a package an
+    # operator set to false stays denied); older npm ignores the field.
+    $allowScriptsMerge = @'
+const fs = require("fs"); const file = process.argv[1];
+let pkg = {}; try { pkg = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) {}
+pkg.allowScripts = Object.assign({}, pkg.allowScripts);
+for (const name of process.argv.slice(2)) if (pkg.allowScripts[name] !== false) pkg.allowScripts[name] = true;
+fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
+'@
+    & node -e $allowScriptsMerge (Join-Path $DkgCliDir "package.json") @DkgAllowScripts
     try {
         & npm install --prefix $DkgCliDir --prefer-online $DkgPackage 2>&1 | Tee-Object -FilePath $npmLog | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "npm install exit $LASTEXITCODE" }
@@ -1065,6 +1129,30 @@ function Install-BlackboxDkgPackage {
         Write-Warn2 "Could not install the published DKG package ${DkgPackage}: $_"
         Write-Step "npm log: $npmLog"
         return $false
+    }
+
+    # A newer DKG release may need an install script the list does not name yet: stop and say which.
+    if (Select-String -Path $npmLog -SimpleMatch "had install scripts blocked" -Quiet) {
+        Write-Warn2 "npm blocked install scripts the DKG node needs (see the list in $npmLog)."
+        return $false
+    }
+
+    # The native SQLite module must load with the Node that will run the node; a folder an earlier
+    # run left half-built is rebuilt here, then checked again (see the .sh).
+    $sqliteDir = Join-Path $DkgCliDir "node_modules\better-sqlite3"
+    $sqliteProbe = 'const DB = require(process.argv[1]); new DB(":memory:").close();'
+    if (Test-Path $sqliteDir) {
+        & node -e $sqliteProbe $sqliteDir 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Step "Building the DKG node's SQLite module for Node $(& node -v) ..."
+            & npm rebuild --prefix $DkgCliDir better-sqlite3 2>&1 | Add-Content -Path $npmLog
+            & node -e $sqliteProbe $sqliteDir 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warn2 "The DKG node's SQLite module does not load with Node $(& node -v) and could not be rebuilt (npm log: $npmLog)."
+                return $false
+            }
+            Write-Ok "SQLite module built for Node $(& node -v)"
+        }
     }
 
     if (-not (Test-Path $DkgBin) -or -not (Test-Path $packageJson)) {
@@ -1080,7 +1168,8 @@ function Install-BlackboxDkgPackage {
         Write-Warn2 "Could not determine the installed DKG package version."
         return $false
     }
-    & $script:VenvPython -m plugins.blackbox.kernel.dkg_version $installedVersion
+    $pluginDir = if ($env:BLACKBOX_PLUGIN_DIR) { $env:BLACKBOX_PLUGIN_DIR } else { Join-Path $RepoDir "plugins\blackbox" }
+    & $script:VenvPython (Join-Path $pluginDir "kernel\dkg_version.py") $installedVersion
     if ($LASTEXITCODE -ne 0) {
         Write-Warn2 "DKG $installedVersion is too old for direct verified Blackbox recovery; version 10.0.9+ is required."
         return $false
@@ -1352,6 +1441,15 @@ for k, v in defaults.items():
 repo_dir = sys.argv[7] if len(sys.argv) > 7 else ""
 def _consent_in_force(checkout):
     try:
+        if checkout and os.path.isfile(os.path.join(checkout, "plugin.yaml")):
+            # Setup-only mode passes the plugin folder itself (see blackbox-install.sh).
+            import importlib, importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "_installed_blackbox", os.path.join(checkout, "__init__.py"), submodule_search_locations=[checkout])
+            package = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = package
+            spec.loader.exec_module(package)
+            return bool(importlib.import_module("_installed_blackbox.community.consent").in_force())
         if checkout:
             sys.path.insert(0, checkout)
         from plugins.blackbox.community import consent
@@ -1382,7 +1480,7 @@ print("  configured: " + ", ".join(added) if added else "  already configured - 
     $configFile = Join-Path $env:TEMP "blackbox_configure.py"
     Set-Content -Path $configFile -Value $configWriter -Encoding UTF8
     try {
-        & $VenvPython $configFile "$HermesHome\config.yaml" $DkgDaemonUrl $DkgHome $DkgBin $ContextGraphId $GraphPeerId $RepoDir
+        & $VenvPython $configFile "$HermesHome\config.yaml" $DkgDaemonUrl $DkgHome $DkgBin $ContextGraphId $GraphPeerId $(if ($env:BLACKBOX_PLUGIN_DIR) { $env:BLACKBOX_PLUGIN_DIR } else { $RepoDir })
         if ($LASTEXITCODE -ne 0) { throw "config update exit $LASTEXITCODE" }
         Write-Ok "Config defaults written (audit mode - blocking is opt-in)"
     } catch {
@@ -1672,12 +1770,17 @@ function Main {
     Write-Banner
     Write-Heading "Checking your system"
     Write-Ok "Detected Windows ($env:PROCESSOR_ARCHITECTURE)"
-    Test-Git
-    Resolve-Python
-    Test-NodeJs
+    if ($SetupOnly) {
+        Test-NodeJs
+        Use-RunningHermes
+    } else {
+        Test-Git
+        Resolve-Python
+        Test-NodeJs
 
-    Resolve-Repo
-    Install-PythonEnv
+        Resolve-Repo
+        Install-PythonEnv
+    }
     Install-BlackboxCommand
     Install-Dkg
     Enable-AndConfigure

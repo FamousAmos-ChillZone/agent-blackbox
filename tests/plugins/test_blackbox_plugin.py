@@ -187,7 +187,7 @@ def test_blackbox_sync_parser_accepts_wait_timeout():
     parser = argparse.ArgumentParser()
     cli_mod.setup_cli(parser)
     args = parser.parse_args(["sync", "--wait", "--timeout", "45", "--require-rules"])
-    assert args.func is sync_command.cmd_sync
+    assert args.func is load_blackbox("sync").cmd_sync   # the package entry: it checks a node exists first
     assert args.wait is True
     assert args.timeout == 45
     assert args.require_rules is True
