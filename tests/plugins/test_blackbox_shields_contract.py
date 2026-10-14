@@ -334,12 +334,24 @@ def test_a_logo_without_terms_is_refused(tmp_path):
 @pytest.mark.parametrize("svg", [
     "<svg><script>fetch('/api/session')</script></svg>", "<svg><foreignObject><p/></foreignObject></svg>",
     '<svg onload="alert(1)"></svg>', '<svg><a href="https://evil.example/">x</a></svg>',
-    '<svg><use xlink:href="data:image/svg+xml;base64,AA"/></svg>'],
-    ids=["script", "foreign-object", "on-attribute", "external-href", "xlink-data-href"])
+    '<svg><use xlink:href="data:image/svg+xml;base64,AA"/></svg>',
+    "<svg/onload=alert(1)></svg>", "<svg><a href=https://evil.example/>x</a></svg>"],
+    ids=["script", "foreign-object", "on-attribute", "external-href", "xlink-data-href",
+         "slash-on-attribute", "unquoted-external-href"])
 def test_a_logo_carrying_refused_markup_is_refused(tmp_path, svg):
     shield = _shield(tmp_path)
     _with_logo(shield, svg)
     assert _only(shield).reason.startswith("the logo carries refused markup")
+
+
+@pytest.mark.parametrize("svg", [
+    '<svg><use href="#glyph"/></svg>', "<svg><use href=#glyph /></svg>",
+    '<svg><rect width="1" height="1" fill="none"/></svg>'],
+    ids=["quoted-fragment-href", "unquoted-fragment-href", "plain-shapes"])
+def test_a_logo_with_only_fragment_links_and_shapes_loads(tmp_path, svg):
+    shield = _shield(tmp_path)
+    _with_logo(shield, svg)
+    assert _only(shield).status == "supported"
 
 
 def test_an_unavailable_pack_carries_its_reason_and_serves_no_logo(tmp_path, monkeypatch):
