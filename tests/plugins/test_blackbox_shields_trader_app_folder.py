@@ -17,14 +17,13 @@ Windows layouts.
 from __future__ import annotations
 
 import dataclasses
-import json
 import os
 import sys
 import threading
 
 import pytest
 
-from plugins.blackbox.dashboard import protection
+from _trader_attack_table import ATTACKS
 from plugins.blackbox.detection import app_wallets, wallet_files
 from plugins.blackbox.detection.wallet_files import detect_wallet_files
 from plugins.blackbox.shields.contract import Pack
@@ -285,8 +284,7 @@ def test_the_app_folder_validator_sits_beside_its_matcher(manifest, problem):
 
 # -- the attack table's app rows on Linux, macOS and Windows layouts, through both detectors ----
 
-TABLE = json.loads((protection.TRADER_SHIELD_PAGE.parent / "trader-shield-attacks.json").read_text(encoding="utf-8"))
-APP_ROWS = [row for row in TABLE["attacks"]
+APP_ROWS = [row for row in ATTACKS   # page rows with their tool calls (_trader_attack_table)
             if row["proof"] == "test" and row["group"] == "vault" and set(row["targets"]) & APP_PACKS]
 
 
