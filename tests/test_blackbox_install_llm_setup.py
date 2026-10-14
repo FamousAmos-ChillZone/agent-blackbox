@@ -1785,9 +1785,14 @@ def test_unix_runtime_marker_survives_interrupted_restart_window(
         "record_blackbox_dkg_runtime_fingerprint"
     )
 
+    helper_body = _extract_function_body("blackbox_helper")
+
     def invoke(*, record: bool) -> tuple[str, ...]:
         command = f"""
 warn() {{ :; }}
+blackbox_helper() {{
+{helper_body}
+}}
 prepare_blackbox_dkg_runtime_fingerprint() {{
 {prepare_body}
 }}

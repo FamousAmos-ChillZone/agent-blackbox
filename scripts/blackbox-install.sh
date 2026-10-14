@@ -22,6 +22,14 @@ set -euo pipefail
 # ── Configuration (override via env) ────────────────────────────────────────
 REPO_URL="${BLACKBOX_REPO_URL:-https://github.com/umanitek/agent-blackbox.git}"
 REPO_BRANCH="${BLACKBOX_REPO_BRANCH:-main}"
+# Setup-only mode: Blackbox is already installed as a plugin (the Hermes plugin catalog),
+# and `hermes blackbox setup` runs this script for everything after Hermes — the DKG
+# node, the graphs, attach, sync, dashboard and services — in the Hermes it runs in.
+# The caller passes HERMES_BIN, VENV_DIR (that Hermes's Python environment),
+# BLACKBOX_INSTALL_DIR, BLACKBOX_HELPER_DIR (the plugin's copies of the helper scripts),
+# BLACKBOX_PLUGIN_DIR and BLACKBOX_REVISION (the plugin's pinned commit).
+BLACKBOX_SETUP_ONLY="${BLACKBOX_SETUP_ONLY:-false}"
+REPO_DIR=""   # set by resolve_repo; setup-only mode has no checkout
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 # Keep the managed npm DKG package and node state inside the Agent Blackbox
 # checkout. For a local script this is the current repository; for curl | bash
@@ -170,8 +178,14 @@ detached_process_survived_startup() {
     kill -0 "$pid" 2>/dev/null
 }
 
+# A helper script shipped beside this installer: scripts/ in a checkout, the plugin's
+# setup/ folder in setup-only mode (BLACKBOX_HELPER_DIR).
+blackbox_helper() {
+    printf '%s/%s' "${BLACKBOX_HELPER_DIR:-$REPO_DIR/scripts}" "$1"
+}
+
 prepare_blackbox_dkg_process_environment() {
-    local helper="$REPO_DIR/scripts/blackbox-dkg-runtime-fingerprint.py"
+    local helper="$(blackbox_helper blackbox-dkg-runtime-fingerprint.py)"
     local heap_mb
     if [ ! -f "$helper" ]; then
         warn "DKG runtime settings helper is missing: $helper"
@@ -230,7 +244,7 @@ blackbox_has_dkg_state() {
 }
 
 prepare_blackbox_dkg_runtime_fingerprint() {
-    local fingerprinter="$REPO_DIR/scripts/blackbox-dkg-runtime-fingerprint.py"
+    local fingerprinter="$(blackbox_helper blackbox-dkg-runtime-fingerprint.py)"
     local node_bin
     local applied=""
     if [ ! -f "$fingerprinter" ]; then
@@ -260,7 +274,7 @@ prepare_blackbox_dkg_runtime_fingerprint() {
 }
 
 record_blackbox_dkg_runtime_fingerprint() {
-    local fingerprinter="$REPO_DIR/scripts/blackbox-dkg-runtime-fingerprint.py"
+    local fingerprinter="$(blackbox_helper blackbox-dkg-runtime-fingerprint.py)"
     if [ -z "$BLACKBOX_DKG_RUNTIME_FINGERPRINT" ] ||
         ! "$VENV_DIR/bin/python" "$fingerprinter" record \
             "$BLACKBOX_DKG_RUNTIME_MARKER" "$BLACKBOX_DKG_RUNTIME_FINGERPRINT"; then
@@ -274,7 +288,7 @@ record_blackbox_dkg_runtime_fingerprint() {
 }
 
 wait_for_blackbox_dkg_runtime() {
-    local verifier="$REPO_DIR/scripts/blackbox-dkg-runtime-fingerprint.py"
+    local verifier="$(blackbox_helper blackbox-dkg-runtime-fingerprint.py)"
     local expected_commit
     if ! expected_commit="$("$VENV_DIR/bin/python" "$verifier" commit \
         "$BLACKBOX_DKG_CLI_DIR")"; then
@@ -509,7 +523,7 @@ blackbox_store_description() {
 }
 
 provision_blackbox_store() {
-    local helper="$REPO_DIR/scripts/blackbox-blazegraph.mjs"
+    local helper="$(blackbox_helper blackbox-blazegraph.mjs)"
     local existing_state namespace existing_backend existing_url existing_managed
     local provisioned parsed
 
@@ -655,7 +669,7 @@ PYEOF
 }
 
 check_blackbox_blazegraph() {
-    local helper="$REPO_DIR/scripts/blackbox-blazegraph.mjs"
+    local helper="$(blackbox_helper blackbox-blazegraph.mjs)"
     local result
     step "Checking the Blazegraph SPARQL endpoint ..."
     if ! result="$(node "$helper" check "$BLACKBOX_DKG_CLI_DIR" "$BLACKBOX_DKG_STORE_URL")"; then
@@ -675,7 +689,7 @@ reset_fresh_managed_blazegraph() {
         step "Stop that DKG node or set BLACKBOX_DKG_STORE_URL to an operator-managed store."
         return 1
     fi
-    local helper="$REPO_DIR/scripts/blackbox-blazegraph.mjs"
+    local helper="$(blackbox_helper blackbox-blazegraph.mjs)"
     step "Clearing the installer-managed Blazegraph namespace for the fresh DKG identity ..."
     if ! node "$helper" reset "$BLACKBOX_DKG_CLI_DIR" \
         "$BLACKBOX_DKG_STORE_URL" "$BLACKBOX_DKG_STORE_NAMESPACE" >/dev/null; then
@@ -1240,6 +1254,26 @@ SH
     fi
 }
 
+# Setup-only mode: use the Hermes the caller runs in (HERMES_BIN, VENV_DIR) and put
+# the `blackbox` command beside the `hermes` on PATH. The user's `hermes` is never replaced.
+use_running_hermes() {
+    heading "Using your Hermes"
+    if [ ! -x "${HERMES_BIN:-}" ] || [ ! -x "${VENV_DIR:-}/bin/python" ]; then
+        err "Setup-only mode needs the Hermes it runs in (HERMES_BIN, VENV_DIR); run it as: hermes blackbox setup"
+        exit 1
+    fi
+    ok "Hermes: $HERMES_BIN"
+    local on_path link_dir
+    on_path="$(command -v hermes 2>/dev/null || true)"
+    link_dir="$(dirname "${on_path:-$HERMES_BIN}")"
+    if [ -w "$link_dir" ]; then
+        install_blackbox_shim "$link_dir"
+    else
+        warn "Cannot write $link_dir: the blackbox command was not added; use: hermes blackbox"
+    fi
+    export PATH="$VENV_DIR/bin:$PATH"
+}
+
 link_hermes() {
     local link_dir="$HOME/.local/bin"
     mkdir -p "$link_dir"
@@ -1454,7 +1488,7 @@ install_blackbox_dkg_package() {
         warn "Could not determine the installed DKG package version."
         return 1
     fi
-    if ! "$VENV_DIR/bin/python" -m plugins.blackbox.kernel.dkg_version "$installed_version"; then
+    if ! "$VENV_DIR/bin/python" "${BLACKBOX_PLUGIN_DIR:-$REPO_DIR/plugins/blackbox}/kernel/dkg_version.py" "$installed_version"; then
         warn "DKG $installed_version is too old for direct verified Blackbox recovery; version 10.0.9+ is required."
         return 1
     fi
@@ -1654,7 +1688,7 @@ enable_and_configure() {
     fi
 
     step "Writing plugins.entries.blackbox defaults to $HERMES_HOME/config.yaml ..."
-    if "$VENV_DIR/bin/python" - "$HERMES_HOME/config.yaml" "$DKG_NETWORK" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_GRAPH_PEER_ID" "$BLACKBOX_DKG_DAEMON_URL" "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_BIN" "$BLACKBOX_COMMUNITY_GRAPH_ID" "$BLACKBOX_COMMUNITY_GRAPH_PEER_ID" "$REPO_DIR" <<'PYEOF'
+    if "$VENV_DIR/bin/python" - "$HERMES_HOME/config.yaml" "$DKG_NETWORK" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_GRAPH_PEER_ID" "$BLACKBOX_DKG_DAEMON_URL" "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_BIN" "$BLACKBOX_COMMUNITY_GRAPH_ID" "$BLACKBOX_COMMUNITY_GRAPH_PEER_ID" "${BLACKBOX_PLUGIN_DIR:-$REPO_DIR}" <<'PYEOF'
 import sys, os
 cfg_path, network, context_graph_id, graph_peer_id, dkg_url, dkg_home, dkg_bin = sys.argv[1:8]
 # Optional (older callers pass seven arguments): the community graph + its owner peer id, and the checkout.
@@ -1766,6 +1800,17 @@ for k, v in defaults.items():
 # cannot be imported the answer is "no consent" (fail closed = sharing off).
 def _consent_in_force(checkout):
     try:
+        if checkout and os.path.isfile(os.path.join(checkout, "plugin.yaml")):
+            # Setup-only mode passes the plugin folder itself (a plugin-catalog install has no
+            # checkout). Stock Hermes has its own `plugins` package, which would shadow ours, so
+            # the plugin is loaded from its folder under a private name.
+            import importlib, importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "_installed_blackbox", os.path.join(checkout, "__init__.py"), submodule_search_locations=[checkout])
+            package = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = package
+            spec.loader.exec_module(package)
+            return bool(importlib.import_module("_installed_blackbox.community.consent").in_force())
         if checkout:
             sys.path.insert(0, checkout)
         from plugins.blackbox.community import consent
@@ -1955,8 +2000,8 @@ start_dashboard() {
     # dashboard keeps the code it loaded, so after an update the installer must
     # launch it again — `blackbox dashboard` replaces the one on its port.
     local revision_file="$HERMES_HOME/blackbox/.dashboard-revision"
-    local revision=""
-    if git -C "$REPO_DIR" rev-parse -q --verify HEAD >/dev/null 2>&1; then
+    local revision="${BLACKBOX_REVISION:-}"
+    if [ -z "$revision" ] && [ -n "$REPO_DIR" ] && git -C "$REPO_DIR" rev-parse -q --verify HEAD >/dev/null 2>&1; then
         revision="$(git -C "$REPO_DIR" rev-parse HEAD)"
     fi
     if command -v curl >/dev/null 2>&1 && curl -fsS "$url/" >/dev/null 2>&1; then
@@ -2620,15 +2665,20 @@ main() {
     banner
     heading "Checking your system"
     detect_os
-    check_git
-    check_python
-    ensure_node
+    if [ "$BLACKBOX_SETUP_ONLY" = true ]; then
+        ensure_node
+        use_running_hermes
+    else
+        check_git
+        check_python
+        ensure_node
 
-    resolve_repo
-    install_python_env
-    link_hermes
-    refresh_blackbox_plugin_copy
-    run_hermes_setup
+        resolve_repo
+        install_python_env
+        link_hermes
+        refresh_blackbox_plugin_copy
+        run_hermes_setup
+    fi
     install_dkg
     enable_and_configure
     configure_blackbox_mode
