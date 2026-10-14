@@ -91,10 +91,15 @@ plugins:
   entries:
     blackbox:
       mode: block
-      wallet_protection: true
-      protected_wallets: [metamask, phantom, exodus, electrum, solana-cli]
-      wallet_addresses: []        # your own public addresses (optional)
+      shields:
+        trader:
+          enabled: true
+          wallets: [metamask, phantom, exodus, electrum, solana-cli]
+          addresses: []           # your own public addresses (optional)
 ```
+
+An older config with `wallet_protection`, `protected_wallets` and `wallet_addresses` still
+works; the next save from the dashboard moves them under `shields.trader`.
 
 The Trader Shield page lists every attack it was tested against, and what the verified threat
 graph already knows about crypto (counted with `scripts/blackbox-trader-graph-counts.py`).

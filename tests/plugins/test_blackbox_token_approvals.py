@@ -21,7 +21,7 @@ from plugins.blackbox.guard import hooks
 from plugins.blackbox.kernel import constants, threat_ids
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.kernel.crypto_secrets.evm_key import keccak256
-from plugins.blackbox.kernel.crypto_secrets import wallet_mode
+from plugins.blackbox.shields.trader import mode as trader_mode
 from plugins.blackbox.ruleset import Ruleset
 
 USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
@@ -84,8 +84,8 @@ def test_approvals_run_with_every_detector_under_trader_shield():
     findings = detect_all("terminal", {"command": f"cast send {USDC} 'approve(address,uint256)' {SPENDER} {MAX}"}, Ruleset())
     [finding] = [f for f in findings if f.identifier.startswith("secret:token-approval")]
     row = {"identifier": finding.identifier, "fields": finding.fields}
-    assert wallet_mode.WalletProtection(enabled=True).allows_finding(row)
-    assert not wallet_mode.WalletProtection(enabled=False).allows_finding(row)
+    assert trader_mode.allows_finding(row, trader_mode.build(enabled=True))
+    assert not trader_mode.allows_finding(row, trader_mode.build(enabled=False))
 
 
 ROUTERS = {"0x7a250d5630b4cf539739df2c5dacb4c659f2488d": "Uniswap V2 Router 02",

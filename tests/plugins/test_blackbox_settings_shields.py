@@ -73,7 +73,7 @@ def test_the_consent_path_persists_consent_and_nothing_under_shields(real_consen
 
 
 def test_superseded_keys_are_removed_in_the_same_write():
-    assert settings.write_settings({"wallet_protection": True, "mode": "block"})["ok"] is True
+    assert settings._persist({"wallet_protection": True, "mode": "block"}) is True   # a key left by an older install
     assert _entry()["wallet_protection"] is True
     alpha = _fake_shield("alpha", supersedes=("wallet_protection", "old_alpha_key"))
 
@@ -122,7 +122,7 @@ def test_a_validator_that_raises_fails_the_save_closed():
     ("alpha", {"enabled": True}),                             # too short to be an answer
 ])
 def test_a_malformed_validator_answer_fails_the_save_closed(answer):
-    assert settings.write_settings({"wallet_protection": True})["ok"] is True
+    assert settings._persist({"wallet_protection": True}) is True   # a key left by an older install
     before = _config_path().read_bytes()
 
     result = settings.write_settings({"mode": "block"}, validators=(lambda payload: answer,))
@@ -140,7 +140,7 @@ def test_two_validators_claiming_one_shield_id_fail_the_save_closed():
 
 
 def test_an_untouched_shield_does_not_apply_its_superseded_keys():
-    assert settings.write_settings({"wallet_protection": True})["ok"] is True
+    assert settings._persist({"wallet_protection": True}) is True   # a key left by an older install
     alpha = _fake_shield("alpha", supersedes=("wallet_protection",))
 
     assert settings.write_settings({"mode": "block"}, validators=(alpha,))["ok"] is True

@@ -19,7 +19,7 @@ from plugins.blackbox.detection import wallet_files
 from plugins.blackbox.guard import background as guard_background
 from plugins.blackbox.guard import hooks
 from plugins.blackbox.kernel import config as config_mod
-from plugins.blackbox.kernel.crypto_secrets import wallet_mode
+from plugins.blackbox.shields.trader import mode as trader_mode
 from plugins.blackbox.ruleset import Ruleset
 
 CHROME_ID = "nkbihfbeogaeaoehlefnkodbefgpgknn"
@@ -41,7 +41,7 @@ def shielded(tmp_path, monkeypatch):
     monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: Ruleset())
     monkeypatch.setattr(guard_background, "_spawn_osv_discovery", lambda *a, **k: None)
     monkeypatch.setattr(guard_background, "_spawn_auto_attach", lambda *a, **k: None)
-    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=True))
+    monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=True))
     yield tmp_path
     wallet_files.EXISTING_STORES.reset()
 

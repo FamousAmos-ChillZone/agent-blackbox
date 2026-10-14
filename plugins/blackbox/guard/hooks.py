@@ -12,8 +12,8 @@ from __future__ import annotations
 import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple
-from .. import audit, detection, killlist, overrides, ruleset
-from ..kernel import config as config_mod, constants, crypto_secrets
+from .. import audit, detection, killlist, overrides, ruleset, shields
+from ..kernel import config as config_mod, constants
 from ..kernel.config import BlackboxConfig
 from . import background
 from . import injection_sites
@@ -145,7 +145,7 @@ def _would_block(cfg: BlackboxConfig, findings: list[detection.Finding]) -> list
 def _own_key_findings(raw: list[detection.Finding], tool_name: str, args: Any) -> list[detection.Finding]:
     """Raw keys of the operator's own listed addresses (Trader Shield), unless the
     labelled-key rule already raised the same finding at least as high."""
-    found = detection.detect_own_wallet_keys(tool_name, args, lambda: crypto_secrets.wallet_mode.current().addresses)
+    found = detection.detect_own_wallet_keys(tool_name, args, lambda: shields.get("trader").mode().options["addresses"])  # transitional, S4c moves it
     rank = constants.SEVERITY_RANK
     have = max((rank.get(f.severity, -1) for f in raw if f.identifier == "secret:wallet-private-key"), default=-1)
     return [f for f in found if rank.get(f.severity, -1) > have]

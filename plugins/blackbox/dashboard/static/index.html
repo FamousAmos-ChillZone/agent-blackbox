@@ -5253,8 +5253,8 @@
     if (engage) engage.addEventListener("click", function () {
       engage.disabled = true; engage.textContent = "Engaging…";
       // Only the switch: a first engage protects every supported wallet; an earlier choice of wallets is kept.
-      postJSON("/api/settings", { wallet_protection: true }).then(function (res) {
-        var ok = res && res.ok && res.body && res.body.ok;
+      postJSON("/api/settings", { shields: { trader: { enabled: true } } }).then(function (res) {
+        var ok = res && res.ok && res.body && res.body.ok && traderEngaged(res.body.settings);
         engage.disabled = false;
         engage.textContent = ok ? "Engaged ✓" : "Engage Trader Shield";
         if (typeof showToast === "function") showToast(ok ? "Trader Shield is engaged." : "Couldn't engage Trader Shield.", ok ? "ok" : "err");
@@ -5263,6 +5263,12 @@
       });
     });
   })();
+
+  // Whether a settings view (GET /api/settings, or a save's "settings") shows Trader Shield on.
+  function traderEngaged(view) {
+    var trader = view && view.shields && view.shields.trader;
+    return !!(trader && trader.mode && trader.mode.enabled === true);
+  }
 
   var wpLast = null;   // the latest panel payload (the events window reads its mode)
   // The wallets found on this machine, one entry per wallet: {id, wallet, browsers, areas,
@@ -7881,8 +7887,8 @@
       discover: true, osv_lookup: true,
       categories: cats, protected_paths: [],
       category_labels: {},
-      wallet_protection: false, protected_wallets: ["metamask", "phantom"], wallet_addresses: [],
-      wallet_supported: [{ id: "metamask", name: "MetaMask" }, { id: "phantom", name: "Phantom" }], wallet_planned: []
+      wallet_protection: false, protected_wallets: [], wallet_addresses: [],
+      wallet_supported: [], wallet_planned: [], trader_loaded: false
     };
   }
 
@@ -7896,12 +7902,17 @@
     out.report = data.report === true;
     out.discover = data.discover !== false;
     out.osv_lookup = data.osv_lookup !== false;
-    var wp = (data.wallet_protection && typeof data.wallet_protection === "object") ? data.wallet_protection : {};
+    // Trader Shield's group, from the composed settings view: shields.trader = {mode, fields} (every field optional, LES-018).
+    var trader = (data.shields && data.shields.trader && typeof data.shields.trader === "object") ? data.shields.trader : null;
+    var wp = (trader && trader.mode && typeof trader.mode === "object") ? trader.mode : {};
+    out.trader_loaded = !!trader;   // a save sends the Trader section only when it was read
     out.wallet_protection = wp.enabled === true;
     if (Array.isArray(wp.wallets)) out.protected_wallets = wp.wallets.slice(0, 20);
-    if (Array.isArray(wp.addresses)) out.wallet_addresses = wp.addresses.slice(0, 50).map(String);   // optional field (LES-018)
-    if (Array.isArray(wp.supported) && wp.supported.length) out.wallet_supported = wp.supported;
-    if (Array.isArray(wp.planned)) out.wallet_planned = wp.planned;
+    if (Array.isArray(wp.addresses)) out.wallet_addresses = wp.addresses.slice(0, 50).map(String);
+    var walletField = ((trader && Array.isArray(trader.fields)) ? trader.fields : []).filter(function (f) { return f && f.key === "wallets"; })[0];
+    var options = (walletField && Array.isArray(walletField.options)) ? walletField.options : [];
+    out.wallet_supported = options.filter(function (o) { return o.status === "supported"; });
+    out.wallet_planned = options.filter(function (o) { return o.status === "planned"; }).map(function (o) { return o.name; });
     var cats = (data.categories && typeof data.categories === "object") ? data.categories : {};
     SET_CATS.forEach(function (c) {
       var item = cats[c.key] || {};
@@ -8126,9 +8137,11 @@
       report: !!setState.report,
       categories: cats,
       protected_paths: setState.protected_paths.slice(0, 100),
-      wallet_protection: !!setState.wallet_protection,
-      protected_wallets: (setState.protected_wallets || []).slice(0, 20),
-      wallet_addresses: walletAddressList().valid
+      shields: setState.trader_loaded ? { trader: {
+        enabled: !!setState.wallet_protection,
+        wallets: (setState.protected_wallets || []).slice(0, 20),
+        addresses: walletAddressList().valid
+      } } : {}
     };
   }
 

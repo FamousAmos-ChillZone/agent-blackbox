@@ -29,8 +29,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from ... import audit
-from ...kernel.crypto_secrets import wallet_mode
+from ... import audit, shields
 from ...kernel.display_safety import log_safe
 from ..safe_payloads import safe_identifier
 
@@ -51,7 +50,7 @@ def local_text(value: Any, limit: int) -> str:
 
 def is_wallet_identifier(identifier: str) -> bool:
     """Whether a finding identifier is a Trader Shield (wallet) event."""
-    return wallet_mode.belongs_to_mode(identifier)
+    return shields.get("trader").claims({"identifier": identifier})   # transitional (S2b): gone in S7
 
 
 def _last_request(context: Optional[dict[str, Any]]) -> str:

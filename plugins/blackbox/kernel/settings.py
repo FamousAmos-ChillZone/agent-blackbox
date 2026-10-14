@@ -20,7 +20,7 @@ import logging
 import threading
 from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Tuple
 
-from . import constants, crypto_secrets
+from . import constants
 from . import yaml_files
 from .config import DETECTION_CATEGORIES, load_blackbox_config
 
@@ -70,7 +70,6 @@ def read_settings() -> dict[str, Any]:
         "osv_lookup": cfg.osv_lookup,
         "categories": categories,
         "protected_paths": list(cfg.protected_paths),
-        "wallet_protection": crypto_secrets.wallet_mode.current().as_json(),   # Web3 wallet protection (trader rules)
         "llm": {
             "enabled": cfg.llm_enabled,
             "provider": cfg.llm_provider,
@@ -221,11 +220,8 @@ def write_settings(payload: dict[str, Any], *, sharing_consent: bool = False,
     without one, a ``shields`` key in *payload* is dropped, never written (fail-closed).
     """
     updates, errors = _validate(payload, sharing_consent=sharing_consent)
-    wallet_updates, wallet_errors = crypto_secrets.wallet_mode.validate(payload)   # Web3 wallet protection
-    updates.update(wallet_updates)
-    errors.extend(wallet_errors)
     shield_updates, shield_errors = _shield_updates(payload, validators)
-    updates.update(shield_updates)   # after the wallet keys, so a superseded one is deleted
+    updates.update(shield_updates)
     errors.extend(shield_errors)
     if errors:
         return {"ok": False, "errors": errors, "settings": read_settings()}

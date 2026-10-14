@@ -43,6 +43,7 @@ from .contract import (
     ShieldStatus,
 )
 from .packs import ShieldData, load_shield_data
+from . import trader
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ __all__ = [
 ]
 
 #: Every registered shield, in registration order. Registering one is one line here.
-_SHIELDS: tuple[Shield, ...] = ()
+_SHIELDS: tuple[Shield, ...] = (trader.TRADER,)
 
 #: The finding source every shield finding carries: never shared (community.NEVER_SHARED_SOURCES).
 LOCAL_ONLY_SOURCE = "secret"

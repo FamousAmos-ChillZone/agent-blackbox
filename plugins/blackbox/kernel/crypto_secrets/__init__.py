@@ -22,18 +22,19 @@ Public surface:
   site that is not that exchange;
 * :func:`scan_own_keys` / :class:`OwnKeyScan` / :func:`own_keys_in` / :func:`address_of`
   / :func:`redact_own_keys` — raw Ethereum private keys that open one of the operator's
-  listed addresses; :func:`checksum_address` — an address's EIP-55 spelling;
+  listed addresses (read through :func:`read_listed_addresses_from`, handed in by the shield
+  that owns the setting); :func:`checksum_address` — an address's EIP-55 spelling;
 * :func:`protocol_contract` / :func:`router_match` / :class:`RouterMatch` — well-known
   exchange routers and the chains they are routers on (never a drainer, never flagged there).
 """
 
 from .seed_phrase import MARKER as SEED_PHRASE_MARKER
-from . import wallet_mode
 from .seed_phrase import SeedPhraseRun, find_seed_phrase_runs, redact_seed_phrases, seed_phrase_spans, wordlist_ready
 from .solana_key import MARKER as SOLANA_KEY_MARKER
 from .solana_key import find_solana_secret_keys, is_solana_secret_key, redact_solana_keys, scan_solana_keys
 from .bitcoin_key import find_bitcoin_private_keys, redact_bitcoin_keys
-from .evm_key import OwnKeyScan, address_of, checksum_address, own_keys_in, redact_own_keys, scan_own_keys
+from .evm_key import (OwnKeyScan, address_of, checksum_address, own_keys_in, read_listed_addresses_from,
+                      redact_own_keys, scan_own_keys)
 from . import exchange_keys, text_view
 from .exchange_keys import misdirected_exchange_keys
 from .known_contracts import RouterMatch, protocol_contract, router_match
@@ -54,6 +55,7 @@ __all__ = [
            "misdirected_exchange_keys",
            "own_keys_in",
            "protocol_contract",
+           "read_listed_addresses_from",
            "redact_bitcoin_keys",
            "redact_own_keys",
            "redact_seed_phrases",
@@ -63,6 +65,5 @@ __all__ = [
            "scan_solana_keys",
            "seed_phrase_spans",
            "text_view",
-           "wallet_mode",
            "wordlist_ready",
 ]
