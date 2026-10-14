@@ -37,18 +37,20 @@ from typing import Any, Iterable, Mapping, Optional
 from ..detection import Finding
 from ..kernel.settings import SettingsValidator
 from .contract import (
+    Pack,
     Shield,
     ShieldEvent,
     ShieldMode,
     ShieldsSnapshot,
     ShieldStatus,
 )
-from .packs import ShieldData, load_shield_data
+from .packs import TABLE_MAX_BYTES, ShieldData, load_shield_data, read_json_file
 from . import trader
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "Pack",
     "Shield",
     "ShieldEvent",
     "ShieldMode",
@@ -56,9 +58,11 @@ __all__ = [
     "ShieldsSnapshot",
     "all_shields",
     "allows",
+    "attack_table",
     "check",
     "events",
     "get",
+    "loaded_packs",
     "pack_logo",
     "settings_validators",
     "settings_view",
@@ -68,6 +72,9 @@ __all__ = [
 
 #: Every registered shield, in registration order. Registering one is one line here.
 _SHIELDS: tuple[Shield, ...] = (trader.TRADER,)
+
+#: The block threshold an attack table is tested at when it names none (Blackbox's default).
+DEFAULT_TESTED_SEVERITY = "critical"
 
 #: The finding source every shield finding carries: never shared (community.NEVER_SHARED_SOURCES).
 LOCAL_ONLY_SOURCE = "secret"
@@ -181,3 +188,39 @@ def pack_logo(shield_id: str, pack_id: str) -> Optional[Path]:
     if pack is None or pack.status == "unavailable" or pack.logo is None:
         return None
     return pack.folder / pack.logo.file
+
+
+def loaded_packs(shield_id: str) -> tuple[Pack, ...]:
+    """Every pack *shield_id* loaded, in display order (unavailable ones included, with their
+    reason); empty for an unknown id."""
+    data = _DATA.get(shield_id)
+    return data.packs if data else ()
+
+
+def attack_table(shield_id: str) -> Optional[dict[str, Any]]:
+    """*shield_id*'s tested attack table as its page reads it; None for an unknown id.
+
+    The rows, groups and evidence levels are the hand-written ``attacks.json``; what the
+    table is tested ON is composed here from the registry, never typed (F-011, F-030):
+    ``systems`` — every supported pack (``logo``: whether it ships one) then every
+    capability — and ``tested_with``, the setup sentence the test suite runs under
+    (every supported pack chosen, block mode at the table's ``tested_severity``).
+    Raises :class:`~.packs.PackError` when the file breaks the shield-file rules.
+    """
+    shield = get(shield_id)
+    if shield is None:
+        return None
+    table = read_json_file(shield.attacks, inside=shield.folder, max_bytes=TABLE_MAX_BYTES)
+    supported = [pack for pack in loaded_packs(shield_id) if pack.status == "supported"]
+    systems = [{"id": pack.id, "name": pack.name, "logo": pack.logo is not None} for pack in supported]
+    systems += [{"id": item.id, "name": item.name, "note": item.note, "logo": False} for item in shield.capabilities]
+    severity = table.get("tested_severity", DEFAULT_TESTED_SEVERITY)
+    tested_with = f"{shield.name} on for {_spoken_list([pack.name for pack in supported])}, block mode, block at {severity}"
+    return {**table, "systems": systems, "tested_with": tested_with}
+
+
+def _spoken_list(names: list[str]) -> str:
+    """*names* as a sentence lists them: "A", "A and B", "A, B and C" ("no pack" when empty)."""
+    if len(names) < 2:
+        return "".join(names) or "no pack"
+    return ", ".join(names[:-1]) + " and " + names[-1]

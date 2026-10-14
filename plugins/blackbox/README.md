@@ -189,13 +189,17 @@ What it stops, in block mode:
 
 Supported wallets: **MetaMask, Phantom, Exodus, Electrum and the Solana CLI.**
 
+Trader Shield protects agents attached to Blackbox through Hermes. OpenClaw
+coverage is not there yet: an agent run through the OpenClaw bridge gets
+Blackbox's other checks, but not Trader Shield's.
+
 ![The Trader Shield page in the Blackbox dashboard](../../docs/catalog/trader-shield.png)
 
 To switch it on:
 
 1. Run `blackbox dashboard`, open Settings → Trader Shield and switch it on (or
    use the Engage button on the Trader Shield page,
-   http://127.0.0.1:9700/trader-shield). Set the mode to `block` so wallet
+   http://127.0.0.1:9700/shields/trader). Set the mode to `block` so wallet
    threats are stopped, not just flagged.
 2. Choose your wallets and, optionally, add your own public wallet addresses,
    so a raw private key that opens one of them is recognised too. Addresses

@@ -101,20 +101,16 @@ def wallet_protection_payload() -> dict[str, Any]:
     }
 
 
-#: The Trader Shield explainer page (the dashboard's "Learn more"), the tested attack table it
-#: shows (one source for the page and its test), and the logos of the wallets it can protect.
+#: The dashboard's static folder, and in it the logos of the wallets Trader Shield can protect
+#: (until S7 moves the panel to ``/shields/{id}/packs/{pack}/logo.svg``). The Trader Shield page,
+#: its attack table and its figures are served by ``dashboard/shields_routes`` since S6b.
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
-TRADER_SHIELD_PAGE = STATIC_DIR / "trader-shield.html"
-ATTACK_TABLE = STATIC_DIR / "trader-shield-attacks.json"
-#: What the verified graph knows about crypto, counted by scripts/blackbox-trader-graph-counts.py.
-GRAPH_COUNTS = STATIC_DIR / "trader-shield-graph.json"
 WALLET_LOGOS = STATIC_DIR / "wallets"
-NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
 
 
 def register_protection_routes(app: Any) -> None:
-    """Add ``GET /api/wallet-protection``, its ``/events`` report and the ``/trader-shield`` page to *app*."""
-    from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+    """Add ``GET /api/wallet-protection``, its ``/events`` report and the wallet logos to *app*."""
+    from fastapi.responses import FileResponse, JSONResponse
 
     @app.get("/api/wallet-protection")
     def wallet_protection() -> Any:
@@ -124,14 +120,6 @@ def register_protection_routes(app: Any) -> None:
     def wallet_protection_events() -> Any:
         return wallet_event_report()
 
-    @app.get("/trader-shield/attacks.json")
-    def trader_shield_attacks() -> Any:
-        return FileResponse(str(ATTACK_TABLE), media_type="application/json", headers=NO_CACHE)
-
-    @app.get("/trader-shield/graph.json")
-    def trader_shield_graph() -> Any:
-        return FileResponse(str(GRAPH_COUNTS), media_type="application/json", headers=NO_CACHE)
-
     @app.get("/wallets/{wallet}.svg")
     def wallet_logo(wallet: str) -> Any:
         # Allowlisted by the supported-wallet table, so the name never becomes a free path.
@@ -139,9 +127,3 @@ def register_protection_routes(app: Any) -> None:
             return JSONResponse({"error": "not found"}, status_code=404)
         return FileResponse(str(WALLET_LOGOS / f"{wallet}.svg"), media_type="image/svg+xml",
                             headers={"Cache-Control": "public, max-age=86400"})
-
-    @app.get("/trader-shield", response_class=HTMLResponse)
-    def trader_shield_page() -> Any:
-        if not TRADER_SHIELD_PAGE.exists():
-            return HTMLResponse("<h1>Trader Shield</h1><p>page missing</p>", status_code=404)
-        return FileResponse(str(TRADER_SHIELD_PAGE), headers=NO_CACHE)
