@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Trader Shield · Agent Blackbox</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='8' y='8' width='48' height='48' rx='13' fill='%230B0B0D' stroke='%23F1EFE9' stroke-width='5'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%23FF4F00'/%3E%3C/svg%3E" />
 <meta name="theme-color" content="#0B0B0D" id="theme-color" />
 <script>
   // Same appearance as the dashboard (its saved preference), applied before paint.
@@ -54,6 +55,7 @@
     padding-inline: 16px; padding-block: 0 80px; -webkit-font-smoothing: antialiased; }
   a { color: inherit; }
   .wrap { max-width: 1080px; margin: 0 auto; display: grid; gap: 88px; }
+  .wrap > * { min-width: 0; }   /* a section never widens the page past the screen */
   .mono { font-family: var(--mono); }
   .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--signal); }
   h1, h2, h3 { margin: 0; text-wrap: balance; font-stretch: 112%; letter-spacing: -.01em; }
@@ -189,12 +191,13 @@
   .agroup header b { font-size: 16px; } .agroup header p { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
   .agroup > summary { cursor: pointer; list-style: none; } .agroup > summary::-webkit-details-marker { display: none; }
   .agroup > summary b::after { content: " \25B8"; color: var(--muted); } .agroup[open] > summary b::after { content: " \25BE"; }
-  .arow { display: grid; grid-template-columns: 92px 1fr; gap: 6px 14px; padding: 12px 18px; border-bottom: 1px solid var(--border); align-items: start; } .arow:last-child { border-bottom: 0; }
+  .arow { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 6px 14px; padding: 12px 18px; border-bottom: 1px solid var(--border); align-items: start; } .arow:last-child { border-bottom: 0; }
   .arow .o { justify-self: start; font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
   .arow .o.blocked { color: #fff; background: var(--ok); } .arow .o.flagged { color: #111; background: var(--warn); }
   .arow .o.missed { color: var(--signal); border: 1px dashed color-mix(in srgb, var(--signal) 55%, transparent); }
   .arow .o.allowed { color: var(--muted-strong); border: 1px dashed var(--border-strong); }
   .arow .t { font-weight: 700; font-size: 14.5px; } .arow .h { font-size: 13.5px; color: var(--muted-strong); margin-top: 2px; }
+  .arow .t, .arow .h, .arow .n { overflow-wrap: anywhere; }   /* paths and commands have no spaces to break at */
   .arow .n { font-size: 12.5px; color: var(--muted); margin-top: 4px; } .arow .n b { color: var(--text); }
   .arow .proof { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-left: 6px; }
   .attacks { display: grid; gap: 16px; }

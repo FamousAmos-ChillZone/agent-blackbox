@@ -5,7 +5,8 @@ community tier compiled from real signed rows (the adversarial suite's
 helpers) and a seeded audit, then runs `dashboard_browser_pass.mjs`
 (Playwright) at desktop and phone widths and asserts: zero page errors, zero
 console errors, zero failed requests, zero horizontal overflow, the Refine
-sections populated, and no phone card cell squeezed under an unbreakable token.
+sections populated, no phone card cell squeezed under an unbreakable token,
+and every shield's own page opened clean at both widths.
 
 Skips, with the reason, when node, Playwright or a Chromium build is not on
 this machine — a skipped smoke is visible; a missing one is not.
@@ -217,6 +218,9 @@ def test_the_dashboard_renders_clean_at_desktop_and_phone_widths(served, tmp_pat
         assert sections["stat-sharing-state"] in {"on", "off", "paused"}, (width, sections["stat-sharing-state"])
         assert sections["vs-lookups"], (width, sections["vs-lookups"])   # where verified answers come from
         assert view["spillingCells"] == [], (width, view["spillingCells"])
+        # Every shield's own page was opened too, so its errors and overflow are in the checks above
+        # (the Trader page once overflowed a phone on an unbreakable path and had no icon, 2026-10-14).
+        assert "/shields/trader" in sections["shield-pages"], (width, sections["shield-pages"])
         # The verified-sync meter is measured against the graph's real size (564 assets).
         assert sections["vs-pct"] == "22.0%", (width, sections["vs-pct"])
         assert sections["vs-chip"].lower() == "syncing", (width, sections["vs-chip"])
