@@ -8,8 +8,8 @@ its detectors (the pack kinds in :mod:`.detectors`, built from the wallet packs 
 in :mod:`.detectors.own_keys`), and the gate: ``claims`` is read from :data:`FINDING_KINDS`
 (what its detectors emit AND the core findings it claims — seed phrases, labelled keys,
 exchange keys, token approvals, the keychain), ``allows`` reads a key-store finding's
-``fields["pack"]``. Its dashboard card is :mod:`.status`; its events report is a placeholder
-that answers empty until S6a fills it.
+``fields["pack"]``. Its dashboard card is :mod:`.status`; its events report, with the story
+of each event told server-side, is :mod:`.events`.
 
 Usage::
 
@@ -27,10 +27,11 @@ from typing import Any, Mapping
 
 from ...detection import Finding
 from ...kernel import crypto_secrets
+from ...kernel.config import load_blackbox_config
 from ..contract import (Capability, FindingKind, SettingField, SettingOption, Shield, ShieldEvent, ShieldMode,
                         ShieldStatus)
 from ..packs import load_packs
-from . import detectors, mode, status
+from . import detectors, events, mode, status
 from .detectors import own_keys
 
 HERE = Path(__file__).resolve().parent
@@ -129,15 +130,16 @@ def _status(active: ShieldMode) -> ShieldStatus:
     return status.build(active, allows)
 
 
-def _no_events() -> list[ShieldEvent]:
-    return []   # placeholder: the events report moves here in S6a
+def _events() -> list[ShieldEvent]:
+    """Every event this shield claims, told under Blackbox's audit/block mode now."""
+    return events.report(claims, blocking=bool(load_blackbox_config().block_enabled))
 
 
 TRADER = Shield(
     id="trader", name="Trader Shield", beta=True,
     tagline="Keeps your AI agent away from your crypto wallets, seed phrases and keys.",
     mode=_current_mode, validate=mode.validate, detect=_detect,
-    claims=claims, allows=allows, status=_status, events=_no_events,
+    claims=claims, allows=allows, status=_status, events=_events,
     settings_fields=settings_fields, finding_kinds=FINDING_KINDS, capabilities=CAPABILITIES,
     packs=HERE / "wallets", page=HERE / "page" / "trader.html", attacks=HERE / "attacks.json",
     detectors=detectors.DETECTORS, browser_roots=HERE / "browsers.json",
