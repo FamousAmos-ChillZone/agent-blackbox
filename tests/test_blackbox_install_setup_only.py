@@ -104,7 +104,7 @@ HERMES_BIN={shlex.quote(str(hermes))}
 VENV_DIR={shlex.quote(str(venv))}
 use_running_hermes
 """
-    return subprocess.run(["bash", "-c", script], capture_output=True, text=True), hermes
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False), hermes
 
 
 def test_setup_only_writes_blackbox_beside_the_users_hermes_and_never_replaces_it(tmp_path):
@@ -148,7 +148,7 @@ HERMES_BIN={shlex.quote(str(tmp_path / "missing"))}
 VENV_DIR={shlex.quote(str(tmp_path))}
 use_running_hermes
 """
-    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)
 
     assert result.returncode == 1
     assert "hermes blackbox setup" in result.stdout
@@ -235,7 +235,7 @@ BLACKBOX_DKG_PACKAGE=@origintrail-official/dkg@10.0.23
 BLACKBOX_DKG_INTEGRITY={shlex.quote(pinned)}
 install_blackbox_dkg_package
 """
-    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)
     result.calls = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
     return result
 
@@ -321,7 +321,7 @@ BLACKBOX_DKG_PACKAGE=@origintrail-official/dkg@10.0.23
 BLACKBOX_DKG_INTEGRITY=
 install_blackbox_dkg_package
 """
-    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)
     return result, cli_dir / "package.json"
 
 
@@ -451,7 +451,7 @@ BLACKBOX_DKG_PACKAGE=@origintrail-official/dkg@10.0.23
 BLACKBOX_DKG_INTEGRITY=
 install_blackbox_dkg_package
 """
-    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)
     return result, calls.read_text(encoding="utf-8").splitlines()
 
 
@@ -500,7 +500,7 @@ HOME={shlex.quote(str(tmp_path))}
 PATH={shlex.quote(str(fake_bin))}:/usr/bin:/bin
 blackbox_docker_available
 """
-    return subprocess.run(["bash", "-c", script], capture_output=True, text=True).returncode
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False).returncode
 
 
 def test_docker_counts_as_available_only_when_it_can_run_the_store(tmp_path):

@@ -287,7 +287,7 @@ def test_the_copy_inside_the_plugin_finds_the_plugins_process_limits(tmp_path):
     shutil.copy(repo / "scripts" / "blackbox-dkg-runtime-fingerprint.py", plugin / "setup" / "helper.py")
 
     result = subprocess.run([sys.executable, str(plugin / "setup" / "helper.py"), "heap", "8192"],
-                            capture_output=True, text=True, stdin=subprocess.DEVNULL)
+                            capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False)
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip().isdigit()
