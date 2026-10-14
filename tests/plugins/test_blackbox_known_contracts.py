@@ -8,6 +8,7 @@ Umanitek's verified graph lists seven exchange routers among its "drainer wallet
 from __future__ import annotations
 
 import json
+import logging
 
 import pytest
 
@@ -97,7 +98,9 @@ def test_a_mixed_case_address_is_kept_lower_case(contracts_file):
     assert _names() == {"0x" + "ab" * 20: "Router"}
 
 
-@pytest.mark.parametrize("text", ["{not json", "[]", '{"contracts": []}', '{"about": "no contracts"}'])
+@pytest.mark.parametrize("text", ["{not json", "[]", '{"contracts": []}', '{"about": "no contracts"}',
+                                  '{"contracts": ' + "[" * 200_000],
+                         ids=["not-json", "a-list", "contracts-a-list", "no-contracts", "nested-too-deep"])
 def test_an_unreadable_file_gives_an_empty_list_and_detection_keeps_running(contracts_file, text, caplog):
     contracts_file.write_text(text, encoding="utf-8")
     assert known_contracts.known_protocol_contracts() == {}
@@ -105,8 +108,17 @@ def test_an_unreadable_file_gives_an_empty_list_and_detection_keeps_running(cont
     assert "secret:token-approval-unlimited" in _approve_everything("0x" + "3" * 40)
 
 
-def test_a_missing_file_gives_an_empty_list(contracts_file):
+def test_a_missing_file_leaves_detection_running_with_one_warning(contracts_file, caplog):
+    # S0b (F-038): a wheel install once shipped without the file. detect_all must keep its
+    # other findings for a contract-shaped call, and the loss is said once, not per call.
+    assert not contracts_file.exists()
+    caplog.set_level(logging.WARNING, logger=known_contracts.__name__)
+    uniswap = "0x7a250d5630b4cf539739df2c5dacb4c659f2488d"
+    for spender in (uniswap, "0x" + "3" * 40, uniswap):
+        assert "secret:token-approval-unlimited" in _approve_everything(spender)
     assert known_contracts.known_protocol_contracts() == {}
+    warnings = [r for r in caplog.records if r.name == known_contracts.__name__ and r.levelno == logging.WARNING]
+    assert len(warnings) == 1 and "could not be read" in warnings[0].getMessage()
 
 
 def test_the_list_is_read_once(contracts_file, monkeypatch):
