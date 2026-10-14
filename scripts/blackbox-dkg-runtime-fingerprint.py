@@ -27,8 +27,13 @@ class FingerprintError(RuntimeError):
 
 # The heap sizing lives in the plugin (one implementation for the installer and
 # the plugin's own restarts). Loaded by path: this script runs before and outside
-# the plugin package, and the module imports only the standard library.
-_PROCESS_LIMITS_PATH = Path(__file__).resolve().parents[1] / "plugins" / "blackbox" / "sync" / "process_limits.py"
+# the plugin package, and the module imports only the standard library. In a
+# checkout this script sits in scripts/ beside plugins/blackbox/; the copy
+# `blackbox setup` runs sits in the plugin's own setup/ folder.
+_HERE = Path(__file__).resolve().parent
+_PLUGIN_DIR = next((candidate for candidate in (_HERE.parent / "plugins" / "blackbox", _HERE.parent)
+                    if (candidate / "sync" / "process_limits.py").is_file()), _HERE.parent / "plugins" / "blackbox")
+_PROCESS_LIMITS_PATH = _PLUGIN_DIR / "sync" / "process_limits.py"
 _PROCESS_LIMITS_SPEC = importlib.util.spec_from_file_location("blackbox_process_limits", _PROCESS_LIMITS_PATH)
 process_limits = importlib.util.module_from_spec(_PROCESS_LIMITS_SPEC)
 sys.modules[_PROCESS_LIMITS_SPEC.name] = process_limits

@@ -271,3 +271,23 @@ def test_cli_write_limits_records_the_installers_choice(tmp_path, capsys):
     assert FINGERPRINTER.main(["write-limits", str(tmp_path), "--max-old-space-size=3000", "512"]) == 0
     assert FINGERPRINTER.process_limits.read_process_limits(str(tmp_path)).heap_mb == 3000
     assert FINGERPRINTER.main(["write-limits", str(tmp_path), "", "not-a-number"]) == 1
+
+
+def test_the_copy_inside_the_plugin_finds_the_plugins_process_limits(tmp_path):
+    """`blackbox setup` runs a copy of this helper from the plugin's setup/ folder, where there is
+    no checkout around it: it must load process_limits from the plugin it ships in."""
+    import shutil
+    import subprocess
+
+    repo = Path(__file__).resolve().parents[2]
+    plugin = tmp_path / "blackbox"
+    (plugin / "sync").mkdir(parents=True)
+    (plugin / "setup").mkdir()
+    shutil.copy(repo / "plugins" / "blackbox" / "sync" / "process_limits.py", plugin / "sync" / "process_limits.py")
+    shutil.copy(repo / "scripts" / "blackbox-dkg-runtime-fingerprint.py", plugin / "setup" / "helper.py")
+
+    result = subprocess.run([sys.executable, str(plugin / "setup" / "helper.py"), "heap", "8192"],
+                            capture_output=True, text=True, stdin=subprocess.DEVNULL)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().isdigit()
