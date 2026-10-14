@@ -10,6 +10,10 @@ the Solana CLI 4.3.0 wrote ``~/.config/solana/id.json`` and a ``cli/config.yml``
 
 from __future__ import annotations
 
+import os
+import sys
+import threading
+
 import pytest
 
 from plugins.blackbox.detection import app_wallets, wallet_files
@@ -109,3 +113,19 @@ def test_a_windows_command_naming_the_folder_by_its_variable_is_found(machine, m
     # literal on both sides and still matches.
     monkeypatch.delenv("APPDATA", raising=False)
     assert _wallets("terminal", {"command": r"copy %APPDATA%\Exodus\exodus.wallet\seed.seco C:\out"}) == ["exodus"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no named pipes in the file system")
+def test_a_named_pipe_at_the_solana_config_place_never_stalls_the_check(machine):
+    """The check runs in a thread with a join timeout so a regression fails instead of hanging the suite."""
+    config = machine / ".config" / "solana" / "cli" / "config.yml"
+    config.unlink()
+    os.mkfifo(config)
+    app_wallets.SOLANA_KEY_FILE.reset()
+    outcome = []
+    worker = threading.Thread(target=lambda: outcome.append(_wallets("terminal", {"command": "cat ~/notes.txt"})),
+                              daemon=True)
+    worker.start()
+    worker.join(1.0)
+    assert not worker.is_alive(), "detect_wallet_files blocked on the Solana config place"
+    assert outcome == [[]]
