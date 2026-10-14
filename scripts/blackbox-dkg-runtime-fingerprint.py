@@ -85,6 +85,26 @@ def _runtime_files(cli_dir: Path, dkg_home: Path, dkg_bin: Path) -> list[Path]:
     return sorted(files, key=lambda path: str(path.resolve()))
 
 
+def _node_version(node_bin: Path) -> str:
+    """`node --version` of *node_bin*; FingerprintError when it is missing or says nothing."""
+    if not node_bin.is_file():
+        raise FingerprintError(f"Node.js executable is missing: {node_bin}")
+    try:
+        node_version = subprocess.run(
+            [str(node_bin), "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            stdin=subprocess.DEVNULL,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise FingerprintError(f"could not identify Node.js runtime: {exc}") from exc
+    if not node_version:
+        raise FingerprintError("Node.js returned an empty version")
+    return node_version
+
+
 def compute_fingerprint(
     cli_dir: Path,
     dkg_home: Path,
@@ -101,20 +121,7 @@ def compute_fingerprint(
     dkg_home = dkg_home.expanduser().resolve()
     node_bin = node_bin.expanduser().resolve()
     dkg_bin = dkg_bin.expanduser().resolve()
-    if not node_bin.is_file():
-        raise FingerprintError(f"Node.js executable is missing: {node_bin}")
-    try:
-        node_version = subprocess.run(
-            [str(node_bin), "--version"],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        ).stdout.strip()
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise FingerprintError(f"could not identify Node.js runtime: {exc}") from exc
-    if not node_version:
-        raise FingerprintError("Node.js returned an empty version")
+    node_version = _node_version(node_bin)
 
     digest = hashlib.sha256()
     _add_bytes(digest, "format", b"blackbox-dkg-runtime-v3")
