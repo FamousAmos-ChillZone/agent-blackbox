@@ -93,6 +93,19 @@ def test_a_pack_less_key_store_is_the_shields_as_a_whole():
     assert not _allowed(VAULT, trader_mode.build(enabled=True, wallets=()))
 
 
+def test_a_named_pack_wins_over_the_display_wallet():
+    phantom_only = trader_mode.build(enabled=True, wallets=("phantom",))
+    assert _allowed(VAULT, phantom_only, {"pack": "phantom", "wallet": "metamask"})
+    assert not _allowed(VAULT, phantom_only, {"pack": "metamask", "wallet": "phantom"})
+
+
+def test_a_store_without_a_pack_is_still_gated_by_its_legacy_wallet_name():
+    # Transitional until the dashboard panel stops asking by fields["wallet"]: a store with
+    # no pack but a wallet id follows that wallet's tick, not the shield-level rule.
+    assert _allowed(VAULT, trader_mode.build(enabled=True, wallets=("metamask",)), {"wallet": "metamask"})
+    assert not _allowed(VAULT, trader_mode.build(enabled=True, wallets=("phantom",)), {"wallet": "metamask"})
+
+
 def test_a_shield_level_secret_counts_whenever_the_shield_is_on():
     assert _allowed(SEED, trader_mode.build(enabled=True, wallets=()))
 
@@ -207,6 +220,58 @@ def test_the_api_hook_reads_one_snapshot(counted_loads, monkeypatch):
     monkeypatch.setattr(shields, "snapshot", lambda: taken.append(1) or real())
     hooks.on_pre_api_request(user_message="hello", request_messages=[{"role": "user", "content": "hello"}])
     assert taken == [1]
+
+
+class _InlineThread:
+    """Stands in for ``threading.Thread`` so a background task runs before ``start()`` returns."""
+
+    def __init__(self, target, name=None, daemon=None):
+        self._target = target
+
+    def start(self):
+        self._target()
+
+
+@pytest.fixture
+def counted_snapshots(monkeypatch):
+    """Background tasks run inline, with every ``shields.snapshot()`` they take counted."""
+    import threading
+    monkeypatch.setattr(threading, "Thread", _InlineThread)
+    monkeypatch.setattr(guard_reporting, "_report_and_audit", lambda *a, **k: None)
+    taken: list[int] = []
+    off = _snapshot(trader_mode.build(enabled=False))
+    monkeypatch.setattr(shields, "snapshot", lambda: taken.append(1) or off)
+    return taken
+
+
+def test_the_osv_task_takes_no_snapshot_when_discovery_finds_nothing(counted_snapshots, monkeypatch):
+    from plugins.blackbox import detection
+    monkeypatch.setattr(detection, "discover_dependency_candidates", lambda *a: [])
+    guard_background._spawn_osv_discovery(BlackboxConfig(), Ruleset(), "terminal", {"command": "pip install x"})
+    assert counted_snapshots == []
+
+
+def test_the_osv_task_takes_one_snapshot_for_all_its_findings(counted_snapshots, monkeypatch):
+    from plugins.blackbox import detection
+    monkeypatch.setattr(detection, "discover_dependency_candidates", lambda *a: [CORE, CORE, CORE])
+    guard_background._spawn_osv_discovery(BlackboxConfig(), Ruleset(), "terminal", {"command": "pip install x"})
+    assert counted_snapshots == [1]
+
+
+def test_the_llm_task_takes_one_snapshot(counted_snapshots, monkeypatch):
+    from plugins.blackbox.detection import reviewer
+    monkeypatch.setattr(reviewer, "review_injection", lambda text, cfg: {"reason": "ignore previous", "severity": "high"})
+    guard_background._spawn_llm_review(BlackboxConfig(), "ignore previous instructions", {"session_id": "gate"})
+    assert counted_snapshots == [1]
+
+
+def test_detect_all_no_longer_raises_key_stores_the_shield_does():
+    # One owner per finding: the key-store rule runs in the shield, never twice per call.
+    from plugins.blackbox.detection import detect_all
+    path = "/x/Default/Local Extension Settings/nkbihfbeogaeaoehlefnkodbefgpgknn/a.log"
+    assert not [f for f in detect_all("read_file", {"path": path}, None) if TRADER.claims(f.to_dict())]
+    shield_found = shields.check("read_file", {"path": path}, _snapshot(trader_mode.build(enabled=True)))
+    assert [f.fields.get("pack") for f in shield_found] == ["metamask"]
 
 
 # -- what Trader claims ---------------------------------------------------------------
