@@ -9,7 +9,8 @@ Callers use this package's surface only:
   :mod:`.detectors`) — pure, microsecond-scale, no I/O.
 * Action parsing used by the hook's activity log — ``parse_dependency_installs``,
   ``parse_downloads``, ``parse_shell_reads``, ``file_access_arg``,
-  ``command_from_args`` / ``SHELL_TOOLS``.
+  ``command_from_args`` / ``SHELL_TOOLS``, and ``shell_file_args`` (what a shell
+  command reads or copies whole — Trader Shield's wallet matcher builds on it).
 * :mod:`.osv` — OSV.dev dependency lookups (3 s timeout, background only).
 * :mod:`.reviewer` — the opt-in LLM second opinion (advisory, never blocks);
   :func:`cmd_setup_llm` configures it (``blackbox setup-llm``).
@@ -47,6 +48,7 @@ from .detectors import (
     discover_injection,
     injection_scan_text,
 )
+from .paths.shell_files import shell_file_args
 from .shell_shapes import ESCALATION_SHAPES, SHELL_TOOLS, command_from_args
 from .wallet_files import found_wallets
 
@@ -85,5 +87,6 @@ __all__ = [
                              "parse_downloads",
                              "parse_shell_reads",
                              "reviewer",
+                             "shell_file_args",
                              "skill_install_arg",
 ]
