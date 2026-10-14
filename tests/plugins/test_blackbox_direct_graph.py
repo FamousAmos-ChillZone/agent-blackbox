@@ -196,7 +196,7 @@ def test_live_views_readiness_corrections_and_limits(tmp_path):
 
 
 def test_decisions_do_not_reuse_a_previous_profile_or_legacy_export(tmp_path, monkeypatch):
-    import yaml
+    import hermes_yaml as yaml
     constants = load_blackbox("kernel.constants")
     fixture = GraphNode()
     fixture.add("urn:defender:injection:profile", "urn:defender:InjectionSignal", {DP + "pattern": "profile only", DP + "severity": "critical"})
