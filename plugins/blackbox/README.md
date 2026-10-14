@@ -1,3 +1,5 @@
+![Agent Blackbox — open-source runtime monitoring for AI agents, by Umanitek](../../docs/blackbox-header.jpg)
+
 # Agent Blackbox
 
 **Security for agents that can act.** An AI agent runs commands, opens files,
@@ -187,6 +189,8 @@ What it stops, in block mode:
 
 Supported wallets: **MetaMask, Phantom, Exodus, Electrum and the Solana CLI.**
 
+![The Trader Shield page in the Blackbox dashboard](../../docs/catalog/trader-shield.png)
+
 To switch it on:
 
 1. Run `blackbox dashboard`, open Settings → Trader Shield and switch it on (or
@@ -233,6 +237,8 @@ power they have.
 | **Verified** | Umanitek's curators only | the verified graph (`context_graph_id`), DKG verifiable memory | flag, and block in block mode | Verifiable |
 | **Community** | every protected node, each under its own signature | the community graph (`community_graph_id`), DKG shared working memory | flag only — never block | Community |
 | **Local** | this machine: built-in checks, protected paths, secret exposure | the local audit trail | flag; protected paths and secrets sent off the machine block in block mode | Local |
+
+![Three tiers: the local audit record, the community graph, the public threat graph](../../docs/catalog/threat-tiers.png)
 
 The idea: a threat should not have to be rediscovered one agent at a time. A
 verified rule protects every node the moment it syncs, and a community report
@@ -368,6 +374,8 @@ has `queue`, `show`, `propose`, `approve`, `policy`, `run`, `pool`, `export`,
 `blackbox dashboard` serves http://127.0.0.1:9700 on this computer only. Every
 change needs a per-session token, so another web page open in your browser
 cannot alter your settings.
+
+![The Blackbox dashboard: connected agents, Trader Shield, recent wallet events, the threat graph](../../docs/catalog/dashboard.png)
 
 | Panel | Shows |
 |---|---|
@@ -525,6 +533,8 @@ blackbox sync --wait --timeout 180
 ```
 
 ## About
+
+![Umanitek](../../docs/umanitek-logo-footer.png)
 
 Agent Blackbox is built by [Umanitek](https://umanitek.ai) on the OriginTrail
 Decentralized Knowledge Graph, turning collective threat intelligence into
