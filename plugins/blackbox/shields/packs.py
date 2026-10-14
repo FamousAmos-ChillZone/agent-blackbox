@@ -63,8 +63,10 @@ ENGINES = ("chromium", "firefox")
 OPERATING_SYSTEMS = ("linux", "macos", "windows")
 INSTALLS = ("native", "snap", "flatpak")
 PROFILE_LAYOUTS = ("children", "self")
+# An attribute may follow whitespace, "/" or a closing quote (`<svg/onload=`), and an href may be unquoted.
 _LOGO_LINT = (re.compile(r"<script", re.IGNORECASE), re.compile(r"<foreignObject", re.IGNORECASE),
-              re.compile(r"\son[a-z]+\s*=", re.IGNORECASE), re.compile(r"href\s*=\s*[\"'](?!#)", re.IGNORECASE))
+              re.compile(r"[\s/\"']on[a-z]+\s*=", re.IGNORECASE),
+              re.compile(r"href\s*=\s*[\"']?(?![\"'#])", re.IGNORECASE))
 
 
 class PackError(ValueError):
