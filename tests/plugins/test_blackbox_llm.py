@@ -300,7 +300,7 @@ def test_setup_llm_reuses_hermes_model_config(monkeypatch):
         "load_config",
         lambda: {"model": {"provider": "openai-api", "default": "gpt-4o-mini"}},
     )
-    monkeypatch.setattr(hconfig, "load_env", lambda: {"OPENAI_API_KEY": "sk-hermes"})
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-hermes")   # what Hermes loaded from ~/.hermes/.env at startup
 
     candidate = reviewer_discovery._hermes_llm_candidate()
     assert candidate == {
@@ -312,57 +312,23 @@ def test_setup_llm_reuses_hermes_model_config(monkeypatch):
     }
 
 
-def test_setup_llm_reuses_discovered_hermes_home_config(tmp_path, monkeypatch):
+def test_setup_llm_uses_a_variable_the_hermes_config_names(monkeypatch):
     from hermes_cli import config as hconfig
 
-    home = tmp_path / "hermes-profile"
-    home.mkdir()
-    (home / "config.yaml").write_text(
-        """
-        model:
-          provider: anthropic
-          default: claude-haiku-4-5-20251001
-        """,
-        encoding="utf-8",
+    monkeypatch.setattr(
+        hconfig, "load_config",
+        lambda: {"model": {"provider": "anthropic", "default": "claude-haiku-4-5-20251001", "key_env": "TEAM_ANTHROPIC"}},
     )
-    (home / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-profile\n", encoding="utf-8")
-    monkeypatch.setattr(hconfig, "load_config", dict)
-    monkeypatch.setattr(hconfig, "load_env", dict)
-    monkeypatch.setattr(reviewer_discovery.attach, "discover_hermes_homes", lambda: [home])
+    monkeypatch.setenv("TEAM_ANTHROPIC", "sk-ant-team")
 
     candidate = reviewer_discovery._hermes_llm_candidate()
     assert candidate == {
-        "source": f"Hermes ({home.resolve()})",
+        "source": "Hermes",
         "provider": "anthropic",
         "model": "claude-haiku-4-5-20251001",
-        "api_key": "sk-ant-profile",
-        "api_key_env": "ANTHROPIC_API_KEY",
+        "api_key": "sk-ant-team",
+        "api_key_env": "TEAM_ANTHROPIC",
     }
-
-
-def test_setup_llm_reuses_openclaw_json_config(tmp_path, monkeypatch):
-    ws = tmp_path / ".openclaw"
-    ws.mkdir()
-    (ws / "openclaw.json").write_text(
-        """
-        {
-          "model": {
-            "provider": "anthropic",
-            "model": "claude-haiku-4-5-20251001",
-            "apiKey": "sk-ant-openclaw"
-          }
-        }
-        """,
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(reviewer_discovery.attach, "discover_openclaw_workspaces", lambda: [ws])
-
-    candidate = reviewer_discovery._openclaw_llm_candidate()
-    assert candidate["source"] == f"OpenClaw ({ws})"
-    assert candidate["provider"] == "anthropic"
-    assert candidate["model"] == "claude-haiku-4-5-20251001"
-    assert candidate["api_key"] == "sk-ant-openclaw"
-
 
 def test_setup_llm_auto_saves_the_variable_name_once_the_operator_agrees(monkeypatch):
     saved = []

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Tuple
 
 from . import constants
+from .host_secrets import read_host_secret
 
 #: The detection categories a user can tune individually.
 DETECTION_CATEGORIES = ("injection", "escalation", "dependency", "fileaccess", "skill", "secret", "ioc")
@@ -280,9 +281,8 @@ def load_blackbox_config() -> BlackboxConfig:
     if llm_provider not in ("openai", "anthropic", ""):
         llm_provider = ""
     llm_model = str(_env_or(llm_entry, env="BLACKBOX_LLM_MODEL", key="model", default="")).strip()
-    key_env = str(llm_entry.get("api_key_env") or "").strip()
-    referenced_key = os.environ.get(key_env, "") if key_env.isascii() and key_env.isidentifier() else ""
-    llm_api_key = str(_env_or(llm_entry, env="BLACKBOX_LLM_API_KEY", key="api_key", default=referenced_key) or referenced_key).strip()
+    referenced_key = read_host_secret(str(llm_entry.get("api_key_env") or "").strip())   # KI-371: a variable's name
+    llm_api_key = (read_host_secret("BLACKBOX_LLM_API_KEY") or str(llm_entry.get("api_key") or "").strip() or referenced_key)
     llm_enabled = _as_bool(_env_or(llm_entry, env="BLACKBOX_LLM_ENABLED", key="enabled", default=False), False)
     context_graph_id = str(
         _env_or(

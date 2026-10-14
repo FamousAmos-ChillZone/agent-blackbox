@@ -101,7 +101,7 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
     setup_llm.add_argument("--provider", choices=["openai", "anthropic"], help="Skip the prompt: set provider")
     setup_llm.add_argument("--model", help="Skip the prompt: set model id (default: provider's recommended)")
     setup_llm.add_argument(
-        "--key-source", choices=["hermes", "openclaw", "new"], help="hermes/openclaw: reuse their key; new: BLACKBOX_LLM_API_KEY or ask"
+        "--key-source", choices=["hermes", "new"], help="hermes: reuse the key Hermes has for its provider; new: BLACKBOX_LLM_API_KEY or ask"
     )
     setup_llm.add_argument("--api-key", help="Use this key (other programs can see it; prefer BLACKBOX_LLM_API_KEY)")
     setup_llm.add_argument(

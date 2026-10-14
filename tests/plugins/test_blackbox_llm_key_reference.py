@@ -12,7 +12,6 @@ HERMES_HOME is a per-test tmp dir (root conftest).
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -100,15 +99,14 @@ def test_a_no_on_the_terminal_switches_nothing_on(monkeypatch):
 
 
 def test_a_key_hermes_will_not_have_at_run_time_is_not_saved_by_name(monkeypatch):
-    # found in ANOTHER profile's .env: this process's Hermes will not load it
+    # a key Hermes does not hold for this profile is saved as itself, never by a name it cannot read
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr(discovery, "_runtime_env", dict)
 
     assert discovery.reachable_key_env(_hermes_candidate()) == ""
 
 
 def test_a_key_hermes_loads_is_saved_by_name(monkeypatch):
-    monkeypatch.setattr(discovery, "_runtime_env", lambda: {"OPENAI_API_KEY": FAKE_KEY})
+    monkeypatch.setenv("OPENAI_API_KEY", FAKE_KEY)
 
     assert discovery.reachable_key_env(_hermes_candidate()) == "OPENAI_API_KEY"
 
@@ -116,7 +114,6 @@ def test_a_key_hermes_loads_is_saved_by_name(monkeypatch):
 def test_an_earlier_copy_is_replaced_by_the_name_on_the_next_run(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", FAKE_KEY)
     monkeypatch.delenv("BLACKBOX_LLM_API_KEY", raising=False)
-    monkeypatch.setattr(discovery, "_runtime_env", lambda: dict(os.environ))
     settings.write_settings({"llm": {"enabled": True, "provider": "openai", "model": "gpt-4o-mini",
                                      "api_key": FAKE_KEY}})   # what the old installer left behind
 
