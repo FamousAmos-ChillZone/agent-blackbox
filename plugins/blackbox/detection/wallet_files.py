@@ -52,7 +52,6 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..kernel import threat_ids
-from ..kernel.crypto_secrets import wallet_mode
 from . import action_parsing, app_wallets, firefox_extensions, shell_shapes
 from .paths import shell_files
 from .finding import Finding
@@ -287,15 +286,20 @@ def wallets_inside_folder(path: str) -> list[str]:
 
 # -- the detector -------------------------------------------------------------
 
-#: Display name -> settings id (``"Solana CLI"`` -> ``"solana-cli"``).
-_IDS = {name: wallet_id for wallet_id, name in wallet_mode.SUPPORTED_WALLETS.items()}
+#: Display name -> settings id (``"Solana CLI"`` -> ``"solana-cli"``). Transitional: a copy of
+#: Trader Shield's supported list (detection may never import shields); deleted with this file in S5b.
+_IDS = {"MetaMask": "metamask", "Phantom": "phantom", "Exodus": "exodus", "Electrum": "electrum",
+        "Solana CLI": "solana-cli"}
+#: ``fields["wallet"]`` of a Firefox extension store, Trader Shield's ``ANY_EXTENSION_WALLET``.
+#: Transitional, like :data:`_IDS` (S5b).
+ANY_EXTENSION_WALLET = "any-extension"
 
 
 def wallet_id(wallet: str) -> str:
     """The settings id of a wallet display name: ``"MetaMask"`` → ``"metamask"``; a Firefox
-    extension store → ``wallet_mode.ANY_EXTENSION_WALLET`` (no folder name ties it to one)."""
+    extension store → :data:`ANY_EXTENSION_WALLET` (no folder name ties it to one)."""
     if wallet == FIREFOX_EXTENSION:
-        return wallet_mode.ANY_EXTENSION_WALLET
+        return ANY_EXTENSION_WALLET
     return _IDS.get(wallet, wallet.lower())
 
 

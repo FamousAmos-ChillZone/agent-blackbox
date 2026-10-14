@@ -847,7 +847,7 @@ Environment overrides:
   BLACKBOX_CONTEXT_GRAPH_ID, BLACKBOX_GRAPH_PEER_ID,
   BLACKBOX_COMMUNITY_GRAPH_ID, BLACKBOX_COMMUNITY_GRAPH_PEER_ID (set as a pair),
   BLACKBOX_LLM_PROVIDER,
-  BLACKBOX_LLM_MODEL, BLACKBOX_LLM_KEY_SOURCE, BLACKBOX_LLM_API_KEY,
+  BLACKBOX_LLM_MODEL, BLACKBOX_LLM_KEY_SOURCE=hermes|new, BLACKBOX_LLM_API_KEY,
   BLACKBOX_HERMES_SETUP=reuse|always|never, BLACKBOX_AUTO_DASHBOARD=0|1,
   BLACKBOX_SYNC_MODE=background|wait
 
@@ -1102,6 +1102,20 @@ install_python_env() {
         if HERMES_EMBEDDED_INSTALL=1 bash "$REPO_DIR/setup-hermes.sh"; then
             ok "Base environment ready via setup-hermes.sh"
             use_hermes_selected_venv
+        elif [ -x "$REPO_DIR/scripts/run-in-hermes-env" ]; then
+            # Hermes 0.21.7+ (pm): the old minimal venv/ would be built for the wrong
+            # release, and every later step (attach, reviewer, sync) then fails. Its setup
+            # has failed transiently (launcher publication racing a restarting dashboard),
+            # so try once more, then stop with the reason rather than continue half-built.
+            warn "setup-hermes.sh did not complete cleanly — trying once more."
+            if HERMES_EMBEDDED_INSTALL=1 bash "$REPO_DIR/setup-hermes.sh"; then
+                ok "Base environment ready via setup-hermes.sh (second try)"
+                use_hermes_selected_venv
+            else
+                err "Hermes's own setup (setup-hermes.sh) failed twice; Blackbox was not installed."
+                step "Fix the error above, then re-run this installer."
+                exit 1
+            fi
         else
             warn "setup-hermes.sh did not complete cleanly — falling back to a minimal venv install."
             minimal_python_env
@@ -1888,7 +1902,8 @@ setup_llm() {
     [ -n "$BLACKBOX_LLM_PROVIDER" ] && args+=(--provider "$BLACKBOX_LLM_PROVIDER")
     [ -n "$BLACKBOX_LLM_MODEL" ] && args+=(--model "$BLACKBOX_LLM_MODEL")
     if [ -n "$BLACKBOX_LLM_API_KEY" ]; then
-        args+=(--api-key "$BLACKBOX_LLM_API_KEY")
+        # The key travels in the environment: a command-line argument is visible
+        # to every program on the machine (ps) while setup-llm runs (KI-371).
         args+=(--key-source new)
     elif [ -n "$BLACKBOX_LLM_KEY_SOURCE" ]; then
         args+=(--key-source "$BLACKBOX_LLM_KEY_SOURCE")
@@ -1896,7 +1911,7 @@ setup_llm() {
 
     if [ "${#args[@]}" -gt 0 ]; then
         step "Using BLACKBOX_LLM_* settings."
-        if "$HERMES_BIN" blackbox setup-llm "${args[@]}"; then
+        if BLACKBOX_LLM_API_KEY="$BLACKBOX_LLM_API_KEY" "$HERMES_BIN" blackbox setup-llm "${args[@]}"; then
             ok "LLM reviewer configured"
         else
             warn "LLM reviewer setup failed from BLACKBOX_LLM_* values."
@@ -1905,7 +1920,7 @@ setup_llm() {
         return 0
     fi
 
-    step "Trying existing Blackbox, Hermes, or OpenClaw LLM config."
+    step "Trying existing Blackbox or Hermes LLM config."
     if "$HERMES_BIN" blackbox setup-llm --auto; then
         ok "LLM reviewer ready"
     else

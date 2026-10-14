@@ -240,7 +240,7 @@ def test_llm_setup_reuses_existing_config_without_prompting() -> None:
 
     assert "blackbox setup-llm --configure" not in body
     assert "blackbox setup-llm --auto" in body
-    assert "existing Blackbox, Hermes, or OpenClaw LLM config" in body
+    assert "existing Blackbox or Hermes LLM config" in body
     assert "LLM reviewer not configured; this is optional" in body
 
 

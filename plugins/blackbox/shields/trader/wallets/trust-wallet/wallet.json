@@ -1,0 +1,7 @@
+{
+  "id": "trust-wallet",
+  "name": "Trust Wallet",
+  "kind": "browser-extension",
+  "status": "planned",
+  "order": 130
+}

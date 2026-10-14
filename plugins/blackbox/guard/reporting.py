@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List, Optional
-from .. import audit, detection
+from .. import audit, detection, shields
 from .. import community
-from ..kernel import crypto_secrets, identity
+from ..kernel import identity
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient
 
@@ -32,9 +32,10 @@ def _flag_worthy(cfg: BlackboxConfig, findings: list[detection.Finding]) -> list
     while Web3 wallet protection is on, for the wallets the operator chose.
     """
     out: list[detection.Finding] = []
-    wallets = crypto_secrets.wallet_mode.current() if findings else None
+    trader = shields.get("trader")   # transitional (S2b): S4c passes a shields snapshot instead
+    wallets = trader.mode() if findings and trader is not None else None
     for f in findings:
-        if wallets is not None and not wallets.allows_finding({"identifier": f.identifier, "fields": f.fields}):
+        if wallets is not None and not trader.allows({"identifier": f.identifier, "fields": f.fields}, wallets):
             continue
         if f.source == "custom":
             out.append(f)
