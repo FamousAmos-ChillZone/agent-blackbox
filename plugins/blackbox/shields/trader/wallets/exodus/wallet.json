@@ -1,0 +1,15 @@
+{
+  "id": "exodus",
+  "name": "Exodus",
+  "kind": "desktop-app",
+  "status": "supported",
+  "order": 30,
+  "verified": "2026-10-13",
+  "source": "Exodus 26.10.7 (official .deb, hash checked) on bench bb-trader-1, Ubuntu 24.04; macOS and Windows use the same Electron app folder",
+  "places": [
+    "$XDG_CONFIG_HOME/Exodus/exodus.wallet",
+    "~/Library/Application Support/Exodus/exodus.wallet",
+    "%APPDATA%/Exodus/exodus.wallet"
+  ],
+  "label": "Desktop app"
+}

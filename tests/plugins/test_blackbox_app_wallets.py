@@ -105,7 +105,7 @@ def test_app_wallets_follow_the_wallet_ticks(machine):
 
 def test_every_app_wallet_can_be_ticked():
     for wallet in app_wallets.APP_WALLETS:
-        assert wallet_files.wallet_id(wallet.name) in trader_mode.SUPPORTED_WALLETS
+        assert wallet_files.wallet_id(wallet.name) in trader_mode.supported_wallets()
 
 
 def test_a_windows_command_naming_the_folder_by_its_variable_is_found(machine, monkeypatch):

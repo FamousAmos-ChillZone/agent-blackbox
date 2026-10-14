@@ -15,6 +15,10 @@ Config, under ``plugins.entries.blackbox``::
         addresses: ["0x…"]           # the operator's OWN public addresses (optional, opt-in):
                                      # a raw 64-hex key that opens one of them is recognised
 
+Which wallets exist is data, not code: the shield's packs (``shields/trader/wallets/``),
+handed in once by :func:`use_packs`; ``supported`` ones may be chosen, ``planned`` ones
+are shown as coming soon.
+
 An install saved before shields keeps the three legacy keys ``wallet_protection`` /
 ``protected_wallets`` / ``wallet_addresses``; :func:`from_entry` still reads them (so it
 stays engaged without a save), and the first save retires them (:func:`validate`).
@@ -33,15 +37,10 @@ Usage::
 from __future__ import annotations
 
 import re
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping, Optional
 
-from ..contract import ShieldMode
+from ..contract import Pack, ShieldMode
 
-#: Wallets Blackbox can protect today: id -> display name. Temporary: S3 replaces it with the packs.
-SUPPORTED_WALLETS: dict[str, str] = {"metamask": "MetaMask", "phantom": "Phantom",
-                                     "exodus": "Exodus", "electrum": "Electrum", "solana-cli": "Solana CLI"}
-#: Wallets on the way (key-store IDs verified, rules not written yet) — shown as "coming soon". Temporary (S3).
-PLANNED_WALLETS: tuple[str, ...] = ("Rabby", "Coinbase Wallet", "Trust Wallet", "OKX Wallet", "Keplr", "Solflare")
 #: Findings that belong to the mode: seed phrases, labelled private keys, Solana and Bitcoin keys (any wallet)…
 WALLET_SECRET_IDENTIFIERS = frozenset({"secret:seed-phrase", "secret:wallet-private-key", "secret:solana-private-key",
                                        "secret:bitcoin-private-key",
@@ -68,6 +67,26 @@ MAX_WALLET_ADDRESSES = 50
 _ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 
 
+#: Trader's wallet packs in display order, handed in once by the shield (:func:`use_packs`).
+_packs: tuple[Pack, ...] = ()
+
+
+def use_packs(packs: Iterable[Pack]) -> None:
+    """Set the wallet packs the mode chooses from (the shield calls this once, at import)."""
+    global _packs
+    _packs = tuple(packs)
+
+
+def wallet_packs() -> tuple[Pack, ...]:
+    """Every wallet pack in display order: supported, planned, then unavailable ones."""
+    return _packs
+
+
+def supported_wallets() -> dict[str, str]:
+    """The wallets Blackbox can protect now: pack id -> display name, in display order."""
+    return {pack.id: pack.name for pack in _packs if pack.status == "supported"}
+
+
 def belongs_to_mode(identifier: str) -> bool:
     """Whether a finding identifier is a Trader Shield finding — THE list the mode gate
     and the dashboard's wallet events both use."""
@@ -75,12 +94,14 @@ def belongs_to_mode(identifier: str) -> bool:
             or identifier.endswith(KEYCHAIN_FILE_SUFFIX))
 
 
-def build(enabled: bool = False, wallets: tuple[str, ...] = tuple(SUPPORTED_WALLETS),
+def build(enabled: bool = False, wallets: Optional[tuple[str, ...]] = None,
           addresses: tuple[str, ...] = ()) -> ShieldMode:
-    """Trader's mode: ``enabled``; ``wallets`` — supported wallet ids to guard;
+    """Trader's mode: ``enabled``; ``wallets`` — supported wallet ids to guard (None:
+    every supported one);
     ``addresses`` — the operator's own public addresses, lower-case (kept on this
     machine only; never put in a finding, a log line or a report)."""
-    return ShieldMode(enabled=enabled, options={WALLETS: tuple(wallets), ADDRESSES: tuple(addresses)},
+    chosen = tuple(supported_wallets()) if wallets is None else tuple(wallets)
+    return ShieldMode(enabled=enabled, options={WALLETS: chosen, ADDRESSES: tuple(addresses)},
                       personal=frozenset({ADDRESSES}))
 
 
@@ -120,10 +141,11 @@ def allows_finding(finding: Mapping[str, Any], mode: ShieldMode) -> bool:
 
 def _wallet_list(raw: Any) -> tuple[str, ...]:
     """Supported wallet ids from *raw* (a list), lower-cased, deduplicated, in order."""
+    supported = supported_wallets()
     out: list[str] = []
     for item in raw if isinstance(raw, list) else []:
         wallet = str(item or "").strip().lower()
-        if wallet in SUPPORTED_WALLETS and wallet not in out:
+        if wallet in supported and wallet not in out:
             out.append(wallet)
     return tuple(out)
 
@@ -149,7 +171,7 @@ def from_entry(entry: Mapping[str, Any]) -> ShieldMode:
         section = {"enabled": entry.get("wallet_protection"), ADDRESSES: entry.get("wallet_addresses")}
         if "protected_wallets" in entry:
             section[WALLETS] = entry["protected_wallets"]
-    chosen = _wallet_list(section[WALLETS]) if WALLETS in section else tuple(SUPPORTED_WALLETS)
+    chosen = _wallet_list(section[WALLETS]) if WALLETS in section else None
     return build(enabled=section.get("enabled") is True, wallets=chosen,
                  addresses=_address_list(section.get(ADDRESSES)))
 
@@ -194,13 +216,13 @@ def _validated_fields(raw: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]
         else:
             errors.append("shields.trader.enabled must be a boolean")
     if WALLETS in raw:
-        chosen = raw[WALLETS]
+        chosen, supported = raw[WALLETS], supported_wallets()
         # No list longer than the supported set: a valid one never repeats a wallet (KI-389).
-        too_long = isinstance(chosen, list) and len(chosen) > len(SUPPORTED_WALLETS)
+        too_long = isinstance(chosen, list) and len(chosen) > len(supported)
         unknown = [] if too_long else [w for w in (chosen if isinstance(chosen, list) else [chosen])
-                                       if str(w or "").lower() not in SUPPORTED_WALLETS]
+                                       if str(w or "").lower() not in supported]
         if not isinstance(chosen, list) or too_long or unknown:
-            errors.append(f"shields.trader.wallets must be a list of: {', '.join(SUPPORTED_WALLETS)}")
+            errors.append(f"shields.trader.wallets must be a list of: {', '.join(supported)}")
         else:
             updates[WALLETS] = list(_wallet_list(chosen))
     if ADDRESSES in raw:
