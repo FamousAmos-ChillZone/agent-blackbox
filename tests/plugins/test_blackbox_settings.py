@@ -559,8 +559,8 @@ def test_a_partly_valid_save_persists_nothing():
 
 
 @pytest.mark.parametrize("payload, field", [
-    (_trader(wallets=["metamask"] * (len(trader_mode.SUPPORTED_WALLETS) + 1)), "shields.trader.wallets"),
-    (_trader(wallets=list(trader_mode.SUPPORTED_WALLETS) + ["metamask"]), "shields.trader.wallets"),
+    (_trader(wallets=["metamask"] * (len(trader_mode.supported_wallets()) + 1)), "shields.trader.wallets"),
+    (_trader(wallets=list(trader_mode.supported_wallets()) + ["metamask"]), "shields.trader.wallets"),
     (_trader(addresses=["0x" + "1" * 40] * (trader_mode.MAX_WALLET_ADDRESSES + 1)), "shields.trader.addresses"),
     ({"protected_paths": [f"/p{i}" for i in range(settings.MAX_PROTECTED_PATHS + 1)]}, "protected_paths"),
 ])
@@ -570,11 +570,11 @@ def test_a_list_over_its_ceiling_is_refused(payload, field):
 
 
 def test_lists_at_their_ceiling_are_saved():
-    result = settings.write_settings({**_trader(wallets=list(trader_mode.SUPPORTED_WALLETS)),
+    result = settings.write_settings({**_trader(wallets=list(trader_mode.supported_wallets())),
                                       "protected_paths": [f"/p{i}" for i in range(settings.MAX_PROTECTED_PATHS)]},
                                      validators=SHIELDS)
     assert result["ok"] is True and len(result["settings"]["protected_paths"]) == settings.MAX_PROTECTED_PATHS
-    assert trader_mode.wallets(trader_mode.current()) == tuple(trader_mode.SUPPORTED_WALLETS)
+    assert trader_mode.wallets(trader_mode.current()) == tuple(trader_mode.supported_wallets())
 
 
 def test_the_dashboard_answers_400_and_saves_nothing_for_a_partly_valid_body(monkeypatch, tmp_path):

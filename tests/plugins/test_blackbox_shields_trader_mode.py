@@ -104,7 +104,7 @@ def test_as_json_strips_the_addresses_unless_asked():
 
 def test_the_mode_is_off_by_default_and_governs_only_wallet_findings():
     mode = trader_mode.from_entry({})
-    assert mode.enabled is False and trader_mode.wallets(mode) == tuple(trader_mode.SUPPORTED_WALLETS)
+    assert mode.enabled is False and trader_mode.wallets(mode) == tuple(trader_mode.supported_wallets())
     vault = {"identifier": "fileaccess:terminal:crypto-wallet", "fields": {"wallet": "metamask"}}
     assert not TRADER.allows(vault, mode) and not TRADER.allows({"identifier": "secret:seed-phrase"}, mode)
     assert TRADER.allows({"identifier": "dep:npm:evil@1.0.0"}, mode)   # not a wallet finding: untouched
@@ -117,7 +117,7 @@ def test_engaging_protects_every_supported_wallet_unless_wallets_were_already_ch
     earlier choice (e.g. MetaMask only) is kept, so engaging never widens it silently."""
     engage = {"shields": {"trader": {"enabled": True}}}
     assert settings.write_settings(engage, validators=SHIELDS)["ok"] is True
-    assert trader_mode.wallets(trader_mode.current()) == tuple(trader_mode.SUPPORTED_WALLETS)
+    assert trader_mode.wallets(trader_mode.current()) == tuple(trader_mode.supported_wallets())
     _write_entry({"wallet_protection": False, "protected_wallets": ["metamask"]})
     assert settings.write_settings(engage, validators=SHIELDS)["ok"] is True
     assert trader_mode.wallets(trader_mode.current()) == ("metamask",)

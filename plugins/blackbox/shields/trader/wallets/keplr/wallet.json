@@ -1,0 +1,7 @@
+{
+  "id": "keplr",
+  "name": "Keplr",
+  "kind": "browser-extension",
+  "status": "planned",
+  "order": 150
+}

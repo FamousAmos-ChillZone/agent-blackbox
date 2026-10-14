@@ -2,8 +2,10 @@
 phrases, private keys, exchange keys, token approvals and the macOS keychain.
 
 This module assembles :data:`TRADER`, the shield's record (Strategy, by composition: a
-:class:`~..contract.Shield` of plain functions). Today it carries the setting (:mod:`.mode`)
-and the gate (``claims`` / ``allows``, the rules the guard has always applied); its own
+:class:`~..contract.Shield` of plain functions). Today it carries the setting (:mod:`.mode`),
+the gate (``claims`` / ``allows``, the rules the guard has always applied) and its data —
+the wallet packs in ``wallets/`` and the browser folders in ``browsers.json``, validated
+by the kind table in :mod:`.detectors` (nothing on the hot path reads them yet); its own
 detectors, card and events report are placeholders that answer empty until S4c, S5 and
 S6a fill them, and ``finding_kinds`` / ``capabilities`` arrive with S4c.
 
@@ -22,7 +24,8 @@ from typing import Any, Mapping
 from ...detection import Finding
 from ...kernel import crypto_secrets
 from ..contract import SettingField, SettingOption, Shield, ShieldEvent, ShieldMode, ShieldStatus
-from . import mode
+from ..packs import load_packs
+from . import detectors, mode
 
 HERE = Path(__file__).resolve().parent
 
@@ -43,14 +46,13 @@ def claims(finding: Mapping[str, Any]) -> bool:
 
 
 def settings_fields() -> list[SettingField]:
-    """How Settings draws Trader's group: the switch, and the wallets (supported, then coming soon)."""
-    supported = [SettingOption(id=wallet_id, name=name, status="supported", logo=f"/wallets/{wallet_id}.svg")
-                 for wallet_id, name in mode.SUPPORTED_WALLETS.items()]
-    planned = [SettingOption(id=name.lower().replace(" ", "-"), name=name, status="planned")
-               for name in mode.PLANNED_WALLETS]
+    """How Settings draws Trader's group: the switch, and the wallet packs in display order
+    (supported, then coming soon; a pack that failed to load is left out until S6a shows it)."""
+    options = tuple(SettingOption(id=pack.id, name=pack.name, status=pack.status,
+                                  logo=f"/wallets/{pack.id}.svg" if pack.status == "supported" else "")
+                    for pack in mode.wallet_packs() if pack.status != "unavailable")
     return [SettingField(key="enabled", kind="toggle", label="Trader Shield"),
-            SettingField(key=mode.WALLETS, kind="multi-pick", label="Wallets to protect",
-                         options=tuple(supported + planned))]
+            SettingField(key=mode.WALLETS, kind="multi-pick", label="Wallets to protect", options=options)]
 
 
 def _no_findings(tool_name: str, args: Any, active: ShieldMode) -> list[Finding]:
@@ -72,7 +74,12 @@ TRADER = Shield(
     claims=claims, allows=mode.allows_finding, status=_status, events=_no_events,
     settings_fields=settings_fields, finding_kinds=(), capabilities=(),
     packs=HERE / "wallets", page=HERE / "page" / "trader.html", attacks=HERE / "attacks.json",
+    detectors=detectors.DETECTORS, browser_roots=HERE / "browsers.json",
 )
+
+# The mode chooses among the packs, read once here at import (never on the hot path).
+# The registry reads them again for its own view (logos, health): two import-time reads.
+mode.use_packs(load_packs(TRADER))
 
 # The kernel's own-key redaction needs the listed addresses but may not import a shield:
 # the shield hands its reader in (dependency injection, like the settings validators).
