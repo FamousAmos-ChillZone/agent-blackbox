@@ -61,6 +61,9 @@ class HealthInputs:
     manifest_state: str = ""             # R7b: "" | "pending" | "stale"
     manifest_state_day: str = ""         # the day it takes effect / expired
     manifest_expires_day: str = ""       # the 30-day-ahead key-expiry alarm
+    #: False on a machine with no DKG node for Blackbox (``health.node_installed``) — a Hermes
+    #: plugin-catalog install brings the plugin only; the alarms then say how to install the node.
+    node_installed: bool = True
     #: DKG-lookup B5: why live verified lookups are degraded ("" = answering). The
     #: caller passes ``ruleset.live.HEALTH.read().problem()`` (the kernel reads no feature).
     verified_lookup_problem: str = ""

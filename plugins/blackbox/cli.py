@@ -145,7 +145,10 @@ def _cmd_status(args: argparse.Namespace) -> int:
           f"{counts['escalation']} escalation, {counts['dependency']} dependency, "
           f"{counts['fileaccess']} fileaccess, {counts['skill']} skill, {counts['ioc']} ioc")
     _print_verified_progress(cfg)
-    if not any(counts.values()):
+    if not any(counts.values()) and not health.node_installed(cfg, reachable):
+        print("  !! LIMITED:        Blackbox's DKG node is not installed — the verified threat graph is not loaded.")
+        print(f"                     To load it, {health.NODE_INSTALL_HINT}.")
+    elif not any(counts.values()):
         # KI-023: an empty ruleset is a LOUD state, never a quiet day.
         print("  !! UNPROTECTED:    threat ruleset is EMPTY — detection has no rules.")
         print("                     Run 'hermes blackbox sync --wait' to load the threat graph.")

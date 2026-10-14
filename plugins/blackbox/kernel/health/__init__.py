@@ -26,6 +26,7 @@ Usage::
 
 from __future__ import annotations
 
+import os
 from datetime import date, datetime, timezone, UTC
 
 from .. import constants
@@ -64,6 +65,9 @@ STALE_INTERVALS = 2.0
 CURATOR_SILENCE_DAYS = 14
 #: A curator key without a heartbeat this long → INFO (plan §09: >48 h).
 HEARTBEAT_SILENCE_DAYS = 2
+#: What to do without a DKG node for Blackbox. A Hermes plugin-catalog install brings the plugin only.
+NODE_INSTALL_HINT = ("install it with the Blackbox installer (blackbox.umanitek.ai); until then the built-in rules "
+                     "(protected paths, secrets, Trader Shield) still protect")
 
 _CURATOR = "curator"
 
@@ -141,6 +145,9 @@ def _trust(inputs: HealthInputs) -> list[HealthItem]:
 
 
 def _node_and_ruleset(inputs: HealthInputs) -> list[HealthItem]:
+    if not inputs.node_installed:   # nothing to sync and nothing to restart: the alarms below would mislead
+        return [HealthItem(_OPERATOR, HealthClass.ACTION, "Blackbox's DKG node is not installed: the verified threat "
+                           "graph is not loaded", NODE_INSTALL_HINT)]
     items = []
     stale = inputs.ruleset_age_s is None or inputs.ruleset_age_s > STALE_INTERVALS * max(1.0, inputs.sync_interval_s)
     if not inputs.node_reachable or stale:
@@ -267,6 +274,16 @@ def red(item: HealthItem) -> bool:
     return item.klass is not HealthClass.INFO
 
 
+def node_installed(cfg: Any, node_reachable: bool) -> bool:
+    """Whether this machine has a DKG node for Blackbox: one answers at ``cfg.dkg_url``, or
+    Blackbox's own DKG command (``cfg.dkg_bin``) is installed and can start one.
+
+    False after a Hermes plugin-catalog install (the plugin only): ``blackbox sync`` and the
+    alarms then say how to install the node instead of waiting on one that is not there.
+    """
+    return node_reachable or os.path.isfile(os.path.expanduser(str(getattr(cfg, "dkg_bin", "") or "")))
+
+
 def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked_by_identifier: Mapping[str, int],
            now: float, *, pending_shares: int = 0, shares_given_up: int = 0, sharing_consent_problem: str = "",
            verified_lookup_problem: str = "",
@@ -281,6 +298,7 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
     kill_list = getattr(rs, "kill_list", None) or {}
     return HealthInputs(
         node_reachable=node_reachable,
+        node_installed=node_installed(cfg, node_reachable),
         ruleset_age_s=(now - getattr(rs, "synced_at", 0)) if getattr(rs, "synced_at", 0) else None,
         sync_interval_s=float(getattr(cfg, "sync_interval", 0) or 0),
         rule_count=sum(int(v) for k, v in rs.counts().items() if k != "community"),

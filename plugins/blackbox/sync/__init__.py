@@ -16,8 +16,25 @@ Usage: ``from ..sync import state as sync_state`` · ``from ..sync.progress impo
 
 from __future__ import annotations
 
+import argparse
+
 from . import progress, state
-from .command import cmd_sync
+from ..kernel import health
+from ..kernel.config import load_blackbox_config
+from ..kernel.dkg_client import DkgClient
+from .command import cmd_sync as _sync_with_node
 from .progress import read_durable_progress, read_recovery_backlog
 
 __all__ = ["cmd_sync", "progress", "read_durable_progress", "read_recovery_backlog", "state"]
+
+
+def cmd_sync(args: argparse.Namespace) -> int:
+    """``blackbox sync``. On a machine with no DKG node for Blackbox — a Hermes plugin-catalog
+    install brings the plugin only — it says how to install one instead of waiting on a node that
+    is not there (exit 2 with ``--wait``); otherwise :func:`.command.cmd_sync`."""
+    cfg = load_blackbox_config()
+    if not health.node_installed(cfg, DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home).reachable()):
+        print("Blackbox's DKG node is not installed, so there is no threat graph to sync. "
+              f"To load it, {health.NODE_INSTALL_HINT}.")
+        return 2 if getattr(args, "wait", False) else 0
+    return _sync_with_node(args)
