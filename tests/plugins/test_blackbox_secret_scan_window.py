@@ -23,7 +23,8 @@ from plugins.blackbox.guard import background as guard_background
 from plugins.blackbox.guard import hooks
 from plugins.blackbox.guard import reporting as guard_reporting
 from plugins.blackbox.kernel import config as config_mod
-from plugins.blackbox.kernel.crypto_secrets import seed_phrase, wallet_mode
+from plugins.blackbox.kernel.crypto_secrets import seed_phrase
+from plugins.blackbox.shields.trader import mode as trader_mode
 from plugins.blackbox.ruleset import Ruleset
 
 WORDS = seed_phrase.WORDLIST_FILE.read_text(encoding="ascii").split()
@@ -44,7 +45,7 @@ def shield(tmp_path, monkeypatch):
     monkeypatch.setattr(hooks, "_config", lambda: config_mod.BlackboxConfig(mode="block", report=False))
     monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: Ruleset())
     monkeypatch.setattr(guard_background, "_spawn_osv_discovery", lambda *a, **k: None)
-    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=True))
+    monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=True))
     findings: list = []
     monkeypatch.setattr(guard_reporting, "_report_and_audit", lambda cfg, event, found, detail: findings.extend(found))
     return findings

@@ -43,7 +43,7 @@ from ..kernel.bounded_files import read_small_text
 class AppWallet:
     """A wallet kept in an app's own folder.
 
-    ``name`` — the display name (its settings id is in ``wallet_mode.SUPPORTED_WALLETS``);
+    ``name`` — the display name (its settings id is in ``wallet_files._IDS``);
     ``places`` — where its keys live, as paths starting with ``~``, ``$XDG_CONFIG_HOME``
     or a Windows ``%VAR%``, where ``*`` stands for one folder or file name; everything
     inside a place is protected; ``kind`` — what the dashboard calls it."""

@@ -29,7 +29,8 @@ from plugins.blackbox.guard import hooks
 from plugins.blackbox.guard import reporting as guard_reporting
 from plugins.blackbox.kernel import config as config_mod
 from plugins.blackbox.kernel import crypto_secrets, threat_ids
-from plugins.blackbox.kernel.crypto_secrets import seed_phrase, wallet_mode
+from plugins.blackbox.kernel.crypto_secrets import seed_phrase
+from plugins.blackbox.shields.trader import mode as trader_mode
 from plugins.blackbox.ruleset import Ruleset
 
 TABLE = json.loads((protection.TRADER_SHIELD_PAGE.parent / "trader-shield-attacks.json").read_text(encoding="utf-8"))
@@ -88,8 +89,8 @@ def shield(tmp_path, monkeypatch):
     monkeypatch.setattr(guard_reporting, "_report_and_audit", lambda cfg, event, found, detail: findings.extend(found))
     seed12, seed24, key = _phrase(os.urandom(16)), _phrase(os.urandom(32)), "0x" + secrets.token_hex(32)
     # Every supported wallet chosen, and @KEY@'s address listed as the trader's own (settings).
-    own = wallet_mode.WalletProtection(enabled=True, addresses=(crypto_secrets.address_of(bytes.fromhex(key[2:])),))
-    monkeypatch.setattr(wallet_mode, "current", lambda: own)
+    own = trader_mode.build(enabled=True, addresses=(crypto_secrets.address_of(bytes.fromhex(key[2:])),))
+    monkeypatch.setattr(trader_mode, "current", lambda: own)
     solana = _solana_key()
     values = {"@SEED12PLUS@": seed12.replace(" ", "+"), "@SEED12@": seed12, "@SEED24@": seed24, "@KEY@": key,
               "@HEX@": key[2:], "@TXHASH@": secrets.token_hex(32), "@APIKEY@": secrets.token_hex(32), "@VAULTFILE@": str(vault / "000003.log"),

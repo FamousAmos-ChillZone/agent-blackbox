@@ -540,32 +540,41 @@ def test_settings_write_deep_merges_categories():
 # 8. KI-389: a save is all-or-nothing, and every list has a ceiling
 # ---------------------------------------------------------------------------
 
-wallet_mode = load_blackbox("kernel.crypto_secrets.wallet_mode")
+shields = load_blackbox("shields")
+trader_mode = load_blackbox("shields.trader.mode")
+SHIELDS = shields.settings_validators()   # what the dashboard hands the writer
+
+
+def _trader(**fields):
+    """A settings payload carrying Trader Shield's section."""
+    return {"shields": {"trader": fields}}
 
 
 def test_a_partly_valid_save_persists_nothing():
-    assert settings.write_settings({"wallet_protection": True, "mode": "block"})["ok"] is True
-    result = settings.write_settings({"wallet_protection": False, "wallet_addresses": "x", "mode": "audit"})
-    assert result["ok"] is False and any("wallet_addresses" in e for e in result["errors"])
-    assert result["settings"]["wallet_protection"]["enabled"] is True   # protection was NOT turned off
+    assert settings.write_settings({**_trader(enabled=True), "mode": "block"}, validators=SHIELDS)["ok"] is True
+    result = settings.write_settings({**_trader(enabled=False, addresses="x"), "mode": "audit"}, validators=SHIELDS)
+    assert result["ok"] is False and any("shields.trader.addresses" in e for e in result["errors"])
+    assert trader_mode.current().enabled is True   # protection was NOT turned off
     assert result["settings"]["mode"] == "block"
 
 
 @pytest.mark.parametrize("payload, field", [
-    ({"protected_wallets": ["metamask"] * (len(wallet_mode.SUPPORTED_WALLETS) + 1)}, "protected_wallets"),
-    ({"protected_wallets": list(wallet_mode.SUPPORTED_WALLETS) + ["metamask"]}, "protected_wallets"),
-    ({"wallet_addresses": ["0x" + "1" * 40] * (wallet_mode.MAX_WALLET_ADDRESSES + 1)}, "wallet_addresses"),
+    (_trader(wallets=["metamask"] * (len(trader_mode.SUPPORTED_WALLETS) + 1)), "shields.trader.wallets"),
+    (_trader(wallets=list(trader_mode.SUPPORTED_WALLETS) + ["metamask"]), "shields.trader.wallets"),
+    (_trader(addresses=["0x" + "1" * 40] * (trader_mode.MAX_WALLET_ADDRESSES + 1)), "shields.trader.addresses"),
     ({"protected_paths": [f"/p{i}" for i in range(settings.MAX_PROTECTED_PATHS + 1)]}, "protected_paths"),
 ])
 def test_a_list_over_its_ceiling_is_refused(payload, field):
-    result = settings.write_settings(payload)
+    result = settings.write_settings(payload, validators=SHIELDS)
     assert result["ok"] is False and any(field in e for e in result["errors"])
 
 
 def test_lists_at_their_ceiling_are_saved():
-    result = settings.write_settings({"protected_wallets": list(wallet_mode.SUPPORTED_WALLETS),
-                                      "protected_paths": [f"/p{i}" for i in range(settings.MAX_PROTECTED_PATHS)]})
+    result = settings.write_settings({**_trader(wallets=list(trader_mode.SUPPORTED_WALLETS)),
+                                      "protected_paths": [f"/p{i}" for i in range(settings.MAX_PROTECTED_PATHS)]},
+                                     validators=SHIELDS)
     assert result["ok"] is True and len(result["settings"]["protected_paths"]) == settings.MAX_PROTECTED_PATHS
+    assert trader_mode.wallets(trader_mode.current()) == tuple(trader_mode.SUPPORTED_WALLETS)
 
 
 def test_the_dashboard_answers_400_and_saves_nothing_for_a_partly_valid_body(monkeypatch, tmp_path):
@@ -575,13 +584,13 @@ def test_the_dashboard_answers_400_and_saves_nothing_for_a_partly_valid_body(mon
     server = load_blackbox("dashboard.server")
     monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
     monkeypatch.setenv("HOME", str(tmp_path))   # the app's agent discovery must not find the real ~/.hermes
-    settings.write_settings({"wallet_protection": True})
+    settings.write_settings(_trader(enabled=True), validators=SHIELDS)
     with TestClient(server.create_app(), base_url="http://127.0.0.1:9700") as client:
         token = client.get("/api/session").json()["token"]
-        res = client.post("/api/settings", json={"wallet_protection": False, "wallet_addresses": "x"},
+        res = client.post("/api/settings", json=_trader(enabled=False, addresses="x"),
                           headers={"X-Blackbox-Token": token})
     assert res.status_code == 400 and res.json()["ok"] is False
-    assert settings.read_settings()["wallet_protection"]["enabled"] is True
+    assert trader_mode.current().enabled is True
 
 
 def test_setup_llm_still_saves_through_the_writer():

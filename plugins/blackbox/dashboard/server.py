@@ -29,9 +29,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
 from ..kernel.browser_boundary import BrowserBoundary
-from ..sync import state as sync_state
-from ..sync import read_durable_progress
-from . import community_routes, graph_pages, lifecycle, protection, sync_meter, sync_timing
+from .. import shields
+from ..sync import read_durable_progress, state as sync_state
+from . import community_routes, graph_pages, lifecycle, protection, shields_routes, sync_meter, sync_timing
 from .graph_pages import _balanced_graph_entries, _graph_entries
 from .network_sync import network_sync_argv as _network_sync_argv
 from .node_probe import NodeLiveness, RepeatGate, node_sync_probe
@@ -1213,7 +1213,7 @@ def create_app(*, manage_blackbox: bool = False):
     def get_settings() -> Any:
         """Current user-tunable detection policy (defaults included)."""
         try:
-            return settings.read_settings()
+            return shields_routes.with_shields(settings.read_settings())
         except Exception as exc:  # pragma: no cover - fail open
             logger.debug("blackbox dashboard: read settings failed: %s", exc)
             return JSONResponse({"error": "could not read settings"}, status_code=500)
@@ -1226,8 +1226,8 @@ def create_app(*, manage_blackbox: bool = False):
         malformed body can't corrupt config.
         """
         try:
-            result = settings.write_settings(payload, sharing_consent=community.consent.for_settings(payload))   # on = opt back in
-            return JSONResponse(result, status_code=200 if result.get("ok") else 400)
+            result = settings.write_settings(payload, sharing_consent=community.consent.for_settings(payload), validators=shields.settings_validators())   # on = opt back in
+            return JSONResponse(shields_routes.with_shields(result), status_code=200 if result.get("ok") else 400)
         except Exception as exc:  # pragma: no cover - fail open
             logger.debug("blackbox dashboard: write settings failed: %s", exc)
             return JSONResponse({"ok": False, "errors": ["internal error"]}, status_code=500)

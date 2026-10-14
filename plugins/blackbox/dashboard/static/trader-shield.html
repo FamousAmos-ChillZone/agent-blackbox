@@ -574,14 +574,15 @@
   document.getElementById("engage").addEventListener("click", function () {
     var note = document.getElementById("engage-note"), btn = this;
     btn.disabled = true; note.className = "note"; note.textContent = "Engaging…";
-    var body = { wallet_protection: true };   // a first engage protects every supported wallet
+    var body = { shields: { trader: { enabled: true } } };   // a first engage protects every supported wallet
     if (document.getElementById("opt-block").checked) body.mode = "block";
     getJSON("/api/session").then(function (s) {
       return fetch("/api/settings", { method: "POST", cache: "no-store",
         headers: { "Content-Type": "application/json", Accept: "application/json", "X-Blackbox-Token": (s && s.token) || "" },
         body: JSON.stringify(body) });
     }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); }).then(function (res) {
-      if (res.ok && res.body && res.body.ok) {
+      var view = (res.body && res.body.settings && res.body.settings.shields) || {};   // the composed settings view
+      if (res.ok && res.body && res.body.ok && view.trader && view.trader.mode && view.trader.mode.enabled === true) {
         note.className = "note ok"; note.textContent = "Trader Shield is engaged. Your dashboard now shows the Trader Shield panel.";
         loadStatus();
       } else {

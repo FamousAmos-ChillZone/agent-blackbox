@@ -1,0 +1,179 @@
+"""Trader Shield's setting (shields/trader/mode.py): read, validated, migrated, kept private.
+
+The setting lives at ``shields.trader`` in the ``blackbox`` config entry. An install saved
+before shields holds three legacy keys (``wallet_protection`` / ``protected_wallets`` /
+``wallet_addresses``): it still reads as engaged, and its first save writes ``shields.trader``
+and retires them (F-009). The operator's own addresses are personal data (F-035): only the
+Settings editor's view carries them. The mode tests moved here from the wallet test files
+(S2b). ``HERMES_HOME``/``BLACKBOX_HOME`` are per-test tmpdirs (root conftest).
+"""
+
+import secrets
+
+import pytest
+from _blackbox_loader import load_blackbox
+
+
+constants = load_blackbox("kernel.constants")
+settings = load_blackbox("kernel.settings")
+yaml_files = load_blackbox("kernel.yaml_files")
+shields = load_blackbox("shields")
+trader_mode = load_blackbox("shields.trader.mode")
+
+TRADER = shields.get("trader")
+SHIELDS = shields.settings_validators()   # what the dashboard hands the writer
+OWN = "0x" + "ab" * 20
+
+
+def _entry() -> dict:
+    """The persisted ``plugins.entries.blackbox`` entry ({} with no config file)."""
+    path = constants.hermes_home() / "config.yaml"
+    data = yaml_files.load_yaml(path) if path.exists() else {}
+    return ((data or {}).get("plugins") or {}).get("entries", {}).get("blackbox") or {}
+
+
+def _write_entry(entry: dict) -> None:
+    """Persist *entry* as the whole ``blackbox`` entry, the way an older install left it."""
+    yaml_files.dump_yaml(constants.hermes_home() / "config.yaml", {"plugins": {"entries": {"blackbox": entry}}})
+
+
+LEGACY = {"wallet_protection": True, "protected_wallets": ["metamask", "phantom"], "wallet_addresses": [OWN]}
+
+
+# ------------------------------------------------------------------ the six S2b cases
+
+
+def test_a_legacy_only_entry_reads_enabled_with_its_wallets_and_addresses():
+    mode = trader_mode.from_entry(LEGACY)
+    assert mode.enabled is True
+    assert trader_mode.wallets(mode) == ("metamask", "phantom") and trader_mode.addresses(mode) == (OWN,)
+
+
+def test_one_save_writes_shields_trader_and_retires_every_legacy_key():
+    _write_entry({**LEGACY, "mode": "block"})
+    result = settings.write_settings({"shields": {"trader": {"enabled": True}}}, validators=SHIELDS)
+
+    assert result["ok"] is True
+    entry = _entry()
+    assert not set(trader_mode.LEGACY_KEYS) & set(entry)
+    # The Engage-style save sent only the switch: the earlier wallets and addresses carried over.
+    assert entry["shields"]["trader"] == {"enabled": True, "wallets": ["metamask", "phantom"], "addresses": [OWN]}
+    assert entry["mode"] == "block"
+
+
+def test_a_never_saved_legacy_entry_still_reads_engaged():
+    _write_entry(LEGACY)
+    assert trader_mode.current().enabled is True and TRADER.mode().enabled is True
+
+
+def test_an_unknown_wallet_id_is_refused_and_nothing_is_written():
+    _write_entry(LEGACY)
+    shield_id, section, errors, _ = trader_mode.validate({"shields": {"trader": {"wallets": ["metamask", "not-a-wallet"]}}})
+    assert (shield_id, section) == ("trader", {}) and errors
+    result = settings.write_settings({"shields": {"trader": {"wallets": ["not-a-wallet"]}}}, validators=SHIELDS)
+    assert result["ok"] is False and _entry() == LEGACY
+
+
+def test_only_the_settings_editor_view_carries_an_address():
+    protection = load_blackbox("dashboard.protection")
+    events = load_blackbox("dashboard.protection.events")
+    _write_entry(LEGACY)
+    mode = TRADER.mode()
+    elsewhere = {
+        "panel status": protection.wallet_protection_payload(),
+        "events report": events.wallet_event_report(),
+        "shield statuses": [status.as_json() for status in shields.statuses()],
+        "shield card": TRADER.status(mode).as_json(),
+        "snapshot": shields.snapshot().as_json(),
+        "shield record": TRADER.as_json(),
+        "kernel settings": settings.read_settings(),
+    }
+    for name, payload in elsewhere.items():
+        assert OWN not in str(payload).lower(), name
+    assert shields.settings_view()["trader"]["mode"]["addresses"] == [OWN]   # the one view that edits them
+
+
+def test_as_json_strips_the_addresses_unless_asked():
+    mode = trader_mode.build(enabled=True, addresses=(OWN,))
+    assert "addresses" not in mode.as_json()
+    assert mode.as_json(include_personal=True)["addresses"] == [OWN]
+
+
+# ------------------------------------------------------------------ moved from the wallet test files
+
+
+def test_the_mode_is_off_by_default_and_governs_only_wallet_findings():
+    mode = trader_mode.from_entry({})
+    assert mode.enabled is False and trader_mode.wallets(mode) == tuple(trader_mode.SUPPORTED_WALLETS)
+    vault = {"identifier": "fileaccess:terminal:crypto-wallet", "fields": {"wallet": "metamask"}}
+    assert not TRADER.allows(vault, mode) and not TRADER.allows({"identifier": "secret:seed-phrase"}, mode)
+    assert TRADER.allows({"identifier": "dep:npm:evil@1.0.0"}, mode)   # not a wallet finding: untouched
+    chosen = trader_mode.from_entry({"shields": {"trader": {"enabled": True, "wallets": ["MetaMask", "not-a-wallet"]}}})
+    assert trader_mode.wallets(chosen) == ("metamask",) and TRADER.allows(vault, chosen)   # unsupported names are dropped
+
+
+def test_engaging_protects_every_supported_wallet_unless_wallets_were_already_chosen():
+    """Engage sends only the switch: a first engage protects every supported wallet; an
+    earlier choice (e.g. MetaMask only) is kept, so engaging never widens it silently."""
+    engage = {"shields": {"trader": {"enabled": True}}}
+    assert settings.write_settings(engage, validators=SHIELDS)["ok"] is True
+    assert trader_mode.wallets(trader_mode.current()) == tuple(trader_mode.SUPPORTED_WALLETS)
+    _write_entry({"wallet_protection": False, "protected_wallets": ["metamask"]})
+    assert settings.write_settings(engage, validators=SHIELDS)["ok"] is True
+    assert trader_mode.wallets(trader_mode.current()) == ("metamask",)
+
+
+def test_settings_accept_the_mode_and_refuse_a_non_boolean():
+    assert TRADER.validate({"shields": {"trader": {"enabled": True, "wallets": ["metamask"]}}})[1:3] == (
+        {"enabled": True, "wallets": ["metamask"], "addresses": []}, [])
+    assert TRADER.validate({"shields": {"trader": {"enabled": "yes"}}})[2]
+    assert TRADER.validate({"shields": {"trader": "on"}})[2]
+    assert TRADER.validate({"mode": "block"})[1:3] == ({}, [])   # the shield is not touched
+
+
+def test_settings_accept_addresses_lower_cased_and_refuse_anything_else():
+    good = "0x" + secrets.token_hex(20)
+    section, errors = TRADER.validate({"shields": {"trader": {"addresses": [good.upper().replace("0X", "0x"), good]}}})[1:3]
+    assert errors == [] and section["addresses"] == [good]
+    for bad in (["0x" + secrets.token_hex(32)], "0x12", ["not an address"], ["0x" + secrets.token_hex(20)] * 51):
+        assert TRADER.validate({"shields": {"trader": {"addresses": bad}}})[2], bad
+
+
+def test_the_mode_carries_the_addresses_lower_cased_and_capped():
+    many = ["0x" + secrets.token_hex(20) for _ in range(60)]
+    mode = trader_mode.from_entry({"wallet_protection": True, "wallet_addresses": [many[0].upper().replace("0X", "0x")] + many})
+    assert trader_mode.addresses(mode)[0] == many[0]
+    assert len(trader_mode.addresses(mode)) == trader_mode.MAX_WALLET_ADDRESSES
+
+
+def test_the_kernel_redacts_own_keys_through_the_shields_address_reader():
+    """The kernel reads the listed addresses through the reader Trader hands it (it never imports a shield)."""
+    crypto_secrets = load_blackbox("kernel.crypto_secrets")
+    key = secrets.token_hex(32)
+    _write_entry({"shields": {"trader": {"enabled": True, "addresses": [crypto_secrets.address_of(bytes.fromhex(key))]}}})
+    assert key not in crypto_secrets.redact_own_keys(f"debug k={key}")
+
+
+# ------------------------------------------------------------------ the dashboard composes shields
+
+
+def test_the_settings_routes_compose_shields_trader_and_a_save_retires_the_legacy_keys(monkeypatch, tmp_path):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    server = load_blackbox("dashboard.server")
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
+    monkeypatch.setenv("HOME", str(tmp_path))   # the app's agent discovery must not find the real ~/.hermes
+    _write_entry(LEGACY)
+    with TestClient(server.create_app(), base_url="http://127.0.0.1:9700") as client:
+        read = client.get("/api/settings").json()
+        token = client.get("/api/session").json()["token"]
+        saved = client.post("/api/settings", json={"shields": {"trader": {"enabled": True, "wallets": ["metamask"]}}},
+                            headers={"X-Blackbox-Token": token})
+
+    assert read["shields"]["trader"]["mode"]["enabled"] is True   # read from the legacy keys
+    assert "wallet_protection" not in read
+    assert saved.status_code == 200 and saved.json()["settings"]["shields"]["trader"]["mode"]["wallets"] == ["metamask"]
+    entry = _entry()
+    assert entry["shields"]["trader"] == {"enabled": True, "wallets": ["metamask"], "addresses": [OWN]}
+    assert not set(trader_mode.LEGACY_KEYS) & set(entry)

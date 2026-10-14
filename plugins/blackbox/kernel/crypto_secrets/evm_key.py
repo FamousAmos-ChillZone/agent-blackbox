@@ -31,7 +31,7 @@ import logging
 import re
 import threading
 from dataclasses import dataclass
-from typing import AbstractSet, Optional
+from typing import AbstractSet, Callable, Iterable, Optional
 
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
@@ -183,13 +183,24 @@ def scan_own_keys(text: str, addresses: AbstractSet[str]) -> OwnKeyScan:
 MARKER = "[REDACTED_WALLET_PRIVATE_KEY]"
 
 
+#: Where the operator's listed addresses come from. Trader Shield owns that setting and
+#: hands its reader in at import (:func:`read_listed_addresses_from`): the kernel never
+#: imports a shield. Until one does, no address is listed and nothing is derived.
+_address_source: Callable[[], Iterable[str]] = tuple
+
+
+def read_listed_addresses_from(source: Callable[[], Iterable[str]]) -> None:
+    """Read the operator's listed addresses from *source* (called with no arguments,
+    each time a 64-hex value needs checking) — the owning shield's setting reader."""
+    global _address_source
+    _address_source = source
+
+
 def _listed_addresses() -> frozenset[str]:
     """The operator's listed addresses (Trader Shield settings), or none when the config
     cannot be read — then no key can be proven, and nothing is derived."""
     try:
-        from .wallet_mode import current
-
-        return frozenset(current().addresses)
+        return frozenset(_address_source())
     except Exception as exc:  # fail open: redaction must never break a log write
         logger.warning("blackbox: listed wallet addresses unreadable (%s); own keys are not redacted", exc)
         return frozenset()

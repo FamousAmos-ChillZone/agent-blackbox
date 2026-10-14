@@ -18,7 +18,7 @@ import pytest
 
 from plugins.blackbox.detection import app_wallets, wallet_files
 from plugins.blackbox.detection.wallet_files import detect_wallet_files
-from plugins.blackbox.kernel.crypto_secrets import wallet_mode
+from plugins.blackbox.shields.trader import mode as trader_mode
 
 
 @pytest.fixture
@@ -97,15 +97,15 @@ def test_found_wallets_lists_app_wallets_by_kind(machine):
 
 
 def test_app_wallets_follow_the_wallet_ticks(machine):
-    only_exodus = wallet_mode.WalletProtection(enabled=True, wallets=("exodus",))
+    only_exodus = trader_mode.build(enabled=True, wallets=("exodus",))
     findings = detect_wallet_files("terminal", {"command": "tar czf home.tgz ~"})
-    kept = [f.fields["wallet"] for f in findings if only_exodus.allows_finding({"identifier": f.identifier, "fields": f.fields})]
+    kept = [f.fields["wallet"] for f in findings if trader_mode.allows_finding({"identifier": f.identifier, "fields": f.fields}, only_exodus)]
     assert kept == ["exodus"]
 
 
 def test_every_app_wallet_can_be_ticked():
     for wallet in app_wallets.APP_WALLETS:
-        assert wallet_files.wallet_id(wallet.name) in wallet_mode.SUPPORTED_WALLETS
+        assert wallet_files.wallet_id(wallet.name) in trader_mode.SUPPORTED_WALLETS
 
 
 def test_a_windows_command_naming_the_folder_by_its_variable_is_found(machine, monkeypatch):

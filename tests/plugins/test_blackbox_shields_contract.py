@@ -516,7 +516,7 @@ def test_a_corrupt_pack_leaves_the_registry_importable_and_the_other_packs_suppo
     assert states == {"metamask": "supported", "electrum": "supported", "exodus": "unavailable",
                       "vanished": "unavailable"}
     assert loaded.roots == () and len(loaded.health) == 1
-    assert importlib.reload(shields).all_shields() == ()
+    assert [shield.id for shield in importlib.reload(shields).all_shields()] == ["trader"]
 
 
 def test_a_loader_that_raises_leaves_the_shield_with_a_reason(tmp_path, monkeypatch):

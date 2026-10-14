@@ -26,7 +26,8 @@ from plugins.blackbox.guard import background as guard_background
 from plugins.blackbox.guard import hooks
 from plugins.blackbox.guard import reporting as guard_reporting
 from plugins.blackbox.kernel import config as config_mod
-from plugins.blackbox.kernel.crypto_secrets import seed_phrase, wallet_mode
+from plugins.blackbox.kernel.crypto_secrets import seed_phrase
+from plugins.blackbox.shields.trader import mode as trader_mode
 from plugins.blackbox.ruleset import Ruleset
 
 WORDS = seed_phrase.WORDLIST_FILE.read_text(encoding="ascii").split()
@@ -68,7 +69,7 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setattr(ruleset_mod, "get", lambda cfg=None: Ruleset())
     monkeypatch.setattr(guard_background, "_spawn_llm_review", lambda *a, **k: None)
     monkeypatch.setattr(guard_reporting, "DkgClient", lambda **k: (_ for _ in ()).throw(OSError("no node in tests")))
-    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=True))
+    monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=True))
     hooks._seen_api_findings.clear()
     return tmp_path / "bb"
 
@@ -130,7 +131,7 @@ def test_an_earlier_turn_is_not_reported_again(home):
 
 
 def test_nothing_is_recorded_while_trader_shield_is_off(home, monkeypatch):
-    monkeypatch.setattr(wallet_mode, "current", lambda: wallet_mode.WalletProtection(enabled=False))
+    monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=False))
     message = f"my seed: {phrase()}"
     hooks.on_pre_api_request(session_id="s5", turn_id="t1", model="m", user_message=message,
                              request_messages=[{"role": "user", "content": message}])

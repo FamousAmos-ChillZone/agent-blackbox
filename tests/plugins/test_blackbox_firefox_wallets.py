@@ -19,7 +19,7 @@ import pytest
 
 from plugins.blackbox.detection import firefox_extensions, wallet_files
 from plugins.blackbox.detection.wallet_files import detect_wallet_files
-from plugins.blackbox.kernel.crypto_secrets import wallet_mode
+from plugins.blackbox.shields.trader import mode as trader_mode
 
 METAMASK_UUID = "ef23dd6a-2006-436e-a3a0-6a52d309351c"
 PHANTOM_UUID = "343768ad-2ba9-4e3f-b661-cabb0410a556"
@@ -79,14 +79,14 @@ def test_a_folder_the_map_cannot_place_stays_protected(firefox, break_it):
         (firefox / "prefs.js").write_text('user_pref("extensions.webextensions.uuids", "{not json");\n', encoding="utf-8")
         uuid = METAMASK_UUID
     [finding] = detect_wallet_files("read_file", {"path": _store(firefox, uuid)})
-    assert finding.fields["wallet"] == wallet_mode.ANY_EXTENSION_WALLET
+    assert finding.fields["wallet"] == trader_mode.ANY_EXTENSION_WALLET
 
 
 def test_unticking_a_wallet_turns_off_its_firefox_protection_too(firefox):
-    only_phantom = wallet_mode.WalletProtection(enabled=True, wallets=("phantom",))
+    only_phantom = trader_mode.build(enabled=True, wallets=("phantom",))
     findings = detect_wallet_files("terminal", {"command": f"tar czf backup.tgz {firefox}"})
     kept = sorted(f.fields["wallet"] for f in findings
-                  if only_phantom.allows_finding({"identifier": f.identifier, "fields": f.fields}))
+                  if trader_mode.allows_finding({"identifier": f.identifier, "fields": f.fields}, only_phantom))
     assert kept == ["any-extension", "phantom"]   # MetaMask unticked: its Firefox folder is no longer guarded
 
 
@@ -116,7 +116,7 @@ def test_a_symlinked_prefs_js_in_a_folder_the_call_names_is_not_followed(tmp_pat
     profile.mkdir(parents=True)
     os.symlink(elsewhere / "prefs.js", profile / "prefs.js")
     [finding] = detect_wallet_files("read_file", {"path": _store(profile, METAMASK_UUID)})
-    assert finding.fields["wallet"] == wallet_mode.ANY_EXTENSION_WALLET
+    assert finding.fields["wallet"] == trader_mode.ANY_EXTENSION_WALLET
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows has no named pipes in the file system")
@@ -134,7 +134,7 @@ def test_a_named_pipe_as_prefs_js_in_a_folder_the_call_names_never_stalls_the_ch
     worker.join(1.0)
     assert not worker.is_alive(), "detect_wallet_files blocked on a prefs.js named by the call"
     [[finding]] = outcome
-    assert finding.fields["wallet"] == wallet_mode.ANY_EXTENSION_WALLET
+    assert finding.fields["wallet"] == trader_mode.ANY_EXTENSION_WALLET
 
 
 def test_the_map_cache_keeps_at_most_64_profiles(tmp_path, firefox, monkeypatch):
