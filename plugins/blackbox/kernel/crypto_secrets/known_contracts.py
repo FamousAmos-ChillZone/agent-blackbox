@@ -94,13 +94,15 @@ def _entry(address: Any, entry: Any) -> Optional[KnownContract]:
 @lru_cache(maxsize=1)
 def known_protocol_contracts() -> dict[str, KnownContract]:
     """``{lower-case address: KnownContract}`` from the shipped list, every entry checked
-    (see the module doc); empty when the file cannot be read. Cached for the process."""
+    (see the module doc); empty, with one WARNING, when the file is missing or cannot be
+    read or parsed (a nesting deep enough to exhaust the parser included). Cached for the
+    process, so the WARNING is logged once."""
     try:
         data = json.loads(KNOWN_CONTRACTS_FILE.read_text(encoding="utf-8-sig"))
         contracts = data["contracts"]
         if not isinstance(contracts, dict):
             raise TypeError("contracts is not an object")
-    except (OSError, ValueError, KeyError, TypeError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, RecursionError) as exc:
         logger.warning("blackbox: known_contracts.json could not be read (%s); no exchange router is exempt", exc)
         return {}
     out: dict[str, KnownContract] = {}
