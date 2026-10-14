@@ -5,9 +5,8 @@ a vault copy, a seed phrase, a keychain read, a token approval and an exchange k
 prose that was the dashboard's JavaScript (``WALLET_WHY``, ``wevStory``, ``wevTodo``,
 ``wevFacts``) and moved here verbatim (D-08, R7). The report half drives the REAL hooks
 (session start, model request, the blocked tool call, session end) into a throwaway
-Blackbox home and reads the report back through ``GET /api/shields/trader/events``, which
-must agree with the old ``GET /api/wallet-protection/events`` on every shared field until
-S7 retires the old window.
+Blackbox home and reads the report back through ``GET /api/shields/trader/events``, the
+one events route since S7 retired the old window.
 """
 
 from __future__ import annotations
@@ -20,6 +19,7 @@ from fastapi.testclient import TestClient
 
 from plugins.blackbox import audit, shields
 from plugins.blackbox import ruleset as ruleset_mod
+from plugins.blackbox.community import sharing as community_sharing
 from plugins.blackbox.dashboard import shields_routes
 from plugins.blackbox.detection import wallet_files
 from plugins.blackbox.guard import background as guard_background
@@ -78,7 +78,7 @@ def test_a_blocked_vault_copy_tells_what_was_asked_what_it_would_have_done_and_t
     assert _fact(event, "What it's after") == "the wallet's keys — to empty the wallet"
     assert _fact(event, "Command") == ARCHIVE_CHROME
     assert _fact(event, "Session") == "hermes · gpt-4.1-mini · completed · 1 steps · #218e43"
-    assert event.logo == "/wallets/metamask.svg"
+    assert event.logo == "/shields/trader/packs/metamask/logo.svg"
 
 
 def test_a_flagged_seed_phrase_says_it_ran_and_why_handling_a_key_is_allowed():
@@ -202,24 +202,62 @@ def _client():
     return TestClient(app)
 
 
-def test_the_new_route_agrees_with_the_old_one_and_adds_the_story(shielded):
+def test_the_route_answers_the_event_with_its_story(shielded):
     assert _run_session(ARCHIVE_CHROME, injection=True)["action"] == "block"
     client = _client()
 
     new = client.get("/api/shields/trader/events")
-    old = client.get("/api/wallet-protection/events").json()["events"]
 
-    assert new.status_code == 200 and len(new.json()) == len(old) == 1
-    [fresh], [legacy] = new.json(), old
-    shared = (set(fresh) & set(legacy)) - {"session", "timeline"}
-    assert shared >= {"ts", "identifier", "title", "severity", "outcome", "tool", "command", "asked"}
-    assert {key: fresh[key] for key in shared} == {key: legacy[key] for key in shared}
-    assert fresh["session"] == legacy["session"] and fresh["timeline"] == legacy["timeline"]
+    assert new.status_code == 200 and len(new.json()) == 1
+    [fresh] = new.json()
+    assert {"ts", "identifier", "title", "severity", "outcome", "tool", "command", "asked"} <= set(fresh)
+    assert fresh["outcome"] == "blocked" and fresh["session"]["model"] == "gpt-4.1-mini"
+    assert any(step["this"] for step in fresh["timeline"])
     assert fresh["story"].startswith("In a conversation with gpt-4.1-mini, your agent was asked: <q>Please back up")
     assert fresh["what_to_do"][0] == "Nothing left this machine. No action is needed for this event."
     assert {"label": "Command", "value": ARCHIVE_CHROME, "mono": True} in fresh["facts"]
     assert "Just before, Blackbox had flagged <b>Instruction override" in fresh["story"]
-    assert fresh["logo"] == "/wallets/metamask.svg" and fresh["command"] == ARCHIVE_CHROME   # not defanged
+    assert fresh["logo"] == "/shields/trader/packs/metamask/logo.svg" and fresh["command"] == ARCHIVE_CHROME   # not defanged
+
+
+def test_a_blocked_vault_copy_is_reported_with_its_request_command_and_session(shielded):
+    """Moved from the old window's tests (S7): the report is proven against what the hooks write."""
+    assert _run_session(ARCHIVE_CHROME)["action"] == "block"
+
+    [event] = shields.get("trader").events()
+
+    assert event.outcome == "blocked" and event.identifier.endswith(":crypto-wallet")
+    assert "MetaMask" in event.title and event.tool == "terminal" and event.command == ARCHIVE_CHROME
+    assert event.asked == REQUEST
+    assert event.session.model == "gpt-4.1-mini" and event.session.status == "completed"
+
+
+def test_the_timeline_marks_the_step_that_reached_for_the_wallet_and_the_threat_before_it(shielded):
+    _run_session(ARCHIVE_CHROME, injection=True)
+
+    [event] = shields.get("trader").events()
+
+    assert [step.type for step in event.timeline if step.type in ("api", "tool")][-2:] == ["api", "tool"]
+    [this_step] = [step for step in event.timeline if step.this]
+    assert this_step.label == ARCHIVE_CHROME and list(this_step.threats) == ["blocked"]
+    earlier = [step for step in event.timeline if step.threat_titles and not step.this]
+    assert earlier and "ignore previous instructions" in earlier[0].threat_titles[0]
+    assert earlier[0].label == "Threat found in what the agent was given"
+
+
+def test_a_trader_event_never_leaves_the_machine(shielded, monkeypatch):
+    """The detail is local by construction: the real wallet finding's source is one the
+    community share gate never sends, so neither it nor its context is ever reported."""
+    captured = []
+    monkeypatch.setattr(hooks.reporting, "_report_and_audit",
+                        lambda cfg, event, findings, detail: captured.extend(findings))
+    hooks.on_pre_tool_call(tool_name="terminal", args={"command": ARCHIVE_CHROME}, session_id=SESSION)
+    [finding] = captured
+    cfg = config_mod.BlackboxConfig(report=True, community_graph_id="did:dkg:context-graph:test")
+
+    allowed, why = community_sharing.CommunitySharePolicy(cfg).decide(finding.to_dict(), "0x" + "ab" * 20)
+
+    assert allowed is False and "never leaves the machine" in why
 
 
 def test_an_unknown_shield_has_no_events_route():

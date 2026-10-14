@@ -1835,7 +1835,7 @@ def create_app(*, manage_blackbox: bool = False):
 
     community_endpoints = community_routes.register_community_routes(app, community_read=_community_read, node_reachable=_node_reachable)
     sync_meter.register_sync_meter_routes(app, load_config=load_blackbox_config, node_reachable=_node_reachable, verified_rules=lambda cfg: _graph_source_count(ruleset.peek(cfg), "public"))
-    shields_routes.register(app, _swr)   # GET /api/shields, and the old wallet-protection panel until S7
+    shields_routes.register(app, _swr)   # GET /api/shields*, each shield page and its files
     @app.get("/api/threat")
     def threat(identifier: str = Query(..., min_length=1), tier: str = Query("public")) -> Any:
         """Full detail for ONE threat via a targeted point-lookup.

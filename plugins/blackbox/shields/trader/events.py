@@ -284,11 +284,7 @@ def _logo(kind: str, title: str, evidence: str) -> str:
     """The wallet's logo URL for a vault event whose pack ships a logo, else ""."""
     if kind != "vault":
         return ""
-    name = _named(title or evidence, "").lower().replace(" ", "")
-    for pack in trader_mode.wallet_packs():
-        if pack.logo is not None and pack.status == "supported" and pack.id == name:
-            return f"/wallets/{pack.id}.svg"
-    return ""
+    return trader_mode.logo_url(_named(title or evidence, "").lower().replace(" ", ""))
 
 
 def _event(threat: dict[str, Any], step: dict[str, Any], session: dict[str, Any], index: int,

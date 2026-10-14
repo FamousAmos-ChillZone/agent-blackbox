@@ -19,7 +19,7 @@
             "state": "ok",
             "text": "MetaMask · Chrome",
             "sub": "vault — protected — blocked if the agent reaches for it",
-            "logo": "/wallets/metamask.svg"
+            "logo": "/shields/trader/packs/metamask/logo.svg"
           },
           {
             "icon": "✓",
@@ -98,6 +98,22 @@
           }
         ]
       }
+    ],
+    "name": "Trader Shield",
+    "tagline": "Keeps your AI agent away from your crypto wallets, seed phrases and keys.",
+    "beta": true,
+    "page": "/shields/trader",
+    "claims": [
+      "secret:seed-phrase",
+      "secret:wallet-private-key",
+      "secret:solana-private-key",
+      "secret:bitcoin-private-key",
+      "secret:exchange-api-key",
+      "secret:token-approval-drainer",
+      "secret:token-approval-unlimited",
+      "secret:token-approval-unchecked-spender",
+      "*:crypto-wallet",
+      "*:macos-keychain"
     ]
   }
 ]

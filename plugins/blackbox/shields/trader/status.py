@@ -99,7 +99,6 @@ def _found_section(active: ShieldMode, allows: Gate, block: bool) -> StatusSecti
     """One row per WALLET (protected in every browser it is in), listing the browsers."""
     on = _SECURED if block else _WATCHED
     guard = "protected — blocked if the agent reaches for it" if block else "watched — flagged, not blocked (audit mode)"
-    logos = {pack.id for pack in trader_mode.wallet_packs() if pack.status == "supported" and pack.logo is not None}
     groups: dict[str, dict[str, Any]] = {}
     for found in found_wallets():
         group = groups.setdefault(found["id"], {"wallet": found["wallet"], "browsers": [], "areas": [], "profiles": 0})
@@ -119,7 +118,7 @@ def _found_section(active: ShieldMode, allows: Gate, block: bool) -> StatusSecti
         rows.append(StatusRow(icon=icon, state=state,
                               text=log_safe(f"{name} · {', '.join(group['browsers'])}", 160),
                               sub=log_safe(f"{where} — " + (guard if protected else "not selected in Settings, so not protected"), 240),
-                              logo=f"/wallets/{wallet_id}.svg" if wallet_id in logos else ""))
+                              logo=trader_mode.logo_url(wallet_id)))
     if not rows:
         rows.append(StatusRow(*_NOT_PROTECTED, text="No wallet found on this machine.",
                               sub="Blackbox checks the usual browser and wallet-app folders by name every few minutes; "
