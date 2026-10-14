@@ -224,3 +224,39 @@ def test_a_pinned_dkg_package_with_the_pinned_checksum_goes_on_to_install(tmp_pa
 
     assert "checksum matches the pinned one" in result.stdout
     assert any(call.startswith("install") and "@origintrail-official/dkg@10.0.23" in call for call in result.calls)
+
+
+# -- the Windows installer: the same contract (parsed by its own toolchain in CI, LES-037) --------
+
+INSTALL_PS1 = INSTALL_SH.with_suffix(".ps1")
+
+
+def _ps1_function(name: str) -> str:
+    match = re.search(rf"^function {re.escape(name)}\b.*?^\}}", INSTALL_PS1.read_text(encoding="utf-8"),
+                      re.MULTILINE | re.DOTALL)
+    assert match is not None, f"{name} not found"
+    return match.group(0)
+
+
+def test_windows_setup_only_skips_the_hermes_steps():
+    main = _ps1_function("Main")
+    setup_branch = main.split("if ($SetupOnly) {", 1)[1].split("} else {", 1)[0]
+
+    assert "Use-RunningHermes" in setup_branch and "Test-NodeJs" in setup_branch
+    assert not any(step in setup_branch for step in ("Test-Git", "Resolve-Python", "Resolve-Repo", "Install-PythonEnv"))
+    assert main.index("Install-BlackboxCommand") > main.index("} else {")   # after both branches
+
+
+def test_windows_helpers_come_from_the_plugin_in_setup_only_mode():
+    text = INSTALL_PS1.read_text(encoding="utf-8").replace(_ps1_function("Get-BlackboxHelper"), "")
+
+    assert 'Join-Path $RepoDir "scripts' not in text   # only the helper's own curl default builds it
+    assert "if ($env:BLACKBOX_HELPER_DIR) { return Join-Path $env:BLACKBOX_HELPER_DIR $Name }" in _ps1_function("Get-BlackboxHelper")
+
+
+def test_windows_keeps_sharing_on_and_pins_the_dkg_checksum():
+    text = INSTALL_PS1.read_text(encoding="utf-8")
+
+    assert 'os.path.isfile(os.path.join(checkout, "plugin.yaml"))' in text
+    assert "$(if ($env:BLACKBOX_PLUGIN_DIR) { $env:BLACKBOX_PLUGIN_DIR } else { $RepoDir })" in text
+    assert "if ($published -ne $DkgIntegrity)" in _ps1_function("Install-BlackboxDkgPackage")

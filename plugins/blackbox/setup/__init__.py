@@ -83,7 +83,7 @@ def setup_environment(base: dict[str, str] | None = None) -> dict[str, str]:
 def _installer_command(store: str) -> list[str]:
     if os.name == "nt":
         return ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                str(HERE / "blackbox-install.ps1"), "-Store", store]
+                str(HERE / "blackbox-install.ps1"), "-StoreBackend", store]
     return ["bash", str(HERE / "blackbox-install.sh"), "--store", store]
 
 

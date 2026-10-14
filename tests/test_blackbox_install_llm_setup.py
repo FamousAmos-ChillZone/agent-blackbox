@@ -498,7 +498,8 @@ def test_windows_installer_migrates_stale_community_sharing_opt_in() -> None:
     assert 'for k, v in {"report": False, "daily_report_limit": 20}.items()' not in writer
     assert 'if blackbox.get("report") is True and not _consent_in_force(repo_dir):' in writer
     assert 'if blackbox.get("daily_report_limit") in (0, "0", 20, "20")' in writer
-    assert "$GraphPeerId $RepoDir" in writer
+    # the checkout for a curl install, the plugin folder in setup-only mode (`blackbox setup`)
+    assert "$GraphPeerId $(if ($env:BLACKBOX_PLUGIN_DIR) { $env:BLACKBOX_PLUGIN_DIR } else { $RepoDir })" in writer
 
 
 def test_hermes_setup_defaults_to_reuse_without_prompting() -> None:
