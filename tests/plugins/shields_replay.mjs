@@ -7,7 +7,8 @@
  *
  *   (each load's first /api/shields answers [], as the server's cache does before it fills)
  *   engaged  — the captured payload: the card is drawn, its banner exists but stays hidden; a
- *              recent event opens the events window; Settings shows the shield's group;
+ *              recent event opens the events window; Settings shows the shield's group, and a
+ *              save sends only the "lines" entries the field's pattern accepts;
  *   off      — the same payload with the shield off: the banner shows, the card hides;
  *   sparse   — payloads missing every optional field (and a non-list): nothing throws.
  *
@@ -94,6 +95,19 @@ for (const vp of viewports) {
   found.settings = await shown('[data-shield-settings="trader"]');
   found.settingsInputs = await page.locator('[data-shield-settings="trader"] input[data-field], [data-shield-settings="trader"] textarea[data-field]').count();
   checks.push(await overflow("settings"));
+  // A "lines" field never sends a line its pattern refuses: type one accepted and one refused line,
+  // save, and read what the real POST /api/settings carried.
+  const posted = page.waitForRequest((req) => req.method() === "POST" && /\/api\/settings$/.test(req.url()), { timeout: 15000 });
+  const linesKey = await page.evaluate(() => {
+    const box = document.querySelector('[data-shield-settings="trader"] textarea[data-field]');
+    box.value = "0x" + "a".repeat(40) + "\nnot-an-address";
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+    return box.getAttribute("data-field");
+  });
+  found.linesNote = await shown(`[data-shield-settings="trader"] [data-lines-note="${linesKey}"]`);
+  await page.evaluate(() => document.getElementById("set-save").click());
+  found.linesSent = ((await posted).postDataJSON().shields?.trader ?? {})[linesKey] ?? null;
+  await page.waitForTimeout(800);
   await page.evaluate(() => document.getElementById("set-cancel").click());
 
   // off: the banner shows and the card hides

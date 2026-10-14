@@ -237,6 +237,9 @@ def test_the_captured_payload_replays_clean_at_desktop_and_phone_widths(served, 
         assert found["windowAfterEscape"]["hidden"]
         assert not found["settings"]["hidden"] and found["settingsInputs"] >= 3, (width, found["settings"])
         assert "engage trader shield" in found["settings"]["text"].lower() and "coming soon" in found["settings"]["text"].lower()
+        # A refused line is named as left out, and the save carries only the accepted one.
+        assert "1 line is not accepted" in found["linesNote"]["text"], (width, found["linesNote"])
+        assert found["linesSent"] == ["0x" + "a" * 40], (width, found["linesSent"])
         assert not found["offBanner"]["hidden"] and "engage trader shield" in found["offBanner"]["text"].lower()
         assert found["offCard"]["hidden"]
         assert found["sparse"] == [0, 1, 1, 0], (width, found["sparse"])
