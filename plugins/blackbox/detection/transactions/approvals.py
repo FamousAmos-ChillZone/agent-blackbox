@@ -5,31 +5,38 @@ on a token, or ``setApprovalForAll(operator, true)`` on an NFT collection, after
 which the spender moves the tokens whenever it likes. An agent can be steered
 into sending exactly that ("claim your airdrop: approve this contract").
 
-What is recognised, in the three ways an agent sends a transaction:
+What is recognised — Foundry ``cast`` and ``spl-token`` command lines, raw calldata
+however its hex is written, and ethers / web3 / viem script code, in every spelling of
+the signature and of "unlimited" — is listed in :mod:`.approval_forms`.
 
-* Foundry: ``cast send|mktx|calldata <token> "approve(address,uint256)" <spender> <amount>``
-  (also ``increaseAllowance`` and ``setApprovalForAll(address,bool)``);
-* raw calldata anywhere in the call: selectors ``0x095ea7b3`` (approve),
-  ``0x39509351`` (increaseAllowance), ``0xa22cb465`` (setApprovalForAll) — the
-  bytes ``cast calldata`` produces (Foundry 1.8.5, checked on the trader bench);
-* script code (ethers / web3 / viem): ``.approve(<spender>, MaxUint256)`` and
-  ``setApprovalForAll(<operator>, true)``.
-
-What it does with one:
+What it does with one (a permit — an approval by signature — and a Solana token
+delegate are treated exactly like an approval):
 
 * the spender or operator is a wallet or contract the VERIFIED threat graph lists
   (looked up like any indicator) → critical, blocks in block mode; listed only by
-  community reports → high, flagged (community findings never block);
+  community reports → high, flagged — community findings never block, at ANY
+  ``block_severity`` (the finding's kind is ``flag-only``, KI-385);
 * otherwise an UNLIMITED approval (2^256−1, ``MaxUint256``, ``type(uint256).max``,
   ``2**256-1``, ``cast max-uint``) or an approve-all → medium, flagged so the operator
-  sees it: DeFi bots approve routers this way every day, so it must not block;
+  sees it: DeFi bots approve routers this way every day, so it must not block
+  (``flag-only`` too, even with ``block_severity`` lowered to medium);
+* a spender written as an ENS name (``drainer.eth``) → medium, flagged: the name
+  cannot be resolved to an address offline, so it cannot be looked up — saying so
+  beats saying nothing;
 * a limited approval to an unknown spender → nothing;
 * an approval to a well-known exchange router (Uniswap, SushiSwap, PancakeSwap, 1inch —
-  ``kernel/crypto_secrets/known_contracts.json``) → nothing, whatever a feed says about it:
-  that is ordinary trading (KI-370: the verified graph lists seven routers as drainers).
+  ``kernel/crypto_secrets/known_contracts.json``) on a chain it is a router on → nothing,
+  whatever a feed says about it: that is ordinary trading (KI-370: the verified graph
+  lists seven routers as drainers). The chain is the one the call names (``--chain``,
+  the RPC host, a typed-data ``chainId`` — :mod:`.chains`). Naming ANOTHER chain, the
+  address is treated like any spender. Naming none, a router deployed at that address
+  on every major chain stays exempt; for the others the rules cannot tell which chain
+  it is, so a feed listing or an unlimited amount flags (medium) and never blocks (KI-388).
 
 Local-only (``source="secret"``): the finding names the kind of approval, never
-the operator's addresses.
+the operator's addresses. ``source="secret"`` alone would let the hook block any
+of them at the operator's threshold, so only the verified-drainer finding leaves
+``kind`` unset; the hook's blocking rule skips ``flag-only``.
 
 Usage::
 
@@ -39,86 +46,25 @@ Usage::
 
 from __future__ import annotations
 
-import re
-import shlex
-from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from .. import ioc_detection
-from ..finding import Finding, _rule_source
+from ..finding import KIND_FLAG_ONLY, Finding, _rule_source
 from ..injection_detection import injection_scan_text
 from ...kernel import crypto_secrets, threat_ids
+from ...kernel.crypto_secrets import RouterMatch
+from .approval_calls import is_ens_name
+from .chains import chain_named
+from .approval_forms import Approval, approvals_in
 
-MAX_UINT256 = 2 ** 256 - 1
-#: An amount this large is unlimited in practice (drainers use MAX; nobody holds 2^255).
-_UNLIMITED_FLOOR = 2 ** 255
-_MAX_WORDS = re.compile(r"MaxUint256|MAX_UINT(?:256)?|maxUint256|type\(uint256\)\.max|2\s*\*\*\s*256\s*-\s*1|\$\(cast max-uint\)|constants\.MaxUint256")
-_ADDRESS = r"0x[0-9a-fA-F]{40}"
-_SIGNATURES = {"approve(address,uint256)": "approve", "increaseallowance(address,uint256)": "approve",
-               "setapprovalforall(address,bool)": "approve-all"}
-_SELECTORS = re.compile(r"0x(095ea7b3|39509351|a22cb465)([0-9a-fA-F]{64})([0-9a-fA-F]{64})")
-_SELECTOR_KIND = {"095ea7b3": "approve", "39509351": "approve", "a22cb465": "approve-all"}
-_SCRIPT_APPROVE = re.compile(rf"\.approve\(\s*['\"]?({_ADDRESS})['\"]?\s*,\s*([^)]+)\)")
-_SCRIPT_APPROVE_ALL = re.compile(rf"setApprovalForAll\(\s*['\"]?({_ADDRESS})['\"]?\s*,\s*(true|True|1)\s*\)")
-
-
-@dataclass(frozen=True)
-class Approval:
-    """One approval a call would send: who may spend (lower-case address), whether it
-    is unlimited, and ``kind`` — ``approve`` (an amount) or ``approve-all`` (every NFT)."""
-
-    spender: str
-    unlimited: bool
-    kind: str
-
-
-def _amount_unlimited(text: str) -> bool:
-    text = text.strip().strip("'\"")
-    if _MAX_WORDS.search(text):
-        return True
-    try:
-        return int(text, 0) >= _UNLIMITED_FLOOR
-    except ValueError:
-        return False
-
-
-def _from_cast(words: list[str]) -> list[Approval]:
-    out: list[Approval] = []
-    for index, word in enumerate(words):
-        kind = _SIGNATURES.get(word.replace(" ", "").lower())
-        if not kind or index + 2 >= len(words) or not re.fullmatch(_ADDRESS, words[index + 1]):
-            continue
-        value = words[index + 2]
-        written = " ".join(words[index + 2:index + 4])   # "$(cast max-uint)" splits into two words
-        unlimited = value.lower() in ("true", "1") if kind == "approve-all" else (
-            _amount_unlimited(value) or bool(_MAX_WORDS.search(written)))
-        out.append(Approval(words[index + 1].lower(), unlimited, kind))
-    return out
-
-
-def approvals_in(text: str) -> list[Approval]:
-    """Every token approval *text* would send (see the module doc), each once."""
-    if not text:
-        return []
-    try:
-        words = shlex.split(text, posix=True)
-    except ValueError:
-        words = text.split()
-    found = _from_cast(words)
-    for selector, spender_word, amount_word in _SELECTORS.findall(text):
-        kind = _SELECTOR_KIND[selector.lower()]
-        amount = int(amount_word, 16)
-        found.append(Approval("0x" + spender_word[-40:].lower(), amount == 1 if kind == "approve-all" else amount >= _UNLIMITED_FLOOR, kind))
-    for spender, amount in _SCRIPT_APPROVE.findall(text):
-        found.append(Approval(spender.lower(), _amount_unlimited(amount), "approve"))
-    for operator, _flag in _SCRIPT_APPROVE_ALL.findall(text):
-        found.append(Approval(operator.lower(), True, "approve-all"))
-    return list(dict.fromkeys(found))
+__all__ = ["Approval", "approvals_in", "detect_token_approvals"]
 
 
 def _listed_by(ruleset: Any, address: str) -> str:
     """Who lists *address* as malicious: ``"public"`` (the verified graph), another rule
-    source (community), or ``""`` for nobody."""
+    source (community), or ``""`` for nobody (or for a spender that is no address)."""
+    if not address or is_ens_name(address):
+        return ""
     identifiers = [threat_ids.ioc_identifier("wallet", address), threat_ids.ioc_identifier("contract", address)]
     sources = {_rule_source(rule) for rule in ioc_detection.ioc_rules(ruleset, identifiers).values()}
     return "public" if "public" in sources else (next(iter(sources)) if sources else "")
@@ -126,34 +72,50 @@ def _listed_by(ruleset: Any, address: str) -> str:
 
 def detect_token_approvals(tool_name: str, args: Any, ruleset: Any) -> list[Finding]:
     """One finding for the riskiest approval in this call (see the module doc)."""
-    approvals = [approval for approval in approvals_in(injection_scan_text(args))
-                 if not crypto_secrets.protocol_contract(approval.spender)]   # STOPGAP KI-370, see known_contracts
+    text = injection_scan_text(args)
+    approvals = approvals_in(text)
     if not approvals:
         return []
-    listed = {_listed_by(ruleset, approval.spender) for approval in approvals} - {""}
-    unlimited = any(approval.unlimited for approval in approvals)
+    chain = chain_named(text)
+    # STOPGAP KI-370 (see known_contracts): a router on its own chain is ordinary trading.
+    # On a chain the call does not name, a feed's listing of it may be that stale entry:
+    # it can flag, never block (KI-388).
+    routers = {approval: crypto_secrets.router_match(approval.spender, chain) for approval in approvals}
+    approvals = [approval for approval in approvals if routers[approval] is not RouterMatch.ON_ITS_CHAIN]
+    checked = [approval for approval in approvals if routers[approval] is not RouterMatch.CHAIN_UNKNOWN]
+    listed = {_listed_by(ruleset, approval.spender) for approval in checked} - {""}
+    unchecked = any(is_ens_name(approval.spender) or (routers[approval] is RouterMatch.CHAIN_UNKNOWN
+                                                      and _listed_by(ruleset, approval.spender))
+                    for approval in approvals)
     finding: Optional[Finding] = None
     if "public" in listed:
         finding = _finding(tool_name, "token-approval-drainer", "critical",
                            "Token approval to a known wallet drainer")
     elif listed:
         finding = _finding(tool_name, "token-approval-drainer", "high",
-                           "Token approval to an address community reports call a drainer")
-    elif unlimited:
+                           "Token approval to an address community reports call a drainer", KIND_FLAG_ONLY)
+    elif any(approval.unlimited for approval in approvals):
         finding = _finding(tool_name, "token-approval-unlimited", "medium",
-                           "Unlimited token approval (the spender can move every token, any time)")
+                           "Unlimited token approval (the spender can move every token, any time)", KIND_FLAG_ONLY)
+    elif unchecked:
+        finding = _finding(tool_name, "token-approval-unchecked-spender", "medium",
+                           "Token approval to a spender Blackbox cannot check (an ENS name, or an exchange "
+                           "router on a chain the call does not name)", KIND_FLAG_ONLY)
     return [finding] if finding else []
 
 
-def _finding(tool_name: str, kind: str, severity: str, title: str) -> Finding:
+def _finding(tool_name: str, rule: str, severity: str, title: str, kind: Optional[str] = None) -> Finding:
+    """The finding for *rule* (``token-approval-…``); *kind* ``flag-only`` keeps it from
+    ever blocking — only a verified-drainer finding is built without it."""
     return Finding(
-        identifier=f"secret:{kind}",
+        identifier=f"secret:{rule}",
         category="secret",
         severity=severity,
         title=title,
         tool_name=tool_name or "",
-        matched=kind,
-        evidence=kind,
+        matched=rule,
+        evidence=rule,
         confirmed=False,
-        source="secret",   # local-only; a verified-drainer match blocks in block mode
+        source="secret",   # local-only, never shared
+        kind=kind,
     )

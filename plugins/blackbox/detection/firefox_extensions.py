@@ -26,26 +26,30 @@ import logging
 import os
 import re
 import threading
-from typing import Dict, Optional, Tuple
+from collections import OrderedDict
+from typing import Optional
+
+from ..kernel.bounded_files import read_small_text
 
 logger = logging.getLogger(__name__)
 
 #: prefs.js is a few KB to a few hundred KB; anything far larger is not a real one.
 _MAX_PREFS_BYTES = 8 * 1024 * 1024
+#: Profiles whose map is kept; a machine has a handful, so 64 is generous.
+_MAX_PROFILES = 64
 _UUIDS_PREF = re.compile(r'user_pref\("extensions\.webextensions\.uuids",\s*"((?:[^"\\]|\\.)*)"\);')
 
 
 def _read_map(prefs_path: str) -> Optional[dict[str, str]]:
     """``{uuid: add-on id}`` from one prefs.js, or None when it cannot be read."""
+    # The profile folder comes from a path in the agent's own call, so a symlinked prefs.js is refused.
+    text = read_small_text(prefs_path, _MAX_PREFS_BYTES, nofollow=True)
+    match = _UUIDS_PREF.search(text) if text is not None else None
+    if not match:
+        return None
     try:
-        if os.path.getsize(prefs_path) > _MAX_PREFS_BYTES:
-            return None
-        with open(prefs_path, encoding="utf-8-sig", errors="replace") as handle:
-            match = _UUIDS_PREF.search(handle.read())
-        if not match:
-            return None
         mapping = json.loads(json.loads('"' + match.group(1) + '"'))   # a JSON object stored as a JS string
-    except (OSError, ValueError) as exc:
+    except ValueError as exc:
         logger.debug("blackbox: Firefox extension map unreadable at %s: %s", prefs_path, exc)
         return None
     if not isinstance(mapping, dict):
@@ -54,11 +58,14 @@ def _read_map(prefs_path: str) -> Optional[dict[str, str]]:
 
 
 class _PrefsMaps:
-    """Each profile's map, re-read only when its prefs.js changes. One lock."""
+    """Each profile's map, re-read only when its prefs.js changes. One lock.
+
+    Least-recently-used, at most :data:`_MAX_PROFILES` profiles: the keys come from
+    folder names in the agent's own calls, so the cache must not grow with them."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._cache: dict[str, tuple[float, Optional[dict[str, str]]]] = {}
+        self._cache: OrderedDict[str, tuple[float, Optional[dict[str, str]]]] = OrderedDict()
 
     def get(self, profile_dir: str) -> Optional[dict[str, str]]:
         prefs_path = os.path.join(profile_dir, "prefs.js")
@@ -69,10 +76,14 @@ class _PrefsMaps:
         with self._lock:
             cached = self._cache.get(prefs_path)
             if cached and cached[0] == mtime:
+                self._cache.move_to_end(prefs_path)
                 return cached[1]
         mapping = _read_map(prefs_path)
         with self._lock:
             self._cache[prefs_path] = (mtime, mapping)
+            self._cache.move_to_end(prefs_path)
+            while len(self._cache) > _MAX_PROFILES:
+                self._cache.popitem(last=False)
         return mapping
 
     def reset(self) -> None:

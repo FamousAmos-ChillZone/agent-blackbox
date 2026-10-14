@@ -145,3 +145,41 @@ def test_an_explicit_mode_still_wins(tmp_path: Path) -> None:
 def test_a_pm_checkout_never_reuses_a_kept_venv() -> None:
     body = _function("install_python_env")
     assert '[ ! -x "$REPO_DIR/scripts/run-in-hermes-env" ]' in body.split("ensure_web_extra")[0]
+
+
+# --- a failed Hermes setup never leaves a half-built install (2026-10-13) ----
+# On an upgraded bench setup-hermes.sh failed once (launcher publication) and the
+# installer fell back to the old minimal venv/, built for the previous Hermes; attach,
+# the reviewer check and the sync then all failed. A pm checkout retries, then stops.
+
+def _run_install_python_env(tmp_path: Path, setup_exit_codes: list[int]) -> subprocess.CompletedProcess[str]:
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    runner = repo / "scripts" / "run-in-hermes-env"
+    runner.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    runner.chmod(0o755)
+    calls = tmp_path / "calls"
+    codes = " ".join(str(code) for code in setup_exit_codes)
+    (repo / "setup-hermes.sh").write_text(
+        f'n=$(wc -l < "{calls}" 2>/dev/null || echo 0); echo x >> "{calls}"\n'
+        f'set -- {codes}\nshift "$n"\nexit "${{1:-0}}"\n', encoding="utf-8")
+    body = (_function("install_python_env") + "\n" + _function("use_hermes_selected_venv") + "\n"
+            + 'ok() { echo "OK $*"; }; err() { echo "ERR $*"; }; ensure_web_extra() { :; }\n'
+            + 'minimal_python_env() { echo "FELL BACK TO MINIMAL VENV"; }\n'
+            + f'REPO_DIR="{repo}"\ninstall_python_env; echo "RETURNED"')
+    return subprocess.run(["bash", "-c", "set -uo pipefail\nstep() { :; }\nwarn() { echo \"WARN $*\"; }\nheading() { :; }\n" + body],
+                          capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"}, check=False)
+
+
+def test_a_transient_setup_failure_is_retried(tmp_path: Path) -> None:
+    result = _run_install_python_env(tmp_path, [1, 0])
+
+    assert "second try" in result.stdout and "RETURNED" in result.stdout
+    assert "FELL BACK" not in result.stdout
+
+
+def test_a_setup_that_fails_twice_stops_the_install(tmp_path: Path) -> None:
+    result = _run_install_python_env(tmp_path, [1, 1])
+
+    assert result.returncode == 1 and "failed twice" in result.stdout
+    assert "FELL BACK" not in result.stdout and "RETURNED" not in result.stdout

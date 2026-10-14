@@ -11,6 +11,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
+#: ``Finding.kind`` of a finding that may flag but must never block, whatever its
+#: ``source`` and severity and whatever ``block_severity`` the operator chose — e.g.
+#: a token approval to an address only community reports list, or an unlimited
+#: approval a trading bot sends every day (KI-385). The hook's blocking rule reads it.
+KIND_FLAG_ONLY = "flag-only"
+
 
 @dataclass
 class Finding:
@@ -46,7 +52,7 @@ class Finding:
     evidence: str = ""
     confirmed: bool = True
     source: str = "public"  # public | community | heuristic | custom
-    # malware | vulnerability | historical; vulnerability/historical never block
+    # malware | vulnerability | historical | flag-only; only malware/None may block
     kind: Optional[str] = None
     fields: dict[str, Any] = field(default_factory=dict)
     rule_subject: str = ""

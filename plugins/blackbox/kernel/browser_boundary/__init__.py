@@ -7,7 +7,12 @@ same-origin. Two structural gates, enforced in ONE middleware:
 
 1. Host + Origin allowlist — only the app's genuine host names pass. The
    Host header defeats DNS rebinding; an Origin, when present (cross-site and
-   ``fetch()`` requests carry one), must name an allowed host too.
+   ``fetch()`` requests carry one), must name an allowed host too AND the port
+   the request arrived on (KI-390): another server on the same loopback
+   (``http://127.0.0.1:8000``, a dev server, a hostile local page) is a
+   different origin, not the app. The port compared is the Host header's (the
+   browser writes the port it connected to there); a header without one means
+   the default port of the Origin's scheme.
 2. A change token on every state-changing request (anything but GET, HEAD,
    OPTIONS), read from the ``X-Blackbox-Token`` header and compared in
    constant time.
@@ -27,8 +32,9 @@ Usage::
     # per session, on a MagicDNS host:
     BrowserBoundary({"node.tailnet.ts.net"}, sessions.token_for_request).install(app)
 
-Host names are compared case-insensitively with any ``:port`` removed; IPv6
-literals are listed in brackets (``[::1]``), as they appear in a Host header.
+Host names are compared case-insensitively; IPv6 literals are listed in
+brackets (``[::1]``), as they appear in a Host header. The allowlist holds
+names only — the port check compares an Origin with the Host header.
 """
 
 from __future__ import annotations
@@ -39,6 +45,20 @@ from urllib.parse import urlsplit
 
 TOKEN_HEADER = "x-blackbox-token"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+_DEFAULT_PORTS = {"http": "80", "https": "443"}
+
+
+def _split_authority(value: str) -> tuple[str, str]:
+    """``(host, port)`` of a ``host[:port]`` authority, host lower-case; an IPv6 literal
+    keeps its brackets (``[::1]``) as Host headers write it; port ``""`` when absent."""
+    value = (value or "").strip().lower()
+    if value.startswith("["):
+        host, _, rest = value.partition("]")
+        return host + "]", rest[1:] if rest.startswith(":") else ""
+    host, _, port = value.partition(":")
+    return host, port
+
 
 TokenLookup = Callable[[Any], Optional[str]]
 """``token_for(request) -> expected token``, or None/"" when the request has none."""
@@ -57,8 +77,17 @@ class BrowserBoundary:
 
     def allows_host(self, value: str) -> bool:
         """True when a Host header (or an Origin's netloc) names an allowed host."""
-        host = (value or "").split(":", 1)[0].strip().lower()
-        return host in self._allowed_hosts
+        return _split_authority(value)[0] in self._allowed_hosts
+
+    def allows_origin(self, origin: str, host_header: str) -> bool:
+        """True when *origin* names an allowed host on the same port as the request's
+        *host_header* — the app's own origin (see the module doc)."""
+        parts = urlsplit(origin)
+        origin_host, origin_port = _split_authority(parts.netloc)
+        if origin_host not in self._allowed_hosts:
+            return False
+        default = _DEFAULT_PORTS.get(parts.scheme.lower(), "")
+        return (origin_port or default) == (_split_authority(host_header)[1] or default)
 
     def install(self, app: Any) -> None:
         """Register the boundary as HTTP middleware on *app* (a FastAPI app)."""
@@ -72,7 +101,7 @@ class BrowserBoundary:
                 return JSONResponse({"error": "forbidden host"}, status_code=403)
             origin = request.headers.get("origin", "")
             # Same-origin UI requests carry an allowed origin or none at all.
-            if origin and not boundary.allows_host(urlsplit(origin).netloc):
+            if origin and not boundary.allows_origin(origin, request.headers.get("host", "")):
                 return JSONResponse({"error": "forbidden origin"}, status_code=403)
             if request.method not in SAFE_METHODS and not boundary._token_matches(request):
                 return JSONResponse(
