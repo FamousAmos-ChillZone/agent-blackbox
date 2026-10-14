@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+import threading
 import time
 
 import pytest
@@ -100,3 +102,60 @@ def test_the_map_is_read_again_when_firefox_changes_it(firefox):
     os.utime(firefox / "prefs.js", (future, future))
     [finding] = detect_wallet_files("read_file", {"path": _store(firefox, OTHER_UUID)})
     assert finding.fields["wallet"] == "metamask"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symlinks need extra rights on Windows")
+def test_a_symlinked_prefs_js_in_a_folder_the_call_names_is_not_followed(tmp_path, firefox):
+    """A folder named by the call cannot lend itself another file's map: a symlinked prefs.js is
+    not read, so its folder is "could not tell" and stays protected, even though the map behind
+    the link would call this add-on not a wallet."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    _write_prefs(elsewhere, {"formautofill@mozilla.org": METAMASK_UUID})
+    profile = tmp_path / "anywhere" / "x.profile"
+    profile.mkdir(parents=True)
+    os.symlink(elsewhere / "prefs.js", profile / "prefs.js")
+    [finding] = detect_wallet_files("read_file", {"path": _store(profile, METAMASK_UUID)})
+    assert finding.fields["wallet"] == wallet_mode.ANY_EXTENSION_WALLET
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no named pipes in the file system")
+def test_a_named_pipe_as_prefs_js_in_a_folder_the_call_names_never_stalls_the_check(tmp_path, firefox):
+    """The check runs in a thread with a join timeout so a regression fails instead of hanging the suite.
+    A map that cannot be read is "could not tell", so the folder stays protected."""
+    profile = tmp_path / "anywhere" / "x.profile"
+    profile.mkdir(parents=True)
+    os.mkfifo(profile / "prefs.js")
+    outcome = []
+    worker = threading.Thread(
+        target=lambda: outcome.append(detect_wallet_files("read_file", {"path": _store(profile, METAMASK_UUID)})),
+        daemon=True)
+    worker.start()
+    worker.join(1.0)
+    assert not worker.is_alive(), "detect_wallet_files blocked on a prefs.js named by the call"
+    [[finding]] = outcome
+    assert finding.fields["wallet"] == wallet_mode.ANY_EXTENSION_WALLET
+
+
+def test_the_map_cache_keeps_at_most_64_profiles(tmp_path, firefox, monkeypatch):
+    """Profile folders come from the agent's calls, so the cache is least-recently-used and bounded."""
+    profiles = []
+    for number in range(firefox_extensions._MAX_PROFILES + 6):
+        profile = tmp_path / "profiles" / f"p{number}"
+        profile.mkdir(parents=True)
+        _write_prefs(profile, {"webextension@metamask.io": METAMASK_UUID})
+        profiles.append(profile)
+    reads = []
+    real_read_map = firefox_extensions._read_map
+    monkeypatch.setattr(firefox_extensions, "_read_map", lambda path: reads.append(path) or real_read_map(path))
+    maps = firefox_extensions.PREFS_MAPS
+    maps.get(str(profiles[0]))
+    for profile in profiles[1:]:
+        maps.get(str(profile))
+        maps.get(str(profiles[0]))      # kept in use, so never the one evicted
+    cached = set(maps._cache)
+    assert len(cached) == firefox_extensions._MAX_PROFILES == 64
+    assert reads.count(str(profiles[0] / "prefs.js")) == 1   # every later get was a cache hit
+    assert str(profiles[0] / "prefs.js") in cached
+    assert str(profiles[1] / "prefs.js") not in cached
+    assert str(profiles[-1] / "prefs.js") in cached
