@@ -37,6 +37,7 @@ from typing import Any, Iterable, Mapping, Optional
 from ..detection import Finding
 from ..kernel.settings import SettingsValidator
 from .contract import (
+    BrowserRoot,
     Pack,
     Shield,
     ShieldEvent,
@@ -50,6 +51,7 @@ from . import trader
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "BrowserRoot",
     "Pack",
     "Shield",
     "ShieldEvent",
@@ -59,6 +61,7 @@ __all__ = [
     "all_shields",
     "allows",
     "attack_table",
+    "browser_roots",
     "check",
     "events",
     "get",
@@ -195,6 +198,13 @@ def loaded_packs(shield_id: str) -> tuple[Pack, ...]:
     reason); empty for an unknown id."""
     data = _DATA.get(shield_id)
     return data.packs if data else ()
+
+
+def browser_roots(shield_id: str) -> tuple[BrowserRoot, ...]:
+    """Every browser folder rule *shield_id* loaded from its ``browsers.json``, in file order
+    (a bad entry was dropped with a health reason); empty for an unknown id or a shield with none."""
+    data = _DATA.get(shield_id)
+    return data.roots if data else ()
 
 
 def attack_table(shield_id: str) -> Optional[dict[str, Any]]:

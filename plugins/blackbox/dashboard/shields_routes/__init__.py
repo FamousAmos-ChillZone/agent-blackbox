@@ -19,7 +19,7 @@ is cleaned and clamped but not defanged — ``backup.tgz`` stays ``backup.tgz`` 
 ``GET /shields/{id}`` is the shield's explainer page, which reads everything else by
 RELATIVE address (F-016): its prose (``/shields/{id}/content.json``), its tested attack
 table (``/attacks.json``: the hand-written rows, ``systems`` and ``tested_with`` composed by
-the registry), its figures (``/graph.json``, 404 for a shield that ships none) and its packs'
+the registry, plus one generated row per browser folder rule, :func:`attacks_payload`), its figures (``/graph.json``, 404 for a shield that ships none) and its packs'
 logos (``/packs/{pack}/logo.svg``). Every file is found through the registry from ``id`` and
 ``pack`` — a value no shield or pack is registered as is 404 before the filesystem is
 touched (R6) — and a logo is served as an image, never a document: ``image/svg+xml``,
@@ -34,12 +34,14 @@ Usage::
     return shields_routes.with_shields(settings.write_settings(payload, validators=...))   # POST
     shields_routes.register(app, _swr)   # from dashboard.server.create_app
     shields_routes.events_payload("trader")   # -> [ShieldEvent.as_json()], or None for an unknown id
+    shields_routes.attacks_payload("trader")  # -> the page's table with its browser-folder rows
 """
 
 from __future__ import annotations
 
 import logging
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -67,6 +69,14 @@ NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
 ALIASES = {"/trader-shield": "/shields/trader",
            "/trader-shield/attacks.json": "/shields/trader/attacks.json",
            "/trader-shield/graph.json": "/shields/trader/graph.json"}
+#: The folded group the generated browser-folder rows are shown in (F-034): one row per rule.
+BROWSER_FOLDER_GROUP = {"id": "browser-folders", "title": "Every browser folder", "fold": True,
+                        "intro": "A stealer often takes a whole browser folder instead of one file. Every place a "
+                                 "browser keeps its profiles is archived in the tests with a wallet inside, and "
+                                 "every one is blocked. Open to see each browser, system and install."}
+#: A browser folder rule whose ``source`` contains this was checked on a real install (``real-software``).
+REAL_INSTALL = "installed on"
+OS_NAMES = {"linux": "Linux", "macos": "macOS", "windows": "Windows"}
 #: ``create_app``'s cache: ``swr(key, producer, default, ttl)`` answers the cached value.
 Cache = Callable[..., Any]
 
@@ -121,6 +131,50 @@ def events_payload(shield_id: str) -> list[Any] | None:
     if shield is None:
         return None
     return [sanitised(event.as_json(), _local_text) for event in shield.events()]
+
+
+def browser_folder_rows(shield_id: str) -> list[dict[str, Any]]:
+    """One attack row per browser folder rule of *shield_id* (``browsers.json``), in file order.
+
+    Row ``vault-root-<browser>-<os>-<install>`` (``-2``, ``-3`` … when rules share all three)
+    claims what the suite proves for that rule: the folder holding the root, with a store of
+    the first supported browser-extension pack that keeps one for the root's engine, archived
+    with ``tar czf`` through the real hook, is blocked. ``proof: test``, ``evidence: [tests]``,
+    plus ``real-software`` when the rule's ``source`` records a real install. What the row
+    DOES lives in the test, never here (a shipped table carries no scenario fields).
+    """
+    packs = [pack for pack in shields.loaded_packs(shield_id)
+             if pack.status == "supported" and pack.kind == "browser-extension"]
+    rows: list[dict[str, Any]] = []
+    seen: Counter[str] = Counter()
+    for root in shields.browser_roots(shield_id):
+        pack = next((pack for pack in packs if (pack.data.get("stores") or {}).get(root.engine)), None)
+        if pack is None:
+            continue   # no supported pack keeps a store there: no row, and the suite says so
+        key = f"vault-root-{root.browser}-{root.os}-{root.install}"
+        seen[key] += 1
+        place = OS_NAMES.get(root.os, root.os) + ("" if root.install == "native" else ", " + root.install)
+        place += "" if seen[key] == 1 else f", layout {seen[key]}"
+        rows.append({"id": key if seen[key] == 1 else f"{key}-{seen[key]}", "group": BROWSER_FOLDER_GROUP["id"],
+                     "proof": "test", "outcome": "blocked", "targets": [pack.id],
+                     "evidence": ["tests"] + (["real-software"] if REAL_INSTALL in root.source else []),
+                     "title": f"{root.browser.capitalize()} folder archived ({place})",
+                     "how": f"The agent archives the folder holding {root.path} with tar, {pack.name}'s vault inside."})
+    return rows
+
+
+def attacks_payload(shield_id: str) -> Optional[dict[str, Any]]:
+    """*shield_id*'s attack table as its page reads it: the registry's table with the
+    generated browser-folder rows and their folded group (placed after ``vault``); None for
+    an unknown id. Raises what ``shields.attack_table`` raises for a broken file."""
+    table = shields.attack_table(shield_id)
+    rows = browser_folder_rows(shield_id) if table is not None else []
+    if not rows:
+        return table
+    groups = list(table["groups"])
+    after = next((index + 1 for index, group in enumerate(groups) if group.get("id") == "vault"), len(groups))
+    return {**table, "groups": groups[:after] + [BROWSER_FOLDER_GROUP] + groups[after:],
+            "attacks": table["attacks"] + rows}
 
 
 def shield_file(shield_id: str, name: str) -> Optional[Path]:
@@ -186,7 +240,7 @@ def register_pages(app: Any) -> None:
     @app.get("/shields/{shield_id}/attacks.json")
     def shield_attacks(shield_id: str) -> Any:
         try:
-            table = shields.attack_table(shield_id)
+            table = attacks_payload(shield_id)
         except ValueError as exc:   # the file broke the shield-file rules: say so, never a 500
             logger.warning("blackbox dashboard: %s attack table unavailable (%s)", shield_id, exc)
             table = None
