@@ -8,17 +8,16 @@ and ``verified`` itself, so the validators here check only what is theirs:
 * ``browser-extension`` (MetaMask, Phantom): ``stores.chromium`` — Chromium extension
   ids, each ``^[a-p]{32}$``; ``stores.firefox`` — addons.mozilla.org add-on ids, each a
   ``{uuid}`` or an ``name@domain`` id; at least one id in total.
-* ``desktop-app`` (Exodus, Electrum) and ``cli-key-file`` (the Solana CLI): ``places`` —
-  at least one path template where the keys live; ``label`` — what the dashboard calls
-  it; an optional ``pointer`` to a settings file naming the key file in use.
+* ``desktop-app`` (Exodus, Electrum) and ``cli-key-file`` (the Solana CLI): checked by
+  :func:`.app_folder.validate_pack`, beside the matcher it serves.
 
 Detection (shields S4a): :func:`detect` answers, for one tool call, a finding per
 chosen pack whose key store the call reads — or copies or archives inside a folder
 handed whole to ``tar``/``zip``/``cp``/``rsync`` (:func:`wallets_inside_folder`, which
 needs to know where key stores exist on this machine: :data:`EXISTING_STORES`, a
-bounded glob under every ``browsers.json`` root, reused for five minutes). The
-browser-extension matcher lives in :mod:`.browser_extension`; the app-folder kinds
-join in S4b. Every finding carries ``fields["pack"]`` (the pack id); a Firefox folder
+bounded glob under every ``browsers.json`` root plus every app place and pointer key
+file, reused for five minutes). The browser-extension matcher lives in
+:mod:`.browser_extension`, the app-folder kinds' in :mod:`.app_folder`. Every finding carries ``fields["pack"]`` (the pack id); a Firefox folder
 no pack can be tied to carries none and belongs to the shield as a whole.
 
 Usage::
@@ -43,14 +42,14 @@ from typing import Any, Callable, Mapping, Optional
 from ....detection import SHELL_TOOLS, Finding, command_from_args, file_access_arg, shell_file_args
 from ....kernel import threat_ids
 from ...contract import BrowserRoot, Pack, PackDetector, ShieldMode
-from ...packs import load_browser_roots
+from ...packs import COMMON_FIELDS, load_browser_roots
 from .. import mode as trader_mode
+from . import app_folder
+from .app_folder import AppFolderMatcher
 from .browser_extension import BrowserExtensionMatcher, Owner, normalize_path
 
 CHROMIUM_ID = re.compile(r"[a-p]{32}")
 FIREFOX_ID = re.compile(r"\{[0-9a-f-]{36}\}|[A-Za-z0-9._+-]{1,64}@[A-Za-z0-9.-]{1,64}")
-#: The manifest's common fields (the loader's), which no kind block repeats.
-_COMMON = frozenset({"id", "name", "kind", "status", "order", "verified", "source", "logo"})
 
 
 @dataclass(frozen=True)
@@ -67,7 +66,7 @@ class KindTable:
 
 
 def _unknown_fields(manifest: Mapping[str, Any], allowed: frozenset[str]) -> Optional[str]:
-    unknown = sorted(set(manifest) - _COMMON - allowed)
+    unknown = sorted(set(manifest) - COMMON_FIELDS - allowed)
     return f"a {manifest.get('kind')} pack has no field {unknown[0]!r}" if unknown else None
 
 
@@ -91,21 +90,10 @@ def _check_browser_extension(manifest: Mapping[str, Any]) -> Optional[str]:
     return None
 
 
-def _check_app_folder(manifest: Mapping[str, Any]) -> Optional[str]:
-    problem = _unknown_fields(manifest, frozenset({"places", "pointer", "label"}))
-    if problem:
-        return problem
-    if not manifest.get("places"):
-        return "places must name at least one path template"
-    if not isinstance(manifest.get("label"), str) or not manifest["label"].strip():
-        return "label must say what the dashboard calls this wallet"
-    return None
-
-
 #: Every detector Trader Shield has, as the loader sees it.
 DETECTORS: tuple[PackDetector, ...] = (
     KindTable(KINDS=("browser-extension",), check=_check_browser_extension),
-    KindTable(KINDS=("desktop-app", "cli-key-file"), check=_check_app_folder),
+    KindTable(KINDS=app_folder.KINDS, check=app_folder.validate_pack),
 )
 
 
@@ -116,17 +104,33 @@ WALLET_CATEGORY = "crypto-wallet"
 #: How long the list of key stores found on this machine is reused.
 _EXISTING_TTL_SECONDS = 300.0
 
-_matcher_for: tuple[tuple[Pack, ...], BrowserExtensionMatcher] = ((), BrowserExtensionMatcher(()))
+_matchers_for: tuple[tuple[Pack, ...], BrowserExtensionMatcher, AppFolderMatcher] = (
+    (), BrowserExtensionMatcher(()), AppFolderMatcher(()))
+
+
+def _matchers() -> tuple[tuple[Pack, ...], BrowserExtensionMatcher, AppFolderMatcher]:
+    """Both kinds' matchers for the packs the mode holds now (built once, rebuilt only
+    when the shield hands the mode its packs again)."""
+    global _matchers_for
+    packs = trader_mode.wallet_packs()
+    if _matchers_for[0] is not packs:
+        _matchers_for = (packs, BrowserExtensionMatcher(packs), AppFolderMatcher(packs))
+    return _matchers_for
 
 
 def matcher() -> BrowserExtensionMatcher:
-    """The browser-extension matcher for the packs the mode holds now (built once, rebuilt
-    only when the shield hands the mode its packs again)."""
-    global _matcher_for
-    packs = trader_mode.wallet_packs()
-    if _matcher_for[0] is not packs:
-        _matcher_for = (packs, BrowserExtensionMatcher(packs))
-    return _matcher_for[1]
+    """The browser-extension matcher for the packs the mode holds now."""
+    return _matchers()[1]
+
+
+def app_matcher() -> AppFolderMatcher:
+    """The app-folder matcher (``desktop-app``, ``cli-key-file``) for the packs the mode holds now."""
+    return _matchers()[2]
+
+
+def owner(path: str) -> Optional[Owner]:
+    """Whose key store *path* lies inside — a browser extension's first, then an app's — or None."""
+    return matcher().owner(path) or app_matcher().owner(normalize_path(path))
 
 
 @functools.cache
@@ -150,7 +154,8 @@ def expand_template(template: str) -> str:
 
 class _ExistingStores:
     """The key-store folders present on this machine, found by a bounded glob
-    (browser folder → profile → store) and reused for a few minutes. One lock."""
+    (browser folder → profile → store, then the app places and pointer key files) and
+    reused for a few minutes. One lock."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -175,10 +180,10 @@ class _ExistingStores:
         for root in browser_roots():
             for candidate in stores.store_globs(expand_template(root.path), root.engine):
                 for match in glob.glob(candidate):
-                    owner = stores.owner(match)
-                    if owner:
-                        found.append((normalize_path(match), owner))
-        return found
+                    store_owner = stores.owner(match)
+                    if store_owner:
+                        found.append((normalize_path(match), store_owner))
+        return found + app_matcher().existing()
 
 
 EXISTING_STORES = _ExistingStores()
@@ -228,14 +233,14 @@ def _all_packs_findings(tool_name: str, args: Any) -> list[Finding]:
     try:
         access = file_access_arg(tool_name, args)
         if access:
-            wallet = matcher().owner(access["path"])
+            wallet = owner(access["path"])
             return [_finding(access["tool"], access["mode"], wallet)] if wallet else []
         tool = (tool_name or "").strip().lower()
         if tool not in SHELL_TOOLS:
             return []
         mode_by_wallet: dict[Owner, str] = {}   # each wallet once, with how it was first reached
         for arg in shell_file_args(command_from_args(tool_name, args)):
-            direct = matcher().owner(arg.path)
+            direct = owner(arg.path)
             found = [direct] if direct else (wallets_inside_folder(arg.path) if arg.recursive else [])
             for wallet in found:
                 mode_by_wallet.setdefault(wallet, "copy" if arg.recursive else "read")
