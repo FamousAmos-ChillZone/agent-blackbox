@@ -36,7 +36,6 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from _trader_attack_table import ATTACKS, SCENARIO_FIELDS, TABLES
 from plugins.blackbox import ruleset as ruleset_mod
 from plugins.blackbox import shields
-from plugins.blackbox.detection import wallet_files
 from plugins.blackbox.guard import background as guard_background
 from plugins.blackbox.guard import hooks
 from plugins.blackbox.guard import reporting as guard_reporting
@@ -194,7 +193,6 @@ def shield(tmp_path, monkeypatch):
     values = _values(tmp_path, stores, solana)
     for shield_id in SHIELD_IDS:
         SETUPS[shield_id](monkeypatch, tuple(pack.id for pack in _supported(shield_id)), values)
-    wallet_files.EXISTING_STORES.reset()
     detectors.EXISTING_STORES.reset()   # the hook asks the shield's detectors
     findings = _hook_under_test(monkeypatch)
 
@@ -208,7 +206,6 @@ def shield(tmp_path, monkeypatch):
         return {k: fill(v) for k, v in value.items()} if isinstance(value, dict) else value
 
     yield fill, findings
-    wallet_files.EXISTING_STORES.reset()
     detectors.EXISTING_STORES.reset()
 
 

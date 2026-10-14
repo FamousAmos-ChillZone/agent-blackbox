@@ -2,10 +2,11 @@
 
 The two "coming soon" lists are pinned first, against the code they replace, so moving the
 wallets into packs cannot quietly change what Settings and the page promise (D-12). Then
-the data is held to today's code (code -> data, §06 step 3a): the eleven packs load, and
-the ids, names, extension ids, places and browser globs they state equal the Python
-tables in detection/wallet_files.py and detection/app_wallets.py under Linux, macOS and
-Windows layouts with mixed-case input. That a supported pack has earned it (a blocked
+the data is held to the code it replaced (code -> data, §06 step 3a): the eleven packs load,
+and the ids, names, extension ids, places and browser roots they state equal the values the
+old Python tables (detection/wallet_files.py, detection/app_wallets.py, deleted in S5b)
+gave on the last run that had both, under Linux, macOS and Windows layouts with
+mixed-case input. That a supported pack has earned it (a blocked
 ``vault`` row names it) is checked with every shield's attack table, in
 test_blackbox_trader_shield_attacks.py.
 """
@@ -19,8 +20,9 @@ from _blackbox_loader import load_blackbox
 shields = load_blackbox("shields")
 packs_loader = load_blackbox("shields.packs")
 trader_mode = load_blackbox("shields.trader.mode")
-wallet_files = load_blackbox("detection.wallet_files")
-app_wallets = load_blackbox("detection.app_wallets")
+detectors = load_blackbox("shields.trader.detectors")
+app_folder = load_blackbox("shields.trader.detectors.app_folder")
+browser_extension = load_blackbox("shields.trader.detectors.browser_extension")
 
 TRADER = shields.get("trader")
 PACKS = packs_loader.load_packs(TRADER)
@@ -96,26 +98,60 @@ def test_logos_ship_with_their_terms():
     assert shields.pack_logo("trader", "exodus") is None
 
 
-# ---------------------------------------------------- the same as today's code
+# ------------------------------- the same as the old code, recorded on its last green run
+
+#: ``detection.wallet_files.WALLETS``: id -> (name, Chromium ids, Firefox add-on ids).
+RECORDED_EXTENSION_WALLETS = {
+    "metamask": ("MetaMask", ("nkbihfbeogaeaoehlefnkodbefgpgknn", "ejbalbakoplchlghecdalmeeeajnimhm"),
+                 ("webextension@metamask.io",)),
+    "phantom": ("Phantom", ("bfnaelmomeimhlpmgjnjophhpkkoljpa",), ("{7c42eea1-b3e4-4be4-a56f-82a5852b12dc}",)),
+}
+#: ``detection.app_wallets.APP_WALLETS``: id -> (name, places, label).
+RECORDED_APP_WALLETS = {
+    "exodus": ("Exodus", ("$XDG_CONFIG_HOME/Exodus/exodus.wallet", "~/Library/Application Support/Exodus/exodus.wallet",
+                          "%APPDATA%/Exodus/exodus.wallet"), "Desktop app"),
+    "electrum": ("Electrum", ("~/.electrum/wallets", "~/.electrum/*/wallets", "%APPDATA%/Electrum/wallets",
+                              "%APPDATA%/Electrum/*/wallets", "%LOCALAPPDATA%/Electrum/wallets",
+                              "%LOCALAPPDATA%/Electrum/*/wallets"), "Desktop app"),
+    "solana-cli": ("Solana CLI", ("$XDG_CONFIG_HOME/solana/*.json", "~/.config/solana/*.json"), "Command line"),
+}
+RECORDED_SOLANA_CONFIG = "$XDG_CONFIG_HOME/solana/cli/config.yml"
+#: ``detection.wallet_files._browser_roots()``, written back as templates (~, $XDG_CONFIG_HOME,
+#: %APPDATA%, %LOCALAPPDATA% for the folders it expanded them to).
+RECORDED_BROWSER_ROOTS = (
+    "$XDG_CONFIG_HOME/BraveSoftware/Brave-Browser*", "$XDG_CONFIG_HOME/chromium", "$XDG_CONFIG_HOME/google-chrome*",
+    "$XDG_CONFIG_HOME/microsoft-edge*", "$XDG_CONFIG_HOME/mozilla/firefox/*", "$XDG_CONFIG_HOME/opera",
+    "$XDG_CONFIG_HOME/vivaldi",
+    "%APPDATA%/Mozilla/Firefox/Profiles/*", "%APPDATA%/Opera Software/Opera*",
+    "%LOCALAPPDATA%/BraveSoftware/Brave-Browser*/User Data", "%LOCALAPPDATA%/Chromium/User Data",
+    "%LOCALAPPDATA%/Google/Chrome*/User Data", "%LOCALAPPDATA%/Microsoft/Edge*/User Data",
+    "%LOCALAPPDATA%/Vivaldi/User Data",
+    "~/.mozilla/firefox/*",
+    "~/.var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser*",
+    "~/.var/app/com.google.Chrome/config/google-chrome*", "~/.var/app/com.microsoft.Edge/config/microsoft-edge*",
+    "~/.var/app/org.chromium.Chromium/config/chromium", "~/.var/app/org.mozilla.firefox/.mozilla/firefox/*",
+    "~/.var/app/org.mozilla.firefox/config/mozilla/firefox/*",
+    "~/Library/Application Support/Arc/User Data", "~/Library/Application Support/BraveSoftware/Brave-Browser*",
+    "~/Library/Application Support/Chromium", "~/Library/Application Support/Firefox/Profiles/*",
+    "~/Library/Application Support/Google/Chrome*", "~/Library/Application Support/Microsoft Edge*",
+    "~/Library/Application Support/Vivaldi", "~/Library/Application Support/com.operasoftware.Opera*",
+    "~/snap/chromium/common/chromium", "~/snap/firefox/common/.mozilla/firefox/*",
+)
 
 
-def test_browser_extension_packs_equal_wallet_files_wallets():
-    today = {wallet_files.wallet_id(store.name): (store.name, store.chromium_ids, store.firefox_ids)
-             for store in wallet_files.WALLETS}
+def test_browser_extension_packs_equal_the_recorded_wallets():
     data = {pack.id: (pack.name, tuple(pack.data["stores"].get("chromium", ())),
                       tuple(pack.data["stores"].get("firefox", ())))
             for pack in SUPPORTED.values() if pack.kind == "browser-extension"}
-    assert data == today
+    assert data == RECORDED_EXTENSION_WALLETS
 
 
-def test_app_folder_packs_equal_app_wallets():
-    today = {wallet_files.wallet_id(wallet.name): (wallet.name, wallet.places, wallet.kind)
-             for wallet in app_wallets.APP_WALLETS}
+def test_app_folder_packs_equal_the_recorded_app_wallets():
     data = {pack.id: (pack.name, tuple(pack.data["places"]), pack.data["label"])
             for pack in SUPPORTED.values() if pack.kind in ("desktop-app", "cli-key-file")}
-    assert data == today
+    assert data == RECORDED_APP_WALLETS
     assert SUPPORTED["solana-cli"].data["pointer"] == {
-        "config": app_wallets.SOLANA_CONFIG, "key": "keypair_path", "max_bytes": 65536}
+        "config": RECORDED_SOLANA_CONFIG, "key": "keypair_path", "max_bytes": 65536}
 
 
 #: Three machines, each with mixed-case folder names (matching ignores case on both sides).
@@ -132,18 +168,18 @@ LAYOUTS = {
 
 @pytest.fixture(params=sorted(LAYOUTS))
 def layout(request, monkeypatch):
-    """The environment of one machine layout; today's code reads it from os.environ."""
+    """The environment of one machine layout; the detectors read it from os.environ."""
     for name, value in LAYOUTS[request.param].items():
         if value is None:
             monkeypatch.delenv(name, raising=False)
         else:
             monkeypatch.setenv(name, value)
-    monkeypatch.setattr(app_wallets.SOLANA_KEY_FILE, "get", lambda: None)   # no config on this machine
+    monkeypatch.setattr(app_folder.POINTER_FILES, "get", lambda pack: None)   # no config on this machine
     return LAYOUTS[request.param]
 
 
 def _expand(template: str, env: dict) -> str:
-    """A path template under *env*, with the defaults today's code uses for unset variables."""
+    """A path template under *env*, with the defaults the old code used for unset variables."""
     home = env["HOME"]
     roots = {"~": home, "$XDG_CONFIG_HOME": env["XDG_CONFIG_HOME"] or f"{home}/.config",
              "%APPDATA%": env["APPDATA"] or f"{home}/AppData/Roaming",
@@ -157,19 +193,20 @@ def _mixed_case(path: str) -> str:
     return "".join(char.swapcase() if index % 2 else char for index, char in enumerate(path))
 
 
-def test_places_match_today_on_every_layout(layout):
+def test_places_match_the_recorded_owner_on_every_layout(layout):
     for pack in SUPPORTED.values():
         if pack.kind not in ("desktop-app", "cli-key-file"):
             continue
         for template in pack.data["places"]:
             if "%" in template and not layout["APPDATA"]:
-                continue   # today an unset %VAR% stays literal and is never looked for
+                continue   # an unset %VAR% stays literal and is never looked for
             inside = _expand(template, layout).replace("*", "Testnet") + ("" if template.endswith(".json") else "/x")
-            assert app_wallets.app_wallet_at(wallet_files.normalize_path(_mixed_case(inside))) == pack.name, inside
+            owner = detectors.app_matcher().owner(browser_extension.normalize_path(_mixed_case(inside)))
+            assert owner is not None and owner.wallet == RECORDED_APP_WALLETS[pack.id][0], inside
 
 
-def test_browser_roots_match_today_on_every_layout(layout):
-    today = {root.replace("\\", "/").lower() for root in wallet_files._browser_roots()}
+def test_browser_roots_match_the_recorded_roots_on_every_layout(layout):
+    recorded = {_expand(template, layout).lower() for template in RECORDED_BROWSER_ROOTS}
     entries = json.loads((TRADER.folder / "browsers.json").read_text(encoding="utf-8"))
     data = {_mixed_case(_expand(entry["path"], layout)).lower() for entry in entries}
-    assert data == today
+    assert data == recorded
