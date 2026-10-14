@@ -177,3 +177,45 @@ def test_the_settings_routes_compose_shields_trader_and_a_save_retires_the_legac
     entry = _entry()
     assert entry["shields"]["trader"] == {"enabled": True, "wallets": ["metamask"], "addresses": [OWN]}
     assert not set(trader_mode.LEGACY_KEYS) & set(entry)
+
+
+# ------------------------------------------------------------------ saves that must retire nothing (S2b review)
+
+
+@pytest.mark.parametrize("payload", [{"mode": "block"}, {"mode": "block", "shields": {}},
+                                     {"mode": "block", "shields": {"trader": {}}}],
+                         ids=["no-shields-key", "empty-shields", "empty-trader-section"])
+def test_a_save_that_leaves_trader_untouched_keeps_the_legacy_keys(payload):
+    """A page built before S2b (or one that never read Trader) saves its other settings with
+    ``shields: {}``: the install must stay engaged on its legacy keys — an empty section
+    means untouched (LES-018)."""
+    _write_entry(LEGACY)
+    assert settings.write_settings(payload, validators=SHIELDS)["ok"] is True
+    entry = _entry()
+    assert {key: entry[key] for key in trader_mode.LEGACY_KEYS} == LEGACY
+    assert "trader" not in (entry.get("shields") or {})
+    assert trader_mode.current().enabled is True
+
+
+def test_a_refused_trader_save_retires_nothing_even_when_some_fields_were_valid():
+    """One bad field refuses the whole section: the valid wallets are not written and the legacy keys stay."""
+    _write_entry(LEGACY)
+    result = settings.write_settings({"shields": {"trader": {"enabled": "yes", "wallets": ["metamask"]}}},
+                                     validators=SHIELDS)
+    assert result["ok"] is False and _entry() == LEGACY
+
+
+def test_with_shields_puts_the_view_where_the_page_reads_it_and_fails_open(monkeypatch):
+    """GET answers the view itself; a save answers it under ``settings`` (the page re-renders from that).
+    A shield whose view raises leaves the settings answered without ``shields``."""
+    routes = load_blackbox("dashboard.shields_routes")
+    read = routes.with_shields({"mode": "observe"})
+    assert read["shields"]["trader"]["mode"]["enabled"] is False
+    saved = routes.with_shields({"ok": False, "errors": ["x"], "settings": {"mode": "observe"}})
+    assert "trader" in saved["settings"]["shields"] and "shields" not in saved
+
+    def broken_view():
+        raise RuntimeError("a broken shield")
+
+    monkeypatch.setattr(routes.shields, "settings_view", broken_view)
+    assert routes.with_shields({"mode": "observe"}) == {"mode": "observe"}
