@@ -1,4 +1,4 @@
-"""Every data file the Blackbox plugin reads ships in a wheel (F-038, F-057, R20).
+"""Every data file the Blackbox plugin reads ships in a wheel (FIX-0123).
 
 A wheel or sealed install carries only the Python files plus what
 ``[tool.setuptools.package-data]`` names. A data file a module opens next to itself
@@ -49,8 +49,8 @@ def _locate(node: ast.AST, source: Path) -> Optional[_Located]:
             return None
         if node.func.attr == "resolve" and not node.args:
             return inner
-        if node.func.attr == "with_name" and len(node.args) == 1 and _literal(node.args[0]):
-            return _Located(inner.path.with_name(node.args[0].value), True)
+        if node.func.attr == "with_name" and len(node.args) == 1 and (name := _literal(node.args[0])) is not None:
+            return _Located(inner.path.with_name(name), True)
         return None
     if isinstance(node, ast.Attribute) and node.attr == "parent":
         inner = _locate(node.value, source)
@@ -60,14 +60,14 @@ def _locate(node: ast.AST, source: Path) -> Optional[_Located]:
         if inner is None or not isinstance(node.slice, ast.Constant) or type(node.slice.value) is not int:
             return None
         return _Located(inner.path.parents[node.slice.value], False)
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div) and _literal(node.right):
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div) and (name := _literal(node.right)) is not None:
         inner = _locate(node.left, source)
-        return _Located(inner.path / node.right.value, True) if inner else None
+        return _Located(inner.path / name, True) if inner else None
     return None
 
 
-def _literal(node: ast.AST) -> bool:
-    return isinstance(node, ast.Constant) and isinstance(node.value, str)
+def _literal(node: ast.AST) -> Optional[str]:
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
 
 
 def _opened_paths(source: Path) -> list[Path]:

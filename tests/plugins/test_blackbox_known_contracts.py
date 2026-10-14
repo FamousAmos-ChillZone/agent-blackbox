@@ -109,7 +109,7 @@ def test_an_unreadable_file_gives_an_empty_list_and_detection_keeps_running(cont
 
 
 def test_a_missing_file_leaves_detection_running_with_one_warning(contracts_file, caplog):
-    # S0b (F-038): a wheel install once shipped without the file. detect_all must keep its
+    # FIX-0123: a wheel install once shipped without the file. detect_all must keep its
     # other findings for a contract-shaped call, and the loss is said once, not per call.
     assert not contracts_file.exists()
     caplog.set_level(logging.WARNING, logger=known_contracts.__name__)
