@@ -198,6 +198,12 @@ def test_the_key_is_a_literal_prefix_never_a_pattern(tmp_path, pointer_home):
     assert app_folder.POINTER_FILES.get(_pointer_pack(tmp_path)) is None
 
 
+def test_a_value_with_a_quote_inside_names_no_file(tmp_path, pointer_home):
+    # As the old keypair_path regex: an odd-quoted value is not a path to protect, so a later good line wins.
+    pointer_home.write_text("wallet_file: \"/decoy/a\"b.json\"\nwallet_file: '/keys/real.json'\n", encoding="utf-8")
+    assert app_folder.POINTER_FILES.get(_pointer_pack(tmp_path)) == "/keys/real.json"
+
+
 def test_the_pointer_is_reread_when_the_config_changes(tmp_path, pointer_home):
     pack = _pointer_pack(tmp_path)
     pointer_home.write_text("wallet_file: /keys/one.json\n", encoding="utf-8")
@@ -243,6 +249,16 @@ def test_a_named_pipe_at_the_config_place_never_stalls_the_check(machine):
 
 def test_planned_and_other_kind_packs_build_no_app_matcher():
     assert {pack.id for pack in detectors.app_matcher().packs} == APP_PACKS
+
+
+def test_a_planned_app_pack_protects_nothing(tmp_path, pointer_home):
+    """No shipped app pack is planned today, so a made-up one proves only supported packs are matched."""
+    pointer_home.write_text("wallet_file: /keys/real.json\n", encoding="utf-8")
+    planned = dataclasses.replace(_pointer_pack(tmp_path), status="planned")
+    matcher = AppFolderMatcher([planned])
+    assert matcher.packs == ()
+    assert matcher.owner(os.path.join(str(tmp_path), ".cli-test", "keys", "k.json").lower()) is None
+    assert matcher.owner("/keys/real.json") is None
 
 
 @pytest.mark.parametrize("template_segment, segment, fits", [
