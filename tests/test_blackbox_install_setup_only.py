@@ -70,7 +70,9 @@ def test_setup_only_skips_the_hermes_steps_and_keeps_everything_after():
     assert setup[4:] == after_hermes
 
 
-def _use_running_hermes(tmp_path: Path, *, hermes_on_path: bool) -> tuple[subprocess.CompletedProcess, Path]:
+def _use_running_hermes(tmp_path: Path, *, hermes_on_path: bool, inner_bin: Path | None = None) -> tuple[subprocess.CompletedProcess, Path]:
+    """Run use_running_hermes with the user's `hermes` in tmp/user-bin (or, with
+    *inner_bin*, Hermes's internal bin folder first on PATH as Hermes runs the setup)."""
     venv = tmp_path / "venv"
     (venv / "bin").mkdir(parents=True)
     python = venv / "bin" / "python"
@@ -82,6 +84,9 @@ def _use_running_hermes(tmp_path: Path, *, hermes_on_path: bool) -> tuple[subpro
     hermes.write_text("#!/bin/sh\necho the-users-hermes\n", encoding="utf-8")
     hermes.chmod(0o755)
     path = f"{user_bin}:/usr/bin:/bin" if hermes_on_path else "/usr/bin:/bin"
+    if inner_bin is not None:
+        path = f"{inner_bin}:{path}"
+    home = tmp_path / "home"
     script = f"""
 heading() {{ :; }}
 ok() {{ echo "OK $*"; }}
@@ -94,6 +99,7 @@ use_running_hermes() {{
 {_body("use_running_hermes")}
 }}
 PATH={shlex.quote(path)}
+HOME={shlex.quote(str(home))}
 HERMES_BIN={shlex.quote(str(hermes))}
 VENV_DIR={shlex.quote(str(venv))}
 use_running_hermes
@@ -108,6 +114,26 @@ def test_setup_only_writes_blackbox_beside_the_users_hermes_and_never_replaces_i
     shim = hermes.parent / "blackbox"
     assert shim.is_file() and "managed-by: agent-blackbox-installer" in shim.read_text(encoding="utf-8")
     assert not hermes.is_symlink() and hermes.read_text(encoding="utf-8") == "#!/bin/sh\necho the-users-hermes\n"
+
+
+def test_setup_only_writes_blackbox_beside_the_launcher_hermes_publishes_not_the_inner_binary(tmp_path):
+    """Proven on a fresh droplet (2026-10-14): Hermes runs the setup with its own
+    .hermes/bin first on PATH, the shim landed there, and `blackbox` was not a command."""
+    inner_bin = tmp_path / "hermes-agent" / ".hermes" / "bin"
+    inner_bin.mkdir(parents=True)
+    (inner_bin / "hermes").write_text("#!/bin/sh\n", encoding="utf-8")
+    (inner_bin / "hermes").chmod(0o755)
+    launcher_dir = tmp_path / "home" / ".local" / "bin"
+    launcher_dir.mkdir(parents=True)
+    launcher = launcher_dir / "hermes"
+    launcher.write_text(f"#!/bin/sh\nexec {inner_bin / 'hermes'} \"$@\"\n", encoding="utf-8")
+    launcher.chmod(0o755)
+
+    result, _ = _use_running_hermes(tmp_path, hermes_on_path=False, inner_bin=inner_bin)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (launcher_dir / "blackbox").is_file()
+    assert not (inner_bin / "blackbox").exists()
 
 
 def test_setup_only_without_the_callers_hermes_stops_with_the_command_to_use(tmp_path):

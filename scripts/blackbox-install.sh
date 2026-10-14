@@ -1281,7 +1281,10 @@ SH
 }
 
 # Setup-only mode: use the Hermes the caller runs in (HERMES_BIN, VENV_DIR) and put
-# the `blackbox` command beside the `hermes` on PATH. The user's `hermes` is never replaced.
+# the `blackbox` command beside the user's `hermes` launcher. The user's `hermes` is never replaced.
+# Hermes runs `hermes blackbox setup` with its own internal bin folder first on PATH, so
+# `command -v hermes` there finds that inner binary, in a folder the user's shell never
+# searches. Hermes publishes the user's launcher to ~/.local/bin, so that folder wins.
 use_running_hermes() {
     heading "Using your Hermes"
     if [ ! -x "${HERMES_BIN:-}" ] || [ ! -x "${VENV_DIR:-}/bin/python" ]; then
@@ -1290,8 +1293,12 @@ use_running_hermes() {
     fi
     ok "Hermes: $HERMES_BIN"
     local on_path link_dir
-    on_path="$(command -v hermes 2>/dev/null || true)"
-    link_dir="$(dirname "${on_path:-$HERMES_BIN}")"
+    if [ -x "$HOME/.local/bin/hermes" ]; then
+        link_dir="$HOME/.local/bin"
+    else
+        on_path="$(command -v hermes 2>/dev/null || true)"
+        link_dir="$(dirname "${on_path:-$HERMES_BIN}")"
+    fi
     if [ -w "$link_dir" ]; then
         install_blackbox_shim "$link_dir"
     else
