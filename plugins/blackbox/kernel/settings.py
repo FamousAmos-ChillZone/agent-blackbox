@@ -256,6 +256,9 @@ def _shield_updates(payload: dict[str, Any],
             logger.warning("blackbox.settings: a shield settings validator failed (%s)", type(exc).__name__)
             errors.append("shield settings could not be checked")
             continue
+        if not _is_error_list(result.errors):   # never extend by None, nor a str letter by letter
+            errors.append(f"invalid shield settings from {result.shield_id!r}")
+            continue
         errors.extend(result.errors)
         if not result.section:
             continue
@@ -274,6 +277,11 @@ def _well_formed(result: ShieldSettings) -> bool:
     return (isinstance(result.shield_id, str) and bool(result.shield_id)
             and isinstance(result.section, dict) and isinstance(result.supersedes, (tuple, list))
             and all(isinstance(key, str) and key != "shields" for key in result.supersedes))
+
+
+def _is_error_list(errors: Any) -> bool:
+    """True when *errors* is a list or tuple of strings (what the dashboard shows)."""
+    return isinstance(errors, (list, tuple)) and all(isinstance(error, str) for error in errors)
 
 
 #: KI-030: settings persistence is read-modify-write; concurrent dashboard
