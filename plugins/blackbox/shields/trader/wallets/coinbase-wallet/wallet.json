@@ -1,0 +1,7 @@
+{
+  "id": "coinbase-wallet",
+  "name": "Coinbase Wallet",
+  "kind": "browser-extension",
+  "status": "planned",
+  "order": 120
+}

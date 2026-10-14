@@ -125,7 +125,8 @@ def _would_block(cfg: BlackboxConfig, findings: list[detection.Finding]) -> list
 
     Confirmed findings and custom rules block; community/heuristic ones only
     alert. ``vulnerability`` kind never blocks (a legit-but-vulnerable package
-    must keep working) — only ``malware`` is stopped. IOC findings alert but
+    must keep working), nor ``flag-only`` (a local rule's community-sourced or
+    routine finding, KI-385) — only ``malware`` is stopped. IOC findings alert but
     never auto-block in this rollout: network and crypto-address blocklists
     are higher-churn / higher-FP than pinned package versions, so they are
     validated in audit mode first.
@@ -135,10 +136,18 @@ def _would_block(cfg: BlackboxConfig, findings: list[detection.Finding]) -> list
     return [
         f for f in findings
         if (f.confirmed or f.source in ("custom", "secret"))
-        and getattr(f, "kind", None) not in (constants.KIND_VULNERABILITY, "historical")
+        and getattr(f, "kind", None) not in (constants.KIND_VULNERABILITY, "historical", detection.KIND_FLAG_ONLY)
         and f.category != "ioc"
         and cfg.meets_block_threshold(f.severity)
     ]
+
+
+def _raw_findings(cfg: BlackboxConfig, rs: Any, tool_name: str, args: Any) -> list[detection.Finding]:
+    """All raw findings for one call, gathered here so new detectors join without growing the hook body."""
+    raw = detection.detect_all(tool_name, args, rs, discover=cfg.discover)
+    raw += detection.detect_custom_fileaccess(tool_name, args, cfg.protected_paths) + wallet_findings.own_key_findings(raw, tool_name, args)
+    raw += _kill_list_findings(rs, tool_name, args)   # R14: curator-signed DISABLE / WARN, last-good list
+    return raw
 
 
 def on_pre_tool_call(
@@ -158,9 +167,7 @@ def on_pre_tool_call(
         rs, graph_evidence = graph_rules.detection_rules(cfg, tool_name, args)
         # Visibility: log every file-access tool call (best-effort).
         _record_activity(tool_name, args)
-        raw = detection.detect_all(tool_name, args, rs, discover=cfg.discover)
-        raw += detection.detect_custom_fileaccess(tool_name, args, cfg.protected_paths) + wallet_findings.own_key_findings(raw, tool_name, args)
-        raw += _kill_list_findings(rs, tool_name, args)   # R14: curator-signed DISABLE / WARN, last-good list
+        raw = _raw_findings(cfg, rs, tool_name, args)
         findings = reporting._flag_worthy(cfg, raw)
         detail = {"tool_name": tool_name, "session_id": session_id, "task_id": task_id,
                   "tool_call_id": tool_call_id, "args": audit.redact(args), "graph_read": graph_evidence}
@@ -348,7 +355,7 @@ def on_pre_api_request(**kwargs: Any) -> None:
         rs, graph_evidence = graph_rules.detection_rules(cfg, "", {})
         sources = _untrusted_request_sources(kwargs.get("user_message"), kwargs.get("request_messages"))
         text = "\n".join(part for _, part in sources)   # the LLM reviewer's input
-        findings = _injection_by_source(sources, rs, cfg.discover)
+        findings = _injection_by_source(sources, rs, cfg.discover) + detection.detect_model_request_secrets(sources)   # KI-381
         findings += injection_sites.injection_site_findings(findings, kwargs.get("request_messages"), rs)   # D8
         findings = reporting._flag_worthy(cfg, findings)
         detail = {

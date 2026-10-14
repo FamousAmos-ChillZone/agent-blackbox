@@ -1,0 +1,23 @@
+{
+  "id": "metamask",
+  "name": "MetaMask",
+  "kind": "browser-extension",
+  "status": "supported",
+  "order": 10,
+  "verified": "2026-10-13",
+  "source": "Chrome Web Store and Edge Add-ons listings (2026-10-12); addons.mozilla.org ether-metamask (2026-10-13)",
+  "stores": {
+    "chromium": [
+      "nkbihfbeogaeaoehlefnkodbefgpgknn",
+      "ejbalbakoplchlghecdalmeeeajnimhm"
+    ],
+    "firefox": [
+      "webextension@metamask.io"
+    ]
+  },
+  "logo": {
+    "file": "logo.svg",
+    "terms": "NOTICE.md",
+    "source": "@metamask/logo 4.0.0 (ISC)"
+  }
+}

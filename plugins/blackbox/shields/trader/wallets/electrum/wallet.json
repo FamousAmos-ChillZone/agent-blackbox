@@ -1,0 +1,18 @@
+{
+  "id": "electrum",
+  "name": "Electrum",
+  "kind": "desktop-app",
+  "status": "supported",
+  "order": 40,
+  "verified": "2026-10-13",
+  "source": "Electrum 4.8.2 (official AppImage) on bench bb-trader-1, Ubuntu 24.04; Windows from electrum/util.py user_dir",
+  "places": [
+    "~/.electrum/wallets",
+    "~/.electrum/*/wallets",
+    "%APPDATA%/Electrum/wallets",
+    "%APPDATA%/Electrum/*/wallets",
+    "%LOCALAPPDATA%/Electrum/wallets",
+    "%LOCALAPPDATA%/Electrum/*/wallets"
+  ],
+  "label": "Desktop app"
+}

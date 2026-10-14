@@ -143,3 +143,59 @@ def test_token_is_compared_in_constant_time(loopback_client, monkeypatch):
     monkeypatch.setattr(browser_boundary.secrets, "compare_digest", spy)
     assert loopback_client.post("/change", headers={"X-Blackbox-Token": "guess"}).status_code == 403
     assert calls == [("guess", PROCESS_TOKEN)]
+
+
+# ------------------------------------------------------------------ KI-390: the port is part of the origin
+
+
+@pytest.mark.parametrize("origin", [
+    "http://127.0.0.1:8000",      # another server on the same loopback
+    "http://localhost:5173",      # a dev server
+    "http://127.0.0.1",           # port 80
+    "https://127.0.0.1:9700",     # the same port named explicitly: allowed (the scheme only picks a default port)
+])
+def test_an_origin_on_another_loopback_port_is_refused(loopback_client, origin):
+    expected = 200 if origin == "https://127.0.0.1:9700" else 403
+    res = loopback_client.post("/change", headers={"Origin": origin, "X-Blackbox-Token": PROCESS_TOKEN})
+    assert res.status_code == expected
+    if expected == 403:
+        assert res.json() == {"error": "forbidden origin"}
+
+
+def test_reads_from_another_loopback_port_are_refused_too(loopback_client):
+    assert loopback_client.get("/read", headers={"Origin": "http://127.0.0.1:8000"}).status_code == 403
+
+
+def test_the_same_port_under_a_loopback_alias_passes(loopback_client):
+    res = loopback_client.post("/change", headers={"Origin": "http://localhost:9700", "X-Blackbox-Token": PROCESS_TOKEN})
+    assert res.status_code == 200
+
+
+def test_an_ipv6_loopback_origin_on_the_same_port_passes(loopback_client):
+    ipv6 = {"Host": "[::1]:9700"}   # the test client cannot dial [::1]; the header is what the boundary reads
+    assert loopback_client.get("/read", headers={**ipv6, "Origin": "http://[::1]:9700"}).status_code == 200
+    assert loopback_client.get("/read", headers={**ipv6, "Origin": "http://[::1]:8000"}).status_code == 403
+
+
+def test_a_default_port_origin_matches_a_host_header_without_a_port():
+    with TestClient(_app({MAGIC_DNS}, lambda _request: "token"), base_url=f"https://{MAGIC_DNS}") as client:
+        assert client.get("/read", headers={"Origin": f"https://{MAGIC_DNS}"}).status_code == 200
+        assert client.get("/read", headers={"Origin": f"https://{MAGIC_DNS}:8443"}).status_code == 403
+
+
+def test_the_dashboard_escape_covers_the_single_quote():
+    """index.html's esc() — what every innerHTML insertion goes through — escapes ' like
+    trader-shield.html's does, so a value can never close a single-quoted attribute."""
+    import re
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    html = (Path(__file__).resolve().parents[2] / "plugins" / "blackbox" / "dashboard" / "static" / "index.html").read_text(encoding="utf-8")
+    esc = re.search(r"  function esc\(s\) \{[\s\S]*?\n  \}\n", html).group(0)
+    rendered = subprocess.run([node, "-e", esc + "console.log(esc(\"<a title='x' href=\\\"y\\\">&</a>\"));"],
+                              capture_output=True, text=True, check=True).stdout.strip()
+    assert rendered == "&lt;a title=&#39;x&#39; href=&quot;y&quot;&gt;&amp;&lt;/a&gt;"

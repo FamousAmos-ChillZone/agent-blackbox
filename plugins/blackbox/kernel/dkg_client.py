@@ -24,7 +24,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import constants
+from . import constants, host_secrets
 from .sparql_text import extract_binding, normalize_bindings, rows_or_fallback  # re-exported: callers import them from here
 
 logger = logging.getLogger(__name__)
@@ -109,10 +109,10 @@ def load_daemon_url() -> str:
 
 
 def load_token(dkg_home: Optional[str] = None) -> Optional[str]:
-    """Resolve the bearer token: Blackbox env override → Blackbox auth.token."""
-    env = os.environ.get("BLACKBOX_DKG_API_TOKEN") or os.environ.get("BLACKBOX_DKG_AUTH_TOKEN")
-    if env and env.strip():
-        return env.strip()
+    """Resolve the bearer token: Blackbox variable (read through Hermes) → Blackbox's own auth.token."""
+    env = host_secrets.read_host_secret("BLACKBOX_DKG_API_TOKEN") or host_secrets.read_host_secret("BLACKBOX_DKG_AUTH_TOKEN")
+    if env:
+        return env
     token_path = _dkg_home(dkg_home) / "auth.token"
     try:
         if token_path.exists():
