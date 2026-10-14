@@ -13,10 +13,13 @@ from __future__ import annotations
 
 import re
 import shlex
+import shutil
 import subprocess
 import os
 import sys
 from pathlib import Path
+
+import pytest
 
 INSTALL_SH = Path(__file__).resolve().parents[1] / "scripts" / "blackbox-install.sh"
 
@@ -260,3 +263,61 @@ def test_windows_keeps_sharing_on_and_pins_the_dkg_checksum():
     assert 'os.path.isfile(os.path.join(checkout, "plugin.yaml"))' in text
     assert "$(if ($env:BLACKBOX_PLUGIN_DIR) { $env:BLACKBOX_PLUGIN_DIR } else { $RepoDir })" in text
     assert "if ($published -ne $DkgIntegrity)" in _ps1_function("Install-BlackboxDkgPackage")
+    assert '$DkgAllowScripts = @("@origintrail-official/dkg", "better-sqlite3", "@openuidev/lang-core")' in text
+    assert '-SimpleMatch "had install scripts blocked"' in _ps1_function("Install-BlackboxDkgPackage")
+
+
+def _install_with_npm(tmp_path: Path, *, npm_output: str, existing_package_json: str | None = None):
+    """install_blackbox_dkg_package with a stub npm that prints *npm_output* and succeeds."""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    cli_dir = tmp_path / "dkg"
+    cli_dir.mkdir()
+    if existing_package_json is not None:
+        (cli_dir / "package.json").write_text(existing_package_json, encoding="utf-8")
+    npm = fake_bin / "npm"
+    npm.write_text(f"#!/bin/sh\nprintf '%s\\n' {shlex.quote(npm_output)}\nexit 0\n", encoding="utf-8")
+    npm.chmod(0o755)
+    script = f"""
+warn() {{ echo "WARN $*"; }}
+ok() {{ echo "OK $*"; }}
+step() {{ :; }}
+install_blackbox_dkg_package() {{
+{_body("install_blackbox_dkg_package")}
+}}
+BLACKBOX_DKG_ALLOW_SCRIPTS=(@origintrail-official/dkg better-sqlite3 @openuidev/lang-core)
+PATH={shlex.quote(str(fake_bin))}:$PATH
+HERMES_HOME={shlex.quote(str(tmp_path / "home"))}
+BLACKBOX_DKG_CLI_DIR={shlex.quote(str(cli_dir))}
+BLACKBOX_DKG_BIN={shlex.quote(str(cli_dir / "missing-dkg"))}
+BLACKBOX_DKG_PACKAGE=@origintrail-official/dkg@10.0.23
+BLACKBOX_DKG_INTEGRITY=
+install_blackbox_dkg_package
+"""
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    return result, cli_dir / "package.json"
+
+
+def test_npm_12_is_told_which_install_scripts_the_dkg_node_needs(tmp_path):
+    """npm 12 runs no install script that package.json's allowScripts does not list; without the
+    better-sqlite3 build the DKG node crashed on every start (stock Hermes's Node 26 / npm 12, 2026-10-14)."""
+    import json as _json
+    if not shutil.which("node"):
+        pytest.skip("Node.js is not installed")
+    _, package_json = _install_with_npm(tmp_path, npm_output="added 1 package",
+                                        existing_package_json='{"allowScripts": {"better-sqlite3": false}, "x": 1}')
+
+    data = _json.loads(package_json.read_text(encoding="utf-8"))
+    assert data["allowScripts"] == {"better-sqlite3": False, "@origintrail-official/dkg": True, "@openuidev/lang-core": True}
+    assert data["x"] == 1   # everything else in the file is kept
+
+
+def test_a_blocked_install_script_stops_the_install_with_the_package_named(tmp_path):
+    if not shutil.which("node"):
+        pytest.skip("Node.js is not installed")
+    blocked = ("npm warn install-scripts 1 packages had install scripts blocked because they are not covered by allowScripts:\n"
+               "npm warn install-scripts   new-native-dep@1.0.0 (install: node-gyp rebuild)")
+    result, _ = _install_with_npm(tmp_path, npm_output=blocked)
+
+    assert result.returncode == 1
+    assert "npm blocked install scripts the DKG node needs: new-native-dep@1.0.0" in result.stdout

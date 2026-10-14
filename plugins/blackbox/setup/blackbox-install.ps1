@@ -80,6 +80,9 @@ $DkgBin      = Join-Path $DkgCliDir "node_modules\.bin\dkg.cmd"
 $DkgPackage  = if ($env:BLACKBOX_DKG_PACKAGE) { $env:BLACKBOX_DKG_PACKAGE } else { "@origintrail-official/dkg@latest" }
 # The npm integrity hash $DkgPackage must have ("sha512-..."); empty = not checked (see the .sh).
 $DkgIntegrity = if ($env:BLACKBOX_DKG_INTEGRITY) { $env:BLACKBOX_DKG_INTEGRITY } else { "" }
+# Packages whose install scripts the DKG node needs; npm 12 runs only those listed under
+# "allowScripts" in the project's package.json (see the .sh for the whole story).
+$DkgAllowScripts = @("@origintrail-official/dkg", "better-sqlite3", "@openuidev/lang-core")
 $DkgDaemonUrl = "http://127.0.0.1:$DkgPort"
 $DkgStoreQueueLimit = if ($env:BLACKBOX_DKG_STORE_QUEUE_LIMIT) { [int]$env:BLACKBOX_DKG_STORE_QUEUE_LIMIT } else { 512 }
 $DkgListContextGraphsProjection = if ($env:BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION) { $env:BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION } else { "1" }
@@ -1092,6 +1095,16 @@ function Install-BlackboxDkgPackage {
 
     New-Item -ItemType Directory -Force -Path $DkgCliDir | Out-Null
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $npmLog) | Out-Null
+    # npm 12's allow list lives in the project's package.json: merge ours in (a package an
+    # operator set to false stays denied); older npm ignores the field.
+    $allowScriptsMerge = @'
+const fs = require("fs"); const file = process.argv[1];
+let pkg = {}; try { pkg = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) {}
+pkg.allowScripts = Object.assign({}, pkg.allowScripts);
+for (const name of process.argv.slice(2)) if (pkg.allowScripts[name] !== false) pkg.allowScripts[name] = true;
+fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
+'@
+    & node -e $allowScriptsMerge (Join-Path $DkgCliDir "package.json") @DkgAllowScripts
     try {
         & npm install --prefix $DkgCliDir --prefer-online $DkgPackage 2>&1 | Tee-Object -FilePath $npmLog | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "npm install exit $LASTEXITCODE" }
@@ -1102,6 +1115,12 @@ function Install-BlackboxDkgPackage {
         }
         Write-Warn2 "Could not install the published DKG package ${DkgPackage}: $_"
         Write-Step "npm log: $npmLog"
+        return $false
+    }
+
+    # A newer DKG release may need an install script the list does not name yet: stop and say which.
+    if (Select-String -Path $npmLog -SimpleMatch "had install scripts blocked" -Quiet) {
+        Write-Warn2 "npm blocked install scripts the DKG node needs (see the list in $npmLog)."
         return $false
     }
 

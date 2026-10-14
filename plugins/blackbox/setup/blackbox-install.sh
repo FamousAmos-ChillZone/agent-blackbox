@@ -76,6 +76,11 @@ BLACKBOX_DKG_PACKAGE="${BLACKBOX_DKG_PACKAGE:-@origintrail-official/dkg@latest}"
 # `hermes blackbox setup` pins an exact version and its hash (Hermes plugin catalog: a
 # download made at setup comes from the official source, pinned by checksum).
 BLACKBOX_DKG_INTEGRITY="${BLACKBOX_DKG_INTEGRITY:-}"
+# Packages whose install scripts the DKG node needs (its sqlite runtime check, the better-sqlite3
+# native build, a postinstall). Older npm ran every install script; npm 12 runs only those the
+# project's package.json lists under "allowScripts" (its --allow-scripts flag is refused for a
+# project install), and without the better-sqlite3 build the node crashes on every start.
+BLACKBOX_DKG_ALLOW_SCRIPTS=(@origintrail-official/dkg better-sqlite3 @openuidev/lang-core)
 BLACKBOX_DKG_DAEMON_URL="http://127.0.0.1:$BLACKBOX_DKG_PORT"
 BLACKBOX_DKG_STORE_QUEUE_LIMIT="${BLACKBOX_DKG_STORE_QUEUE_LIMIT:-512}"
 BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION="${BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION:-1}"
@@ -1473,6 +1478,15 @@ install_blackbox_dkg_package() {
 
     mkdir -p "$BLACKBOX_DKG_CLI_DIR"
     mkdir -p "$(dirname "$npm_log")"
+    # npm 12's allow list lives in the project's package.json: merge ours in (a package an
+    # operator set to false stays denied); older npm ignores the field.
+    node -e '
+const fs = require("fs"); const file = process.argv[1];
+let pkg = {}; try { pkg = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) {}
+pkg.allowScripts = Object.assign({}, pkg.allowScripts);
+for (const name of process.argv.slice(2)) if (pkg.allowScripts[name] !== false) pkg.allowScripts[name] = true;
+fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
+' "$BLACKBOX_DKG_CLI_DIR/package.json" "${BLACKBOX_DKG_ALLOW_SCRIPTS[@]}"
     if ! npm install --prefix "$BLACKBOX_DKG_CLI_DIR" --prefer-online \
         "$BLACKBOX_DKG_PACKAGE" >"$npm_log" 2>&1; then
         if [ -n "$backup_dir" ]; then
@@ -1486,6 +1500,14 @@ install_blackbox_dkg_package() {
             step "npm cache permissions are invalid. Fix them, then re-run:"
             echo "      sudo chown -R \"$(id -u):$(id -g)\" \"$npm_cache\""
         fi
+        step "npm log: $npm_log"
+        return 1
+    fi
+
+    # A newer DKG release may need an install script this list does not name yet: npm only warns,
+    # and the node would crash on start. Stop here and say which package, instead.
+    if grep -q "had install scripts blocked" "$npm_log"; then
+        warn "npm blocked install scripts the DKG node needs: $(grep -A4 'had install scripts blocked' "$npm_log" | grep -oE '^npm warn install-scripts +[^ ]+@[^ ]+' | awk '{print $NF}' | tr '\n' ' ')"
         step "npm log: $npm_log"
         return 1
     fi
