@@ -105,7 +105,7 @@ def test_real_http_job_waits_for_coverage_and_never_upgrades_failed_job(tmp_path
 
 def test_profile_a_b_a_keeps_explicit_query_trust_and_job_state_separate(tmp_path, local_server, monkeypatch):
     url, _, _ = local_server
-    import yaml
+    import hermes_yaml as yaml
     a, b = tmp_path / "a", tmp_path / "b"
     for home, mode, graph in [(a, "core-cache", "a"), (b, "rpc-only", "b")]:
         home.mkdir()
