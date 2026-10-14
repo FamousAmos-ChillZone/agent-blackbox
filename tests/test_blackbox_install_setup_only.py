@@ -178,3 +178,49 @@ def test_setup_only_keeps_community_sharing_on_by_reading_consent_from_the_plugi
 
 def test_the_config_writer_is_given_the_plugin_folder_in_setup_only_mode():
     assert '"${BLACKBOX_PLUGIN_DIR:-$REPO_DIR}" <<\'PYEOF\'' in _body("enable_and_configure")
+
+
+def _install_dkg_package(tmp_path: Path, *, pinned: str, published: str) -> subprocess.CompletedProcess:
+    """install_blackbox_dkg_package with a stub npm that publishes *published* and logs installs."""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    log = tmp_path / "npm-calls"
+    npm = fake_bin / "npm"
+    npm.write_text(f"""#!/bin/sh
+echo "$*" >> {shlex.quote(str(log))}
+if [ "$1" = view ]; then echo {shlex.quote(published)}; exit 0; fi
+exit 1
+""", encoding="utf-8")
+    npm.chmod(0o755)
+    script = f"""
+warn() {{ echo "WARN $*"; }}
+ok() {{ echo "OK $*"; }}
+step() {{ :; }}
+install_blackbox_dkg_package() {{
+{_body("install_blackbox_dkg_package")}
+}}
+PATH={shlex.quote(str(fake_bin))}:/usr/bin:/bin
+HERMES_HOME={shlex.quote(str(tmp_path / "home"))}
+BLACKBOX_DKG_CLI_DIR={shlex.quote(str(tmp_path / "dkg"))}
+BLACKBOX_DKG_PACKAGE=@origintrail-official/dkg@10.0.23
+BLACKBOX_DKG_INTEGRITY={shlex.quote(pinned)}
+install_blackbox_dkg_package
+"""
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    result.calls = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+    return result
+
+
+def test_a_pinned_dkg_package_with_another_checksum_is_never_installed(tmp_path):
+    result = _install_dkg_package(tmp_path, pinned="sha512-pinned", published="sha512-something-else")
+
+    assert result.returncode == 1
+    assert "not the one this Blackbox release pins" in result.stdout
+    assert not any(call.startswith("install") for call in result.calls)
+
+
+def test_a_pinned_dkg_package_with_the_pinned_checksum_goes_on_to_install(tmp_path):
+    result = _install_dkg_package(tmp_path, pinned="sha512-pinned", published="sha512-pinned")
+
+    assert "checksum matches the pinned one" in result.stdout
+    assert any(call.startswith("install") and "@origintrail-official/dkg@10.0.23" in call for call in result.calls)

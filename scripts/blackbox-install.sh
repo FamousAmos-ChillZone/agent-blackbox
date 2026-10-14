@@ -72,6 +72,10 @@ BLACKBOX_DKG_HOME="$BLACKBOX_INSTALL_ROOT/.dkg"
 BLACKBOX_DKG_CLI_DIR="$BLACKBOX_INSTALL_ROOT/dkg"
 BLACKBOX_DKG_BIN="$BLACKBOX_DKG_CLI_DIR/node_modules/.bin/dkg"
 BLACKBOX_DKG_PACKAGE="${BLACKBOX_DKG_PACKAGE:-@origintrail-official/dkg@latest}"
+# The npm integrity hash BLACKBOX_DKG_PACKAGE must have ("sha512-…"); empty = not checked.
+# `hermes blackbox setup` pins an exact version and its hash (Hermes plugin catalog: a
+# download made at setup comes from the official source, pinned by checksum).
+BLACKBOX_DKG_INTEGRITY="${BLACKBOX_DKG_INTEGRITY:-}"
 BLACKBOX_DKG_DAEMON_URL="http://127.0.0.1:$BLACKBOX_DKG_PORT"
 BLACKBOX_DKG_STORE_QUEUE_LIMIT="${BLACKBOX_DKG_STORE_QUEUE_LIMIT:-512}"
 BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION="${BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION:-1}"
@@ -855,7 +859,7 @@ Environment overrides:
   BLACKBOX_NODE_MAJOR, BLACKBOX_INSTALL_DIR, BLACKBOX_CONTEXT_GRAPH_ID,
   BLACKBOX_DKG_PORT, BLACKBOX_DKG_STORE_PORT, BLACKBOX_DKG_STORE_URL,
   BLACKBOX_DKG_HOME, BLACKBOX_DKG_CLI_DIR,
-  BLACKBOX_DKG_BIN, BLACKBOX_DKG_PACKAGE,
+  BLACKBOX_DKG_BIN, BLACKBOX_DKG_PACKAGE, BLACKBOX_DKG_INTEGRITY,
   BLACKBOX_DKG_DAEMON_URL, BLACKBOX_DKG_CATCHUP_TIMEOUT,
   BLACKBOX_DKG_STORE_QUEUE_LIMIT, BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION,
   BLACKBOX_CONTEXT_GRAPH_ID, BLACKBOX_GRAPH_PEER_ID,
@@ -1444,6 +1448,18 @@ install_blackbox_dkg_package() {
     if ! command -v npm >/dev/null 2>&1; then
         warn "npm is required to install the published OriginTrail DKG package."
         return 1
+    fi
+
+    # A pinned checksum is compared with what the registry publishes for the package BEFORE
+    # anything is installed; npm then checks the download against that same published hash.
+    if [ -n "$BLACKBOX_DKG_INTEGRITY" ]; then
+        local published=""
+        published="$(npm view "$BLACKBOX_DKG_PACKAGE" dist.integrity 2>/dev/null || true)"
+        if [ "$published" != "$BLACKBOX_DKG_INTEGRITY" ]; then
+            warn "The registry's checksum for $BLACKBOX_DKG_PACKAGE (${published:-unavailable}) is not the one this Blackbox release pins; it was not installed."
+            return 1
+        fi
+        ok "DKG package checksum matches the pinned one ($BLACKBOX_DKG_PACKAGE)"
     fi
 
     if [ -d "$BLACKBOX_DKG_CLI_DIR/.git" ]; then
