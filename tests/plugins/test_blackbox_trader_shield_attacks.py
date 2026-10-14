@@ -1,5 +1,10 @@
 """Trader Shield's attack table (dashboard/static/trader-shield-attacks.json) stays true.
 
+The page's table and what each row DOES are two files joined by row id: the plugin ships
+the table (title, how, outcome, targets, evidence); the tool calls live beside this test
+in ``trader_shield_attack_scenarios.json`` — attack commands are test data, and a plugin
+that ships them reads as an attack to Hermes's install scanner (plugin catalog).
+
 The Trader Shield page shows people which Web3 attacks are blocked, flagged or not covered.
 That table is the single source: every ``proof: "test"`` scenario is driven here through the
 REAL pre-execution hook (Trader Shield on for MetaMask, block mode, block at critical, the
@@ -12,7 +17,6 @@ no secret-shaped literal lives in the repo (LES-022).
 from __future__ import annotations
 
 import hashlib
-import json
 import random
 import os
 import secrets
@@ -21,6 +25,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
+from _trader_attack_table import ATTACKS, SCENARIO_FIELDS, SCENARIOS, TABLE
 from plugins.blackbox import ruleset as ruleset_mod
 from plugins.blackbox.dashboard import protection
 from plugins.blackbox.detection import wallet_files
@@ -33,7 +38,6 @@ from plugins.blackbox.kernel.crypto_secrets import seed_phrase
 from plugins.blackbox.shields.trader import mode as trader_mode
 from plugins.blackbox.ruleset import Ruleset
 
-TABLE = json.loads((protection.TRADER_SHIELD_PAGE.parent / "trader-shield-attacks.json").read_text(encoding="utf-8"))
 METAMASK = "nkbihfbeogaeaoehlefnkodbefgpgknn"
 PHANTOM = "bfnaelmomeimhlpmgjnjophhpkkoljpa"
 #: blocked / flagged / missed (a gap); allowed = a harmless look-alike that must raise nothing.
@@ -121,7 +125,7 @@ def shield(tmp_path, monkeypatch):
     wallet_files.EXISTING_STORES.reset()
 
 
-LOCAL = [attack for attack in TABLE["attacks"] if attack["proof"] == "test"]
+LOCAL = [attack for attack in ATTACKS if attack["proof"] == "test"]
 
 
 def _scenario_setting(attack, monkeypatch):
@@ -151,10 +155,17 @@ def test_the_table_is_well_formed():
     groups = {group["id"] for group in TABLE["groups"]}
     ids = [attack["id"] for attack in TABLE["attacks"]]
     assert len(ids) == len(set(ids))
-    for attack in TABLE["attacks"]:
+    for attack in ATTACKS:
         assert attack["group"] in groups and attack["outcome"] in OUTCOMES and attack["proof"] in ("test", "bench")
         assert attack["title"] and attack["how"] and attack["args"]
     assert TABLE.get("bench_run")
+
+
+def test_every_row_has_exactly_one_scenario_and_ships_none():
+    rows = [attack["id"] for attack in TABLE["attacks"]]
+    assert set(SCENARIOS) == set(rows)
+    shipped = {attack["id"]: sorted(SCENARIO_FIELDS & set(attack)) for attack in TABLE["attacks"]}
+    assert {row: fields for row, fields in shipped.items() if fields} == {}
 
 
 def test_every_gap_says_what_would_close_it():

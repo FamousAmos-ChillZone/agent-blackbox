@@ -847,7 +847,7 @@ Environment overrides:
   BLACKBOX_CONTEXT_GRAPH_ID, BLACKBOX_GRAPH_PEER_ID,
   BLACKBOX_COMMUNITY_GRAPH_ID, BLACKBOX_COMMUNITY_GRAPH_PEER_ID (set as a pair),
   BLACKBOX_LLM_PROVIDER,
-  BLACKBOX_LLM_MODEL, BLACKBOX_LLM_KEY_SOURCE, BLACKBOX_LLM_API_KEY,
+  BLACKBOX_LLM_MODEL, BLACKBOX_LLM_KEY_SOURCE=hermes|new, BLACKBOX_LLM_API_KEY,
   BLACKBOX_HERMES_SETUP=reuse|always|never, BLACKBOX_AUTO_DASHBOARD=0|1,
   BLACKBOX_SYNC_MODE=background|wait
 
@@ -1920,7 +1920,7 @@ setup_llm() {
         return 0
     fi
 
-    step "Trying existing Blackbox, Hermes, or OpenClaw LLM config."
+    step "Trying existing Blackbox or Hermes LLM config."
     if "$HERMES_BIN" blackbox setup-llm --auto; then
         ok "LLM reviewer ready"
     else

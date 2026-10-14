@@ -1,7 +1,7 @@
 """``blackbox setup-llm`` — configure the opt-in LLM second-opinion reviewer.
 
-Finds an API key the operator already has (Hermes or OpenClaw config, env
-files, environment) and asks before using it; keys are masked on screen.
+Finds an API key the operator already gave Hermes (read through Hermes, never
+from a file — see :mod:`.discovery`) and asks before using it; keys are masked on screen.
 
 KI-371: a key that lives in an environment variable Hermes loads (``~/.hermes/.env``)
 is saved as that variable's NAME (``llm.api_key_env``), never copied into config.yaml;
@@ -12,14 +12,14 @@ the operator's yes: an unattended run (no terminal) only says how to turn it on.
 from __future__ import annotations
 
 import argparse
-import os
 from typing import Any, Optional
 
 from ...kernel import settings
+from ...kernel.host_secrets import read_host_secret
 from .. import reviewer as llm
 from ...kernel.config import load_blackbox_config
-from .discovery import (_LLM_KEY_ENV_VARS, _env_key, _hermes_llm_candidate, _openclaw_llm_candidate,
-                        copied_key_env, reachable_key_env, stored_llm_entry)
+from .discovery import (_LLM_KEY_ENV_VARS, _env_key, _hermes_llm_candidate, copied_key_env, reachable_key_env,
+                        stored_llm_entry)
 
 # ---------------------------------------------------------------------------
 # setup-llm: interactive picker for the optional LLM reviewer
@@ -64,11 +64,8 @@ def _auto_llm_candidate() -> tuple[str, Optional[dict[str, str]]]:
             "api_key": cfg.llm_api_key,
             "api_key_env": "",
         }
-    for resolver in (_hermes_llm_candidate, _openclaw_llm_candidate):
-        candidate = resolver()
-        if candidate:
-            return candidate["source"], candidate
-    return "", None
+    candidate = _hermes_llm_candidate()
+    return (candidate["source"], candidate) if candidate else ("", None)
 
 
 def _resolve_key(source: str, provider: str) -> tuple[str, str]:
@@ -78,9 +75,8 @@ def _resolve_key(source: str, provider: str) -> tuple[str, str]:
     environment variable, never a command-line argument other programs can list).
     """
     if source == "new":
-        return os.environ.get("BLACKBOX_LLM_API_KEY", "").strip(), ""
-    resolver = {"openclaw": _openclaw_llm_candidate, "hermes": _hermes_llm_candidate}.get(source)
-    candidate = resolver() if resolver else None
+        return read_host_secret("BLACKBOX_LLM_API_KEY"), ""
+    candidate = _hermes_llm_candidate() if source == "hermes" else None
     if candidate and candidate["provider"] == provider:
         return candidate["api_key"], reachable_key_env(candidate)
     return _env_key(provider)
@@ -110,7 +106,7 @@ def _operator_agrees(candidate: dict[str, str]) -> bool:
 
 def _replace_copied_key(candidate: dict[str, str]) -> None:
     """KI-371 clean-up: a key an earlier setup copied into config.yaml becomes its variable's name."""
-    if os.environ.get("BLACKBOX_LLM_API_KEY") or not stored_llm_entry().get("api_key"):
+    if read_host_secret("BLACKBOX_LLM_API_KEY") or not stored_llm_entry().get("api_key"):
         return
     name = copied_key_env(candidate["provider"], candidate["api_key"])
     if name and settings.write_settings({"llm": {"api_key_env": name}}).get("ok"):
@@ -118,7 +114,7 @@ def _replace_copied_key(candidate: dict[str, str]) -> None:
 
 
 def _reuse_found_config() -> Optional[int]:
-    """Use a reviewer config found elsewhere (Blackbox, Hermes, OpenClaw).
+    """Use a reviewer config found elsewhere (Blackbox's own, or Hermes's).
 
     Returns the command's exit code when one was found, or None when there is none.
     """
@@ -166,7 +162,7 @@ def cmd_setup_llm(args: argparse.Namespace) -> int:
         if reused is not None:
             return reused
         if args.auto:
-            print("No reusable Hermes/OpenClaw LLM config found.")
+            print("No reusable Hermes LLM config found.")
             return 2
 
     tty = _tty()
@@ -185,11 +181,8 @@ def cmd_setup_llm(args: argparse.Namespace) -> int:
         api_key, api_key_env = args.api_key or "", ""
         if not api_key:
             if not source:
-                ans = _ask(
-                    "API key — [1] from Hermes env (default)  [2] from OpenClaw  [3] paste a new key: ",
-                    tty,
-                )
-                source = {"2": "openclaw", "3": "new"}.get(ans, "hermes")
+                ans = _ask("API key — [1] from Hermes env (default)  [2] paste a new key: ", tty)
+                source = "new" if ans == "2" else "hermes"
             api_key, api_key_env = _resolve_key(source, provider)
             if not api_key:
                 env_hint = " / ".join(_LLM_KEY_ENV_VARS.get(provider, ()))
