@@ -143,3 +143,27 @@ def test_the_page_and_its_files_are_served(app):
     assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
     assert "Engage Trader Shield" in page.text
     assert content.json()["can"] and table.json()["systems"] and table.json()["tested_with"]
+
+
+@pytest.mark.parametrize("broken", ['{"attacks": [', '{"a": 1, "a": 2}', "[" * 20 + "]" * 20])
+def test_a_broken_attack_table_answers_404_never_a_500(tmp_path, monkeypatch, broken):
+    from fastapi import FastAPI
+
+    (tmp_path / "attacks.json").write_text(broken, encoding="utf-8")
+    bare = dataclasses.replace(shields.get("trader"), packs=tmp_path / "wallets", attacks=tmp_path / "attacks.json")
+    monkeypatch.setattr(shields, "get", lambda shield_id: bare if shield_id == "trader" else None)
+    app = FastAPI()
+    shields_routes.register_pages(app)
+    response = TestClient(app, raise_server_exceptions=False).get("/shields/trader/attacks.json")
+    assert (response.status_code, response.json()) == (404, {"error": "not found"})
+
+
+def test_the_page_treats_a_failed_fetch_as_a_failure_not_an_empty_answer():
+    # A 404 graph.json (a shield that ships none) or a 403 content.json must reach the page's
+    # .catch() and its "open this from your dashboard" message — never render as zero counts
+    # or empty lists because r.json() parsed the {"error": ...} body as if it were the data.
+    page = shields.get("trader").page.read_text(encoding="utf-8")
+    get_json = re.search(r"function getJSON\(url\) \{.*?\n  \}", page, re.S)
+    assert get_json and "if (!r.ok) throw" in get_json.group(0)
+    # Every read goes through getJSON; the one other fetch is the Engage POST, which reads r.ok itself.
+    assert page.count("fetch(") == 2 and 'fetch(HERE + "../../api/settings", { method: "POST"' in page
