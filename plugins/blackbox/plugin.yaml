@@ -1,14 +1,19 @@
 name: blackbox
 version: "1.0.0"
+# The Hermes release this plugin is built and tested against (pm-managed installs,
+# hermes_yaml, the register_* routes it uses). SemVer floor, as the catalog requires.
+requires_hermes: ">=0.21.7"
 # `backend` is the only bundled kind Hermes auto-loads without a per-home
 # `plugins.enabled` entry (hermes_cli/plugins.py load gate). Blackbox must watch
 # every session with zero setup, so it opts into eager auto-load this way. It
 # registers no tool backend — only the lifecycle hooks below — so the load path
 # is otherwise identical to a standalone plugin.
 kind: backend
-description: "Agent Blackbox — graph-driven agent security. Syncs a threat ruleset from the curated public Verifiable Memory graph and matches every tool call and model request against it: prompt-injection patterns, privilege-escalation tool shapes, and vulnerable dependency installs. Audit mode records findings locally; block mode refuses tool calls at/above a configured severity. With consent, it shares privacy-safe threat reports with a community graph in DKG shared working memory and flags (never blocks) what other nodes report. Fail-open everywhere."
+description: "Agent Blackbox — graph-driven agent security. Syncs a threat ruleset from the curated public Verifiable Memory graph and matches every tool call and model request against it: prompt-injection patterns, privilege-escalation tool shapes, and vulnerable dependency installs. Audit mode records findings locally; block mode refuses tool calls at/above a configured severity. It also shares privacy-safe threat reports (never prompt or command text, never secrets) with a community graph in DKG shared working memory and flags (never blocks) what other nodes report; sharing is on by default and turned off with report: false (or BLACKBOX_REPORT=0). Fail-open everywhere."
 author: Umanitek
-hooks:
+# Every hook register() installs, declared so `hermes plugins validate` can check
+# the plugin registers nothing it did not declare (catalog admission rule 6).
+provides_hooks:
   - pre_tool_call
   - post_tool_call
   - pre_api_request
