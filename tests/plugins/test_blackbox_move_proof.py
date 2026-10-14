@@ -113,3 +113,19 @@ def test_a_function_defined_under_a_module_level_if_or_try_is_compared(repo: Pat
 
     assert result.returncode == 1, result.stdout + result.stderr
     assert "changed (1):\n  guarded::pick\n" in result.stdout
+
+
+def test_a_docstring_edit_is_clean_but_a_change_below_the_docstring_is_not(repo: Path) -> None:
+    documented = 'def scale(x):\n    """{}"""\n    return x * {}\n'
+    (repo / PLUGIN / "scale.py").write_text(documented.format("Double it.", "2"), encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "scale")
+
+    (repo / PLUGIN / "scale.py").write_text(documented.format("Twice the value.", "2"), encoding="utf-8")
+    reworded = _move_proof(repo)
+    (repo / PLUGIN / "scale.py").write_text(documented.format("Double it.", "3"), encoding="utf-8")
+    changed = _move_proof(repo)
+
+    assert reworded.returncode == 0, reworded.stdout + reworded.stderr
+    assert changed.returncode == 1, changed.stdout + changed.stderr
+    assert "changed (1):\n  scale::scale\n" in changed.stdout
