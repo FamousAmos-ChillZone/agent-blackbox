@@ -1533,6 +1533,22 @@ fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
         return 1
     fi
 
+    # The native SQLite module must load with the Node that will run the node. npm runs no
+    # install script for a package it already has, so a folder an earlier run left half-built
+    # (an npm that blocked the build, an interrupted install) is rebuilt here, then checked again.
+    local sqlite_dir="$BLACKBOX_DKG_CLI_DIR/node_modules/better-sqlite3"
+    local sqlite_probe='const DB = require(process.argv[1]); new DB(":memory:").close();'
+    if [ -d "$sqlite_dir" ] && ! node -e "$sqlite_probe" "$sqlite_dir" >/dev/null 2>&1; then
+        step "Building the DKG node's SQLite module for Node $(node -v) ..."
+        if ! npm rebuild --prefix "$BLACKBOX_DKG_CLI_DIR" better-sqlite3 >>"$npm_log" 2>&1 ||
+            ! node -e "$sqlite_probe" "$sqlite_dir" >/dev/null 2>&1; then
+            warn "The DKG node's SQLite module does not load with Node $(node -v) and could not be rebuilt."
+            step "npm log: $npm_log"
+            return 1
+        fi
+        ok "SQLite module built for Node $(node -v)"
+    fi
+
     if [ ! -x "$BLACKBOX_DKG_BIN" ] || [ ! -f "$package_json" ]; then
         if [ -n "$backup_dir" ]; then
             rm -rf "$BLACKBOX_DKG_CLI_DIR"

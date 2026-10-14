@@ -265,6 +265,7 @@ def test_windows_keeps_sharing_on_and_pins_the_dkg_checksum():
     assert "if ($published -ne $DkgIntegrity)" in _ps1_function("Install-BlackboxDkgPackage")
     assert '$DkgAllowScripts = @("@origintrail-official/dkg", "better-sqlite3", "@openuidev/lang-core")' in text
     assert '-SimpleMatch "had install scripts blocked"' in _ps1_function("Install-BlackboxDkgPackage")
+    assert "& npm rebuild --prefix $DkgCliDir better-sqlite3" in _ps1_function("Install-BlackboxDkgPackage")
 
 
 def _install_with_npm(tmp_path: Path, *, npm_output: str, existing_package_json: str | None = None):
@@ -383,3 +384,74 @@ def test_an_older_hermes_without_a_launcher_still_gets_the_link(tmp_path):
     link = _link_steps(tmp_path, pm_checkout=False, existing=None)
 
     assert link.is_symlink()
+
+
+def _install_with_sqlite(tmp_path: Path, *, built_before: bool, rebuild_works: bool):
+    """install_blackbox_dkg_package where better-sqlite3 loads only once a `built` marker exists;
+    the stub npm's `rebuild` makes the marker when *rebuild_works*. Returns (result, npm calls)."""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    cli_dir = tmp_path / "dkg"
+    sqlite_dir = cli_dir / "node_modules" / "better-sqlite3"
+    sqlite_dir.mkdir(parents=True)
+    (sqlite_dir / "package.json").write_text('{"main": "index.js"}', encoding="utf-8")
+    (sqlite_dir / "index.js").write_text(
+        "const fs = require('fs');\n"
+        "if (!fs.existsSync(__dirname + '/built')) throw new Error('not built');\n"
+        "module.exports = class { constructor() {} close() {} };\n", encoding="utf-8")
+    if built_before:
+        (sqlite_dir / "built").write_text("", encoding="utf-8")
+    calls = tmp_path / "npm-calls"
+    npm = fake_bin / "npm"
+    npm.write_text(f"""#!/bin/sh
+echo "$*" >> {shlex.quote(str(calls))}
+if [ "$1" = rebuild ] && [ {'1' if rebuild_works else '0'} = 1 ]; then touch {shlex.quote(str(sqlite_dir / 'built'))}; fi
+exit 0
+""", encoding="utf-8")
+    npm.chmod(0o755)
+    script = f"""
+warn() {{ echo "WARN $*"; }}
+ok() {{ echo "OK $*"; }}
+step() {{ echo "STEP $*"; }}
+install_blackbox_dkg_package() {{
+{_body("install_blackbox_dkg_package")}
+}}
+BLACKBOX_DKG_ALLOW_SCRIPTS=(better-sqlite3)
+PATH={shlex.quote(str(fake_bin))}:$PATH
+HERMES_HOME={shlex.quote(str(tmp_path / "home"))}
+BLACKBOX_DKG_CLI_DIR={shlex.quote(str(cli_dir))}
+BLACKBOX_DKG_BIN={shlex.quote(str(cli_dir / "missing-dkg"))}
+BLACKBOX_DKG_PACKAGE=@origintrail-official/dkg@10.0.23
+BLACKBOX_DKG_INTEGRITY=
+install_blackbox_dkg_package
+"""
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+    return result, calls.read_text(encoding="utf-8").splitlines()
+
+
+def test_a_half_built_sqlite_module_is_rebuilt_on_the_next_run(tmp_path):
+    """A retry of a setup whose npm had blocked the build: npm skips scripts for packages it already
+    has, so the DKG node kept crashing until the installer rebuilt the module (2026-10-14)."""
+    if not shutil.which("node"):
+        pytest.skip("Node.js is not installed")
+    result, calls = _install_with_sqlite(tmp_path, built_before=False, rebuild_works=True)
+
+    assert any(call.startswith("rebuild") and "better-sqlite3" in call for call in calls)
+    assert "SQLite module built" in result.stdout
+
+
+def test_a_sqlite_module_that_cannot_be_built_stops_the_install(tmp_path):
+    if not shutil.which("node"):
+        pytest.skip("Node.js is not installed")
+    result, _ = _install_with_sqlite(tmp_path, built_before=False, rebuild_works=False)
+
+    assert result.returncode == 1
+    assert "could not be rebuilt" in result.stdout
+
+
+def test_a_working_sqlite_module_is_not_rebuilt(tmp_path):
+    if not shutil.which("node"):
+        pytest.skip("Node.js is not installed")
+    _, calls = _install_with_sqlite(tmp_path, built_before=True, rebuild_works=True)
+
+    assert not any(call.startswith("rebuild") for call in calls)

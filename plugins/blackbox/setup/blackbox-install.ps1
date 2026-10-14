@@ -1124,6 +1124,24 @@ fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
         return $false
     }
 
+    # The native SQLite module must load with the Node that will run the node; a folder an earlier
+    # run left half-built is rebuilt here, then checked again (see the .sh).
+    $sqliteDir = Join-Path $DkgCliDir "node_modules\better-sqlite3"
+    $sqliteProbe = 'const DB = require(process.argv[1]); new DB(":memory:").close();'
+    if (Test-Path $sqliteDir) {
+        & node -e $sqliteProbe $sqliteDir 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Step "Building the DKG node's SQLite module for Node $(& node -v) ..."
+            & npm rebuild --prefix $DkgCliDir better-sqlite3 2>&1 | Add-Content -Path $npmLog
+            & node -e $sqliteProbe $sqliteDir 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warn2 "The DKG node's SQLite module does not load with Node $(& node -v) and could not be rebuilt (npm log: $npmLog)."
+                return $false
+            }
+            Write-Ok "SQLite module built for Node $(& node -v)"
+        }
+    }
+
     if (-not (Test-Path $DkgBin) -or -not (Test-Path $packageJson)) {
         if ($backupDir) {
             Remove-Item $DkgCliDir -Recurse -Force -ErrorAction SilentlyContinue
