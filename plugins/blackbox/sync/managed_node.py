@@ -266,37 +266,7 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
         _wait_for_managed_dkg_ready(cfg, "")
         return
     try:
-        subprocess.run(
-            [command, "stop"],
-            env=env,
-            stdin=subprocess.DEVNULL, capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
-        # ``dkg stop`` can return after its ten-second API wait while the
-        # worker is still draining sync jobs. Starting immediately then sees
-        # the old PID and refuses with "Daemon already running". Wait for the
-        # exact managed worker and API listener to disappear first.
-        stopped = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-        stop_deadline = time.monotonic() + 45
-        while time.monotonic() < stop_deadline:
-            pid_running = old_pid is not None and node_process.is_managed_daemon(cfg, old_pid)
-            if not pid_running and not stopped.reachable(timeout=0.5):
-                break
-            time.sleep(0.5)
-        else:
-            raise RuntimeError("managed DKG node did not finish stopping")
-
-        # A forced worker exit can leave its PID file behind. Remove it only
-        # after proving that exact managed process is no longer alive.
-        if old_pid is not None:
-            if not node_process.is_managed_daemon(cfg, old_pid):
-                try:
-                    (Path(cfg.dkg_home) / "daemon.pid").unlink()
-                except FileNotFoundError:
-                    pass
-
+        _stop_managed_dkg(cfg, old_pid, env, command)
         started = subprocess.run(
             [command, "start"],
             env=env,
@@ -315,6 +285,44 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
             + (f": {detail[-500:]}" if detail else "")
         )
     _wait_for_managed_dkg_ready(cfg, (started.stderr or started.stdout or "").strip())
+
+
+def _stop_managed_dkg(cfg: BlackboxConfig, old_pid: Optional[int], env: dict[str, str], command: str) -> None:
+    """Stop the node with ``dkg stop`` and wait until its process and API are gone (≤ 45 s).
+
+    Raises RuntimeError when it does not finish stopping; OSError / SubprocessError from the
+    stop command pass through to the caller.
+    """
+    subprocess.run(
+        [command, "stop"],
+        env=env,
+        stdin=subprocess.DEVNULL, capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    # ``dkg stop`` can return after its ten-second API wait while the
+    # worker is still draining sync jobs. Starting immediately then sees
+    # the old PID and refuses with "Daemon already running". Wait for the
+    # exact managed worker and API listener to disappear first.
+    stopped = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
+    stop_deadline = time.monotonic() + 45
+    while time.monotonic() < stop_deadline:
+        pid_running = old_pid is not None and node_process.is_managed_daemon(cfg, old_pid)
+        if not pid_running and not stopped.reachable(timeout=0.5):
+            break
+        time.sleep(0.5)
+    else:
+        raise RuntimeError("managed DKG node did not finish stopping")
+
+    # A forced worker exit can leave its PID file behind. Remove it only
+    # after proving that exact managed process is no longer alive.
+    if old_pid is not None:
+        if not node_process.is_managed_daemon(cfg, old_pid):
+            try:
+                (Path(cfg.dkg_home) / "daemon.pid").unlink()
+            except FileNotFoundError:
+                pass
 
 
 def _wait_for_managed_dkg_ready(cfg: BlackboxConfig, detail: str) -> None:
