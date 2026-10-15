@@ -496,13 +496,15 @@ def _docker_available(tmp_path: Path, *, docker: str | None, os_name: str = "lin
         stub = fake_bin / "docker"
         stub.write_text(f"#!/bin/sh\nexit {0 if docker == 'up' else 1}\n", encoding="utf-8")
         stub.chmod(0o755)
+    # PATH is the stub folder ALONE: the function needs only shell builtins and `docker`, and a host
+    # with a real, running Docker in /usr/bin (GitHub's Ubuntu runners) must not answer for the stub.
     script = f"""
 blackbox_docker_available() {{
 {_body("blackbox_docker_available")}
 }}
 OS={os_name}
 HOME={shlex.quote(str(tmp_path))}
-PATH={shlex.quote(str(fake_bin))}:/usr/bin:/bin
+PATH={shlex.quote(str(fake_bin))}
 blackbox_docker_available
 """
     return subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False).returncode
