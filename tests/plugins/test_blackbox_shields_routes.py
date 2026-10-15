@@ -175,7 +175,7 @@ def test_the_page_treats_a_failed_fetch_as_a_failure_not_an_empty_answer():
     # .catch() and its "open this from your dashboard" message — never render as zero counts
     # or empty lists because r.json() parsed the {"error": ...} body as if it were the data.
     page = shields.get("trader").page.read_text(encoding="utf-8")
-    get_json = re.search(r"function getJSON\(url\) \{.*?\n  \}", page, re.S)
+    get_json = re.search(r"function getJSON\(url\) \{.*?\n  \}", page, re.DOTALL)
     assert get_json and "if (!r.ok) throw" in get_json.group(0)
     # Every read goes through getJSON; the one other fetch is the Engage POST, which reads r.ok itself.
     assert page.count("fetch(") == 2 and 'fetch(HERE + "../../api/settings", { method: "POST"' in page
