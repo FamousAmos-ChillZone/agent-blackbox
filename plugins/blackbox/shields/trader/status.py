@@ -29,6 +29,7 @@ Usage::
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, Mapping
 
 from ...kernel import crypto_secrets
@@ -37,6 +38,8 @@ from ...kernel.display_safety import log_safe
 from ..contract import ShieldMode, ShieldStatus, StatusRow, StatusSection
 from ..packs import chosen_but_unavailable
 from . import detectors, mode as trader_mode
+
+logger = logging.getLogger(__name__)
 
 #: The gate a found store is checked against (the shield's own ``allows``).
 Gate = Callable[[Mapping[str, Any], ShieldMode], bool]
@@ -174,6 +177,7 @@ def build(active: ShieldMode, allows: Gate) -> ShieldStatus:
     try:
         found = _found_section(active, allows, block)
     except Exception:   # a filesystem error means "none found", never a broken page
+        logger.warning("blackbox: Trader Shield status: the wallet scan failed", exc_info=True)
         found = StatusSection(title="Found on this machine", help=FOUND_HELP,
                               rows=(StatusRow(*_NOT_PROTECTED, text="No wallet found on this machine."),))
     sections = [found, _watching_section(active, block, tuple(cfg.protected_paths or ()))]

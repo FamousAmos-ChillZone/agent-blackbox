@@ -51,8 +51,8 @@ CORE = Finding(identifier="fileaccess:read_file:ssh-private-key", category="file
                fields={"file_category": "ssh-private-key"})
 
 
-def _snapshot(mode, shield=TRADER) -> shields.ShieldsSnapshot:
-    return shields.ShieldsSnapshot(entries=((shield, mode),))
+def _snapshot(mode, which=TRADER) -> shields.ShieldsSnapshot:
+    return shields.ShieldsSnapshot(entries=((which, mode),))
 
 
 def _allowed(identifier, mode, fields=None) -> bool:
@@ -336,7 +336,7 @@ def test_the_skipped_rows_exist():
 
 
 @pytest.mark.parametrize("attack", LOCAL, ids=[attack["id"] for attack in LOCAL])
-def test_every_claimed_finding_of_every_row_stays_on_the_machine(shield, attack, monkeypatch):
+def test_every_claimed_finding_of_every_row_stays_on_the_machine(shield, attack, monkeypatch):  # health: allow F811 -- pytest injects the imported shield fixture by parameter name
     if attack["id"] in SKIPPED:
         pytest.skip(SKIPPED[attack["id"]])
     fill, findings = shield

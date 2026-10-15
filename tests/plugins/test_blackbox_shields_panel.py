@@ -210,7 +210,7 @@ def _events_payload() -> list[dict]:
 
 
 @pytest.mark.skipif(not PLAYWRIGHT.exists(), reason="node_modules/playwright is needed for the browser replay")
-def test_the_captured_payload_replays_clean_at_desktop_and_phone_widths(served, tmp_path):
+def test_the_captured_payload_replays_clean_at_desktop_and_phone_widths(served, tmp_path):  # health: allow F811 -- pytest injects the imported served fixture by parameter name
     chromium = _chromium()
     if chromium is None:
         pytest.skip("no Chromium build in Playwright's cache (npx playwright install chromium)")

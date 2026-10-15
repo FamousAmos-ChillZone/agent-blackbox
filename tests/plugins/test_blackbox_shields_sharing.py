@@ -89,7 +89,7 @@ def test_the_twins_are_the_ones_known_today():
 
 @pytest.mark.parametrize("shield_id, target, category, attack", TWINS,
                          ids=[f"{row['id']}-twin-of-{target}-by-core-{category}" for _s, target, category, row in TWINS])
-def test_a_twin_route_is_flagged_by_the_core_rule_and_shared(shield, shield_id, target, category, attack, monkeypatch):
+def test_a_twin_route_is_flagged_by_the_core_rule_and_shared(shield, shield_id, target, category, attack, monkeypatch):  # health: allow F811 -- pytest injects the imported shield fixture by parameter name
     fill, findings = shield
     _scenario_setting(attack, monkeypatch)
     monkeypatch.setattr(community_sharing.consent, "in_force", lambda: True)

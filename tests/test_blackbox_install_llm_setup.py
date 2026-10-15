@@ -1719,8 +1719,7 @@ def test_installers_restart_running_owned_dkg_only_for_runtime_changes() -> None
 
     assert "BLACKBOX_DKG_RESTART_REQUIRED" in INSTALL_SH.read_text(encoding="utf-8")
     assert 'if [ "$BLACKBOX_DKG_RESTART_REQUIRED" != true ]; then' in unix
-    assert "blackbox_dkg_control start || true" in unix      # through its service when it has one (KI-414)
-    assert "blackbox_dkg_control restart || true" in unix
+    assert "blackbox_dkg_control start || true" in unix and "blackbox_dkg_control restart || true" in unix   # via its service (KI-414)
     assert "if wait_for_blackbox_dkg_runtime; then" in unix
     assert 'docker start "$managed_container"' in INSTALL_SH.read_text(encoding="utf-8")
     assert "docker start $managedContainer" in windows

@@ -36,11 +36,14 @@ Usage::
 from __future__ import annotations
 
 import html
+import logging
 import re
 from dataclasses import replace
 from typing import Any, Callable, Mapping, Optional
 
 from ... import audit
+
+logger = logging.getLogger(__name__)
 from ...kernel.display_safety import log_safe
 from ..contract import EventFact, SessionSummary, ShieldEvent, TimelineStep
 from . import mode as trader_mode
@@ -316,6 +319,7 @@ def report(claims: Claims, blocking: bool) -> list[ShieldEvent]:
     try:
         sessions = audit.read_local_activity(max_sessions=SESSIONS_SCANNED).get("sessions") or []
     except Exception:   # an unreadable log means "no events", never a broken window
+        logger.warning("blackbox: Trader Shield events: the audit log could not be read", exc_info=True)
         sessions = []
     events: list[ShieldEvent] = []
     for session in sessions:
