@@ -26,14 +26,16 @@ Usage::
 
 from __future__ import annotations
 
+import os
 from datetime import date, datetime, timezone, UTC
 
 from .. import constants
-# Imported under its own name: the HealthInputs field below is also called community_authority, and a class
-# body that reads a module through a name it is defining works only by evaluation order.
+# Imported under these names to match inputs.py, where HealthInputs has fields called community_authority
+# and manifest_watch.
 from . import community_authority as community_alarms
-from . import manifest_watch as manifest_watcher   # the same reason: a HealthInputs field is called manifest_watch
-from dataclasses import dataclass, field
+from . import manifest_watch as manifest_watcher
+from .inputs import HealthInputs   # the facts the rules read; its own module (this file is at its size limit)
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, List, Mapping, Optional
 
@@ -57,72 +59,16 @@ class HealthItem:
         return {"audience": self.audience, "class": self.klass.value, "message": self.message, "what_to_do": self.what_to_do}
 
 
-@dataclass(frozen=True)
-class HealthInputs:
-    """Everything the health rules look at (plain facts, gathered by the caller).
-
-    ``node_reachable``; ``ruleset_age_s`` (seconds since the ruleset was
-    compiled; None = never); ``sync_interval_s``; ``rule_count``;
-    ``community_configured``; ``community_paused``; ``read_unavailable_reason``
-    ("" when the last community read was fine); ``curator_trusted`` (a key
-    manifest this network trusts); ``backlog`` (lanes text, "" when none);
-    ``away_keys``; ``revoked`` ({identifier: actions it BLOCKED here});
-    ``held_back`` (statements over the per-author budget); ``pending_shares``
-    (this node's reports waiting to be retried, R16); ``shares_given_up``
-    (reports abandoned after the retry window).
-    """
-
-    node_reachable: bool
-    ruleset_age_s: Optional[float]
-    sync_interval_s: float
-    rule_count: int
-    community_configured: bool = False
-    community_paused: bool = False
-    read_unavailable_reason: str = ""
-    curator_trusted: bool = False
-    backlog: str = ""
-    away_keys: int = 0
-    revoked: Mapping[str, int] = None  # type: ignore[assignment]
-    held_back: int = 0
-    pending_shares: int = 0
-    shares_given_up: int = 0
-    #: R10b (plan §12): the full operator set.
-    curators_last_day: str = ""          # newest day any curator statement carries ("" = none)
-    today: str = ""                      # UTC day the inputs were gathered
-    heartbeat_missing_keys: int = 0      # curator keys with no heartbeat in HEARTBEAT_SILENCE_DAYS
-    manifest_conflict: bool = False      # two trusted manifests, one order, different content
-    manifest_conflict_ignored: bool = False   # T1: a conflict at/below the sticky order, ignored
-    min_reader_version: str = ""         # the manifest's floor; my_version is constants.__version__
-    my_version: str = ""
-    env_mismatch_rows: int = 0           # rows signed for another network / graph
-    future_dated_rows: int = 0           # rows dated after tomorrow
-    kill_list_version: int = 0           # the kill list in force (0 = none)
-    kill_list_refused: str = ""          # why the newest kill list was refused (last-good kept)
-    manifest_state: str = ""             # R7b: "" | "pending" | "stale"
-    manifest_state_day: str = ""         # the day it takes effect / expired
-    manifest_expires_day: str = ""       # the 30-day-ahead key-expiry alarm
-    #: DKG-lookup B5: why live verified lookups are degraded ("" = answering). The
-    #: caller passes ``ruleset.live.HEALTH.read().problem()`` (the kernel reads no feature).
-    verified_lookup_problem: str = ""
-    #: trust-and-threat-lab R1: why the shipped legacy asset list was refused ("" = fine) — the
-    #: caller passes ``rs.verified_scope.legacy_refused``; the last-good asset tiers stay in force.
-    legacy_list_refused: str = ""
-    #: Community Curation C11: why sharing is stopped by consent ("" = in force or sharing off) — the
-    #: caller passes ``community.consent.why_not()`` only when `report: true`.
-    sharing_consent_problem: str = ""
-    #: Community Curation: the same facts for the COMMUNITY authority (its own manifest and curators).
-    community_authority: community_alarms.CommunityAuthorityInputs = field(
-        default_factory=community_alarms.CommunityAuthorityInputs)
-    #: trust-and-threat-lab W1: the manifest watcher's facts (``manifest_watch.watch_inputs``); shown with or without a community.
-    manifest_watch: manifest_watcher.ManifestWatchInputs = field(default_factory=manifest_watcher.ManifestWatchInputs)
-
-
 #: A ruleset older than this many sync intervals is stale.
 STALE_INTERVALS = 2.0
 #: Curators silent this long → INFO (verified rules still enforce).
 CURATOR_SILENCE_DAYS = 14
 #: A curator key without a heartbeat this long → INFO (plan §09: >48 h).
 HEARTBEAT_SILENCE_DAYS = 2
+#: What to do without a DKG node for Blackbox: a Hermes plugin-catalog install brings the plugin
+#: only, and `blackbox setup` installs the rest (the same installer curl runs).
+NODE_INSTALL_HINT = ("finish the install: hermes blackbox setup — until then the built-in rules "
+                     "(protected paths, secrets, Trader Shield) still protect")
 
 _CURATOR = "curator"
 
@@ -200,6 +146,9 @@ def _trust(inputs: HealthInputs) -> list[HealthItem]:
 
 
 def _node_and_ruleset(inputs: HealthInputs) -> list[HealthItem]:
+    if not inputs.node_installed:   # nothing to sync and nothing to restart: the alarms below would mislead
+        return [HealthItem(_OPERATOR, HealthClass.ACTION, "Blackbox setup has not run: no DKG node, so the verified "
+                           "threat graph is not loaded", NODE_INSTALL_HINT)]
     items = []
     stale = inputs.ruleset_age_s is None or inputs.ruleset_age_s > STALE_INTERVALS * max(1.0, inputs.sync_interval_s)
     if not inputs.node_reachable or stale:
@@ -326,6 +275,16 @@ def red(item: HealthItem) -> bool:
     return item.klass is not HealthClass.INFO
 
 
+def node_installed(cfg: Any, node_reachable: bool) -> bool:
+    """Whether this machine has a DKG node for Blackbox: one answers at ``cfg.dkg_url``, or
+    Blackbox's own DKG command (``cfg.dkg_bin``) is installed and can start one.
+
+    False after a Hermes plugin-catalog install (the plugin only): ``blackbox sync`` and the
+    alarms then say how to install the node instead of waiting on one that is not there.
+    """
+    return node_reachable or os.path.isfile(os.path.expanduser(str(getattr(cfg, "dkg_bin", "") or "")))
+
+
 def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked_by_identifier: Mapping[str, int],
            now: float, *, pending_shares: int = 0, shares_given_up: int = 0, sharing_consent_problem: str = "",
            verified_lookup_problem: str = "",
@@ -340,6 +299,7 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
     kill_list = getattr(rs, "kill_list", None) or {}
     return HealthInputs(
         node_reachable=node_reachable,
+        node_installed=node_installed(cfg, node_reachable),
         ruleset_age_s=(now - getattr(rs, "synced_at", 0)) if getattr(rs, "synced_at", 0) else None,
         sync_interval_s=float(getattr(cfg, "sync_interval", 0) or 0),
         rule_count=sum(int(v) for k, v in rs.counts().items() if k != "community"),

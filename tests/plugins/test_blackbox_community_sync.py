@@ -173,7 +173,12 @@ def test_term_safe_strips_controls_and_clamps():
 # ---------------------------------------------------------------------------
 
 
-def test_status_screams_when_ruleset_empty(bb_home, monkeypatch, capsys):
+def test_status_screams_when_ruleset_empty(bb_home, tmp_path, monkeypatch, capsys):
+    """KI-023 on a machine that HAS Blackbox's DKG node (setup ran) but no rules yet. A machine
+    where setup never ran says "SETUP NEEDED" instead (test_blackbox_catalog_only_install.py)."""
+    dkg_command = tmp_path / "dkg"
+    dkg_command.write_text("#!/bin/sh\n", encoding="utf-8")
+
     class EmptyRs:
         def counts(self):
             return {"injection": 0, "escalation": 0, "dependency": 0, "fileaccess": 0, "skill": 0, "ioc": 0, "community": 0}
@@ -182,7 +187,7 @@ def test_status_screams_when_ruleset_empty(bb_home, monkeypatch, capsys):
         def reachable(self):
             return False
 
-    monkeypatch.setattr(cli, "load_blackbox_config", lambda: BlackboxConfig())
+    monkeypatch.setattr(cli, "load_blackbox_config", lambda: BlackboxConfig(dkg_bin=str(dkg_command)))
     monkeypatch.setattr(cli, "DkgClient", lambda **kw: QuietClient())
     monkeypatch.setattr(cli.ruleset, "get", lambda cfg: EmptyRs())
     monkeypatch.setattr(cli.audit, "count_findings", lambda: 0)
