@@ -34,7 +34,7 @@ from ..sync import read_durable_progress, state as sync_state
 from . import community_routes, graph_pages, lifecycle, shields_routes, sync_meter, sync_timing
 from .graph_pages import _balanced_graph_entries, _graph_entries
 from .network_sync import network_sync_argv as _network_sync_argv
-from .node_probe import NodeLiveness, RepeatGate, node_sync_probe
+from .node_probe import NodeLiveness, NodeReadCache, RepeatGate, node_sync_probe
 from .sync_labels import (_community_progress, _is_hidden_swm_catchup_error, _is_retryable_durable_catchup_error,
                           _sync_label, current_transfer_error, not_subscribed_activity)
 from .threat_detail_fields import DETAIL_FIELDS
@@ -1100,50 +1100,8 @@ def create_app(*, manage_blackbox: bool = False):
                              ttl=15.0, timeout=5.0)
     _node_reachable = _liveness.reachable
     _node_read_log = RepeatGate()
-    _swr_lock = threading.Lock()
-    _swr_state: dict[str, dict[str, Any]] = {}   # key -> {"val", "ts"}
-    _swr_busy: set[str] = set()
-
-    def _swr(key: str, producer: Any, default: Any, ttl: float = _SWR_TTL) -> Any:
-        """Return the cached value for ``key`` instantly, refreshing in the
-        background past ``ttl``; ``default`` until the first refresh lands.
-        ``producer`` runs off the request path, so it may block on the node."""
-        now = time.monotonic()
-        with _swr_lock:
-            entry = _swr_state.get(key)
-            fresh = entry is not None and (now - entry["ts"]) < ttl
-            cur = entry["val"] if entry is not None else default
-            spawn = (not fresh) and (key not in _swr_busy)
-            if spawn:
-                _swr_busy.add(key)
-        if spawn:
-            def _run() -> None:
-                started = time.monotonic()
-                try:
-                    val = producer()
-                except Exception as exc:  # fail open; logged at most once per 5 min per key
-                    if _node_read_log.due(key):
-                        logger.warning("blackbox dashboard: node read %s failed: %s", key, exc)
-                    val = None
-                elapsed = time.monotonic() - started
-                if elapsed > _SLOW_NODE_READ_SEC and _node_read_log.due("slow:" + key):
-                    logger.warning("blackbox dashboard: node read %s took %.1f s", key, elapsed)
-                with _swr_lock:
-                    newer = _swr_state.get(key)
-                    # A value stored after this refresh began (a save's _swr_store) is newer: keep it.
-                    if val is not None and not (newer is not None and newer["ts"] > started):
-                        _swr_state[key] = {"val": val, "ts": time.monotonic()}
-                    _swr_busy.discard(key)
-            threading.Thread(target=_run, name="blackbox-swr", daemon=True).start()
-        return cur
-
-    def _swr_store(key: str, producer: Any) -> None:
-        """Recompute ``key`` now, on the request path, and cache it — for a read whose input
-        the request itself just changed (a Settings save changes a shield's card), so the
-        page's next read is the new value, not the one cached before the change."""
-        val = producer()
-        with _swr_lock:
-            _swr_state[key] = {"val": val, "ts": time.monotonic()}
+    _node_reads = NodeReadCache(default_ttl=_SWR_TTL, slow_seconds=_SLOW_NODE_READ_SEC, log_gate=_node_read_log)
+    _swr, _swr_store = _node_reads.get, _node_reads.store
 
     def _community_read(cfg: Any) -> Any:
         """THE community read behind every dashboard statistic (R0d): the whole verified
