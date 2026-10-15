@@ -26,6 +26,7 @@ from .curate import add_curate_parser, status_health_items
 from .dashboard import cmd_dashboard
 from .detection import cmd_setup_llm
 from .overrides import add_rules_parser
+from .setup import add_setup_parser
 from .sync import cmd_sync
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,7 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
 
     sub.add_parser("status", help="Show config, node reachability, ruleset + findings counts").set_defaults(func=_cmd_status)
     add_rules_parser(sub)   # R7b: local overrides (unblock / reblock / list)
+    add_setup_parser(sub)   # the full install after a Hermes plugin-catalog install
     sync = sub.add_parser("sync", help="Force a ruleset refresh from the DKG node")
     sync.add_argument(
         "--wait",
@@ -104,11 +106,8 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
         "--key-source", choices=["hermes", "new"], help="hermes: reuse the key Hermes has for its provider; new: BLACKBOX_LLM_API_KEY or ask"
     )
     setup_llm.add_argument("--api-key", help="Use this key (other programs can see it; prefer BLACKBOX_LLM_API_KEY)")
-    setup_llm.add_argument(
-        "--auto",
-        action="store_true",
-        help="Reuse existing Blackbox, Hermes, or OpenClaw credentials (asks on a terminal; else changes nothing)",
-    )
+    setup_llm.add_argument("--auto", action="store_true",
+                           help="Reuse the key Hermes already has for its provider (asks on a terminal; else changes nothing)")
     setup_llm.add_argument(
         "--configure",
         action="store_true",
@@ -153,7 +152,10 @@ def _cmd_status(args: argparse.Namespace) -> int:
           f"{counts['fileaccess']} fileaccess, {counts['skill']} skill, {counts['ioc']} ioc")
     if getattr(cfg, 'detection_backend', 'legacy-cache') != "dkg":
         _print_verified_progress(cfg)
-    if not any(counts.values()):
+    if not any(counts.values()) and not health.node_installed(cfg, reachable):
+        print("  !! SETUP NEEDED:   Blackbox setup has not run — no DKG node, so the verified threat graph is not loaded.")
+        print(f"                     To {health.NODE_INSTALL_HINT}.")
+    elif not any(counts.values()):
         # KI-023: an empty ruleset is a LOUD state, never a quiet day.
         print("  !! UNPROTECTED:    threat ruleset is EMPTY — detection has no rules.")
         print("                     Run 'hermes blackbox sync --wait' to load the threat graph.")

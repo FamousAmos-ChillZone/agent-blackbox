@@ -27,8 +27,13 @@ class FingerprintError(RuntimeError):
 
 # The heap sizing lives in the plugin (one implementation for the installer and
 # the plugin's own restarts). Loaded by path: this script runs before and outside
-# the plugin package, and the module imports only the standard library.
-_PROCESS_LIMITS_PATH = Path(__file__).resolve().parents[1] / "plugins" / "blackbox" / "sync" / "process_limits.py"
+# the plugin package, and the module imports only the standard library. In a
+# checkout this script sits in scripts/ beside plugins/blackbox/; the copy
+# `blackbox setup` runs sits in the plugin's own setup/ folder.
+_HERE = Path(__file__).resolve().parent
+_PLUGIN_DIR = next((candidate for candidate in (_HERE.parent / "plugins" / "blackbox", _HERE.parent)
+                    if (candidate / "sync" / "process_limits.py").is_file()), _HERE.parent / "plugins" / "blackbox")
+_PROCESS_LIMITS_PATH = _PLUGIN_DIR / "sync" / "process_limits.py"
 _PROCESS_LIMITS_SPEC = importlib.util.spec_from_file_location("blackbox_process_limits", _PROCESS_LIMITS_PATH)
 process_limits = importlib.util.module_from_spec(_PROCESS_LIMITS_SPEC)
 sys.modules[_PROCESS_LIMITS_SPEC.name] = process_limits
@@ -85,6 +90,26 @@ def _runtime_files(cli_dir: Path, dkg_home: Path, dkg_bin: Path) -> list[Path]:
     return sorted(files, key=lambda path: str(path.resolve()))
 
 
+def _node_version(node_bin: Path) -> str:
+    """`node --version` of *node_bin*; FingerprintError when it is missing or says nothing."""
+    if not node_bin.is_file():
+        raise FingerprintError(f"Node.js executable is missing: {node_bin}")
+    try:
+        node_version = subprocess.run(
+            [str(node_bin), "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            stdin=subprocess.DEVNULL,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise FingerprintError(f"could not identify Node.js runtime: {exc}") from exc
+    if not node_version:
+        raise FingerprintError("Node.js returned an empty version")
+    return node_version
+
+
 def compute_fingerprint(
     cli_dir: Path,
     dkg_home: Path,
@@ -101,20 +126,7 @@ def compute_fingerprint(
     dkg_home = dkg_home.expanduser().resolve()
     node_bin = node_bin.expanduser().resolve()
     dkg_bin = dkg_bin.expanduser().resolve()
-    if not node_bin.is_file():
-        raise FingerprintError(f"Node.js executable is missing: {node_bin}")
-    try:
-        node_version = subprocess.run(
-            [str(node_bin), "--version"],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        ).stdout.strip()
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise FingerprintError(f"could not identify Node.js runtime: {exc}") from exc
-    if not node_version:
-        raise FingerprintError("Node.js returned an empty version")
+    node_version = _node_version(node_bin)
 
     digest = hashlib.sha256()
     _add_bytes(digest, "format", b"blackbox-dkg-runtime-v3")
