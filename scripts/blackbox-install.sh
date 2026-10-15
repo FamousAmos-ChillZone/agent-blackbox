@@ -337,11 +337,18 @@ blackbox_dkg_owned_by() {
     local service_pid node_pid parent_pid
     service_pid="$(blackbox_dkg_service_pid "$1")"
     [ -n "$service_pid" ] || return 1
-    node_pid="$(tr -dc '0-9' <"$BLACKBOX_DKG_HOME/daemon.pid" 2>/dev/null)"
+    [ -f "$BLACKBOX_DKG_HOME/daemon.pid" ] || return 1
+    node_pid="$(tr -dc '0-9' <"$BLACKBOX_DKG_HOME/daemon.pid")"
     [ -n "$node_pid" ] || return 1
     [ "$node_pid" = "$service_pid" ] && return 0
     parent_pid="$(ps -o ppid= -p "$node_pid" 2>/dev/null | tr -dc '0-9')"
     [ "$parent_pid" = "$service_pid" ]
+}
+
+# Where launchd keeps the node's error output: launchd has no journal, so without this a node
+# that fails under the LaunchAgent leaves no trace. Errors only — the node writes its own log.
+blackbox_dkg_launchd_error_log() {
+    printf '%s/launchd-errors.log' "$BLACKBOX_DKG_HOME"
 }
 
 blackbox_dkg_answers() {
@@ -375,6 +382,10 @@ hand_dkg_node_to_service() {
         waited=$((waited + 1))
     done
     warn "The $supervisor service did not take over the DKG node within ${BLACKBOX_DKG_HANDOVER_WAIT_SECONDS}s."
+    if [ "$supervisor" = launchd ] && [ -s "$(blackbox_dkg_launchd_error_log)" ]; then
+        warn "Its last errors ($(blackbox_dkg_launchd_error_log)):"
+        tail -n 5 "$(blackbox_dkg_launchd_error_log)" | sed 's/^/    /'
+    fi
     if ! blackbox_dkg_answers; then
         blackbox_dkg_control stop >/dev/null 2>&1 || true   # so it does not fight the direct copy
         blackbox_dkg start >/dev/null 2>&1 || true
@@ -2503,8 +2514,10 @@ UNIT
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>StandardErrorPath</key><string>$(xml_escape "$(blackbox_dkg_launchd_error_log)")</string>
 </dict></plist>
 PLIST
+            : >"$(blackbox_dkg_launchd_error_log)" 2>/dev/null || true   # this registration's errors only
             launchctl unload "$plist" >/dev/null 2>&1 || true
             launchctl load "$plist" >/dev/null 2>&1 \
                 && ok "LaunchAgent registered — the node survives reboots" \

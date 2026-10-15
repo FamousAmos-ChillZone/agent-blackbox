@@ -280,7 +280,7 @@ def _register_boot_service(tmp_path, os_name: str):
         f"BLACKBOX_DKG_BIN='{_installed_dkg_bin(tmp_path)}'",
         _installer_constant("BLACKBOX_DKG_LAUNCHD_LABEL"),   # the script's own top-level value
         _top_level_function("xml_escape"),
-        _top_level_function("register_boot_service"),
+        _top_level_function("blackbox_dkg_launchd_error_log"), _top_level_function("register_boot_service"),
         "register_boot_service",
     ])
     result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
@@ -325,6 +325,9 @@ def test_the_macos_login_item_starts_the_node_with_its_limits_and_switches(tmp_p
     assert "DKG_LIST_CONTEXT_GRAPHS_PROJECTION" not in environment   # install-time only
     assert environment["DKG_SYNC_ON_CONNECT_ENABLED"] == "1"
     assert environment["DKG_HOME"] == "/srv/bb/.dkg"
+    # launchd has no journal: the node's errors under the LaunchAgent land next to its own log (KI-426)
+    assert plist["StandardErrorPath"] == "/srv/bb/.dkg/launchd-errors.log"
+    assert "StandardOutPath" not in plist   # errors only: the node writes its own log
 
 
 def test_a_plist_value_is_escaped_as_xml_text(tmp_path):
@@ -342,7 +345,7 @@ def test_a_plist_value_is_escaped_as_xml_text(tmp_path):
         *(f"{key}='{value}'" for key, value in settings_with_markup.items()),
         f"BLACKBOX_DKG_BIN='{_installed_dkg_bin(tmp_path)}'",
         _installer_constant("BLACKBOX_DKG_LAUNCHD_LABEL"),   # the script's own top-level value
-        _top_level_function("xml_escape"), _top_level_function("register_boot_service"), "register_boot_service",
+        _top_level_function("xml_escape"), _top_level_function("blackbox_dkg_launchd_error_log"), _top_level_function("register_boot_service"), "register_boot_service",
     ])
     subprocess.run(["bash", "-c", script], check=True, env={"PATH": f"{stubs}:/usr/bin:/bin"})
 

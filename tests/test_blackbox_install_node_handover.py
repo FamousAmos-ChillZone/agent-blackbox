@@ -25,7 +25,8 @@ REPO = Path(__file__).resolve().parents[1]
 INSTALL_SH = REPO / "scripts" / "blackbox-install.sh"
 LABEL = "ai.umanitek.blackbox-dkg"
 FUNCTIONS = ("blackbox_dkg_supervisor", "blackbox_dkg_control", "blackbox_dkg_service_pid",
-             "blackbox_dkg_owned_by", "blackbox_dkg_answers", "hand_dkg_node_to_service")
+             "blackbox_dkg_owned_by", "blackbox_dkg_answers", "blackbox_dkg_launchd_error_log",
+             "hand_dkg_node_to_service")
 
 # Pids of the simulated machine: the installer's unsupervised copy, and the copy a service starts
 # (`dkg start --foreground` = the CLI's supervisor; the node daemon is its child).
@@ -195,6 +196,16 @@ def test_when_the_service_does_not_take_the_node_it_is_started_directly_and_the_
     assert machine.node_pid() == ORPHAN_NODE   # the node runs again
     assert "did not take over the DKG node" in output
     assert "now runs under" not in output
+
+
+def test_a_failed_launchd_handover_shows_the_service_s_last_errors(tmp_path):
+    """launchd keeps no journal: the warning shows what the LaunchAgent's node wrote to stderr."""
+    machine = Machine(tmp_path, "launchd")
+    machine.orphan_running()
+    machine.service_takes_over(False)
+    (machine.dkg_home / "launchd-errors.log").write_text("Daemon already running (PID 4527).\n", encoding="utf-8")
+    _, output = machine.run()
+    assert "launchd-errors.log" in output and "Daemon already running (PID 4527)." in output
 
 
 def test_without_a_service_nothing_is_handed_over(tmp_path):
