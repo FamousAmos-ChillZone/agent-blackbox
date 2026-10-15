@@ -481,6 +481,7 @@ block mode.
 | `overrides.json` | your local unblock decisions |
 | `kill_list.json` | the last good curator kill list for skills and MCP servers |
 | `allowlist.json` | your own additions to the allowlist (optional) |
+| `attach_declined.json` | the agents you switched protection off for, so no automatic re-attach turns it back on (present once you do) |
 
 ## Privacy and your rights
 

@@ -953,7 +953,7 @@ def create_app(*, manage_blackbox: bool = False):
             touched: list[dict[str, Any]] = []
             now = time.monotonic()
             reconcile = force or now - float(_rescan_state["last_reconcile"] or 0.0) >= _RECONCILE_INTERVAL_SEC
-            targets = current if reconcile else current - known
+            targets = {t for t in (current if reconcile else current - known) if not attach.is_declined(*t)}   # never one the operator switched off
             if reconcile:
                 _rescan_state["last_reconcile"] = now
             for kind, target in sorted(targets):
@@ -1181,7 +1181,7 @@ def create_app(*, manage_blackbox: bool = False):
     def get_settings() -> Any:
         """Current user-tunable detection policy (defaults included)."""
         try:
-            return shields_routes.with_shields(settings.read_settings())
+            return shields_routes.with_shields(community_routes.effective_sharing(settings.read_settings()))
         except Exception as exc:  # pragma: no cover - fail open
             logger.debug("blackbox dashboard: read settings failed: %s", exc)
             return JSONResponse({"error": "could not read settings"}, status_code=500)
@@ -1197,7 +1197,7 @@ def create_app(*, manage_blackbox: bool = False):
             result = settings.write_settings(payload, sharing_consent=community.consent.for_settings(payload), validators=shields.settings_validators())   # on = opt back in
             if result.get("ok"):
                 shields_routes.refresh_after_save(_swr_store)
-            return JSONResponse(shields_routes.with_shields(result), status_code=200 if result.get("ok") else 400)
+            return JSONResponse(shields_routes.with_shields(community_routes.effective_sharing(result)), status_code=200 if result.get("ok") else 400)
         except Exception as exc:  # pragma: no cover - fail open
             logger.debug("blackbox dashboard: write settings failed: %s", exc)
             return JSONResponse({"ok": False, "errors": ["internal error"]}, status_code=500)

@@ -96,6 +96,14 @@ def in_force() -> bool:
     return record is None or not record.withdrawn_at
 
 
+def sharing_on(cfg: Any) -> bool:
+    """Whether this node shares with the community graph right now: the build and the
+    operator's switch and a community graph (``cfg.community_enabled``) AND a consent in force
+    — the two checks the share gate makes. Every "is sharing on?" display reads this, so an
+    opt-out made with ``blackbox report --withdraw-consent`` never shows as on."""
+    return bool(getattr(cfg, "community_enabled", False)) and in_force()
+
+
 def why_not() -> str:
     """"" when consent is in force; otherwise ONE plain sentence saying why not —
     never given, withdrawn, or given for an earlier text of the terms (which

@@ -7166,7 +7166,7 @@
         modePill.textContent = mode + ' mode';
         modePill.title = mode === "block"
           ? "Block mode. Confirmed verifiable-graph threats are blocked."
-          : "Audit mode. Findings are logged locally; nothing is blocked or shared.";
+          : "Audit mode. Findings are logged locally; nothing is blocked.";
       } else {
         modePill.hidden = true;
       }
@@ -7710,6 +7710,7 @@
         closeSettings();
         showToast("Changes saved successfully.", "ok");
         shieldsUI.refresh();   // a shield's card shows/hides with its mode
+        poll();                // the mode badge and the Threat sharing tile, now — not at the next 4 s poll
       } else {
         var errs = Array.isArray(result.errors) && result.errors.length
           ? result.errors.join(" · ")
@@ -7736,6 +7737,7 @@
 
   function loadSettings(force) {
     if (setLoaded && !force) { return Promise.resolve(); }
+    if (force) setLoaded = false;   // until this read lands, Save must not send what was loaded before
     return getJSON("/api/settings").then(function (data) {
       setState = normalizeSettings(data);
       shieldsUI.settings.load(data && data.shields);
@@ -7746,7 +7748,7 @@
     }).catch(function () {
       if (!setState) setState = defaultSetState();
       renderAllSettings();
-      setStatus("Could not load settings. Showing defaults.", "err");
+      setStatus("Could not load the current settings, so Save is off (nothing old is written back). Close and open Settings to try again.", "err");
     });
   }
 
@@ -7773,8 +7775,17 @@
     lockSettingsPageScroll();
     overlay.classList.add("open");
     overlay.setAttribute("aria-hidden", "false");
-    if (setState) renderAllSettings(); else setStatus("Loading settings…");
-    loadSettings(false);
+    if (setState) renderAllSettings();
+    // Always re-read the server's settings: Engage on a shield's banner, `blackbox report
+    // --withdraw-consent`, the CLI or another tab may have changed them since this page last
+    // read them, and Save sends the WHOLE form — a stale form would write the old values back.
+    // Save stays off until the fresh read lands (and stays off if it fails).
+    var saveButton = $("set-save");
+    if (saveButton) saveButton.disabled = true;
+    setStatus("Loading settings…");
+    loadSettings(true).then(function () {
+      if (saveButton && !setSaving) saveButton.disabled = !setLoaded;
+    });
     var close = $("set-close");
     if (close) close.focus();
   }

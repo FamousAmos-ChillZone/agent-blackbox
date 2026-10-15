@@ -595,3 +595,75 @@ def test_excluded_build_artifacts_do_not_trigger_refresh(installed_copy):
     os.utime(src / "__pycache__" / "x.pyc", (2000, 2000))
 
     assert attach_plugin_copy._needs_copy(dest) is False
+
+
+# ---------------------------------------------------------------------------
+# The operator's switch-off sticks (2026-10-15 dashboard audit: unticking an
+# agent in Local agents was undone by the next background rescan)
+# ---------------------------------------------------------------------------
+
+
+def _protected(home):
+    return attach.enabled_list_has(yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8")), "blackbox")
+
+
+def test_a_switched_off_hermes_home_is_skipped_by_the_automatic_sweep(fake_env, monkeypatch, tmp_path):
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bb"))
+    profile = fake_env["profile"]
+    attach.attach_all(openclaw=False)
+    assert _protected(profile)
+
+    attach.detach_hermes(profile)
+    assert attach.is_declined("hermes", profile)
+    attach.attach_all(openclaw=False)              # the timer's sweep
+
+    assert not _protected(profile)
+    assert _protected(fake_env["hermes_default"])  # the others are still kept protected
+
+
+def test_an_explicit_attach_turns_it_back_on_and_forgets_the_switch_off(fake_env, monkeypatch, tmp_path):
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bb"))
+    profile = fake_env["profile"]
+    attach.attach_hermes(profile)
+    attach.detach_hermes(profile)
+
+    attach.attach_all(openclaw=False, explicit=True)   # `blackbox attach`
+
+    assert _protected(profile) and not attach.is_declined("hermes", profile)
+
+
+def test_a_dry_run_detach_records_nothing(fake_env, monkeypatch, tmp_path):
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bb"))
+    attach.attach_hermes(fake_env["profile"])
+    attach.detach_hermes(fake_env["profile"], dry_run=True)
+    assert not attach.is_declined("hermes", fake_env["profile"])
+
+
+def test_a_switched_off_openclaw_workspace_is_skipped_by_the_automatic_sweep(fake_env, monkeypatch, tmp_path):
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bb"))
+    workspace = fake_env["openclaw_ws"]
+    attach.attach_openclaw(workspace)
+    attach.detach_openclaw(workspace)
+
+    report = attach.attach_all(hermes=False)
+
+    assert report["openclaw"] == [] and attach.is_declined("openclaw", workspace)
+    assert "blackbox" not in json.loads((workspace / "openclaw.json").read_text(encoding="utf-8"))["plugins"].get("allow", [])
+
+
+def test_the_dashboard_rescan_keeps_an_agent_the_operator_switched_off(fake_env, monkeypatch, tmp_path):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bb"))
+    server = load_blackbox("dashboard.server")
+    profile = fake_env["profile"]
+    attach.attach_hermes(profile)
+    with TestClient(server.create_app(), base_url="http://127.0.0.1:9700") as client:
+        token = {"X-Blackbox-Token": client.get("/api/session").json()["token"]}
+        off = client.post("/api/agents/protection", json={"targets": [{"kind": "hermes", "target": str(profile), "enabled": False}]},
+                          headers=token)
+        assert off.status_code == 200
+        client.post("/api/agents/rescan", headers=token)   # ↻ — a forced reconcile of every agent
+
+    assert not _protected(profile)

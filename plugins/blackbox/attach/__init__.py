@@ -8,6 +8,7 @@ target. Callers use this surface:
   the periodic auto-attach sweep).
 * :func:`attach_hermes` / :func:`detach_hermes`, :func:`attach_openclaw` /
   :func:`detach_openclaw` — one target.
+* :func:`is_declined` — whether the operator switched a target off (automatic sweeps skip it).
 * :func:`discover_hermes_homes`, :func:`discover_openclaw_workspaces`,
   :func:`is_managed_blackbox_chat_profile`, :func:`enabled_list_has`.
 * :func:`cmd_attach` / :func:`cmd_detach` — the CLI commands, and the
@@ -37,6 +38,7 @@ from .hermes_homes import (
 from .openclaw_bridge import attach_openclaw, detach_openclaw
 from .openclaw_discovery import discover_openclaw_workspaces
 from .plugin_copy import copy_plugin_tree, repo_root
+from .declined import is_declined
 from .sweep import attach_all, detach_all
 
 __all__ = [
@@ -52,6 +54,7 @@ __all__ = [
     "discover_hermes_homes",
     "discover_openclaw_workspaces",
     "enabled_list_has",
+    "is_declined",
     "is_managed_blackbox_chat_profile",
     "print_hermes_attach_row",
     "print_openclaw_attach_row",

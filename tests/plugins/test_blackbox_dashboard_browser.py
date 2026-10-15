@@ -239,3 +239,22 @@ def test_the_served_app_never_touches_the_real_hermes_home(served):
     assert str(Path.home()) != str(_REAL_HOME)
     homes = hermes_homes.discover_hermes_homes()
     assert all(str(home).startswith(str(Path.home())) for home in homes), homes
+
+
+FRESHNESS = Path(__file__).with_name("dashboard_settings_freshness.mjs")
+
+
+def test_settings_reopened_after_engage_shows_it_and_save_keeps_it(served, tmp_path):
+    """2026-10-15 dashboard audit: Engage on the Trader banner, then a Settings Save, disengaged
+    the shield — the page reopened the Settings copy it loaded before Engage and saved it back."""
+    chromium = _chromium()
+    if chromium is None:
+        pytest.skip("no Chromium build in Playwright's cache (npx playwright install chromium)")
+    result = subprocess.run(["node", str(FRESHNESS), served, str(tmp_path)], capture_output=True, text=True, timeout=240,
+                            cwd=str(REPO), env={**os.environ, "PW_EXEC": chromium}, check=False)
+    assert result.returncode == 0, result.stderr[-2000:]
+    summary = json.loads((tmp_path / "settings-freshness-summary.json").read_text(encoding="utf-8"))
+    assert summary["pageErrors"] == [] and summary["consoleErrors"] == [], summary
+    assert summary["offBefore"] is False                 # the fixture starts with the shield off
+    assert summary["onInForm"] is True                   # reopened Settings shows the Engage
+    assert summary["enabledAfterSave"] is True           # and Save keeps it
