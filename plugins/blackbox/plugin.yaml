@@ -3,6 +3,14 @@ version: "1.0.0"
 # The Hermes release this plugin is built and tested against (pm-managed installs,
 # hermes_yaml, the register_* routes it uses). SemVer floor, as the catalog requires.
 requires_hermes: ">=0.21.7"
+# The libraries Blackbox imports that are not the standard library: report signing, the
+# local dashboard, and the DKG node's process supervision. Hermes ships them in its core
+# today; declared so Blackbox keeps working if that ever changes.
+python_dependencies:
+  - "cryptography>=41,<52"
+  - "fastapi>=0.104,<1"
+  - "uvicorn>=0.31,<1"
+  - "psutil>=5.9,<9"   # Hermes pins 7.2.2, and 8.0.0 on Android (resolved for every platform at once)
 # `backend` is the only bundled kind Hermes auto-loads without a per-home
 # `plugins.enabled` entry (hermes_cli/plugins.py load gate). Blackbox must watch
 # every session with zero setup, so it opts into eager auto-load this way. It

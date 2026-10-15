@@ -46,6 +46,23 @@ Blackbox itself has a problem, the agent keeps working.
 
 ## Install
 
+**Already running Hermes?** Install Blackbox from the Hermes plugin catalog, then
+let it set up the rest:
+
+```bash
+hermes plugins install blackbox
+hermes blackbox setup
+```
+
+`hermes blackbox setup` runs the same installer as the one-line install below,
+inside the Hermes you already have: it installs Blackbox's DKG node (a pinned,
+checksum-verified release), joins both threat graphs, protects every local agent,
+runs the first sync and starts the dashboard. Use `--store oxigraph` to set up
+without Docker. Until setup has run, the built-in rules (protected paths, secrets,
+Trader Shield) already protect, and `blackbox status` says setup is still needed.
+
+**Starting from scratch?** One command installs Hermes and Blackbox together:
+
 ```bash
 curl -fsSL blackbox.umanitek.ai | bash
 ```
@@ -71,12 +88,6 @@ The node's default store is Blazegraph, which runs in Docker. On macOS the
 installer starts Docker Desktop if it is installed but stopped; on Linux, start
 Docker Engine first. To install without Docker, download the script and run it
 with `--store oxigraph`.
-
-**Installed from the Hermes plugin catalog?** The catalog installs the plugin
-only. It protects at once with its built-in rules (Trader Shield, protected
-paths, secrets, the checks that need no data); the verified threat graph and
-the community graph arrive once the local DKG node is installed with the
-installer above.
 
 **Compatibility:** Hermes 0.21.7 or later. OpenClaw 2026.6.11 or later (older
 releases lack the plugin hooks Blackbox needs). A running OpenClaw Gateway must
@@ -158,8 +169,8 @@ plugins:
 |---|---|---|---|
 | Malicious or vulnerable package | `dep:<ecosystem>:<name>@<version>` | `dep:npm:event-stream@3.3.6` | verified malware blocks; a vulnerability never blocks |
 | Prompt injection | `injection:<pattern hash>` | `injection:2146bcb99d8ef90a53e99b08` | verified rules block |
-| Dangerous command | `escalation:<tool>:<argument shape>` | `escalation:terminal:remote-script-pipe` | verified rules block |
-| Sensitive file access | `fileaccess:<tool>:<category>` | `fileaccess:read_file:ssh-private-key` | verified rules block |
+| Dangerous command | `escalation:{tool}:<argument shape>` | `escalation:terminal:remote-script-pipe` | verified rules block |
+| Sensitive file access | `fileaccess:{tool}:<category>` | `fileaccess:read_file:ssh-private-key` | verified rules block |
 | Suspicious skill | `skill:<name>@<version>`, or `skill:artifact:<sha256>:<shape>` for a local one | `skill:sneaky-skill@1.0.0` | verified rules block |
 | Known-bad indicator | `ioc:<type>:<value>` — domain, url, ip, hash, wallet, contract | `ioc:domain:evil.example` | flags only in this version |
 | Secret exposure | `secret:<type>` — the type only, never the value | `secret:aws-access-key` | blocks at `block_severity`; a secret sent off the machine is rated critical |
@@ -334,6 +345,7 @@ Every command is also `hermes blackbox …`.
 
 | Command | What it does |
 |---|---|
+| `blackbox setup` | finish a plugin-catalog install: DKG node, threat graphs, agents, dashboard (`--store oxigraph` for no Docker) |
 | `blackbox status` | config, node health, ruleset and findings counts, operator alarms |
 | `blackbox sync --wait` | pull the latest verified threat graph now |
 | `blackbox dashboard` | the live dashboard at http://127.0.0.1:9700 |

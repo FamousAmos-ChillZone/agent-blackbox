@@ -6,7 +6,10 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const BLACKBOX_BLAZEGRAPH_JAVA_OPTS = '-Xms512m -Xmx4g';
-const BLACKBOX_BLAZEGRAPH_CPUS = '4';
+// At most 4 CPUs for the store — never more than Docker has: `docker run --cpus 4` is refused
+// outright on a 2-CPU machine ("range of CPUs is from 0.01 to 2.00"), which stopped the default
+// install on small servers. Docker's own count is used (Docker Desktop's VM may have fewer than the host).
+const BLACKBOX_BLAZEGRAPH_MAX_CPUS = 4;
 const MINIMUM_BLAZEGRAPH_HEAP_BYTES = 4 * 1024 * 1024 * 1024;
 
 function fail(message) {
@@ -188,6 +191,13 @@ function backupContainerName(name) {
   return `${name}-pre-4g-${Date.now()}`;
 }
 
+async function blazegraphCpus() {
+  const info = await runDocker(['info', '--format', '{{.NCPU}}'], { timeoutMs: 10_000 });
+  const available = Number.parseInt(String(info.stdout).trim(), 10);
+  if (info.exitCode !== 0 || !Number.isFinite(available) || available < 1) return String(BLACKBOX_BLAZEGRAPH_MAX_CPUS);
+  return String(Math.min(BLACKBOX_BLAZEGRAPH_MAX_CPUS, available));
+}
+
 function blackboxDockerRunner(log) {
   return {
     async run(args, opts) {
@@ -196,7 +206,7 @@ function blackboxDockerRunner(log) {
           [
             'run',
             '--cpus',
-            BLACKBOX_BLAZEGRAPH_CPUS,
+            await blazegraphCpus(),
             '-e',
             `JAVA_OPTS=${BLACKBOX_BLAZEGRAPH_JAVA_OPTS}`,
             ...args.slice(1),
@@ -212,7 +222,7 @@ function blackboxDockerRunner(log) {
       if (heapBytes(javaOpts) >= MINIMUM_BLAZEGRAPH_HEAP_BYTES) {
         const name = String(args[1] || 'dkg-blazegraph');
         const limited = await runDocker(
-          ['update', '--cpus', BLACKBOX_BLAZEGRAPH_CPUS, name],
+          ['update', '--cpus', await blazegraphCpus(), name],
           { timeoutMs: 10_000 },
         );
         if (limited.exitCode !== 0) {
