@@ -311,6 +311,77 @@ blackbox_dkg_control() {
     esac
 }
 
+BLACKBOX_DKG_HANDOVER_WAIT_SECONDS="${BLACKBOX_DKG_HANDOVER_WAIT_SECONDS:-90}"   # a node start takes 10-60 s
+
+# The pid of the process the node's service runs (`dkg start --foreground`, the DKG CLI's own
+# supervisor), or nothing when the service is not running it.
+blackbox_dkg_service_pid() {
+    local pid=""
+    case "$1" in
+        systemd) pid="$(systemctl show -p MainPID --value blackbox-dkg 2>/dev/null)" ;;
+        systemd-user) pid="$(systemctl --user show -p MainPID --value blackbox-dkg 2>/dev/null)" ;;
+        launchd)
+            pid="$(launchctl print "gui/$(id -u)/$BLACKBOX_DKG_LAUNCHD_LABEL" 2>/dev/null |
+                sed -nE 's/^[[:space:]]*pid = ([0-9]+).*/\1/p' | head -n 1)"
+            ;;
+    esac
+    pid="$(printf '%s' "$pid" | tr -dc '0-9')"
+    [ "$pid" = 0 ] && pid=""   # systemd's MainPID for a unit that is not running
+    printf '%s' "$pid"
+}
+
+# Whether the running node is the one the service *supervisor* runs. The node daemon writes its
+# own pid to daemon.pid; under `dkg start --foreground` it is a child of the process the service
+# started, so either that process or its parent is the service's.
+blackbox_dkg_owned_by() {
+    local service_pid node_pid parent_pid
+    service_pid="$(blackbox_dkg_service_pid "$1")"
+    [ -n "$service_pid" ] || return 1
+    node_pid="$(tr -dc '0-9' <"$BLACKBOX_DKG_HOME/daemon.pid" 2>/dev/null)"
+    [ -n "$node_pid" ] || return 1
+    [ "$node_pid" = "$service_pid" ] && return 0
+    parent_pid="$(ps -o ppid= -p "$node_pid" 2>/dev/null | tr -dc '0-9')"
+    [ "$parent_pid" = "$service_pid" ]
+}
+
+blackbox_dkg_answers() {
+    curl -fsS --max-time 5 "$BLACKBOX_DKG_DAEMON_URL/api/status" >/dev/null 2>&1
+}
+
+# A first install has no service yet, so it runs the node itself (with install-only settings,
+# e.g. sync-on-connect off). Registering the service does not move that node under it: launchd's
+# copy exits "Daemon already running" and is relaunched for ever, systemd's is only enabled — so
+# until a reboot nothing supervises the node and it keeps the install-only settings (KI-426).
+# Hand it over: stop the installer's copy, start the node through its service, and confirm the
+# service's process is the one serving. If the service does not take it, the node is started
+# again directly so protection never drops, and the run says so.
+hand_dkg_node_to_service() {
+    local supervisor waited=0
+    supervisor="$(blackbox_dkg_supervisor)"
+    [ -n "$supervisor" ] || return 0
+    if blackbox_dkg_owned_by "$supervisor" && blackbox_dkg_answers; then
+        ok "The DKG node already runs under its $supervisor service"
+        return 0
+    fi
+    step "Handing the DKG node to its $supervisor service ..."
+    blackbox_dkg stop >/dev/null 2>&1 || true   # the installer's own, unsupervised copy
+    blackbox_dkg_control restart >/dev/null 2>&1 || true
+    while [ "$waited" -lt "$BLACKBOX_DKG_HANDOVER_WAIT_SECONDS" ]; do
+        if blackbox_dkg_owned_by "$supervisor" && blackbox_dkg_answers; then
+            ok "The DKG node now runs under its $supervisor service"
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    warn "The $supervisor service did not take over the DKG node within ${BLACKBOX_DKG_HANDOVER_WAIT_SECONDS}s."
+    if ! blackbox_dkg_answers; then
+        blackbox_dkg_control stop >/dev/null 2>&1 || true   # so it does not fight the direct copy
+        blackbox_dkg start >/dev/null 2>&1 || true
+    fi
+    warn "The node runs without its service until the next reboot or login; re-run the installer to retry."
+}
+
 blackbox_has_dkg_state() {
     [ -f "$BLACKBOX_DKG_HOME/auth.token" ] || [ -f "$BLACKBOX_DKG_HOME/config.json" ]
 }
@@ -2443,6 +2514,7 @@ PLIST
             warn "Unknown OS — boot persistence not configured; start the node manually after reboots."
             ;;
     esac
+    hand_dkg_node_to_service
 }
 
 # Boot persistence for the DASHBOARD (KI-296). The dashboard is what keeps a

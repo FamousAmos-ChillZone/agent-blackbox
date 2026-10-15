@@ -274,6 +274,7 @@ def _register_boot_service(tmp_path, os_name: str):
         "set -euo pipefail",
         "ok() { :; }", "warn() { echo \"WARN $*\"; }", "step() { :; }", "heading() { :; }",
         "secure_dkg_token_perms() { :; }", "id() { echo 1000; }",
+        "hand_dkg_node_to_service() { :; }",   # its own tests: test_blackbox_install_node_handover.py
         f"HOME={tmp_path}",
         *(f"{key}='{value}'" for key, value in _NODE_SETTINGS.items()),
         f"BLACKBOX_DKG_BIN='{_installed_dkg_bin(tmp_path)}'",
@@ -337,7 +338,7 @@ def test_a_plist_value_is_escaped_as_xml_text(tmp_path):
         (stubs / name).chmod(0o755)
     script = "\n".join([
         "set -euo pipefail", "ok() { :; }", "warn() { :; }", "step() { :; }", "heading() { :; }",
-        "secure_dkg_token_perms() { :; }", f"HOME={tmp_path}",
+        "secure_dkg_token_perms() { :; }", "hand_dkg_node_to_service() { :; }", f"HOME={tmp_path}",
         *(f"{key}='{value}'" for key, value in settings_with_markup.items()),
         f"BLACKBOX_DKG_BIN='{_installed_dkg_bin(tmp_path)}'",
         _installer_constant("BLACKBOX_DKG_LAUNCHD_LABEL"),   # the script's own top-level value
