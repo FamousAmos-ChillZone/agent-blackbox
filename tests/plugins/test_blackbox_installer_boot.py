@@ -250,6 +250,14 @@ def _installed_dkg_bin(tmp_path) -> str:
     return str(dkg)
 
 
+def _installer_constant(name: str) -> str:
+    """The `NAME=value` line the installer sets at its top level, so the sandbox cannot drift from it."""
+    import re
+    match = re.search(rf"^{name}=\S+", _src(), re.MULTILINE)
+    assert match is not None, name
+    return match.group(0)
+
+
 def _register_boot_service(tmp_path, os_name: str):
     """Run the real register_boot_service in a sandbox shaped like *os_name*."""
     import shutil
@@ -269,6 +277,7 @@ def _register_boot_service(tmp_path, os_name: str):
         f"HOME={tmp_path}",
         *(f"{key}='{value}'" for key, value in _NODE_SETTINGS.items()),
         f"BLACKBOX_DKG_BIN='{_installed_dkg_bin(tmp_path)}'",
+        _installer_constant("BLACKBOX_DKG_LAUNCHD_LABEL"),   # the script's own top-level value
         _top_level_function("xml_escape"),
         _top_level_function("register_boot_service"),
         "register_boot_service",
@@ -331,6 +340,7 @@ def test_a_plist_value_is_escaped_as_xml_text(tmp_path):
         "secure_dkg_token_perms() { :; }", f"HOME={tmp_path}",
         *(f"{key}='{value}'" for key, value in settings_with_markup.items()),
         f"BLACKBOX_DKG_BIN='{_installed_dkg_bin(tmp_path)}'",
+        _installer_constant("BLACKBOX_DKG_LAUNCHD_LABEL"),   # the script's own top-level value
         _top_level_function("xml_escape"), _top_level_function("register_boot_service"), "register_boot_service",
     ])
     subprocess.run(["bash", "-c", script], check=True, env={"PATH": f"{stubs}:/usr/bin:/bin"})

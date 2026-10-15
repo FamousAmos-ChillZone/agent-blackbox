@@ -54,6 +54,7 @@ fi
 DKG_NETWORK="${BLACKBOX_DKG_NETWORK:-mainnet-base}"   # a valid dkg mainnet (mainnet-base | mainnet-gnosis). Base uses ETH for gas. No testnet.
 BLACKBOX_HOME="${BLACKBOX_HOME:-$HERMES_HOME/blackbox}"
 BLACKBOX_SYSTEMD_DIR=/etc/systemd/system   # where system units go (node service units below)
+BLACKBOX_DKG_LAUNCHD_LABEL=ai.umanitek.blackbox-dkg   # the node's LaunchAgent on macOS (register_boot_service)
 BLACKBOX_PTRACE_SCOPE_FILE=/proc/sys/kernel/yama/ptrace_scope   # read by register_key_console
 BLACKBOX_DKG_PORT_EXPLICIT=false
 [ -n "${BLACKBOX_DKG_PORT+x}" ] && BLACKBOX_DKG_PORT_EXPLICIT=true
@@ -246,6 +247,68 @@ blackbox_dkg() {
     DKG_VM_RECOVERY_PREFETCH_ENABLED="$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED" \
     NODE_OPTIONS="$BLACKBOX_DKG_NODE_OPTIONS" \
     "$BLACKBOX_DKG_BIN" "$@"
+}
+
+# The service an earlier install registered to supervise the node (register_boot_service):
+# "systemd" (system unit), "systemd-user", "launchd", or nothing — a first install, where the
+# installer runs the node itself until the service is registered at the end.
+blackbox_dkg_supervisor() {
+    if command -v systemctl >/dev/null 2>&1; then
+        if [ -f "$BLACKBOX_SYSTEMD_DIR/blackbox-dkg.service" ] &&
+            systemctl is-enabled --quiet blackbox-dkg 2>/dev/null; then
+            echo systemd
+            return 0
+        fi
+        if [ -f "$HOME/.config/systemd/user/blackbox-dkg.service" ] &&
+            systemctl --user is-enabled --quiet blackbox-dkg 2>/dev/null; then
+            echo systemd-user
+            return 0
+        fi
+    fi
+    if [ "$(uname -s 2>/dev/null)" = Darwin ] && [ -f "$HOME/Library/LaunchAgents/$BLACKBOX_DKG_LAUNCHD_LABEL.plist" ]; then
+        echo launchd
+    fi
+    return 0
+}
+
+# `blackbox_dkg_control start|stop|restart` — through the supervising service when there is
+# one. A supervised node stopped or started with `dkg stop`/`dkg start` behind the service's
+# back makes the two fight: the service's node exits "failed", the service restarts it, and
+# the unit's ExecStartPre `dkg stop` (the orphan guard) kills the copy the installer just
+# started — the unit flaps, and the catch-up that follows fails "Daemon already running"
+# (KI-414). The plugin restarts through the service for the same reason (FIX-0014). A stop
+# through the service stays stopped (systemd does not restart a requested stop; launchd's
+# job is unloaded) until the matching start.
+blackbox_dkg_control() {
+    local action="$1" target
+    case "$(blackbox_dkg_supervisor)" in
+        systemd) systemctl "$action" blackbox-dkg ;;
+        systemd-user) systemctl --user "$action" blackbox-dkg ;;
+        launchd)
+            target="gui/$(id -u)/$BLACKBOX_DKG_LAUNCHD_LABEL"
+            case "$action" in
+                stop) launchctl bootout "$target" 2>/dev/null || true ;;
+                start | restart)
+                    if launchctl print "$target" >/dev/null 2>&1; then
+                        if [ "$action" = restart ]; then
+                            launchctl kickstart -k "$target"
+                        else
+                            launchctl kickstart "$target"
+                        fi
+                    else
+                        launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$BLACKBOX_DKG_LAUNCHD_LABEL.plist"
+                    fi
+                    ;;
+            esac
+            ;;
+        *)
+            if [ "$action" = restart ]; then
+                blackbox_dkg stop && blackbox_dkg start
+            else
+                blackbox_dkg "$action"
+            fi
+            ;;
+    esac
 }
 
 blackbox_has_dkg_state() {
@@ -604,7 +667,7 @@ PYEOF
         fi
         if [ "$BLACKBOX_DKG_ALREADY_RUNNING" = true ]; then
             step "Pausing DKG so its overloaded store can pass recovery checks ..."
-            if blackbox_dkg stop; then
+            if blackbox_dkg_control stop; then
                 BLACKBOX_DKG_ALREADY_RUNNING=false
                 if check_blackbox_blazegraph; then
                     return 0
@@ -1667,9 +1730,7 @@ install_dkg() {
             return 0
         fi
         step "Restarting the Blackbox-owned DKG node to activate sync and relay updates ..."
-        if blackbox_dkg stop; then
-            blackbox_dkg start || true
-        fi
+        blackbox_dkg_control restart || true
         if wait_for_blackbox_dkg_runtime; then
             rm -f "$BLACKBOX_DKG_STORE_RESET_MARKER"
             ok "Blackbox DKG node restarted with the current sync settings"
@@ -1700,7 +1761,7 @@ install_dkg() {
     # DKG's launcher can give up its 15-second startup wait just before a
     # healthy daemon finishes loading a large Blazegraph namespace. The
     # commit-aware readiness check below is the authoritative result.
-    blackbox_dkg start || true
+    blackbox_dkg_control start || true
     if wait_for_blackbox_dkg_runtime; then
         rm -f "$BLACKBOX_DKG_STORE_RESET_MARKER"
         ok "DKG node bootstrapped on $DKG_NETWORK"
@@ -2320,13 +2381,13 @@ UNIT
             fi
             ;;
         Darwin)
-            local plist="$HOME/Library/LaunchAgents/ai.umanitek.blackbox-dkg.plist"
+            local plist="$HOME/Library/LaunchAgents/$BLACKBOX_DKG_LAUNCHD_LABEL.plist"
             mkdir -p "$HOME/Library/LaunchAgents"
             cat > "$plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>ai.umanitek.blackbox-dkg</string>
+  <key>Label</key><string>$BLACKBOX_DKG_LAUNCHD_LABEL</string>
   <key>ProgramArguments</key><array>
     <string>$BLACKBOX_DKG_BIN</string><string>start</string><string>--foreground</string>
   </array>
