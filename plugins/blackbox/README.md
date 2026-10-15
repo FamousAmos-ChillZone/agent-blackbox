@@ -185,7 +185,8 @@ leave your machine.
 ## Trader Shield (crypto wallets and keys)
 
 Trader Shield keeps an AI agent away from your crypto wallets and keys. It is
-**off by default**; you switch it on.
+the first *shield*: an opt-in protection pack for one kind of user, on top of
+Blackbox's checks for everyone. It is **off by default**; you switch it on.
 
 What it stops, in block mode:
 
@@ -517,9 +518,10 @@ shrink).
 | `guard/` | the five hooks and the flag-or-block decision |
 | `detection/` | the checks: pure functions that name and match an action |
 | `ruleset/` | the compiled lookups the checks read, kept fresh |
-| `shields/` | opt-in protection packs; Trader Shield's wallets and browser folders as data |
+| `shields/` | opt-in protection packs; Trader Shield's wallets and browser folders as data ([how shields are built](shields/README.md)) |
 | `community/` | building, signing, sending, reading and verifying community statements |
 | `sync/` | the local DKG node and the verified-graph sync |
+| `setup/` | `blackbox setup`: the full install after a plugin-catalog install |
 | `audit/` | local logs and the share ledger |
 | `dashboard/` | the local web UI and its API |
 | `attach/` | finding and protecting every local agent |
