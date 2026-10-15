@@ -168,12 +168,58 @@ def test_a_chosen_pack_that_is_not_supported_now_is_reported(home, monkeypatch):
     assert all((row.icon, row.state) == ("!", "warn") for row in rows.values())
 
 
-def test_supported_packs_a_saved_list_leaves_out_are_named(home, monkeypatch):
+def _saved(monkeypatch, **trader):
+    """The config entry as a Settings save left it: ``shields.trader`` = *trader*."""
+    from plugins.blackbox.kernel import config as kernel_config
+
+    monkeypatch.setattr(kernel_config, "_blackbox_entry", lambda: {"shields": {"trader": trader}})
+
+
+def _with_extra_supported_pack(monkeypatch, home):
+    """This version supports one more wallet than any earlier save could have offered:
+    the planned Rabby pack, promoted to supported."""
+    import dataclasses
+
+    packs = tuple(dataclasses.replace(pack, status="supported") if pack.id == "rabby" else pack
+                  for pack in trader_mode.wallet_packs())
+    assert any(pack.id == "rabby" for pack in packs)
+    monkeypatch.setattr(trader_mode, "_packs", packs)
+
+
+def _attention(active):
+    return list(_rows(_card(active), "Needs attention")) if "Needs attention" in [
+        section.title for section in _card(active).sections] else []
+
+
+def test_wallets_the_operator_left_unticked_are_never_called_new(home, monkeypatch):
+    # The trader bench, 2026-10-15: MetaMask + Phantom saved out of the five offered; the card
+    # said "new since you last saved: Exodus, Electrum, Solana CLI" for wallets just unticked.
     _config(monkeypatch)
-    rows = _rows(_card(trader_mode.build(enabled=True, wallets=("metamask", "phantom"))), "Needs attention")
-    assert list(rows) == ["new since you last saved: Exodus, Electrum, Solana CLI"]
-    # Never saved (every supported pack is chosen): nothing needs attention.
-    assert "Needs attention" not in [section.title for section in _card(trader_mode.build(enabled=True)).sections]
+    _saved(monkeypatch, enabled=True, wallets=["metamask", "phantom"],
+           offered=["metamask", "phantom", "exodus", "electrum", "solana-cli"])
+    assert _attention(trader_mode.build(enabled=True, wallets=("metamask", "phantom"))) == []
+
+
+def test_a_wallet_added_after_the_save_is_named(home, monkeypatch):
+    _config(monkeypatch)
+    _with_extra_supported_pack(monkeypatch, home)
+    _saved(monkeypatch, enabled=True, wallets=["metamask"],
+           offered=["metamask", "phantom", "exodus", "electrum", "solana-cli"])
+    assert _attention(trader_mode.build(enabled=True, wallets=("metamask",))) == ["new since you last saved: Rabby"]
+
+
+def test_a_save_from_before_offered_was_recorded_counts_the_first_five_as_offered(home, monkeypatch):
+    _config(monkeypatch)
+    _with_extra_supported_pack(monkeypatch, home)
+    _saved(monkeypatch, enabled=True, wallets=["metamask", "phantom"])   # no "offered": saved by an older version
+    assert _attention(trader_mode.build(enabled=True, wallets=("metamask", "phantom"))) == ["new since you last saved: Rabby"]
+
+
+def test_never_saved_means_every_supported_wallet_and_nothing_needs_attention(home, monkeypatch):
+    _config(monkeypatch)
+    _with_extra_supported_pack(monkeypatch, home)
+    _saved(monkeypatch, enabled=True)   # no wallets list: every supported wallet is chosen
+    assert _attention(trader_mode.build(enabled=True)) == []
 
 
 # ------------------------------------------------------------------ the serving boundary
@@ -276,6 +322,8 @@ def _every_section_setup(home, monkeypatch):
     monkeypatch.setattr(detectors.EXISTING_STORES, "get", lambda: stores)
     chosen = ShieldMode(True, {"wallets": ("metamask", "ghost"), "addresses": (OWN,)}, frozenset({"addresses"}))
     monkeypatch.setattr(trader_mode, "current", lambda: chosen)
+    # Saved when Settings offered four wallets: the fifth (Solana CLI) is new since that save.
+    _saved(monkeypatch, enabled=True, wallets=["metamask", "ghost"], offered=["metamask", "phantom", "exodus", "electrum"])
 
 
 def test_the_captured_payload_has_every_section_and_no_address(home, monkeypatch):

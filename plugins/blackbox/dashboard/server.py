@@ -1129,11 +1129,21 @@ def create_app(*, manage_blackbox: bool = False):
                 if elapsed > _SLOW_NODE_READ_SEC and _node_read_log.due("slow:" + key):
                     logger.warning("blackbox dashboard: node read %s took %.1f s", key, elapsed)
                 with _swr_lock:
-                    if val is not None:
+                    newer = _swr_state.get(key)
+                    # A value stored after this refresh began (a save's _swr_store) is newer: keep it.
+                    if val is not None and not (newer is not None and newer["ts"] > started):
                         _swr_state[key] = {"val": val, "ts": time.monotonic()}
                     _swr_busy.discard(key)
             threading.Thread(target=_run, name="blackbox-swr", daemon=True).start()
         return cur
+
+    def _swr_store(key: str, producer: Any) -> None:
+        """Recompute ``key`` now, on the request path, and cache it — for a read whose input
+        the request itself just changed (a Settings save changes a shield's card), so the
+        page's next read is the new value, not the one cached before the change."""
+        val = producer()
+        with _swr_lock:
+            _swr_state[key] = {"val": val, "ts": time.monotonic()}
 
     def _community_read(cfg: Any) -> Any:
         """THE community read behind every dashboard statistic (R0d): the whole verified
@@ -1227,6 +1237,8 @@ def create_app(*, manage_blackbox: bool = False):
         """
         try:
             result = settings.write_settings(payload, sharing_consent=community.consent.for_settings(payload), validators=shields.settings_validators())   # on = opt back in
+            if result.get("ok"):
+                shields_routes.refresh_after_save(_swr_store)
             return JSONResponse(shields_routes.with_shields(result), status_code=200 if result.get("ok") else 400)
         except Exception as exc:  # pragma: no cover - fail open
             logger.debug("blackbox dashboard: write settings failed: %s", exc)

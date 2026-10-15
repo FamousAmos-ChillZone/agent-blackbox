@@ -155,13 +155,14 @@ def _watching_section(active: ShieldMode, block: bool, protected_paths: tuple[st
 
 
 def _health_section(active: ShieldMode) -> StatusSection | None:
-    """Health rows: chosen packs that are not supported now, and supported packs a saved
-    list leaves out (an absent list means every supported pack, so it never has one)."""
+    """Health rows: chosen packs that are not supported now, and supported packs added since
+    the operator last saved — never ones they were offered and left unticked."""
     packs = trader_mode.wallet_packs()
     chosen = trader_mode.wallets(active)
     lines = [log_safe(line, 240) for line in chosen_but_unavailable(packs, chosen)]
-    unsaved = [pack.name for pack in packs if pack.status == "supported" and pack.id not in chosen]
-    if trader_mode.WALLETS in active.options and unsaved:
+    added = set(trader_mode.newly_supported(active))
+    unsaved = [pack.name for pack in packs if pack.id in added]
+    if unsaved:
         lines.append(log_safe("new since you last saved: " + ", ".join(unsaved), 240))
     if not lines:
         return None

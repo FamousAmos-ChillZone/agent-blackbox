@@ -9,9 +9,12 @@ Settings editor's view carries them. The mode tests moved here from the wallet t
 """
 
 import secrets
+import threading
+import time
 
 import pytest
 from _blackbox_loader import load_blackbox
+from tests.waiting import wait_until
 
 
 constants = load_blackbox("kernel.constants")
@@ -57,8 +60,16 @@ def test_one_save_writes_shields_trader_and_retires_every_legacy_key():
     entry = _entry()
     assert not set(trader_mode.LEGACY_KEYS) & set(entry)
     # The Engage-style save sent only the switch: the earlier wallets and addresses carried over.
-    assert entry["shields"]["trader"] == {"enabled": True, "wallets": ["metamask", "phantom"], "addresses": [OWN]}
+    assert entry["shields"]["trader"] == {"enabled": True, "wallets": ["metamask", "phantom"], "addresses": [OWN],
+                                          "offered": list(trader_mode.supported_wallets())}
     assert entry["mode"] == "block"
+
+
+def test_offered_is_written_by_the_save_never_taken_from_the_payload():
+    _write_entry({"mode": "block"})
+    payload = {"shields": {"trader": {"enabled": True, "wallets": ["metamask"], "offered": ["metamask"]}}}
+    assert settings.write_settings(payload, validators=SHIELDS)["ok"] is True
+    assert _entry()["shields"]["trader"]["offered"] == list(trader_mode.supported_wallets())
 
 
 def test_a_never_saved_legacy_entry_still_reads_engaged():
@@ -124,7 +135,7 @@ def test_engaging_protects_every_supported_wallet_unless_wallets_were_already_ch
 
 def test_settings_accept_the_mode_and_refuse_a_non_boolean():
     assert TRADER.validate({"shields": {"trader": {"enabled": True, "wallets": ["metamask"]}}})[1:3] == (
-        {"enabled": True, "wallets": ["metamask"], "addresses": []}, [])
+        {"enabled": True, "wallets": ["metamask"], "addresses": [], "offered": list(trader_mode.supported_wallets())}, [])
     assert TRADER.validate({"shields": {"trader": {"enabled": "yes"}}})[2]
     assert TRADER.validate({"shields": {"trader": "on"}})[2]
     assert TRADER.validate({"mode": "block"})[1:3] == ({}, [])   # the shield is not touched
@@ -174,8 +185,76 @@ def test_the_settings_routes_compose_shields_trader_and_a_save_retires_the_legac
     assert "wallet_protection" not in read
     assert saved.status_code == 200 and saved.json()["settings"]["shields"]["trader"]["mode"]["wallets"] == ["metamask"]
     entry = _entry()
-    assert entry["shields"]["trader"] == {"enabled": True, "wallets": ["metamask"], "addresses": [OWN]}
+    assert entry["shields"]["trader"] == {"enabled": True, "wallets": ["metamask"], "addresses": [OWN],
+                                          "offered": list(trader_mode.supported_wallets())}
     assert not set(trader_mode.LEGACY_KEYS) & set(entry)
+
+
+def _dashboard(monkeypatch, tmp_path):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    server = load_blackbox("dashboard.server")
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
+    monkeypatch.setenv("HOME", str(tmp_path))   # the app's agent discovery must not find the real ~/.hermes
+    return TestClient(server.create_app(), base_url="http://127.0.0.1:9700")
+
+
+def _trader_card(client, wait_s=5.0):
+    """GET /api/shields until the cache has its first card (it answers [] before that)."""
+    deadline = time.monotonic() + wait_s
+    while True:
+        cards = client.get("/api/shields").json()
+        if cards or time.monotonic() > deadline:
+            return next(card for card in cards if card["shield_id"] == "trader")
+        time.sleep(0.05)   # a poll interval under the deadline above
+
+
+def test_the_card_read_right_after_a_save_shows_the_saved_wallets(monkeypatch, tmp_path):
+    # The trader bench, 2026-10-15: after Save the page re-read GET /api/shields and got the
+    # card cached BEFORE the save (stale-while-revalidate), so it kept showing the old wallets.
+    _write_entry({"shields": {"trader": {"enabled": True, "wallets": list(trader_mode.supported_wallets())}}})
+    with _dashboard(monkeypatch, tmp_path) as client:
+        assert _trader_card(client)["mode"]["wallets"] == list(trader_mode.supported_wallets())
+        token = client.get("/api/session").json()["token"]
+        saved = client.post("/api/settings", json={"shields": {"trader": {"wallets": ["metamask"]}}},
+                            headers={"X-Blackbox-Token": token})
+        assert saved.status_code == 200
+        assert _trader_card(client)["mode"]["wallets"] == ["metamask"]   # the very next read, no wait
+
+
+def test_a_refresh_that_began_before_the_save_cannot_put_the_old_card_back(monkeypatch, tmp_path):
+    shields_routes = load_blackbox("dashboard.shields_routes")
+    real = shields_routes.statuses_payload
+    release, entered, slow = threading.Event(), threading.Event(), {"on": False}
+
+    def payload():
+        if slow["on"]:
+            slow["on"] = False
+            entered.set()
+            release.wait(5)
+            return [{"shield_id": "trader", "mode": {"enabled": True, "wallets": ["stale"]}}]
+        return real()
+
+    monkeypatch.setattr(shields_routes, "statuses_payload", payload)
+    monkeypatch.setattr(shields_routes, "STATUS_TTL_SECONDS", 0.0)   # every read starts a background refresh
+    _write_entry({"shields": {"trader": {"enabled": True, "wallets": list(trader_mode.supported_wallets())}}})
+    with _dashboard(monkeypatch, tmp_path) as client:
+        _trader_card(client)
+        slow["on"] = True
+        deadline = time.monotonic() + 5
+        while not entered.is_set() and time.monotonic() < deadline:
+            client.get("/api/shields")                  # starts the slow refresh, built from the old mode
+            entered.wait(0.02)
+        assert entered.is_set()
+        token = client.get("/api/session").json()["token"]
+        client.post("/api/settings", json={"shields": {"trader": {"wallets": ["metamask"]}}},
+                    headers={"X-Blackbox-Token": token})
+        release.set()                                   # the old refresh now finishes, after the save
+        wait_until(lambda: not any(t.name == "blackbox-swr" and t.is_alive() for t in threading.enumerate()),
+                   timeout=5, what="the slow refresh to finish")
+        for _ in range(5):
+            assert _trader_card(client)["mode"]["wallets"] == ["metamask"]
 
 
 # ------------------------------------------------------------------ saves that must retire nothing

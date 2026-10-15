@@ -12,6 +12,9 @@ Config, under ``plugins.entries.blackbox``::
       trader:
         enabled: true                # the mode (default false)
         wallets: [metamask]          # which wallets (default: every supported one)
+        offered: [metamask, …]       # written by the save, never by the operator: every wallet
+                                     # Settings offered then, so a wallet added in a later version
+                                     # is told apart from one the operator left unticked
         addresses: ["0x…"]           # the operator's OWN public addresses (optional, opt-in):
                                      # a raw 64-hex key that opens one of them is recognised
 
@@ -60,6 +63,12 @@ ANY_EXTENSION_WALLET = "any-extension"
 WALLETS, ADDRESSES = "wallets", "addresses"
 #: The three keys this setting lived under before shields; one save retires them.
 LEGACY_KEYS = ("wallet_protection", "protected_wallets", "wallet_addresses")
+#: Saved next to the chosen wallets by every save (server-made, never read from the payload):
+#: the supported wallets Settings offered at that moment.
+OFFERED = "offered"
+#: What a save made before OFFERED was recorded had on offer: the five wallets Blackbox
+#: supported from Trader Shield's first release until the save began recording it.
+OFFERED_BEFORE_RECORDING = ("metamask", "phantom", "exodus", "electrum", "solana-cli")
 
 #: Most addresses an operator may list (each costs a key derivation only when a 64-hex
 #: value appears in a call, ~2 ms; the list is matched as a set).
@@ -171,20 +180,49 @@ def _address_list(raw: Any) -> tuple[str, ...]:
     return tuple(out[:MAX_WALLET_ADDRESSES])
 
 
+def _saved_section(entry: Mapping[str, Any]) -> Mapping[str, Any]:
+    """The saved ``shields.trader`` mapping; for an install that never saved since shields
+    arrived, the same mapping composed from the three legacy keys."""
+    shields = entry.get("shields")
+    section = shields.get("trader") if isinstance(shields, Mapping) else None
+    if isinstance(section, Mapping):
+        return section
+    legacy: dict[str, Any] = {"enabled": entry.get("wallet_protection"), ADDRESSES: entry.get("wallet_addresses")}
+    if "protected_wallets" in entry:
+        legacy[WALLETS] = entry["protected_wallets"]
+    return legacy
+
+
 def from_entry(entry: Mapping[str, Any]) -> ShieldMode:
     """The mode as the ``blackbox`` config entry states it (defaults when absent).
 
     ``shields.trader`` when present; otherwise the three legacy keys, so an install that
     never saved since shields arrived stays engaged."""
-    shields = entry.get("shields")
-    section = shields.get("trader") if isinstance(shields, Mapping) else None
-    if not isinstance(section, Mapping):   # never saved since shields: the legacy keys
-        section = {"enabled": entry.get("wallet_protection"), ADDRESSES: entry.get("wallet_addresses")}
-        if "protected_wallets" in entry:
-            section[WALLETS] = entry["protected_wallets"]
+    section = _saved_section(entry)
     chosen = _wallet_list(section[WALLETS]) if WALLETS in section else None
     return build(enabled=section.get("enabled") is True, wallets=chosen,
                  addresses=_address_list(section.get(ADDRESSES)))
+
+
+def newly_supported(mode: ShieldMode, entry: Optional[Mapping[str, Any]] = None) -> tuple[str, ...]:
+    """Supported wallet ids *mode* leaves out that Settings did NOT offer when the list was
+    saved — wallets this version added since, which the operator has never been asked about.
+    A wallet the operator left unticked was offered, so it is never named here.
+
+    *entry* is the ``blackbox`` config entry (default: read now). Empty when no list was
+    saved: every supported wallet is then chosen, so none can be missing."""
+    if entry is None:
+        from ...kernel.config import _blackbox_entry   # the one reader of plugins.entries.blackbox
+
+        entry = _blackbox_entry()
+    section = _saved_section(entry)
+    if WALLETS not in section:
+        return ()
+    raw = section.get(OFFERED)
+    offered = ({str(item or "").strip().lower() for item in raw} if isinstance(raw, list)
+               else set(OFFERED_BEFORE_RECORDING))
+    chosen = set(wallets(mode))
+    return tuple(wallet for wallet in supported_wallets() if wallet not in chosen and wallet not in offered)
 
 
 def current() -> ShieldMode:
@@ -213,7 +251,8 @@ def validate(payload: Mapping[str, Any]) -> tuple[str, dict[str, Any], list[str]
     if errors or not updates:
         return "trader", {}, errors, LEGACY_KEYS
     now = current()
-    section = {"enabled": now.enabled, WALLETS: list(wallets(now)), ADDRESSES: list(addresses(now)), **updates}
+    section = {"enabled": now.enabled, WALLETS: list(wallets(now)), ADDRESSES: list(addresses(now)), **updates,
+               OFFERED: list(supported_wallets())}   # what this save offered (never taken from the payload)
     return "trader", section, [], LEGACY_KEYS
 
 

@@ -87,6 +87,21 @@ REAL_INSTALL = "installed on"
 OS_NAMES = {"linux": "Linux", "macos": "macOS", "windows": "Windows"}
 #: ``create_app``'s cache: ``swr(key, producer, default, ttl)`` answers the cached value.
 Cache = Callable[..., Any]
+#: ``create_app``'s cache writer: ``store(key, producer)`` recomputes and caches now.
+CacheStore = Callable[[str, Callable[[], Any]], None]
+#: The cache key of ``GET /api/shields``.
+CACHE_KEY = "shields"
+
+
+def refresh_after_save(store: CacheStore) -> None:
+    """Rebuild every shield's card now, after a Settings save changed a mode, so the page's
+    refresh right after Save shows the new mode instead of the card cached before it.
+    Fail-open: the save already succeeded; a card that cannot be built is logged and the
+    cache keeps its last card until the next refresh."""
+    try:
+        store(CACHE_KEY, statuses_payload)
+    except Exception:
+        logger.warning("blackbox dashboard: shield cards not rebuilt after a settings save", exc_info=True)
 
 
 def with_shields(result: dict[str, Any]) -> dict[str, Any]:
@@ -219,7 +234,7 @@ def register(app: Any, swr: Cache) -> None:
 
     @app.get("/api/shields")
     def shield_statuses() -> Any:
-        return swr("shields", statuses_payload, [], STATUS_TTL_SECONDS)
+        return swr(CACHE_KEY, statuses_payload, [], STATUS_TTL_SECONDS)
 
     @app.get("/api/shields/{shield_id}/events")
     def shield_events(shield_id: str) -> Any:
