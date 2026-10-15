@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict
+from . import declined
 from . import hermes_homes
 from . import openclaw_bridge
 from . import openclaw_discovery
@@ -20,15 +21,22 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def attach_all(*, hermes: bool = True, openclaw: bool = True, dry_run: bool = False) -> dict[str, Any]:
-    """Attach Blackbox to every discovered target. Returns a combined report."""
+def attach_all(*, hermes: bool = True, openclaw: bool = True, dry_run: bool = False,
+               explicit: bool = False) -> dict[str, Any]:
+    """Attach Blackbox to every discovered target. Returns a combined report.
+
+    An automatic sweep (the default) skips targets the operator switched off
+    (:mod:`.declined`); ``explicit=True`` — the operator's own ``blackbox attach`` —
+    attaches them too, which also clears their switch-off."""
     report: dict[str, Any] = {"hermes": [], "openclaw": [], "dry_run": dry_run}
     if hermes:
         for home in hermes_homes.discover_hermes_homes():
-            report["hermes"].append(hermes_homes.attach_hermes(home, dry_run=dry_run))
+            if explicit or not declined.is_declined("hermes", home):
+                report["hermes"].append(hermes_homes.attach_hermes(home, dry_run=dry_run))
     if openclaw:
         for ws in openclaw_discovery.discover_openclaw_workspaces():
-            report["openclaw"].append(openclaw_bridge.attach_openclaw(ws, dry_run=dry_run))
+            if explicit or not declined.is_declined("openclaw", ws):
+                report["openclaw"].append(openclaw_bridge.attach_openclaw(ws, dry_run=dry_run))
     report["count"] = _protected_count(report)
     return report
 

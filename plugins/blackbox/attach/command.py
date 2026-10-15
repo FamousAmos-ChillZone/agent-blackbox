@@ -9,7 +9,7 @@ from .. import attach
 def cmd_attach(args: argparse.Namespace) -> int:
     do_hermes = not args.openclaw_only
     do_openclaw = not args.hermes_only
-    report = attach.attach_all(hermes=do_hermes, openclaw=do_openclaw, dry_run=args.dry_run)
+    report = attach.attach_all(hermes=do_hermes, openclaw=do_openclaw, dry_run=args.dry_run, explicit=True)
     prefix = "Would protect" if args.dry_run else "Protected"
     for row in report.get("hermes", []):
         print_hermes_attach_row(row, prefix)

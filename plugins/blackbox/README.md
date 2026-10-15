@@ -167,13 +167,13 @@ plugins:
 
 | Category | How it is named | Example | In block mode |
 |---|---|---|---|
-| Malicious or vulnerable package | `dep:<ecosystem>:<name>@<version>` | `dep:npm:event-stream@3.3.6` | verified malware blocks; a vulnerability never blocks |
-| Prompt injection | `injection:<pattern hash>` | `injection:2146bcb99d8ef90a53e99b08` | verified rules block |
-| Dangerous command | `escalation:<tool>:<argument shape>` | `escalation:terminal:remote-script-pipe` | verified rules block |
-| Sensitive file access | `fileaccess:<tool>:<category>` | `fileaccess:read_file:ssh-private-key` | verified rules block |
-| Suspicious skill | `skill:<name>@<version>`, or `skill:artifact:<sha256>:<shape>` for a local one | `skill:sneaky-skill@1.0.0` | verified rules block |
-| Known-bad indicator | `ioc:<type>:<value>` — domain, url, ip, hash, wallet, contract | `ioc:domain:evil.example` | flags only in this version |
-| Secret exposure | `secret:<type>` — the type only, never the value | `secret:aws-access-key` | blocks at `block_severity`; a secret sent off the machine is rated critical |
+| Malicious or vulnerable package | `dep:{ecosystem}:{name}@{version}` | `dep:npm:event-stream@3.3.6` | verified malware blocks; a vulnerability never blocks |
+| Prompt injection | `injection:{pattern hash}` | `injection:2146bcb99d8ef90a53e99b08` | verified rules block |
+| Dangerous command | `escalation:{tool}:{argument shape}` | `escalation:terminal:remote-script-pipe` | verified rules block |
+| Sensitive file access | `fileaccess:{tool}:{category}` | `fileaccess:read_file:ssh-private-key` | verified rules block |
+| Suspicious skill | `skill:{name}@{version}`, or `skill:artifact:{sha256}:{shape}` for a local one | `skill:sneaky-skill@1.0.0` | verified rules block |
+| Known-bad indicator | `ioc:{type}:{value}` — domain, url, ip, hash, wallet, contract | `ioc:domain:evil.example` | flags only in this version |
+| Secret exposure | `secret:{type}` — the type only, never the value | `secret:aws-access-key` | blocks at `block_severity`; a secret sent off the machine is rated critical |
 | Your protected paths | a local rule | `~/.ssh/*`, `**/.env` | blocks |
 
 **When does Blackbox block?** Three things must all be true: `mode: block`, a
@@ -185,7 +185,8 @@ leave your machine.
 ## Trader Shield (crypto wallets and keys)
 
 Trader Shield keeps an AI agent away from your crypto wallets and keys. It is
-**off by default**; you switch it on.
+the first *shield*: an opt-in protection pack for one kind of user, on top of
+Blackbox's checks for everyone. It is **off by default**; you switch it on.
 
 What it stops, in block mode:
 
@@ -200,13 +201,17 @@ What it stops, in block mode:
 
 Supported wallets: **MetaMask, Phantom, Exodus, Electrum and the Solana CLI.**
 
+Trader Shield protects agents attached to Blackbox through Hermes. OpenClaw
+coverage is not there yet: an agent run through the OpenClaw bridge gets
+Blackbox's other checks, but not Trader Shield's.
+
 ![The Trader Shield page in the Blackbox dashboard](../../docs/catalog/trader-shield.png)
 
 To switch it on:
 
 1. Run `blackbox dashboard`, open Settings → Trader Shield and switch it on (or
    use the Engage button on the Trader Shield page,
-   http://127.0.0.1:9700/trader-shield). Set the mode to `block` so wallet
+   http://127.0.0.1:9700/shields/trader). Set the mode to `block` so wallet
    threats are stopped, not just flagged.
 2. Choose your wallets and, optionally, add your own public wallet addresses,
    so a raw private key that opens one of them is recognised too. Addresses
@@ -476,6 +481,7 @@ block mode.
 | `overrides.json` | your local unblock decisions |
 | `kill_list.json` | the last good curator kill list for skills and MCP servers |
 | `allowlist.json` | your own additions to the allowlist (optional) |
+| `attach_declined.json` | the agents you switched protection off for, so no automatic re-attach turns it back on (present once you do) |
 
 ## Privacy and your rights
 
@@ -513,9 +519,10 @@ shrink).
 | `guard/` | the five hooks and the flag-or-block decision |
 | `detection/` | the checks: pure functions that name and match an action |
 | `ruleset/` | the compiled lookups the checks read, kept fresh |
-| `shields/` | opt-in protection packs; Trader Shield's wallets and browser folders as data |
+| `shields/` | opt-in protection packs; Trader Shield's wallets and browser folders as data ([how shields are built](shields/README.md)) |
 | `community/` | building, signing, sending, reading and verifying community statements |
 | `sync/` | the local DKG node and the verified-graph sync |
+| `setup/` | `blackbox setup`: the full install after a plugin-catalog install |
 | `audit/` | local logs and the share ledger |
 | `dashboard/` | the local web UI and its API |
 | `attach/` | finding and protecting every local agent |

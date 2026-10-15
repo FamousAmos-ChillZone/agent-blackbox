@@ -498,17 +498,18 @@ installation.
 | Verified | `context_graph_id` | verifiable memory | Umanitek's curator only | may block |
 | Community | `community_graph_id` | shared working memory | every sharing node, signed | flags only |
 
-**Modules** (`plugins/blackbox/`, thirteen feature modules and one kernel)
+**Modules** (`plugins/blackbox/`, fourteen feature modules and one kernel)
 
 | Module | Owns | May depend on |
 |---|---|---|
 | `guard` | the five Hermes hooks, the flag/block decision, automatic sharing, the kill-list check | `kernel`, `attach`, `audit`, `community`, `detection`, `ruleset`, `killlist`, `overrides`, `shields` |
-| `detection` | pure detectors, action parsing, content scanners, protected paths, wallet and token-approval checks, OSV lookups, the optional LLM reviewer | `kernel`, `attach` |
-| `shields` | opt-in protection packs: the shield contract and pack loader; Trader Shield's wallets, browser folders and setting | `kernel`, `detection`, `audit` |
+| `detection` | pure detectors, action parsing, content scanners, protected paths, secret and token-approval checks, OSV lookups, the optional LLM reviewer | `kernel`, `attach` |
+| `shields` | opt-in protection packs ([how they are built](plugins/blackbox/shields/README.md)): the registry, the shield contract and pack loader; Trader Shield's wallets and browser folders as data, its setting, card, events and page | `kernel`, `detection`, `audit` |
 | `ruleset` | compiling verified, community and curator tiers into O(1) lookups; refresh; the pulse | `kernel`, `community`, `killlist` |
 | `community` | report schema, builder, signer, consent, share gate, stages, statements, keep-alive, retry, reputation, allowlist, shadow, membership, `blackbox report` | `kernel`, `audit`, `detection` |
 | `sync` | the managed DKG node and the verified-graph catch-up; `blackbox sync` | `kernel`, `ruleset`, `community` |
 | `audit` | local findings and activity logs, the share ledger, the private audit record | `kernel` |
+| `setup` | `blackbox setup`: the full install after a Hermes plugin-catalog install (the bundled installer in setup-only mode, the pinned DKG release) | `kernel` |
 | `dashboard` | the loopback web UI and its API | `kernel`, `attach`, `audit`, `community`, `detection`, `ruleset`, `sync`, `shields` |
 | `attach` | finding and wiring Hermes homes and OpenClaw workspaces | `kernel` |
 | `overrides` | the local release valve, `blackbox rules` | `kernel` |
@@ -869,8 +870,6 @@ Click a module to open its file list.
 | `lifecycle.py` | Startup and shutdown hooks for the dashboard app, without FastAPI's deprecated ``on_event`` |
 | `network_sync.py` | The command line the dashboard runs for its verified-graph sync |
 | `node_probe.py` | The dashboard's probes of the local DKG node: is it answering, and how is its sync |
-| `protection/__init__.py` | The dashboard's wallet-protection panel: what Blackbox found to protect, and how (trader rules) |
-| `protection/events.py` | Trader Shield's full event report: every wallet event, with the session around it (local only) |
 | `pulse_driver.py` | The community pulse keeps beating while the dashboard runs, browser or not (KI-283) |
 | `safe_payloads.py` | Making community- and graph-derived values safe to serve (the dashboard's one sanitizer) |
 | `server.py` | Standalone Blackbox dashboard — a tiny FastAPI app bound to loopback |

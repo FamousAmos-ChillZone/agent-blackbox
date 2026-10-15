@@ -36,6 +36,7 @@ $ProgressPreference = "SilentlyContinue"
 # ── Configuration (override via env) ────────────────────────────────────────
 $RepoUrl     = if ($env:BLACKBOX_REPO_URL)    { $env:BLACKBOX_REPO_URL }    else { "https://github.com/umanitek/agent-blackbox.git" }
 $RepoBranch  = if ($env:BLACKBOX_REPO_BRANCH) { $env:BLACKBOX_REPO_BRANCH } else { "main" }
+$DkgTaskName = "Agent Blackbox DKG node"   # the node's logon task (Register-ScheduledTask below)
 # Setup-only mode: Blackbox is already installed as a plugin (the Hermes plugin catalog), and
 # `hermes blackbox setup` runs this script for everything after Hermes, in the Hermes it runs in.
 # The caller passes HERMES_BIN, VENV_DIR, BLACKBOX_INSTALL_DIR, BLACKBOX_HELPER_DIR and
@@ -273,6 +274,62 @@ function Initialize-BlackboxDkgProcessEnvironment {
     }
     Write-Ok "DKG safety limits: one large sync at a time; V8 heap ${heapMb}MB"
     return $true
+}
+
+# The logon task an earlier install registered to run the node: it holds `dkg start --foreground`
+# and retries a failed run, so it supervises the node. Stopping or starting that node with
+# `dkg stop`/`dkg start` behind the task's back makes the two fight (KI-414; the systemd and
+# launchd services in blackbox-install.sh behave the same way). Returns the task, or $null on a
+# first install, before the task is registered.
+function Get-BlackboxDkgTask {
+    if (-not (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue)) { return $null }
+    $task = Get-ScheduledTask -TaskName $DkgTaskName -ErrorAction SilentlyContinue
+    if ($task -and $task.State -ne "Disabled") { return $task }
+    return $null
+}
+
+# Start, stop or restart the node: through its logon task when there is one, else with the DKG
+# CLI. Stopping the task first is a requested stop (no retry); the CLI stop that follows ends a
+# node left behind by the task's process. Sets $LASTEXITCODE like the CLI, so every caller
+# checks one result either way.
+function Invoke-BlackboxDkgControl {
+    param([ValidateSet("start", "stop", "restart")][string]$Action)
+    if ($null -eq (Get-BlackboxDkgTask)) {
+        if ($Action -eq "restart") {
+            Invoke-BlackboxDkg stop
+            if ($LASTEXITCODE -eq 0) { Invoke-BlackboxDkg start }
+        } else {
+            Invoke-BlackboxDkg $Action
+        }
+        return
+    }
+    try {
+        if ($Action -ne "start") {
+            Stop-ScheduledTask -TaskName $DkgTaskName -ErrorAction Stop
+            Invoke-BlackboxDkg stop
+        }
+        if ($Action -ne "stop") { Start-ScheduledTask -TaskName $DkgTaskName -ErrorAction Stop }
+        $global:LASTEXITCODE = 0
+    } catch {
+        Write-Warn2 "Could not $Action the DKG node through its task: $($_.Exception.Message)"
+        $global:LASTEXITCODE = 1
+    }
+}
+
+# Whether the checkout's HEAD is already part of origin/$RepoBranch's history - then moving to
+# the new tip loses nothing. A depth-1 clone holds none of that history, so a bounded stretch
+# more is fetched to check (never the whole repository); an answer it cannot give is "no",
+# which keeps the strict fast-forward and its refusal (KI-417; mirrors blackbox-install.sh).
+$HistoryCheckDepth = 200
+function Test-BlackboxHeadInBranch {
+    $remote = "refs/remotes/origin/$RepoBranch"
+    & git -C $RepoDir merge-base --is-ancestor HEAD $remote 2>$null
+    if ($LASTEXITCODE -eq 0) { return $true }
+    if ((& git -C $RepoDir rev-parse --is-shallow-repository 2>$null) -ne "true") { return $false }
+    & git -C $RepoDir fetch -q "--deepen=$HistoryCheckDepth" origin $RepoBranch 2>$null
+    if ($LASTEXITCODE -ne 0) { return $false }
+    & git -C $RepoDir merge-base --is-ancestor HEAD $remote 2>$null
+    return ($LASTEXITCODE -eq 0)
 }
 
 function Invoke-BlackboxDkg {
@@ -663,7 +720,7 @@ function Initialize-BlackboxStore {
         if (Test-BlackboxBlazegraph) { return $true }
         if ($script:DkgAlreadyRunning) {
             Write-Step "Pausing DKG so its overloaded store can pass recovery checks ..."
-            Invoke-BlackboxDkg stop
+            Invoke-BlackboxDkgControl stop
             if ($LASTEXITCODE -eq 0) {
                 $script:DkgAlreadyRunning = $false
                 if (Test-BlackboxBlazegraph) { return $true }
@@ -969,13 +1026,19 @@ function Resolve-Repo {
         # A depth-1 fetch brings the new tip without its parent, so `pull --ff-only`
         # refuses every update (KI-294): move to the new tip when the install holds
         # no work of its own (--keep still refuses uncommitted changes).
+        # HEAD can also be an older commit of the branch this install did not fetch last (the
+        # checkout was moved outside the installer): still no work of its own, but a depth-1
+        # clone cannot show it (KI-417) - Test-BlackboxHeadInBranch fetches a bounded stretch.
         $head = (& git -C $RepoDir rev-parse HEAD)
-        if ($fetchedBefore -and $head -eq $fetchedBefore) {
+        if (($fetchedBefore -and $head -eq $fetchedBefore) -or (Test-BlackboxHeadInBranch)) {
             & git -C $RepoDir reset -q --keep "refs/remotes/origin/$RepoBranch"
             if ($LASTEXITCODE -ne 0) { throw "Could not update $RepoDir to origin/${RepoBranch}: it has uncommitted changes (git's reason is above)" }
         } else {
             & git -C $RepoDir pull --ff-only origin $RepoBranch
-            if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward $RepoDir to origin/${RepoBranch}: it holds local commits (git's reason is above)" }
+            if ($LASTEXITCODE -ne 0) {
+                $own = (& git -C $RepoDir log --oneline -3 "refs/remotes/origin/$RepoBranch..HEAD" 2>$null) -join "; "
+                throw "Could not fast-forward $RepoDir to origin/${RepoBranch}: it holds commits that are not on that branch: $own"
+            }
         }
     } else {
         Write-Step "Cloning $RepoUrl -> $RepoDir"
@@ -1242,9 +1305,8 @@ function Install-Dkg {
         }
         Write-Step "Restarting the Blackbox-owned DKG node to activate sync and relay updates ..."
         try {
-            Invoke-BlackboxDkg stop
-            if ($LASTEXITCODE -ne 0) { throw "dkg stop exit $LASTEXITCODE" }
-            Invoke-BlackboxDkg start
+            Invoke-BlackboxDkgControl restart
+            if ($LASTEXITCODE -ne 0) { throw "dkg restart exit $LASTEXITCODE" }
             if (-not (Wait-BlackboxDkgRuntime)) { throw "DKG runtime verification failed" }
             Remove-Item $script:DkgStoreResetMarker -Force -ErrorAction SilentlyContinue
             Write-Ok "Blackbox DKG node restarted with the current sync settings"
@@ -1272,7 +1334,7 @@ function Install-Dkg {
     Write-Step "  Store:    $(Get-BlackboxStoreDescription)"
     Write-Step "  (non-interactive; subscribing and reading need no wallet funding)"
     try {
-        Invoke-BlackboxDkg start
+        Invoke-BlackboxDkgControl start
         if (-not (Wait-BlackboxDkgRuntime)) { throw "DKG runtime verification failed" }
         Remove-Item $script:DkgStoreResetMarker -Force -ErrorAction SilentlyContinue
         Write-Ok "DKG node bootstrapped on $Network"
@@ -1735,7 +1797,7 @@ function Register-BlackboxStartupTasks {
     try {
         $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
         $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "$hidden `"$nodeLauncher`""
-        Register-ScheduledTask -TaskName "Agent Blackbox DKG node" -Action $action -Trigger $trigger `
+        Register-ScheduledTask -TaskName $DkgTaskName -Action $action -Trigger $trigger `
             -Principal $principal -Settings $settings -Force | Out-Null
         Write-Ok "The DKG node starts when you sign in (task 'Agent Blackbox DKG node')"
     } catch {

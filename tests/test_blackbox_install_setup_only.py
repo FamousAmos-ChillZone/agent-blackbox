@@ -185,9 +185,14 @@ def test_no_step_after_hermes_reads_the_checkout_directly():
               and guard not in lines[index - 1]]   # the line under a non-empty check is safe
     allowed = ("REPO_DIR=", "${BLACKBOX_HELPER_DIR:-$REPO_DIR/scripts}", "${BLACKBOX_PLUGIN_DIR:-$REPO_DIR/plugins/blackbox}",
                "${BLACKBOX_PLUGIN_DIR:-$REPO_DIR}", '[ -n "$REPO_DIR" ]')
-    hermes_steps = "".join(_body(step) for step in ("resolve_repo", "install_python_env", "use_hermes_selected_venv",
-                                                    "ensure_web_extra", "minimal_python_env",
+    hermes_steps = "".join(_body(step) for step in ("resolve_repo", "blackbox_head_in_branch", "install_python_env",
+                                                    "use_hermes_selected_venv", "ensure_web_extra", "minimal_python_env",
                                                     "refresh_blackbox_plugin_copy", "reuse_existing_hermes_api_keys"))
+    # blackbox_head_in_branch is part of resolve_repo's update (KI-417): it may read the checkout
+    # only while resolve_repo stays its one caller.
+    callers = [line.strip() for line in lines if "blackbox_head_in_branch" in line and "()" not in line
+               and not line.lstrip().startswith("#")]
+    assert callers and all(line in _body("resolve_repo") for line in callers), callers
     stray = [line for line in direct if line not in hermes_steps and not any(token in line for token in allowed)]
     assert stray == []
 
@@ -491,13 +496,15 @@ def _docker_available(tmp_path: Path, *, docker: str | None, os_name: str = "lin
         stub = fake_bin / "docker"
         stub.write_text(f"#!/bin/sh\nexit {0 if docker == 'up' else 1}\n", encoding="utf-8")
         stub.chmod(0o755)
+    # PATH is the stub folder ALONE: the function needs only shell builtins and `docker`, and a host
+    # with a real, running Docker in /usr/bin (GitHub's Ubuntu runners) must not answer for the stub.
     script = f"""
 blackbox_docker_available() {{
 {_body("blackbox_docker_available")}
 }}
 OS={os_name}
 HOME={shlex.quote(str(tmp_path))}
-PATH={shlex.quote(str(fake_bin))}:/usr/bin:/bin
+PATH={shlex.quote(str(fake_bin))}
 blackbox_docker_available
 """
     return subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False).returncode

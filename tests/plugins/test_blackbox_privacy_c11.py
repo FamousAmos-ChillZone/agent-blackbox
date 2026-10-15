@@ -18,6 +18,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from _clock import utc_today
 from _community_rows import GRAPH, Reporter
 from test_blackbox_curate_community import Curators, _listing
 from test_blackbox_curator_service import FOUND, PKG, Service
@@ -170,7 +171,7 @@ def test_a_curator_erasure_leaves_nothing_that_links_the_reporter_except_the_rec
     team.two_key(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _listing(alice))
     with team.b:                                                                     # B published the listing: it keeps it alive
         from plugins.blackbox.community import reputation
-        reputation.ReputationLedger().record(alice.author, reputation.Outcome(date.today().isoformat(), True))
+        reputation.ReputationLedger().record(alice.author, reputation.Outcome(utc_today().isoformat(), True))
         parser = argparse.ArgumentParser()
         add_curate_parser(parser.add_subparsers(), compiled_ruleset=None)
         args = parser.parse_args(["curate", "graduate", "--erase", alice.author])

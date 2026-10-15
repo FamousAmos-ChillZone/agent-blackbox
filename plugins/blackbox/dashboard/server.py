@@ -31,10 +31,10 @@ from typing import Any, Dict, List, Set, Tuple
 from ..kernel.browser_boundary import BrowserBoundary
 from .. import shields
 from ..sync import read_durable_progress, state as sync_state
-from . import community_routes, graph_pages, lifecycle, protection, shields_routes, sync_meter, sync_timing
+from . import community_routes, graph_pages, lifecycle, shields_routes, sync_meter, sync_timing
 from .graph_pages import _balanced_graph_entries, _graph_entries
 from .network_sync import network_sync_argv as _network_sync_argv
-from .node_probe import NodeLiveness, RepeatGate, node_sync_probe
+from .node_probe import NodeLiveness, NodeReadCache, RepeatGate, node_sync_probe
 from .sync_labels import (_community_progress, _is_hidden_swm_catchup_error, _is_retryable_durable_catchup_error,
                           _sync_label, current_transfer_error, not_subscribed_activity)
 from .threat_detail_fields import DETAIL_FIELDS
@@ -953,7 +953,7 @@ def create_app(*, manage_blackbox: bool = False):
             touched: list[dict[str, Any]] = []
             now = time.monotonic()
             reconcile = force or now - float(_rescan_state["last_reconcile"] or 0.0) >= _RECONCILE_INTERVAL_SEC
-            targets = current if reconcile else current - known
+            targets = {t for t in (current if reconcile else current - known) if not attach.is_declined(*t)}   # never one the operator switched off
             if reconcile:
                 _rescan_state["last_reconcile"] = now
             for kind, target in sorted(targets):
@@ -1100,40 +1100,8 @@ def create_app(*, manage_blackbox: bool = False):
                              ttl=15.0, timeout=5.0)
     _node_reachable = _liveness.reachable
     _node_read_log = RepeatGate()
-    _swr_lock = threading.Lock()
-    _swr_state: dict[str, dict[str, Any]] = {}   # key -> {"val", "ts"}
-    _swr_busy: set[str] = set()
-
-    def _swr(key: str, producer: Any, default: Any, ttl: float = _SWR_TTL) -> Any:
-        """Return the cached value for ``key`` instantly, refreshing in the
-        background past ``ttl``; ``default`` until the first refresh lands.
-        ``producer`` runs off the request path, so it may block on the node."""
-        now = time.monotonic()
-        with _swr_lock:
-            entry = _swr_state.get(key)
-            fresh = entry is not None and (now - entry["ts"]) < ttl
-            cur = entry["val"] if entry is not None else default
-            spawn = (not fresh) and (key not in _swr_busy)
-            if spawn:
-                _swr_busy.add(key)
-        if spawn:
-            def _run() -> None:
-                started = time.monotonic()
-                try:
-                    val = producer()
-                except Exception as exc:  # fail open; logged at most once per 5 min per key
-                    if _node_read_log.due(key):
-                        logger.warning("blackbox dashboard: node read %s failed: %s", key, exc)
-                    val = None
-                elapsed = time.monotonic() - started
-                if elapsed > _SLOW_NODE_READ_SEC and _node_read_log.due("slow:" + key):
-                    logger.warning("blackbox dashboard: node read %s took %.1f s", key, elapsed)
-                with _swr_lock:
-                    if val is not None:
-                        _swr_state[key] = {"val": val, "ts": time.monotonic()}
-                    _swr_busy.discard(key)
-            threading.Thread(target=_run, name="blackbox-swr", daemon=True).start()
-        return cur
+    _node_reads = NodeReadCache(default_ttl=_SWR_TTL, slow_seconds=_SLOW_NODE_READ_SEC, log_gate=_node_read_log)
+    _swr, _swr_store = _node_reads.get, _node_reads.store
 
     def _community_read(cfg: Any) -> Any:
         """THE community read behind every dashboard statistic (R0d): the whole verified
@@ -1213,7 +1181,7 @@ def create_app(*, manage_blackbox: bool = False):
     def get_settings() -> Any:
         """Current user-tunable detection policy (defaults included)."""
         try:
-            return shields_routes.with_shields(settings.read_settings())
+            return shields_routes.with_shields(community_routes.effective_sharing(settings.read_settings()))
         except Exception as exc:  # pragma: no cover - fail open
             logger.debug("blackbox dashboard: read settings failed: %s", exc)
             return JSONResponse({"error": "could not read settings"}, status_code=500)
@@ -1227,7 +1195,9 @@ def create_app(*, manage_blackbox: bool = False):
         """
         try:
             result = settings.write_settings(payload, sharing_consent=community.consent.for_settings(payload), validators=shields.settings_validators())   # on = opt back in
-            return JSONResponse(shields_routes.with_shields(result), status_code=200 if result.get("ok") else 400)
+            if result.get("ok"):
+                shields_routes.refresh_after_save(_swr_store)
+            return JSONResponse(shields_routes.with_shields(community_routes.effective_sharing(result)), status_code=200 if result.get("ok") else 400)
         except Exception as exc:  # pragma: no cover - fail open
             logger.debug("blackbox dashboard: write settings failed: %s", exc)
             return JSONResponse({"ok": False, "errors": ["internal error"]}, status_code=500)
@@ -1686,20 +1656,20 @@ def create_app(*, manage_blackbox: bool = False):
 
     @app.post("/api/agents/protection")
     def save_agent_protection(payload: dict[str, Any] = Body(...)) -> Any:
-        """Apply desired Blackbox protection state for selected local targets."""
+        """Apply desired protection for selected targets — under the rescan's lock, so a sweep already under way never re-attaches a target switched off meanwhile."""
         rows: list[dict[str, Any]] = []
-        for item in payload.get("targets") or []:
-            if not isinstance(item, dict):
-                continue
-            kind = str(item.get("kind") or "").lower()
-            target = str(item.get("target") or "").strip()
-            enabled = bool(item.get("enabled"))
-            if not target:
-                continue
-            if kind == "hermes":
-                rows.append(attach.attach_hermes(Path(target)) if enabled else attach.detach_hermes(Path(target)))
-            elif kind == "openclaw":
-                rows.append(attach.attach_openclaw(Path(target)) if enabled else attach.detach_openclaw(Path(target)))
+        with _rescan_state["lock"]:
+            for item in payload.get("targets") or []:
+                if not isinstance(item, dict):
+                    continue
+                kind = str(item.get("kind") or "").lower()
+                target = str(item.get("target") or "").strip()
+                if not target:
+                    continue
+                if kind == "hermes":
+                    rows.append(attach.attach_hermes(Path(target)) if item.get("enabled") else attach.detach_hermes(Path(target)))
+                elif kind == "openclaw":
+                    rows.append(attach.attach_openclaw(Path(target)) if item.get("enabled") else attach.detach_openclaw(Path(target)))
         ok = all(row.get("ok") for row in rows) if rows else False
         return JSONResponse({"ok": ok, "targets": rows}, status_code=200 if ok else 400)
 
@@ -1835,7 +1805,7 @@ def create_app(*, manage_blackbox: bool = False):
 
     community_endpoints = community_routes.register_community_routes(app, community_read=_community_read, node_reachable=_node_reachable)
     sync_meter.register_sync_meter_routes(app, load_config=load_blackbox_config, node_reachable=_node_reachable, verified_rules=lambda cfg: _graph_source_count(ruleset.peek(cfg), "public"))
-    protection.register_protection_routes(app)   # the wallet-protection panel (trader rules)
+    shields_routes.register(app, _swr)   # GET /api/shields*, each shield page and its files
     @app.get("/api/threat")
     def threat(identifier: str = Query(..., min_length=1), tier: str = Query("public")) -> Any:
         """Full detail for ONE threat via a targeted point-lookup.

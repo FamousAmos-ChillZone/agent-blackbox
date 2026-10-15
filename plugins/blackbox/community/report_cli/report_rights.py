@@ -130,11 +130,19 @@ def _sharing_on() -> bool:
 
 
 def withdraw_consent() -> int:
-    """``--withdraw-consent``: sharing stops on the next action."""
+    """``--withdraw-consent``: sharing stops on the next action.
+
+    The withdrawal record stops every share by itself; the ``report`` switch is turned off
+    too, through the same settings write the dashboard toggle uses, so the switch never
+    reads "on" over a withdrawn consent (a dashboard Save would otherwise send that "on"
+    back as an opt-in)."""
     if not consent.in_force():
         print("Community sharing was already off.")
         return 0
     if consent.withdraw():
+        from ...kernel import settings
+        if not settings.write_settings({"report": False}).get("ok"):
+            print("Note: the sharing switch in config.yaml could not be turned off; your opt-out still stops sharing.")
         print("Community sharing turned off: nothing further leaves this machine for the community graph.")
         return 0
     print("Could not save the opt-out, so sharing is still ON. Check that the Blackbox home is writable and try again.")
