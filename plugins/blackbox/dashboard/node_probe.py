@@ -251,9 +251,9 @@ class NodeReadCache:
         started = time.monotonic()
         try:
             value = producer()
-        except Exception as exc:  # fail open; logged at most once per interval per key
+        except Exception as exc:  # fail open; logged (with its traceback) at most once per interval per key
             if self._log_gate.due(key):
-                logger.warning("blackbox dashboard: node read %s failed: %s", key, exc)
+                logger.warning("blackbox dashboard: node read %s failed: %s", key, exc, exc_info=True)
             value = None
         elapsed = time.monotonic() - started
         if elapsed > self._slow_seconds and self._log_gate.due("slow:" + key):
