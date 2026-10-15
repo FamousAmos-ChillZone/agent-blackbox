@@ -149,6 +149,10 @@
         refresh();
         var section = document.querySelector('[data-shield-card="' + id + '"]');
         if (ok && section && section.scrollIntoView) setTimeout(function () { section.scrollIntoView({ behavior: "smooth", block: "start" }); }, 400);
+      }).catch(function (err) {   // a refused or failed request must never leave the button stuck on "Engaging…"
+        button.disabled = false;
+        button.textContent = "Engage " + name;
+        deps.toast(err && err.readOnly ? err.message : "Couldn't engage " + name + ".", "err");
       });
     }
 

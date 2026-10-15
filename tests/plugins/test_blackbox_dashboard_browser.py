@@ -258,3 +258,21 @@ def test_settings_reopened_after_engage_shows_it_and_save_keeps_it(served, tmp_p
     assert summary["offBefore"] is False                 # the fixture starts with the shield off
     assert summary["onInForm"] is True                   # reopened Settings shows the Engage
     assert summary["enabledAfterSave"] is True           # and Save keeps it
+
+
+READ_ONLY = Path(__file__).with_name("dashboard_read_only_view.mjs")
+
+
+def test_a_read_only_view_says_changes_are_off_instead_of_network_error(served, tmp_path):
+    """2026-10-15: through the demo's read-only view (it refuses /api/session) Save said "Network
+    error. Settings not saved." and Engage could stay stuck on "Engaging…"."""
+    chromium = _chromium()
+    if chromium is None:
+        pytest.skip("no Chromium build in Playwright's cache (npx playwright install chromium)")
+    result = subprocess.run(["node", str(READ_ONLY), served, str(tmp_path)], capture_output=True, text=True, timeout=240,
+                            cwd=str(REPO), env={**os.environ, "PW_EXEC": chromium}, check=False)
+    assert result.returncode == 0, result.stderr[-2000:]
+    summary = json.loads((tmp_path / "read-only-view-summary.json").read_text(encoding="utf-8"))
+    assert summary["pageErrors"] == [], summary
+    assert "switched off in this view" in summary["saveStatus"] and "Network error" not in summary["saveStatus"]
+    assert summary["engageButton"].startswith("Engage ")   # back to its label, not stuck on "Engaging…"

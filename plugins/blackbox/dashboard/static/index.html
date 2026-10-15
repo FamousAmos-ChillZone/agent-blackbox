@@ -4126,8 +4126,8 @@
       } else if (note) {
         note.textContent = "Save failed.";
       }
-    }).catch(function () {
-      if (note) note.textContent = "Save failed.";
+    }).catch(function (err) {
+      if (note) note.textContent = err && err.readOnly ? err.message : "Save failed.";
     });
   }
 
@@ -7674,8 +7674,21 @@
     });
   }
 
+  // Shown when this dashboard may not change anything: it is opened through a read-only view (one
+  // that refuses /api/session — e.g. a demo or proxy), so every save would be refused.
+  var READ_ONLY_VIEW_MESSAGE = "Changes are switched off in this view: this dashboard is opened read-only here. " +
+    "Open it on the machine itself (http://127.0.0.1:9700) to change settings.";
+
   function postJSON(url, body) {
-    return getSessionToken().then(function (tok) {
+    return getSessionToken().catch(function (err) {
+      // A refused session key is a read-only view, not a network failure: say so to every caller.
+      if (err && /HTTP 40[13]/.test(String(err.message))) {
+        var refused = new Error(READ_ONLY_VIEW_MESSAGE);
+        refused.readOnly = true;
+        throw refused;
+      }
+      throw err;
+    }).then(function (tok) {
       return fetch(url, {
         method: "POST",
         headers: {
@@ -7717,8 +7730,8 @@
           : ("Could not save (HTTP " + res.status + ").");
         setStatus(errs, "err");
       }
-    }).catch(function () {
-      setStatus("Network error. Settings not saved.", "err");
+    }).catch(function (err) {
+      setStatus(err && err.readOnly ? err.message : "Network error. Settings not saved.", "err");
     }).then(function () {
       setSaving = false;
       btn.disabled = false;
