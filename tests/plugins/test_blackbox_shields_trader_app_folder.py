@@ -1,5 +1,5 @@
 """Trader Shield's desktop-app and cli-key-file kinds (shields/trader/detectors/app_folder.py) —
-moved from test_blackbox_app_wallets.py in shields S4b.
+moved from test_blackbox_app_wallets.py.
 
 The layouts are copied from the real software installed on bench bb-trader-1
 (2026-10-13): Exodus 26.10.7 (.deb) wrote ``~/.config/Exodus/exodus.wallet/{seed.seco,
@@ -9,7 +9,7 @@ the Solana CLI 4.3.0 wrote ``~/.config/solana/id.json`` and a ``cli/config.yml``
 
 Each input goes through the detector, ``detectors.detect``. The old
 ``detection.detect_wallet_files`` gave identical findings apart from the added ``pack``
-field until S5b deleted it; the attack table's Exodus, Electrum and Solana CLI rows and
+field until the old module was deleted; the attack table's Exodus, Electrum and Solana CLI rows and
 each layout's own paths stay pinned, on Linux, macOS and Windows layouts, to what both
 gave on that last run.
 """

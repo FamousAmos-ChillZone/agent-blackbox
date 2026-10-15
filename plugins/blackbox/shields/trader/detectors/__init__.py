@@ -11,7 +11,7 @@ and ``verified`` itself, so the validators here check only what is theirs:
 * ``desktop-app`` (Exodus, Electrum) and ``cli-key-file`` (the Solana CLI): checked by
   :func:`.app_folder.validate_pack`, beside the matcher it serves.
 
-Detection (shields S4a): :func:`detect` answers, for one tool call, a finding per
+Detection: :func:`detect` answers, for one tool call, a finding per
 chosen pack whose key store the call reads — or copies or archives inside a folder
 handed whole to ``tar``/``zip``/``cp``/``rsync`` (:func:`wallets_inside_folder`, which
 needs to know where key stores exist on this machine: :data:`EXISTING_STORES`, a

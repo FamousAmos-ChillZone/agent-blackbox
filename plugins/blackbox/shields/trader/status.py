@@ -13,11 +13,11 @@ Sections, in the panel's own words:
 * **Always watching** — seed phrases, private keys (with the COUNT of listed own
   addresses, never an address), exchange API keys, token approvals, protected files;
 * **Needs attention** — health rows, only when there is one: a chosen pack that is not
-  supported right now (F-013) and supported packs absent from an explicitly saved list
-  (F-037 — whether those switch on by themselves is D-21, a founder call).
+  supported right now, and supported packs absent from an explicitly saved list
+  (whether those switch on by themselves is an open product decision).
 
 Text is clamped here with ``kernel.display_safety.log_safe`` (the operator's own folder
-names); the dashboard sanitises every record once more where it serves them (F-002) —
+names); the dashboard sanitises every record once more where it serves them —
 this module never imports the dashboard.
 
 Usage::

@@ -25,7 +25,7 @@ stays engaged without a save), and the first save retires them (:func:`validate`
 
 The mode is the shields contract's :class:`~..contract.ShieldMode`, built by :func:`build`:
 options ``wallets`` and ``addresses``, the addresses marked personal so ``as_json()``
-leaves them out unless the Settings editor asks (F-035).
+leaves them out unless the Settings editor asks.
 
 Usage::
 
@@ -58,7 +58,7 @@ ANY_EXTENSION_WALLET = "any-extension"
 
 #: The mode's options: the chosen wallet ids, and the operator's own addresses (personal).
 WALLETS, ADDRESSES = "wallets", "addresses"
-#: The three keys this setting lived under before shields; one save retires them (F-009).
+#: The three keys this setting lived under before shields; one save retires them.
 LEGACY_KEYS = ("wallet_protection", "protected_wallets", "wallet_addresses")
 
 #: Most addresses an operator may list (each costs a key derivation only when a 64-hex
@@ -200,7 +200,7 @@ def validate(payload: Mapping[str, Any]) -> tuple[str, dict[str, Any], list[str]
     Unknown wallets and non-booleans are refused, never stored; ``wallets`` holds at most
     every supported wallet once, ``addresses`` at most :data:`MAX_WALLET_ADDRESSES`. A
     section that touches the mode is written COMPLETE — fields the payload leaves out
-    keep their current value — because the same save retires the legacy keys (F-009):
+    keep their current value — because the same save retires the legacy keys:
     an Engage that sends only ``enabled`` keeps an earlier choice of wallets and addresses.
     """
     shields = payload.get("shields")

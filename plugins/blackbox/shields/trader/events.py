@@ -19,14 +19,14 @@ told the way a person reads it:
 
 The prose (story, what to do, "Why it matters", "Reached for") was the dashboard's
 JavaScript (``WALLET_WHY``, ``wevStory``, ``wevTodo``, ``wevFacts``, ``walletRows``) and
-moved here verbatim (D-08) so it is tested and the window can draw any shield's events.
+moved here verbatim so it is tested and the window can draw any shield's events.
 
 PRIVATE BY CONSTRUCTION: everything is read from this machine's own audit logs through
 the one session reconstruction the local graph also uses (:func:`audit.read_local_activity`).
 Trader findings carry ``source: "secret"``, which the community share gate never sends,
 so none of this ever reaches the community graph. Text is clamped here with
 ``kernel.display_safety.log_safe``; the dashboard sanitises every record once more where
-it serves them (F-002) — this module never imports the dashboard.
+it serves them — this module never imports the dashboard.
 
 Usage::
 

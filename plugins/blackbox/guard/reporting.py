@@ -49,7 +49,7 @@ def _flag_worthy(cfg: BlackboxConfig, findings: list[detection.Finding],
 
 
 def _attach_sightings(finding_dicts: list[dict[str, Any]], detail: dict[str, Any]) -> None:
-    """Give each finding the sighting a report carries (threat-profiles §03.2):
+    """Give each finding the sighting a report carries:
     the tool, the action, blocked or flagged (from the hook's ``blocked`` list)
     and what the threat goes after."""
     blocked = set(detail.get("blocked") or ())

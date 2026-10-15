@@ -91,7 +91,8 @@ def _pack_of(fields: Mapping[str, Any]) -> str:
     """The pack a key-store finding names, or "" for a store no pack can be named for."""
     if "pack" in fields:
         return str(fields["pack"])
-    # Transitional (S7): the dashboard wallet panel still asks the gate by fields["wallet"].
+    # A key-store finding that names only its wallet (the field from before packs). No current
+    # detector or caller produces one any more, so this fallback can go in its own change.
     legacy = str(fields.get("wallet") or "")
     return "" if legacy == mode.ANY_EXTENSION_WALLET else legacy
 

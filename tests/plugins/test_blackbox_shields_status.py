@@ -1,10 +1,10 @@
-"""Trader Shield's card (shields/trader/status.py) and ``GET /api/shields`` (shields S5).
+"""Trader Shield's card (shields/trader/status.py) and ``GET /api/shields`` .
 
 The card says, in the panel's own words, which wallets were found on this machine and
 whether each is protected, what is always watched, and two health rows: a chosen pack
-that is not supported right now (F-013) and supported packs a saved list leaves out
-(F-037). The dashboard sanitises the card ONCE where it serves it (F-002), serves it
-through its 2 s cache (F-021), and never carries an address (R27). Since S7 it is the only
+that is not supported right now and supported packs a saved list leaves out
+The dashboard sanitises the card ONCE where it serves it, serves it
+through its 2 s cache, and never carries an address. Since the old wallet panel went, it is the only
 source of the card's words: the dashboard draws it as given. The found-wallet assertions
 moved here from the old wallet-protection panel's tests.
 """
@@ -263,7 +263,7 @@ def test_two_requests_inside_two_seconds_call_the_producer_once(home, monkeypatc
     assert shields_routes.STATUS_TTL_SECONDS == 2.0
 
 
-# ------------------------------------------------------------------ the captured payload (S7 replay, S8)
+# ------------------------------------------------------------------ the captured payload (the dashboard replay and the bench proof)
 
 
 def _every_section_setup(home, monkeypatch):

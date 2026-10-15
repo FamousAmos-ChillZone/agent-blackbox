@@ -182,7 +182,7 @@ def test_the_page_treats_a_failed_fetch_as_a_failure_not_an_empty_answer():
 
 
 def test_the_old_wallet_routes_are_gone_and_the_shield_routes_answer(app):
-    """S7: the page draws every shield from the shield routes; the wallet panel's routes and
+    """The page draws every shield from the shield routes; the wallet panel's routes and
     its logo folder are removed in the same change, so the page and the server cannot drift."""
     with TestClient(app, base_url=LOCAL) as client:
         gone = {path: client.get(path).status_code

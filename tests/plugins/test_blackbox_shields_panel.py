@@ -1,4 +1,4 @@
-"""The dashboard draws every shield from the API alone (static/shields.js; shields S7).
+"""The dashboard draws every shield from the API alone (static/shields.js).
 
 index.html names no shield: each shield's banner, card, Settings group and the events window
 are drawn by ``shields.js`` from ``GET /api/shields``, ``GET /api/shields/{id}/events`` and the

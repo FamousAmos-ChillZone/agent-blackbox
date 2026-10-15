@@ -1,12 +1,12 @@
 """Firefox wallets follow the wallet ticks like every other browser (shields/trader/detectors/
-firefox_map.py) — moved from test_blackbox_firefox_wallets.py in shields S4a.
+firefox_map.py) — moved from test_blackbox_firefox_wallets.py.
 
 Firefox names an add-on's storage folder by a random UUID; its prefs.js maps add-on id →
 UUID (the format below was copied from real Firefox 157 installs on a bench, 2026-10-13).
 MetaMask-in-Firefox is the ``metamask`` pack, Phantom-in-Firefox is ``phantom``, other add-ons
 are not wallets, and a folder the map cannot place is a pack-less finding that stays protected.
 The old ``detection.detect_wallet_files`` agreed with every input here apart from the added
-``pack`` field until S5b deleted it; the tests below hold the packs each input names.
+``pack`` field until the old module was deleted; the tests below hold the packs each input names.
 """
 
 from __future__ import annotations

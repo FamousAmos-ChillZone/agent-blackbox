@@ -269,7 +269,7 @@ def test_valid_templates_pass(template):
     assert check_template(template) == template
 
 
-# R25 / F-046 with the S3 roots: $XDG_CONFIG_HOME is ~/.config, already one folder below
+# With the shipped browser roots: $XDG_CONFIG_HOME is ~/.config, already one folder below
 # home, so one named folder below it is as narrow as ~/.electrum/wallets.
 @pytest.mark.parametrize("template", [
     "$XDG_CONFIG_HOME/chromium", "$XDG_CONFIG_HOME/google-chrome*", "$XDG_CONFIG_HOME/BraveSoftware/Brave-Browser*"])

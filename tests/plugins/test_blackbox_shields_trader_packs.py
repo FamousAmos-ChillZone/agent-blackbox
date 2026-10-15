@@ -1,10 +1,10 @@
 """Trader Shield's wallets and browser roots as data (shields/trader/wallets/, browsers.json).
 
 The two "coming soon" lists are pinned first, against the code they replace, so moving the
-wallets into packs cannot quietly change what Settings and the page promise (D-12). Then
-the data is held to the code it replaced (code -> data, §06 step 3a): the eleven packs load,
+wallets into packs cannot quietly change what Settings and the page promise. Then
+the data is held to the code it replaced (code -> data): the eleven packs load,
 and the ids, names, extension ids, places and browser roots they state equal the values the
-old Python tables (detection/wallet_files.py, detection/app_wallets.py, deleted in S5b)
+old Python tables (detection/wallet_files.py, detection/app_wallets.py, since deleted)
 gave on the last run that had both, under Linux, macOS and Windows layouts with
 mixed-case input. That a supported pack has earned it (a blocked
 ``vault`` row names it) is checked with every shield's attack table, in

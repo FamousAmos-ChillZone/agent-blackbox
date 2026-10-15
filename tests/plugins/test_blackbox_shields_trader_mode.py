@@ -3,9 +3,9 @@
 The setting lives at ``shields.trader`` in the ``blackbox`` config entry. An install saved
 before shields holds three legacy keys (``wallet_protection`` / ``protected_wallets`` /
 ``wallet_addresses``): it still reads as engaged, and its first save writes ``shields.trader``
-and retires them (F-009). The operator's own addresses are personal data (F-035): only the
-Settings editor's view carries them. The mode tests moved here from the wallet test files
-(S2b). ``HERMES_HOME``/``BLACKBOX_HOME`` are per-test tmpdirs (root conftest).
+and retires them. The operator's own addresses are personal data: only the
+Settings editor's view carries them. The mode tests moved here from the wallet test files.
+``HERMES_HOME``/``BLACKBOX_HOME`` are per-test tmpdirs (root conftest).
 """
 
 import secrets
@@ -40,7 +40,7 @@ def _write_entry(entry: dict) -> None:
 LEGACY = {"wallet_protection": True, "protected_wallets": ["metamask", "phantom"], "wallet_addresses": [OWN]}
 
 
-# ------------------------------------------------------------------ the six S2b cases
+# ------------------------------------------------------------------ the six legacy-key cases
 
 
 def test_a_legacy_only_entry_reads_enabled_with_its_wallets_and_addresses():
@@ -178,14 +178,14 @@ def test_the_settings_routes_compose_shields_trader_and_a_save_retires_the_legac
     assert not set(trader_mode.LEGACY_KEYS) & set(entry)
 
 
-# ------------------------------------------------------------------ saves that must retire nothing (S2b review)
+# ------------------------------------------------------------------ saves that must retire nothing
 
 
 @pytest.mark.parametrize("payload", [{"mode": "block"}, {"mode": "block", "shields": {}},
                                      {"mode": "block", "shields": {"trader": {}}}],
                          ids=["no-shields-key", "empty-shields", "empty-trader-section"])
 def test_a_save_that_leaves_trader_untouched_keeps_the_legacy_keys(payload):
-    """A page built before S2b (or one that never read Trader) saves its other settings with
+    """A page built before this setting moved (or one that never read Trader) saves its other settings with
     ``shields: {}``: the install must stay engaged on its legacy keys — an empty section
     means untouched (LES-018)."""
     _write_entry(LEGACY)

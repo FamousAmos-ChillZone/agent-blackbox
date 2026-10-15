@@ -1,7 +1,7 @@
 """The dashboard's side of shields: the settings each shield adds, and ``GET /api/shields``.
 
 The kernel's settings stay shield-free (it never imports a shield); the dashboard composes
-each shield's Settings view onto what the kernel answers (F-017), on GET and POST alike, so
+each shield's Settings view onto what the kernel answers, on GET and POST alike, so
 the page re-renders from one shape. A sub-package because ``dashboard/`` is at its file
 limit. The page draws every shield from these routes alone (``static/shields.js``); no
 shield is named in the dashboard's own markup or script.
@@ -9,9 +9,9 @@ shield is named in the dashboard's own markup or script.
 ``GET /api/shields`` answers every registered shield's card (``shields.statuses()``) with
 what the page needs to draw it — the shield's ``name``, ``tagline``, ``beta``, its ``page``
 address and ``claims`` (the finding identifier patterns it owns, so the page can tell its
-findings apart) — sanitised ONCE here, at the serving boundary (F-002: a shield clamps its own text but never
+findings apart) — sanitised ONCE here, at the serving boundary (a shield clamps its own text but never
 imports the dashboard), and served through the server's stale-while-revalidate cache for
-:data:`STATUS_TTL_SECONDS`, so N shields cost one read per 2 s however many tabs poll (F-021).
+:data:`STATUS_TTL_SECONDS`, so N shields cost one read per 2 s however many tabs poll.
 
 ``GET /api/shields/{id}/events`` answers that shield's full local events report
 (``[ShieldEvent.as_json()]``, newest first; 404 for an id no shield is registered as),
@@ -20,15 +20,15 @@ is cleaned and clamped but not defanged — ``backup.tgz`` stays ``backup.tgz`` 
 ``identifier`` goes through ``safe_identifier``, the token the page hands back.
 
 ``GET /shields/{id}`` is the shield's explainer page, which reads everything else by
-RELATIVE address (F-016): its prose (``/shields/{id}/content.json``), its tested attack
+RELATIVE address: its prose (``/shields/{id}/content.json``), its tested attack
 table (``/attacks.json``: the hand-written rows, ``systems`` and ``tested_with`` composed by
 the registry, plus one generated row per browser folder rule, :func:`attacks_payload`), its figures (``/graph.json``, 404 for a shield that ships none) and its packs'
 logos (``/packs/{pack}/logo.svg``). Every file is found through the registry from ``id`` and
 ``pack`` — a value no shield or pack is registered as is 404 before the filesystem is
-touched (R6) — and a logo is served as an image, never a document: ``image/svg+xml``,
-``nosniff`` and a sandboxing CSP, so an SVG opened directly runs nothing (F-054, R30). The
+touched — and a logo is served as an image, never a document: ``image/svg+xml``,
+``nosniff`` and a sandboxing CSP, so an SVG opened directly runs nothing. The
 campaign addresses ``/trader-shield``, ``/trader-shield/attacks.json`` and
-``/trader-shield/graph.json`` are permanent 307 aliases with FIXED Locations (D-07), never
+``/trader-shield/graph.json`` are permanent 307 aliases with FIXED Locations, never
 built from the request. All of it sits behind the app-wide browser boundary.
 
 ``GET /shields.js`` is the dashboard's shield code (``static/shields.js``, one fixed file).
@@ -66,18 +66,18 @@ MAX_EVENT_TEXT = 8000
 #: served as is or not at all.
 LOCAL_PATHS = ("logo", "page")
 LOCAL_URL = re.compile(r"/[A-Za-z0-9_-]+(?:[./][A-Za-z0-9_-]+)*")
-#: A pack logo is an image, never a document: opened directly, its script cannot run (F-054).
+#: A pack logo is an image, never a document: opened directly, its script cannot run.
 LOGO_HEADERS = {"X-Content-Type-Options": "nosniff",
                 "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
                 "Cache-Control": "public, max-age=86400"}
 NO_CACHE = {"Cache-Control": "no-cache, no-store, must-revalidate"}
 #: The page's shield code (``GET /shields.js``): it ships with the page, so it is never cached either.
 SHIELDS_SCRIPT = Path(__file__).resolve().parents[1] / "static" / "shields.js"
-#: The campaign addresses of Trader Shield's page (D-07): permanent, each to a FIXED Location.
+#: The campaign addresses of Trader Shield's page: permanent, each to a FIXED Location.
 ALIASES = {"/trader-shield": "/shields/trader",
            "/trader-shield/attacks.json": "/shields/trader/attacks.json",
            "/trader-shield/graph.json": "/shields/trader/graph.json"}
-#: The folded group the generated browser-folder rows are shown in (F-034): one row per rule.
+#: The folded group the generated browser-folder rows are shown in: one row per rule.
 BROWSER_FOLDER_GROUP = {"id": "browser-folders", "title": "Every browser folder", "fold": True,
                         "intro": "A stealer often takes a whole browser folder instead of one file. Every place a "
                                  "browser keeps its profiles is archived in the tests with a wallet inside, and "

@@ -367,7 +367,7 @@ def test_the_trader_page_says_which_agents_it_covers():
     assert "attached to Blackbox through Hermes" in lead and "OpenClaw are not covered" in lead
 
 
-# ------------------------------------------- one generated row per browser root (F-034)
+# ------------------------------------------- one generated row per browser root
 #
 # Every rule in the shield's browsers.json owes one row, ``vault-root-<browser>-<os>-<install>``
 # (``-2`` … when rules share all three): a store of a supported browser-extension pack laid

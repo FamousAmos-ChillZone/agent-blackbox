@@ -211,7 +211,7 @@ def attack_table(shield_id: str) -> Optional[dict[str, Any]]:
     """*shield_id*'s tested attack table as its page reads it; None for an unknown id.
 
     The rows, groups and evidence levels are the hand-written ``attacks.json``; what the
-    table is tested ON is composed here from the registry, never typed (F-011, F-030):
+    table is tested ON is composed here from the registry, never typed:
     ``systems`` — every supported pack (``logo``: whether it ships one) then every
     capability — and ``tested_with``, the setup sentence the test suite runs under
     (every supported pack chosen, block mode at the table's ``tested_severity``).

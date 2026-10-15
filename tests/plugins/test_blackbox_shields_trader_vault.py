@@ -1,10 +1,10 @@
 """Trader Shield's browser-extension kind (shields/trader/detectors) — moved from
-test_blackbox_wallet_files.py in shields S4a.
+test_blackbox_wallet_files.py.
 
 Each test drives one way an agent reaches a browser wallet's vault (or a way that must
 NOT count) through the detector, ``detectors.detect``. The old
 ``detection.detect_wallet_files`` gave identical findings apart from the added ``pack``
-field until S5b deleted it; the roots, store globs and the attack table's vault and
+field until the old module was deleted; the roots, store globs and the attack table's vault and
 Firefox rows stay pinned to what both gave on that last run.
 """
 
@@ -80,7 +80,7 @@ def test_finding_never_carries_the_path():
 
 
 def test_a_finding_names_its_pack_by_id():
-    """F-004: the pack is named by id in ``fields["pack"]``, the person-facing name stays in the text."""
+    """The pack is named by id in ``fields["pack"]``, the person-facing name stays in the text."""
     [finding] = _detect("read_file", {"path": f"/x/Default/Local Extension Settings/{CHROME_ID}/a.log"})
     assert finding.fields["pack"] == "metamask" and "MetaMask" in finding.title
 
@@ -144,7 +144,7 @@ def test_existing_store_scan_finds_the_fake_install(fake_home):
 
 
 def test_a_firefox_vault_read_is_pack_less_and_counts_while_trader_shield_is_on():
-    """KI-366 / F-004: Firefox storage the map cannot place names no pack; it is the shield's
+    """KI-366: Firefox storage the map cannot place names no pack; it is the shield's
     as a whole, so it is returned whatever is chosen and today's gate still counts it."""
     path = "~/.mozilla/firefox/ab12.default/storage/default/moz-extension+++0b6f^userContextId=4294967295/idb/x.sqlite"
     [finding] = _detect("read_file", {"path": path})
@@ -231,7 +231,7 @@ def test_archiving_a_snap_or_flatpak_chromium_profile_is_found(tmp_path, monkeyp
         _reset_stores()
 
 
-# -- built from data: the packs and browsers.json, not WALLETS / _browser_roots (S4a) ------------
+# -- built from data: the packs and browsers.json, not WALLETS / _browser_roots ------------
 
 def test_a_pack_with_no_chromium_id_matches_no_chromium_path(tmp_path):
     """An empty id alternation would match every extension folder; such a pack gets no pattern."""

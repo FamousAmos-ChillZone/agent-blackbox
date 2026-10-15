@@ -3,10 +3,10 @@
 Two halves. The story half pins, word for word, the sentences the events window shows for
 a vault copy, a seed phrase, a keychain read, a token approval and an exchange key — the
 prose that was the dashboard's JavaScript (``WALLET_WHY``, ``wevStory``, ``wevTodo``,
-``wevFacts``) and moved here verbatim (D-08, R7). The report half drives the REAL hooks
+``wevFacts``) and moved here verbatim. The report half drives the REAL hooks
 (session start, model request, the blocked tool call, session end) into a throwaway
 Blackbox home and reads the report back through ``GET /api/shields/trader/events``, the
-one events route since S7 retired the old window.
+one events route since the old wallet window was retired.
 """
 
 from __future__ import annotations
@@ -97,7 +97,7 @@ def test_a_flagged_seed_phrase_says_it_ran_and_why_handling_a_key_is_allowed():
 
 def test_a_keychain_read_names_the_warning_signs_met_before_it():
     # "handled a wallet private key" is today's JavaScript wording for every non-vault,
-    # non-seed event, moved verbatim (R7); rewording it is a separate, visible change.
+    # non-seed event, moved verbatim; rewording it is a separate, visible change.
     event = _event("fileaccess:terminal:macos-keychain", title="macOS keychain read",
                    evidence="read macos-keychain", action="security dump-keychain",
                    asked="Show me my saved passwords", model="claude-sonnet-5", earlier=(INJECTION,))
@@ -218,7 +218,7 @@ def test_the_route_answers_the_event_with_its_story(shielded):
 
 
 def test_a_blocked_vault_copy_is_reported_with_its_request_command_and_session(shielded):
-    """Moved from the old window's tests (S7): the report is proven against what the hooks write."""
+    """Moved from the old window's tests: the report is proven against what the hooks write."""
     assert _run_session(ARCHIVE_CHROME)["action"] == "block"
 
     [event] = shields.get("trader").events()
