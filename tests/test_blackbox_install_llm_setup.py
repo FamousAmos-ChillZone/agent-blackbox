@@ -134,9 +134,13 @@ def test_unix_installer_creates_global_blackbox_launcher(tmp_path: Path) -> None
     hermes_bin.chmod(0o755)
 
     body = _extract_function_body("link_hermes")
+    shim_body = _extract_function_body("install_blackbox_shim")
     command = f"""
 ok() {{ :; }}
 warn() {{ :; }}
+install_blackbox_shim() {{
+{shim_body}
+}}
 link_hermes() {{
 {body}
 }}
@@ -183,9 +187,13 @@ def test_unix_installer_does_not_replace_unmanaged_blackbox_command(tmp_path: Pa
     hermes_bin.chmod(0o755)
 
     body = _extract_function_body("link_hermes")
+    shim_body = _extract_function_body("install_blackbox_shim")
     command = f"""
 ok() {{ :; }}
 warn() {{ :; }}
+install_blackbox_shim() {{
+{shim_body}
+}}
 link_hermes() {{
 {body}
 }}
@@ -490,7 +498,8 @@ def test_windows_installer_migrates_stale_community_sharing_opt_in() -> None:
     assert 'for k, v in {"report": False, "daily_report_limit": 20}.items()' not in writer
     assert 'if blackbox.get("report") is True and not _consent_in_force(repo_dir):' in writer
     assert 'if blackbox.get("daily_report_limit") in (0, "0", 20, "20")' in writer
-    assert "$GraphPeerId $RepoDir" in writer
+    # the checkout for a curl install, the plugin folder in setup-only mode (`blackbox setup`)
+    assert "$GraphPeerId $(if ($env:BLACKBOX_PLUGIN_DIR) { $env:BLACKBOX_PLUGIN_DIR } else { $RepoDir })" in writer
 
 
 def test_hermes_setup_defaults_to_reuse_without_prompting() -> None:
@@ -1461,8 +1470,48 @@ def test_blazegraph_helper_sizes_heap_and_preserves_undersized_store(tmp_path: P
     assert calls[0] == "inspect dkg-blazegraph-test"
     assert calls[1] == "stop dkg-blazegraph-test"
     assert calls[2].startswith("rename dkg-blazegraph-test dkg-blazegraph-test-pre-4g-")
-    assert calls[3] == "run --cpus 4 -e JAVA_OPTS=-Xms512m -Xmx4g -d blazegraph"
-    assert json.loads(completed.stdout)["url"] == calls[3]
+    assert calls[3] == "info --format {{.NCPU}}"   # this fake Docker gives no count: the old 4 stands
+    assert calls[4] == "run --cpus 4 -e JAVA_OPTS=-Xms512m -Xmx4g -d blazegraph"
+    assert json.loads(completed.stdout)["url"] == calls[4]
+
+
+def test_blazegraph_helper_never_asks_docker_for_more_cpus_than_it_has(tmp_path: Path) -> None:
+    """A 2-CPU server refused `docker run --cpus 4` ("range of CPUs is from 0.01 to 2.00") and the
+    default install stopped (fresh Ubuntu 24.04 droplet, 2026-10-14). The store gets min(4, Docker's CPUs)."""
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node.js is not installed")
+    cli = tmp_path / "node_modules" / "@origintrail-official" / "dkg"
+    module = cli / "dist" / "daemon" / "blazegraph-docker.js"
+    module.parent.mkdir(parents=True)
+    (cli / "package.json").write_text('{"type":"module"}', encoding="utf-8")
+    module.write_text(
+        "export async function provisionBlazegraphDocker(options) {\n"
+        "  const started = await options.docker.run(['run', '-d', 'blazegraph']);\n"
+        "  return {url: started.stdout.trim(), port: options.port, managedByDkg: true};\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    docker = fake_bin / "docker"
+    docker.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in\n"
+        "  info) echo 2 ;;\n"
+        "  run) printf '%s\\n' \"$*\" ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    docker.chmod(0o755)
+
+    completed = subprocess.run(
+        [node, str(BLAZEGRAPH_HELPER), str(tmp_path), "blackbox-test", "10001"],
+        check=True, capture_output=True, text=True,
+        env={**os.environ, "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", "")},
+    )
+
+    assert json.loads(completed.stdout)["url"] == "run --cpus 2 -e JAVA_OPTS=-Xms512m -Xmx4g -d blazegraph"
 
 
 def test_blazegraph_helper_uses_dkg_store_health_check(tmp_path: Path) -> None:
@@ -1777,9 +1826,14 @@ def test_unix_runtime_marker_survives_interrupted_restart_window(
         "record_blackbox_dkg_runtime_fingerprint"
     )
 
+    helper_body = _extract_function_body("blackbox_helper")
+
     def invoke(*, record: bool) -> tuple[str, ...]:
         command = f"""
 warn() {{ :; }}
+blackbox_helper() {{
+{helper_body}
+}}
 prepare_blackbox_dkg_runtime_fingerprint() {{
 {prepare_body}
 }}

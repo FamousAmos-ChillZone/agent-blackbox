@@ -22,6 +22,14 @@ set -euo pipefail
 # ── Configuration (override via env) ────────────────────────────────────────
 REPO_URL="${BLACKBOX_REPO_URL:-https://github.com/umanitek/agent-blackbox.git}"
 REPO_BRANCH="${BLACKBOX_REPO_BRANCH:-main}"
+# Setup-only mode: Blackbox is already installed as a plugin (the Hermes plugin catalog),
+# and `hermes blackbox setup` runs this script for everything after Hermes — the DKG
+# node, the graphs, attach, sync, dashboard and services — in the Hermes it runs in.
+# The caller passes HERMES_BIN, VENV_DIR (that Hermes's Python environment),
+# BLACKBOX_INSTALL_DIR, BLACKBOX_HELPER_DIR (the plugin's copies of the helper scripts),
+# BLACKBOX_PLUGIN_DIR and BLACKBOX_REVISION (the plugin's pinned commit).
+BLACKBOX_SETUP_ONLY="${BLACKBOX_SETUP_ONLY:-false}"
+REPO_DIR=""   # set by resolve_repo; setup-only mode has no checkout
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 # Keep the managed npm DKG package and node state inside the Agent Blackbox
 # checkout. For a local script this is the current repository; for curl | bash
@@ -64,6 +72,15 @@ BLACKBOX_DKG_HOME="$BLACKBOX_INSTALL_ROOT/.dkg"
 BLACKBOX_DKG_CLI_DIR="$BLACKBOX_INSTALL_ROOT/dkg"
 BLACKBOX_DKG_BIN="$BLACKBOX_DKG_CLI_DIR/node_modules/.bin/dkg"
 BLACKBOX_DKG_PACKAGE="${BLACKBOX_DKG_PACKAGE:-@origintrail-official/dkg@latest}"
+# The npm integrity hash BLACKBOX_DKG_PACKAGE must have ("sha512-…"); empty = not checked.
+# `hermes blackbox setup` pins an exact version and its hash (Hermes plugin catalog: a
+# download made at setup comes from the official source, pinned by checksum).
+BLACKBOX_DKG_INTEGRITY="${BLACKBOX_DKG_INTEGRITY:-}"
+# Packages whose install scripts the DKG node needs (its sqlite runtime check, the better-sqlite3
+# native build, a postinstall). Older npm ran every install script; npm 12 runs only those the
+# project's package.json lists under "allowScripts" (its --allow-scripts flag is refused for a
+# project install), and without the better-sqlite3 build the node crashes on every start.
+BLACKBOX_DKG_ALLOW_SCRIPTS=(@origintrail-official/dkg better-sqlite3 @openuidev/lang-core)
 BLACKBOX_DKG_DAEMON_URL="http://127.0.0.1:$BLACKBOX_DKG_PORT"
 BLACKBOX_DKG_STORE_QUEUE_LIMIT="${BLACKBOX_DKG_STORE_QUEUE_LIMIT:-512}"
 BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION="${BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION:-1}"
@@ -170,8 +187,14 @@ detached_process_survived_startup() {
     kill -0 "$pid" 2>/dev/null
 }
 
+# A helper script shipped beside this installer: scripts/ in a checkout, the plugin's
+# setup/ folder in setup-only mode (BLACKBOX_HELPER_DIR).
+blackbox_helper() {
+    printf '%s/%s' "${BLACKBOX_HELPER_DIR:-$REPO_DIR/scripts}" "$1"
+}
+
 prepare_blackbox_dkg_process_environment() {
-    local helper="$REPO_DIR/scripts/blackbox-dkg-runtime-fingerprint.py"
+    local helper="$(blackbox_helper blackbox-dkg-runtime-fingerprint.py)"
     local heap_mb
     if [ ! -f "$helper" ]; then
         warn "DKG runtime settings helper is missing: $helper"
@@ -230,7 +253,7 @@ blackbox_has_dkg_state() {
 }
 
 prepare_blackbox_dkg_runtime_fingerprint() {
-    local fingerprinter="$REPO_DIR/scripts/blackbox-dkg-runtime-fingerprint.py"
+    local fingerprinter="$(blackbox_helper blackbox-dkg-runtime-fingerprint.py)"
     local node_bin
     local applied=""
     if [ ! -f "$fingerprinter" ]; then
@@ -260,7 +283,7 @@ prepare_blackbox_dkg_runtime_fingerprint() {
 }
 
 record_blackbox_dkg_runtime_fingerprint() {
-    local fingerprinter="$REPO_DIR/scripts/blackbox-dkg-runtime-fingerprint.py"
+    local fingerprinter="$(blackbox_helper blackbox-dkg-runtime-fingerprint.py)"
     if [ -z "$BLACKBOX_DKG_RUNTIME_FINGERPRINT" ] ||
         ! "$VENV_DIR/bin/python" "$fingerprinter" record \
             "$BLACKBOX_DKG_RUNTIME_MARKER" "$BLACKBOX_DKG_RUNTIME_FINGERPRINT"; then
@@ -274,7 +297,7 @@ record_blackbox_dkg_runtime_fingerprint() {
 }
 
 wait_for_blackbox_dkg_runtime() {
-    local verifier="$REPO_DIR/scripts/blackbox-dkg-runtime-fingerprint.py"
+    local verifier="$(blackbox_helper blackbox-dkg-runtime-fingerprint.py)"
     local expected_commit
     if ! expected_commit="$("$VENV_DIR/bin/python" "$verifier" commit \
         "$BLACKBOX_DKG_CLI_DIR")"; then
@@ -465,6 +488,14 @@ require_docker_for_blazegraph() {
     ok "Docker engine is ready for Blazegraph"
 }
 
+# Whether Docker can run the Blazegraph store: running now, or Docker Desktop installed on a Mac
+# (require_docker_for_blazegraph starts it).
+blackbox_docker_available() {
+    command -v docker >/dev/null 2>&1 || return 1
+    docker info >/dev/null 2>&1 && return 0
+    [ "$OS" = "macos" ] && { [ -d "/Applications/Docker.app" ] || [ -d "$HOME/Applications/Docker.app" ]; }
+}
+
 use_blackbox_oxigraph() {
     BLACKBOX_DOCKER_REQUIRED=false
     BLACKBOX_DKG_SELECTED_STORE_BACKEND="oxigraph-server"
@@ -509,7 +540,7 @@ blackbox_store_description() {
 }
 
 provision_blackbox_store() {
-    local helper="$REPO_DIR/scripts/blackbox-blazegraph.mjs"
+    local helper="$(blackbox_helper blackbox-blazegraph.mjs)"
     local existing_state namespace existing_backend existing_url existing_managed
     local provisioned parsed
 
@@ -604,6 +635,15 @@ PYEOF
         fi
         warn "The managed Blazegraph endpoint is down; attempting Docker recovery."
     fi
+    # `hermes blackbox setup` (a Hermes plugin-catalog install) needs no Docker: without it the store
+    # is the DKG-managed Oxigraph, chosen here rather than asked about. The one-line installer keeps
+    # asking first (founder decision 2026-10-14).
+    if [ "$BLACKBOX_SETUP_ONLY" = true ] && [ "$BLACKBOX_DKG_STORE_BACKEND" = "auto" ] && ! blackbox_docker_available; then
+        step "Docker is not available here, so setup uses the DKG-managed Oxigraph store (no Docker needed)."
+        step "To move to Blazegraph later: install Docker, then run: hermes blackbox setup --store blazegraph"
+        use_blackbox_oxigraph
+        return 0
+    fi
     if ! require_docker_for_blazegraph; then
         if [ "$BLACKBOX_DKG_STORE_BACKEND" = "auto" ] &&
             confirm_oxigraph_fallback "Blazegraph cannot be installed because Docker is unavailable."; then
@@ -655,7 +695,7 @@ PYEOF
 }
 
 check_blackbox_blazegraph() {
-    local helper="$REPO_DIR/scripts/blackbox-blazegraph.mjs"
+    local helper="$(blackbox_helper blackbox-blazegraph.mjs)"
     local result
     step "Checking the Blazegraph SPARQL endpoint ..."
     if ! result="$(node "$helper" check "$BLACKBOX_DKG_CLI_DIR" "$BLACKBOX_DKG_STORE_URL")"; then
@@ -675,7 +715,7 @@ reset_fresh_managed_blazegraph() {
         step "Stop that DKG node or set BLACKBOX_DKG_STORE_URL to an operator-managed store."
         return 1
     fi
-    local helper="$REPO_DIR/scripts/blackbox-blazegraph.mjs"
+    local helper="$(blackbox_helper blackbox-blazegraph.mjs)"
     step "Clearing the installer-managed Blazegraph namespace for the fresh DKG identity ..."
     if ! node "$helper" reset "$BLACKBOX_DKG_CLI_DIR" \
         "$BLACKBOX_DKG_STORE_URL" "$BLACKBOX_DKG_STORE_NAMESPACE" >/dev/null; then
@@ -841,7 +881,7 @@ Environment overrides:
   BLACKBOX_NODE_MAJOR, BLACKBOX_INSTALL_DIR, BLACKBOX_CONTEXT_GRAPH_ID,
   BLACKBOX_DKG_PORT, BLACKBOX_DKG_STORE_PORT, BLACKBOX_DKG_STORE_URL,
   BLACKBOX_DKG_HOME, BLACKBOX_DKG_CLI_DIR,
-  BLACKBOX_DKG_BIN, BLACKBOX_DKG_PACKAGE,
+  BLACKBOX_DKG_BIN, BLACKBOX_DKG_PACKAGE, BLACKBOX_DKG_INTEGRITY,
   BLACKBOX_DKG_DAEMON_URL, BLACKBOX_DKG_CATCHUP_TIMEOUT,
   BLACKBOX_DKG_STORE_QUEUE_LIMIT, BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION,
   BLACKBOX_CONTEXT_GRAPH_ID, BLACKBOX_GRAPH_PEER_ID,
@@ -1220,26 +1260,81 @@ minimal_python_env() {
 }
 
 # ── hermes + blackbox commands on PATH (~/.local/bin) ────────────────────────
-link_hermes() {
-    local link_dir="$HOME/.local/bin"
+# The `blackbox` command: a small script beside `hermes` that runs `hermes blackbox`.
+# An existing `blackbox` that this installer did not write is left alone.
+install_blackbox_shim() {
+    local link_dir="$1"
     local blackbox_bin="$link_dir/blackbox"
-    mkdir -p "$link_dir"
-    if [ -x "$HERMES_BIN" ]; then
-        ln -sf "$HERMES_BIN" "$link_dir/hermes"
-        ok "Linked hermes → $link_dir/hermes"
-        if { [ -e "$blackbox_bin" ] || [ -L "$blackbox_bin" ]; } &&
-           ! grep -q 'managed-by: agent-blackbox-installer' "$blackbox_bin" 2>/dev/null; then
-            warn "Not replacing existing command at $blackbox_bin; remove or rename it, then re-run the installer."
-        else
-            cat > "$blackbox_bin" <<'SH'
+    if { [ -e "$blackbox_bin" ] || [ -L "$blackbox_bin" ]; } &&
+       ! grep -q 'managed-by: agent-blackbox-installer' "$blackbox_bin" 2>/dev/null; then
+        warn "Not replacing existing command at $blackbox_bin; remove or rename it, then re-run the installer."
+    else
+        cat > "$blackbox_bin" <<'SH'
 #!/bin/sh
 # managed-by: agent-blackbox-installer
 bin_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 exec "$bin_dir/hermes" blackbox "$@"
 SH
-            chmod 755 "$blackbox_bin"
-            ok "Installed blackbox → hermes blackbox ($blackbox_bin)"
+        chmod 755 "$blackbox_bin"
+        ok "Installed blackbox → hermes blackbox ($blackbox_bin)"
+    fi
+}
+
+# Setup-only mode: use the Hermes the caller runs in (HERMES_BIN, VENV_DIR) and put
+# the `blackbox` command beside the user's `hermes` launcher. The user's `hermes` is never replaced.
+# Hermes runs `hermes blackbox setup` with its own internal bin folder first on PATH, so
+# `command -v hermes` there finds that inner binary, in a folder the user's shell never
+# searches. Hermes publishes the user's launcher to ~/.local/bin, so that folder wins.
+use_running_hermes() {
+    heading "Using your Hermes"
+    if [ ! -x "${HERMES_BIN:-}" ] || [ ! -x "${VENV_DIR:-}/bin/python" ]; then
+        err "Setup-only mode needs the Hermes it runs in (HERMES_BIN, VENV_DIR); run it as: hermes blackbox setup"
+        exit 1
+    fi
+    ok "Hermes: $HERMES_BIN"
+    local on_path link_dir
+    if [ -x "$HOME/.local/bin/hermes" ]; then
+        link_dir="$HOME/.local/bin"
+    else
+        on_path="$(command -v hermes 2>/dev/null || true)"
+        link_dir="$(dirname "${on_path:-$HERMES_BIN}")"
+    fi
+    if [ -w "$link_dir" ]; then
+        install_blackbox_shim "$link_dir"
+    else
+        warn "Cannot write $link_dir: the blackbox command was not added; use: hermes blackbox"
+    fi
+    export PATH="$VENV_DIR/bin:$PATH"
+}
+
+# Earlier runs of this installer linked ~/.local/bin/hermes to a Hermes Python environment.
+# Hermes 0.21.7+ publishes its own launcher there and will not replace a link that points
+# outside its checkout ("launcher publication failed"), so every re-run stopped in Hermes's
+# setup. Such a link (into some venv/bin/hermes) is removed before that setup runs; any other
+# file there is left alone.
+release_old_hermes_link() {
+    local link="$HOME/.local/bin/hermes" target
+    [ -L "$link" ] || return 0
+    target="$(readlink "$link")"
+    case "$target" in
+        */venv/bin/hermes)
+            rm -f "$link"
+            step "Removed the hermes link an earlier Blackbox install made ($target); Hermes publishes its own."
+            ;;
+    esac
+}
+
+link_hermes() {
+    local link_dir="$HOME/.local/bin"
+    mkdir -p "$link_dir"
+    if [ -x "$HERMES_BIN" ]; then
+        if [ -x "$REPO_DIR/scripts/run-in-hermes-env" ]; then
+            ok "hermes → $link_dir/hermes (Hermes's own launcher)"
+        else   # an older Hermes publishes no launcher: link it
+            ln -sf "$HERMES_BIN" "$link_dir/hermes"
+            ok "Linked hermes → $link_dir/hermes"
         fi
+        install_blackbox_shim "$link_dir"
         case ":$PATH:" in
             *":$link_dir:"*) : ;;
             *) warn "Add $link_dir to your PATH for the hermes and blackbox commands:  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
@@ -1405,6 +1500,18 @@ install_blackbox_dkg_package() {
         return 1
     fi
 
+    # A pinned checksum is compared with what the registry publishes for the package BEFORE
+    # anything is installed; npm then checks the download against that same published hash.
+    if [ -n "$BLACKBOX_DKG_INTEGRITY" ]; then
+        local published=""
+        published="$(npm view "$BLACKBOX_DKG_PACKAGE" dist.integrity 2>/dev/null || true)"
+        if [ "$published" != "$BLACKBOX_DKG_INTEGRITY" ]; then
+            warn "The registry's checksum for $BLACKBOX_DKG_PACKAGE (${published:-unavailable}) is not the one this Blackbox release pins; it was not installed."
+            return 1
+        fi
+        ok "DKG package checksum matches the pinned one ($BLACKBOX_DKG_PACKAGE)"
+    fi
+
     if [ -d "$BLACKBOX_DKG_CLI_DIR/.git" ]; then
         backup_dir="${BLACKBOX_DKG_CLI_DIR}.custom-backup-$(date +%Y%m%d%H%M%S)"
         step "Moving the custom DKG checkout to $backup_dir"
@@ -1416,6 +1523,15 @@ install_blackbox_dkg_package() {
 
     mkdir -p "$BLACKBOX_DKG_CLI_DIR"
     mkdir -p "$(dirname "$npm_log")"
+    # npm 12's allow list lives in the project's package.json: merge ours in (a package an
+    # operator set to false stays denied); older npm ignores the field.
+    node -e '
+const fs = require("fs"); const file = process.argv[1];
+let pkg = {}; try { pkg = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) {}
+pkg.allowScripts = Object.assign({}, pkg.allowScripts);
+for (const name of process.argv.slice(2)) if (pkg.allowScripts[name] !== false) pkg.allowScripts[name] = true;
+fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
+' "$BLACKBOX_DKG_CLI_DIR/package.json" "${BLACKBOX_DKG_ALLOW_SCRIPTS[@]}"
     if ! npm install --prefix "$BLACKBOX_DKG_CLI_DIR" --prefer-online \
         "$BLACKBOX_DKG_PACKAGE" >"$npm_log" 2>&1; then
         if [ -n "$backup_dir" ]; then
@@ -1433,6 +1549,30 @@ install_blackbox_dkg_package() {
         return 1
     fi
 
+    # A newer DKG release may need an install script this list does not name yet: npm only warns,
+    # and the node would crash on start. Stop here and say which package, instead.
+    if grep -q "had install scripts blocked" "$npm_log"; then
+        warn "npm blocked install scripts the DKG node needs: $(grep -A4 'had install scripts blocked' "$npm_log" | grep -oE '^npm warn install-scripts +[^ ]+@[^ ]+' | awk '{print $NF}' | tr '\n' ' ')"
+        step "npm log: $npm_log"
+        return 1
+    fi
+
+    # The native SQLite module must load with the Node that will run the node. npm runs no
+    # install script for a package it already has, so a folder an earlier run left half-built
+    # (an npm that blocked the build, an interrupted install) is rebuilt here, then checked again.
+    local sqlite_dir="$BLACKBOX_DKG_CLI_DIR/node_modules/better-sqlite3"
+    local sqlite_probe='const DB = require(process.argv[1]); new DB(":memory:").close();'
+    if [ -d "$sqlite_dir" ] && ! node -e "$sqlite_probe" "$sqlite_dir" >/dev/null 2>&1; then
+        step "Building the DKG node's SQLite module for Node $(node -v) ..."
+        if ! npm rebuild --prefix "$BLACKBOX_DKG_CLI_DIR" better-sqlite3 >>"$npm_log" 2>&1 ||
+            ! node -e "$sqlite_probe" "$sqlite_dir" >/dev/null 2>&1; then
+            warn "The DKG node's SQLite module does not load with Node $(node -v) and could not be rebuilt."
+            step "npm log: $npm_log"
+            return 1
+        fi
+        ok "SQLite module built for Node $(node -v)"
+    fi
+
     if [ ! -x "$BLACKBOX_DKG_BIN" ] || [ ! -f "$package_json" ]; then
         if [ -n "$backup_dir" ]; then
             rm -rf "$BLACKBOX_DKG_CLI_DIR"
@@ -1447,7 +1587,7 @@ install_blackbox_dkg_package() {
         warn "Could not determine the installed DKG package version."
         return 1
     fi
-    if ! "$VENV_DIR/bin/python" -m plugins.blackbox.kernel.dkg_version "$installed_version"; then
+    if ! "$VENV_DIR/bin/python" "${BLACKBOX_PLUGIN_DIR:-$REPO_DIR/plugins/blackbox}/kernel/dkg_version.py" "$installed_version"; then
         warn "DKG $installed_version is too old for direct verified Blackbox recovery; version 10.0.9+ is required."
         return 1
     fi
@@ -1647,7 +1787,7 @@ enable_and_configure() {
     fi
 
     step "Writing plugins.entries.blackbox defaults to $HERMES_HOME/config.yaml ..."
-    if "$VENV_DIR/bin/python" - "$HERMES_HOME/config.yaml" "$DKG_NETWORK" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_GRAPH_PEER_ID" "$BLACKBOX_DKG_DAEMON_URL" "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_BIN" "$BLACKBOX_COMMUNITY_GRAPH_ID" "$BLACKBOX_COMMUNITY_GRAPH_PEER_ID" "$REPO_DIR" <<'PYEOF'
+    if "$VENV_DIR/bin/python" - "$HERMES_HOME/config.yaml" "$DKG_NETWORK" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_GRAPH_PEER_ID" "$BLACKBOX_DKG_DAEMON_URL" "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_BIN" "$BLACKBOX_COMMUNITY_GRAPH_ID" "$BLACKBOX_COMMUNITY_GRAPH_PEER_ID" "${BLACKBOX_PLUGIN_DIR:-$REPO_DIR}" <<'PYEOF'
 import sys, os
 cfg_path, network, context_graph_id, graph_peer_id, dkg_url, dkg_home, dkg_bin = sys.argv[1:8]
 # Optional (older callers pass seven arguments): the community graph + its owner peer id, and the checkout.
@@ -1759,6 +1899,17 @@ for k, v in defaults.items():
 # cannot be imported the answer is "no consent" (fail closed = sharing off).
 def _consent_in_force(checkout):
     try:
+        if checkout and os.path.isfile(os.path.join(checkout, "plugin.yaml")):
+            # Setup-only mode passes the plugin folder itself (a plugin-catalog install has no
+            # checkout). Stock Hermes has its own `plugins` package, which would shadow ours, so
+            # the plugin is loaded from its folder under a private name.
+            import importlib, importlib.util
+            spec = importlib.util.spec_from_file_location(
+                "_installed_blackbox", os.path.join(checkout, "__init__.py"), submodule_search_locations=[checkout])
+            package = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = package
+            spec.loader.exec_module(package)
+            return bool(importlib.import_module("_installed_blackbox.community.consent").in_force())
         if checkout:
             sys.path.insert(0, checkout)
         from plugins.blackbox.community import consent
@@ -1948,8 +2099,8 @@ start_dashboard() {
     # dashboard keeps the code it loaded, so after an update the installer must
     # launch it again — `blackbox dashboard` replaces the one on its port.
     local revision_file="$HERMES_HOME/blackbox/.dashboard-revision"
-    local revision=""
-    if git -C "$REPO_DIR" rev-parse -q --verify HEAD >/dev/null 2>&1; then
+    local revision="${BLACKBOX_REVISION:-}"
+    if [ -z "$revision" ] && [ -n "$REPO_DIR" ] && git -C "$REPO_DIR" rev-parse -q --verify HEAD >/dev/null 2>&1; then
         revision="$(git -C "$REPO_DIR" rev-parse HEAD)"
     fi
     if command -v curl >/dev/null 2>&1 && curl -fsS "$url/" >/dev/null 2>&1; then
@@ -2602,7 +2753,7 @@ CONSOLE_UNIT
     case "$scope" in
         2|3) ok "kernel.yama.ptrace_scope is $scope" ;;
         *) warn "kernel.yama.ptrace_scope is ${scope:-unavailable}; the key console needs 2 or more. On this host run:"
-           step "  echo 'kernel.yama.ptrace_scope = 2' > /etc/sysctl.d/60-blackbox-ptrace.conf && sysctl --system" ;;
+           step "  set kernel.yama.ptrace_scope = 2 in a file under /etc/sysctl.d/ (for example 60-blackbox-ptrace.conf), then run: sysctl --system" ;;
     esac
     step "  give $user access:  setfacl -R -m u:$user:rwX $BLACKBOX_HOME/curate  (and read access to the Hermes install)"
     step "  write $BLACKBOX_HOME/curate/console_settings.json (tailscaleLogin, magicDnsHost, loginPassphraseHash)"
@@ -2613,15 +2764,21 @@ main() {
     banner
     heading "Checking your system"
     detect_os
-    check_git
-    check_python
-    ensure_node
+    if [ "$BLACKBOX_SETUP_ONLY" = true ]; then
+        ensure_node
+        use_running_hermes
+    else
+        check_git
+        check_python
+        ensure_node
 
-    resolve_repo
-    install_python_env
-    link_hermes
-    refresh_blackbox_plugin_copy
-    run_hermes_setup
+        resolve_repo
+        release_old_hermes_link
+        install_python_env
+        link_hermes
+        refresh_blackbox_plugin_copy
+        run_hermes_setup
+    fi
     install_dkg
     enable_and_configure
     configure_blackbox_mode
