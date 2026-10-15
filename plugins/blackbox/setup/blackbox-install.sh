@@ -1008,6 +1008,19 @@ move_broken_blackbox_repo_aside() {
     step "Preserved it at $backup"
 }
 
+# Whether the checkout's HEAD is already part of origin/$REPO_BRANCH's history — then moving
+# to the new tip loses nothing. A depth-1 clone holds none of that history, so a bounded
+# stretch more is fetched to check (never the whole repository); an answer it cannot give is
+# "no", which keeps the strict fast-forward and its refusal (KI-417).
+BLACKBOX_HISTORY_CHECK_DEPTH=200
+blackbox_head_in_branch() {
+    local remote="refs/remotes/origin/$REPO_BRANCH"
+    git -C "$REPO_DIR" merge-base --is-ancestor HEAD "$remote" 2>/dev/null && return 0
+    [ "$(git -C "$REPO_DIR" rev-parse --is-shallow-repository 2>/dev/null)" = true ] || return 1
+    git -C "$REPO_DIR" fetch -q --deepen="$BLACKBOX_HISTORY_CHECK_DEPTH" origin "$REPO_BRANCH" 2>/dev/null || return 1
+    git -C "$REPO_DIR" merge-base --is-ancestor HEAD "$remote" 2>/dev/null
+}
+
 resolve_repo() {
     local script_src="${BASH_SOURCE[0]:-}"
     if [ -n "$script_src" ] && [ -f "$script_src" ]; then
@@ -1058,13 +1071,19 @@ resolve_repo() {
         # (HEAD is what it last fetched), move to the new tip; --keep still
         # refuses to overwrite uncommitted changes. Otherwise keep the strict
         # fast-forward, which stops with git's reason instead of losing work.
-        if [ -n "$fetched_before" ] && [ "$(git -C "$REPO_DIR" rev-parse HEAD)" = "$fetched_before" ]; then
+        # HEAD can also be an older commit of the branch that this install did not fetch last
+        # (the checkout was moved outside the installer): that is still no work of its own, but
+        # a depth-1 clone cannot show it (KI-417) — blackbox_head_in_branch fetches a bounded
+        # stretch of history to check.
+        if { [ -n "$fetched_before" ] && [ "$(git -C "$REPO_DIR" rev-parse HEAD)" = "$fetched_before" ]; } ||
+            blackbox_head_in_branch; then
             if ! git -C "$REPO_DIR" reset -q --keep "refs/remotes/origin/$REPO_BRANCH"; then
                 err "Could not update $REPO_DIR to origin/$REPO_BRANCH: it has uncommitted changes (git's reason is above)."
                 return 1
             fi
         elif ! git -C "$REPO_DIR" pull --ff-only origin "$REPO_BRANCH"; then
-            err "Could not fast-forward $REPO_DIR to origin/$REPO_BRANCH: it holds local commits (git's reason is above)."
+            err "Could not fast-forward $REPO_DIR to origin/$REPO_BRANCH: it holds commits that are not on that branch (git's reason is above):"
+            git -C "$REPO_DIR" log --oneline -3 "refs/remotes/origin/$REPO_BRANCH..HEAD" >&2
             return 1
         fi
     else
@@ -1136,9 +1155,20 @@ ensure_node() {
         HAS_NODE=false
         return 0
     fi
-    warn "Node.js $NODE_MAJOR+ not found — installing it automatically (via nvm)…"
     # nvm is the portable path on both macOS and Linux and needs no sudo.
     export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+    # A Node that nvm installed on an earlier run is not on a fresh shell's PATH; use it
+    # rather than announcing and running a second install (KI-418).
+    if [ -s "$NVM_DIR/nvm.sh" ]; then
+        # shellcheck disable=SC1091
+        . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true
+        if nvm use "$NODE_MAJOR" >/dev/null 2>&1 && _node_ok; then
+            ok "Node.js $(node -v) (installed earlier with nvm) + npm $(npm -v 2>/dev/null || echo '?')"
+            HAS_NODE=true
+            return 0
+        fi
+    fi
+    warn "Node.js $NODE_MAJOR+ not found — installing it automatically (via nvm)…"
     if [ ! -s "$NVM_DIR/nvm.sh" ]; then
         step "Installing nvm into $NVM_DIR …"
         if ! curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash >/dev/null 2>&1; then

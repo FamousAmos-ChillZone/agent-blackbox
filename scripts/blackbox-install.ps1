@@ -316,6 +316,22 @@ function Invoke-BlackboxDkgControl {
     }
 }
 
+# Whether the checkout's HEAD is already part of origin/$RepoBranch's history - then moving to
+# the new tip loses nothing. A depth-1 clone holds none of that history, so a bounded stretch
+# more is fetched to check (never the whole repository); an answer it cannot give is "no",
+# which keeps the strict fast-forward and its refusal (KI-417; mirrors blackbox-install.sh).
+$HistoryCheckDepth = 200
+function Test-BlackboxHeadInBranch {
+    $remote = "refs/remotes/origin/$RepoBranch"
+    & git -C $RepoDir merge-base --is-ancestor HEAD $remote 2>$null
+    if ($LASTEXITCODE -eq 0) { return $true }
+    if ((& git -C $RepoDir rev-parse --is-shallow-repository 2>$null) -ne "true") { return $false }
+    & git -C $RepoDir fetch -q "--deepen=$HistoryCheckDepth" origin $RepoBranch 2>$null
+    if ($LASTEXITCODE -ne 0) { return $false }
+    & git -C $RepoDir merge-base --is-ancestor HEAD $remote 2>$null
+    return ($LASTEXITCODE -eq 0)
+}
+
 function Invoke-BlackboxDkg {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)
     # These process-level guards wrap the DKG entrypoint, so they apply equally
@@ -1010,13 +1026,19 @@ function Resolve-Repo {
         # A depth-1 fetch brings the new tip without its parent, so `pull --ff-only`
         # refuses every update (KI-294): move to the new tip when the install holds
         # no work of its own (--keep still refuses uncommitted changes).
+        # HEAD can also be an older commit of the branch this install did not fetch last (the
+        # checkout was moved outside the installer): still no work of its own, but a depth-1
+        # clone cannot show it (KI-417) - Test-BlackboxHeadInBranch fetches a bounded stretch.
         $head = (& git -C $RepoDir rev-parse HEAD)
-        if ($fetchedBefore -and $head -eq $fetchedBefore) {
+        if (($fetchedBefore -and $head -eq $fetchedBefore) -or (Test-BlackboxHeadInBranch)) {
             & git -C $RepoDir reset -q --keep "refs/remotes/origin/$RepoBranch"
             if ($LASTEXITCODE -ne 0) { throw "Could not update $RepoDir to origin/${RepoBranch}: it has uncommitted changes (git's reason is above)" }
         } else {
             & git -C $RepoDir pull --ff-only origin $RepoBranch
-            if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward $RepoDir to origin/${RepoBranch}: it holds local commits (git's reason is above)" }
+            if ($LASTEXITCODE -ne 0) {
+                $own = (& git -C $RepoDir log --oneline -3 "refs/remotes/origin/$RepoBranch..HEAD" 2>$null) -join "; "
+                throw "Could not fast-forward $RepoDir to origin/${RepoBranch}: it holds commits that are not on that branch: $own"
+            }
         }
     } else {
         Write-Step "Cloning $RepoUrl -> $RepoDir"
