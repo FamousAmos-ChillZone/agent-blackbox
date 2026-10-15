@@ -47,7 +47,7 @@ def print_community_status(cfg) -> None:
     line = f"  reports shared:    {contributed}"
     if ledger:
         last = ledger[0]
-        outcome = "ok" if last.get("ok") else "FAILED"
+        outcome = report_tracking.outcome_label(last)   # a refused re-share reads "already shared", not FAILED
         line += f" (last: {display_safety.term_safe(last.get('identifier'), 80)} · {outcome} · {display_safety.term_safe(last.get('ts'), 24)})"
     print(line)
 
