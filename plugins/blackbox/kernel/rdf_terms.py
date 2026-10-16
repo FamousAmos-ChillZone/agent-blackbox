@@ -2,7 +2,8 @@
 
 * ``Quad`` — a ``{subject, predicate, object}`` dict; ``object`` is a ready term.
 * :func:`iri`, :func:`literal`, :func:`datetime_literal`, :func:`make_quad` —
-  term builders (literals are escaped and capped so no peer's sync breaks).
+  term builders (literals are escaped and capped so no peer's sync breaks);
+  :func:`literal_text` reads a plain literal term back.
 * :func:`assert_quads_literal_size` — the pre-write check :mod:`.dkg_client` runs.
 
 Usage: ``make_quad(subject, constants.SEVERITY_PRED, literal("high"))``.
@@ -10,6 +11,7 @@ Usage: ``make_quad(subject, constants.SEVERITY_PRED, literal("high"))``.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone, UTC
 from typing import Dict, Iterable, Optional
 from . import constants
@@ -129,6 +131,18 @@ def literal(value: str) -> str:
     aborts a peer's graph sync and hides the whole community graph from them.
     """
     return _literal_term_for_value(_cap_literal_value(str(value)))
+
+
+#: The control-character escapes :func:`literal` writes; an escaped quote or backslash stands for itself.
+_UNESCAPED = {"n": "\n", "r": "\r", "t": "\t"}
+
+
+def literal_text(term: str) -> Optional[str]:
+    """The text of a plain literal term as :func:`literal` writes it (escapes
+    undone); None for anything else (an IRI, a typed or tagged literal)."""
+    if len(term) < 2 or not term.startswith('"') or not term.endswith('"'):
+        return None
+    return re.sub(r'\\(["\\nrt])', lambda m: _UNESCAPED.get(m[1], m[1]), term[1:-1])
 
 
 def datetime_literal(ts: Optional[datetime] = None) -> str:
