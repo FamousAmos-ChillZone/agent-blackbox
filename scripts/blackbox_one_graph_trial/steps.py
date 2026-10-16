@@ -48,7 +48,7 @@ STATE_FILE = "trial-state.json"
 #: (Blackbox reads the flag only to trust an empty community read).
 _SYNCED_FLAG_GAPS = {
     "OriginTrail/dkg#3281": "OriginTrail/dkg#3281: the first catch-up can run before the graph's authority and "
-                            "is not repeated (fix #3287 not merged)",
+                            "is not repeated (fixed by #3287 on builds that carry it)",
     "OriginTrail/dkg#3296": "OriginTrail/dkg#3296: a node that already holds the graph's data is never marked synced",
 }
 
