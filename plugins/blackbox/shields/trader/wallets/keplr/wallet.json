@@ -13,5 +13,48 @@
     "firefox": [
       "keplr-extension@keplr.app"
     ]
-  }
+  },
+  "availability": [
+    {
+      "store": "Chrome Web Store",
+      "browsers": [
+        "Chrome",
+        "Brave",
+        "Edge",
+        "Opera",
+        "Vivaldi",
+        "Arc"
+      ],
+      "state": "protected",
+      "url": "https://chromewebstore.google.com/detail/dmkamcknogkgcdfhhbddcghachkejeap",
+      "source": "https://www.keplr.app/get"
+    },
+    {
+      "store": "Firefox Add-ons",
+      "browsers": [
+        "Firefox"
+      ],
+      "state": "protected",
+      "url": "https://addons.mozilla.org/firefox/addon/keplr/",
+      "source": "https://www.keplr.app/get"
+    },
+    {
+      "store": "Edge Add-ons",
+      "browsers": [
+        "Edge"
+      ],
+      "state": "not-covered",
+      "url": "https://microsoftedge.microsoft.com/addons/detail/ocodgmmffbkkeecmadcijjhkmeohinei",
+      "source": "https://www.keplr.app/get",
+      "note": "Keplr's own Edge build has its own id"
+    },
+    {
+      "store": "Safari",
+      "browsers": [
+        "Safari"
+      ],
+      "state": "not-offered",
+      "note": "No desktop Safari extension from the publisher"
+    }
+  ]
 }

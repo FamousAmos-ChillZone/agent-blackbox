@@ -13,5 +13,46 @@
     "firefox": [
       "{6d72262a-b243-4dc6-8f4f-be96c74e0a86}"
     ]
-  }
+  },
+  "availability": [
+    {
+      "store": "Chrome Web Store",
+      "browsers": [
+        "Chrome",
+        "Brave",
+        "Edge",
+        "Opera",
+        "Vivaldi",
+        "Arc"
+      ],
+      "state": "protected",
+      "url": "https://chromewebstore.google.com/detail/bhhhlbepdkbapadjdnnojkbgioiodbic",
+      "source": "https://www.solflare.com/download/"
+    },
+    {
+      "store": "Firefox Add-ons",
+      "browsers": [
+        "Firefox"
+      ],
+      "state": "protected",
+      "url": "https://addons.mozilla.org/firefox/addon/solflare-wallet/",
+      "source": "https://www.solflare.com/download/"
+    },
+    {
+      "store": "Edge Add-ons",
+      "browsers": [
+        "Edge"
+      ],
+      "state": "not-found",
+      "note": "No Edge Add-ons listing found; Edge installs it from the Chrome Web Store"
+    },
+    {
+      "store": "Safari",
+      "browsers": [
+        "Safari"
+      ],
+      "state": "not-offered",
+      "note": "No desktop Safari extension from the publisher"
+    }
+  ]
 }

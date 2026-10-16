@@ -10,5 +10,46 @@
     "chromium": [
       "hnfanknocfeofbddgcijnmhnfnkdnaad"
     ]
-  }
+  },
+  "availability": [
+    {
+      "store": "Chrome Web Store",
+      "browsers": [
+        "Chrome",
+        "Brave",
+        "Edge",
+        "Opera",
+        "Vivaldi",
+        "Arc"
+      ],
+      "state": "protected",
+      "url": "https://chromewebstore.google.com/detail/hnfanknocfeofbddgcijnmhnfnkdnaad",
+      "source": "https://help.coinbase.com/en/wallet/browser-extension/coinbase-wallet-extension"
+    },
+    {
+      "store": "Firefox Add-ons",
+      "browsers": [
+        "Firefox"
+      ],
+      "state": "not-offered",
+      "source": "https://help.coinbase.com/en/wallet/browser-extension/coinbase-wallet-extension",
+      "note": "Coinbase supports Chrome and Brave only"
+    },
+    {
+      "store": "Edge Add-ons",
+      "browsers": [
+        "Edge"
+      ],
+      "state": "not-offered",
+      "note": "Coinbase supports Chrome and Brave only"
+    },
+    {
+      "store": "Safari",
+      "browsers": [
+        "Safari"
+      ],
+      "state": "not-offered",
+      "note": "No desktop Safari extension from the publisher"
+    }
+  ]
 }
