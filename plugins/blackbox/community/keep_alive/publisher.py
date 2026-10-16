@@ -5,11 +5,9 @@
   Only reports are kept alive: disputes, retractions and digests are either
   final or period-named and need no copies.
 * :func:`forget_retracted` — a retraction ends keep-alive for the identifier.
-* :func:`publish_due_copies` — the publish step on the refresh cycle: first
-  move the live reports that still name the retired community graph into the
-  configured one, once (:mod:`.graph_move`); then for every live report whose
-  newest copy is from an older epoch, send the same signed quads under the
-  epoch's copy name. ACCEPTED is ledgered as ``kept-alive``
+* :func:`publish_due_copies` — the publish step on the refresh cycle: for every
+  live report whose newest copy is from an older epoch, send the same signed
+  quads under the epoch's copy name. ACCEPTED is ledgered as ``kept-alive``
   (never as a new contribution); an "already shared" answer means the copy
   exists; the first FAILED answer ends the beat (the node is refusing writes —
   the next refresh tries again, no backoff state needed because the beat is
@@ -36,7 +34,6 @@ from typing import Any, Dict, Iterable, Optional
 from ... import audit
 from ...kernel import threat_ids
 from ...kernel.dkg_client import DkgClient
-from . import graph_move
 from .epochs import copy_name, current_epoch
 from .store import LiveReportStore
 
@@ -80,8 +77,7 @@ def forget_retracted(identifier: str, store: Optional[LiveReportStore] = None) -
 
 def publish_due_copies(client: DkgClient, cfg: Any, store: Optional[LiveReportStore] = None,
                        now: Optional[float] = None) -> int:
-    """Move the reports that still name another graph (:mod:`.graph_move`), then
-    send this epoch's copy of every live report that lacks one; returns how
+    """Send this epoch's copy of every live report that lacks one; returns how
     many were accepted. Does nothing while sharing is off or keep-alive is 0."""
     from .. import sharing   # the one send path (sharing imports this package at load time)
 
@@ -93,12 +89,8 @@ def publish_due_copies(client: DkgClient, cfg: Any, store: Optional[LiveReportSt
     when = time.time() if now is None else now
     epoch = current_epoch(when, days)
     live = store or LiveReportStore()
-    moved = graph_move.move_reports(client, cfg, live, epoch, when, budget=MAX_COPIES_PER_BEAT)
-    if moved.refused:
-        return moved.accepted
-    accepted = moved.accepted
-    graph = str(cfg.context_graph_id)
-    for report in [r for r in live.due(epoch, when) if r.graph == graph][:MAX_COPIES_PER_BEAT - moved.sends]:
+    accepted = 0
+    for report in live.due(epoch, when)[:MAX_COPIES_PER_BEAT]:
         outcome, detail = sharing.send_report(client, report.graph, copy_name(report.name, epoch), list(report.quads))
         if outcome is sharing.ShareOutcome.FAILED:
             logger.info("blackbox: keep-alive copy refused this beat (%s); retrying on the next refresh",

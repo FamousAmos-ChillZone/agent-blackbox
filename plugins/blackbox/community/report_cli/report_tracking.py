@@ -25,8 +25,7 @@ from ..statements.curator_view import today_utc as curator_today
 #: How a ledger outcome is shown (community.ShareOutcome values).
 _OUTCOME_LABELS = {"accepted": "ok", "already-shared": "already shared", "failed": "FAILED",
                    "retrying": "retrying", "failed-after-retries": "FAILED after retries",   # R16
-                   "kept-alive": "kept alive",                                                # R5
-                   "moved": "moved to the verified graph"}                                    # one graph, 2026-10-16
+                   "kept-alive": "kept alive"}                                                # R5
 
 
 def outcome_line(row: dict[str, Any], compiled: dict[str, dict[str, Any]]) -> str:

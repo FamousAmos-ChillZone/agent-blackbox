@@ -1,4 +1,4 @@
-"""Report quads: a finding -> the privacy-safe statements shared with the community.
+"""Report quads: a finding -> the privacy-safe statements shared to the community graph.
 
 One subject per (reporter, threat) — ``urn:guardian:report:{reporter}:{hash}``
 — which makes distinct-reporter counting honest by construction. Never carries
@@ -6,14 +6,13 @@ prompt or command text; literals are capped by :mod:`..kernel.rdf_terms`.
 
 Usage: ``community.build_report_quads(identifier, severity=..., reporter_address=...)``
 · ``community.build_false_positive_quads(identifier, reporter_address=..., reason=...)``
-· ``community.build_retraction_quads(identifier, reporter_address=..., signer=...)``
-· ``report_builder.rebind_quads(quads, signer)`` — one of this node's statements signed again for another graph.
+· ``community.build_retraction_quads(identifier, reporter_address=..., signer=...)``.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone, UTC
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from ..kernel import constants
 from ..kernel import rdf_terms
 from ..kernel import signing, threat_ids
@@ -157,35 +156,6 @@ def build_report_quads(
     return out
 
 
-
-
-#: The quads that follow from a statement's signed envelope: its record digest and signer key (§03.3a).
-_INTEGRITY_PREDICATES = frozenset({sighting_vocab.RECORD_DIGEST_PRED, sighting_vocab.SIGNER_KEY_PRED})
-
-
-def rebind_quads(quads: Iterable[rdf_terms.Quad], signer: ReportSigner) -> Optional[list[rdf_terms.Quad]]:
-    """*quads* — one statement THIS node signed for another graph — signed again
-    for *signer*'s graph: the same statement type, payload (its day included) and
-    schema version; only the graph the signature binds changes, and the integrity
-    quads follow the new envelope. How a report moves into the one graph
-    (2026-10-16). None when the quads carry nothing this node may re-sign: no
-    envelope, an envelope this key did not sign, or one from another network."""
-    rows = [dict(q) for q in quads]
-    signed = next((q for q in rows if q.get("predicate") == constants.SIGNED_STATEMENT_PRED), None)
-    envelope = signing.from_text(rdf_terms.literal_text(signed["object"]) or "") if signed else None
-    if envelope is None or envelope.environment != signer.environment:
-        return None
-    own = signing.verify(envelope, statement_type=envelope.statement_type, environment=envelope.environment,
-                         graph=envelope.graph)
-    if own != signing.public_key_hex(signer.private_key):
-        return None
-    text = signing.sign(signer.private_key, statement_type=envelope.statement_type, environment=signer.environment,
-                        graph=signer.graph, payload=envelope.payload, schema_version=envelope.schema_version).to_text()
-    out = [{**q, "object": rdf_terms.literal(text)} if q is signed else q
-           for q in rows if q.get("predicate") not in _INTEGRITY_PREDICATES]
-    if any(q.get("predicate") in _INTEGRITY_PREDICATES for q in rows):
-        out.extend(_integrity_quads(signed["subject"], text))
-    return out
 
 
 def build_false_positive_quads(

@@ -315,8 +315,7 @@ def test_the_store_file_holds_no_unexpected_fields(tmp_path):
     store = LiveReportStore(tmp_path / "live.json", clock=lambda: NOW)
     _remember(store, "report-a")
     data = json.loads((tmp_path / "live.json").read_text(encoding="utf-8"))
-    assert set(data["live"][0]) == {"name", "graph", "identifier", "subject", "severity", "quads", "first_shared", "last_epoch",
-                                    "moved_day"}
+    assert set(data["live"][0]) == {"name", "graph", "identifier", "subject", "severity", "quads", "first_shared", "last_epoch"}
 
 
 def test_a_transient_empty_view_during_a_replay_never_wipes_the_tier(monkeypatch):

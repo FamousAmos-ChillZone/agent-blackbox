@@ -244,9 +244,6 @@ def retry_due_shares(client: DkgClient, cfg: Any, queue: Optional[ShareRetryQueu
     store = queue or default_queue()
     accepted = 0
     for share in store.due():
-        share = _in_the_configured_graph(client, cfg, store, share)
-        if share is None:
-            continue
         outcome, detail = sharing.send_report(client, share.graph, share.name, list(share.quads))
         if outcome is sharing.ShareOutcome.FAILED:
             if store.reschedule(share, detail) is None:
@@ -267,29 +264,6 @@ def retry_due_shares(client: DkgClient, cfg: Any, queue: Optional[ShareRetryQueu
     if accepted:
         logger.info("blackbox: %d queued community share(s) accepted on retry", accepted)
     return accepted
-
-
-def _in_the_configured_graph(client: DkgClient, cfg: Any, store: ShareRetryQueue,
-                              share: PendingShare) -> Optional[PendingShare]:
-    """*share* as it must be sent now. One queued for another graph (the retired
-    community graph, before 2026-10-16) is signed again for the configured graph
-    (:func:`.report_builder.rebind_quads`) and re-queued that way; one this node
-    cannot sign again is dropped; None also when it cannot sign right now."""
-    from . import report_builder, report_signer
-
-    graph = str(cfg.context_graph_id)
-    if share.graph == graph:
-        return share
-    signer = report_signer.resolve_report_signer(client, graph)
-    if signer is None:
-        return None
-    quads = report_builder.rebind_quads(share.quads, signer)
-    if quads is None:
-        store.remove(share.name)
-        return None
-    moved = replace(share, graph=graph, quads=tuple(quads))
-    store.add(moved)
-    return moved
 
 
 def share_retry_stats() -> RetryStats:

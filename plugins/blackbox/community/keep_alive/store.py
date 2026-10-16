@@ -21,7 +21,6 @@ Usage::
     store.remember(graph=..., name=..., identifier=..., subject=..., severity=..., quads=..., epoch=...)
     store.due(current_epoch, now)        # LiveReports whose newest copy is from an older epoch
     store.mark_published(name, epoch)
-    store.record_move(name, graph=..., quads=..., epoch=..., day=...)   # moved into the one graph (2026-10-16)
     store.forget_identifier(identifier)  # retracted: never kept alive again
 """
 
@@ -53,13 +52,11 @@ _DAY_SECONDS = 86_400.0
 class LiveReport:
     """One report this node shared and keeps alive.
 
-    ``name`` is the base asset name (the first share), ``graph`` the graph it
-    is shared to, ``identifier`` / ``subject`` / ``severity`` what the share
-    ledger rows say, ``quads`` the signed statement exactly as first shared
-    (or as signed again when it moved graph), ``first_shared`` when (epoch
-    seconds, this node's clock), ``last_epoch`` the keep-alive epoch of the
-    newest copy on the network and ``moved_day`` the UTC day it moved into the
-    one graph ("" for a report first shared there).
+    ``name`` is the base asset name (the first share), ``graph`` the community
+    graph, ``identifier`` / ``subject`` / ``severity`` what the share ledger
+    rows say, ``quads`` the signed statement exactly as first shared,
+    ``first_shared`` when (epoch seconds, this node's clock) and
+    ``last_epoch`` the keep-alive epoch of the newest copy on the network.
     """
 
     name: str
@@ -70,7 +67,6 @@ class LiveReport:
     quads: tuple[dict[str, str], ...]
     first_shared: float
     last_epoch: int
-    moved_day: str = ""
 
     def within_lifetime(self, now: float) -> bool:
         """Still inside the community lifetime of its threat type (plan §03)."""
@@ -79,14 +75,14 @@ class LiveReport:
     def as_json(self) -> dict[str, Any]:
         return {"name": self.name, "graph": self.graph, "identifier": self.identifier, "subject": self.subject,
                 "severity": self.severity, "quads": list(self.quads), "first_shared": self.first_shared,
-                "last_epoch": self.last_epoch, "moved_day": self.moved_day}
+                "last_epoch": self.last_epoch}
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> LiveReport:
         return cls(name=str(data["name"]), graph=str(data["graph"]), identifier=str(data.get("identifier", "")),
                    subject=str(data.get("subject", "")), severity=str(data.get("severity", "")),
                    quads=tuple(dict(q) for q in data.get("quads", [])), first_shared=float(data.get("first_shared", 0)),
-                   last_epoch=int(data.get("last_epoch", 0)), moved_day=str(data.get("moved_day", "")))
+                   last_epoch=int(data.get("last_epoch", 0)))
 
 
 class LiveReportStore:
@@ -138,20 +134,6 @@ class LiveReportStore:
         with self._lock:
             live = self._load()
             self._save([replace(r, last_epoch=int(epoch)) if r.name == name else r for r in live])
-
-    def record_move(self, name: str, *, graph: str, quads: Iterable[dict[str, str]], epoch: Epoch, day: str) -> None:
-        """*name* now lives in *graph*, signed again as *quads*; its copy for
-        *epoch* is out, and it moved on UTC *day* (see :mod:`.graph_move`)."""
-        moved = tuple(dict(q) for q in quads)
-        with self._lock:
-            live = self._load()
-            self._save([replace(r, graph=graph, quads=moved, last_epoch=int(epoch), moved_day=day)
-                        if r.name == name else r for r in live])
-
-    def moved_on(self, day: str) -> int:
-        """How many reports moved graph on UTC *day*."""
-        with self._lock:
-            return sum(1 for r in self._load() if r.moved_day == day)
 
     def forget_all(self) -> int:
         """Identity erasure (R13): nothing of this node's is ever re-published again."""

@@ -9,10 +9,9 @@ network copies expire (``ruleset.community_tier``).
 
 Public surface — :func:`remember_accepted_share` (every share path, on an
 ACCEPTED report), :func:`forget_retracted` (on a retraction),
-:func:`publish_due_copies` (the publish step on the refresh cycle; it first
-moves, once, the reports this node shared in the retired community graph into
-the one graph — :mod:`.graph_move`), the pure :func:`current_epoch` /
-:func:`copy_name`, and :class:`LiveReportStore` for tests and tooling.
+:func:`publish_due_copies` (the publish step on the refresh cycle), the pure
+:func:`current_epoch` / :func:`copy_name`, and :class:`LiveReportStore` for
+tests and tooling.
 """
 
 from __future__ import annotations
