@@ -24,7 +24,7 @@ from ..detection import osv
 from ..kernel import display_safety, node_routes, signing
 from ..kernel.signing.authority import Authority
 from ..kernel.signing.statement_order import CuratorStatement
-from . import console, dossier, handoff, intake, keys, node_ui_views, publishing, queue, transport, verbs, watch
+from . import console, dossier, handoff, intake, keys, node_ui_views, promotion, publishing, queue, transport, verbs, watch
 from .ladder import outcomes
 from .upkeep import heartbeat, published
 from .context import CurateContext, build_context, verified_identifiers
@@ -203,10 +203,16 @@ def _propose(args: argparse.Namespace) -> int:
 
 
 def _propose_promotion(ctx: CurateContext, store: ProposalStore, args: argparse.Namespace):
+    """The report to promote comes from the community read (``--report`` picks one; default: the earliest)."""
     read = community.read_verified_reports(ctx.client, ctx.cfg)
-    subjects = [r.subject for r in read.reports if r.identifier == args.promote] if read.available else []
-    return verbs.propose_promotion(ctx, store, identifier=args.promote, severity=args.severity, evidence=args.evidence,
-                                   reason=args.reason, report_subjects=subjects, name=args.name)
+    if not read.available:
+        raise verbs.VerbError("the community reports could not be read; nothing was signed (try again)")
+    try:
+        report = promotion.choose_report(read.reports, args.promote, subject=args.report)
+    except promotion.PromotionError as exc:
+        raise verbs.VerbError(str(exc)) from exc
+    return verbs.propose_promotion(ctx, store, report=report, severity=args.severity, evidence=args.evidence,
+                                   reason=args.reason)
 
 
 def _inbox(args: argparse.Namespace) -> int:

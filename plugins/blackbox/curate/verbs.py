@@ -30,7 +30,7 @@ from . import dossier, keys, promotion, transport
 from .context import CurateContext, KillListDraft, ManifestDraft, PromotionDraft, StatementDraft
 from .proposal import Proposal, ProposalState, ProposalStore
 from .publishing import MANIFEST_KIND, VerbError, next_sequence, publish
-from .publishing.publish import _validated_promotion
+from .publishing.publish import checked_promotion
 from ..community import reputation
 
 logger = logging.getLogger(__name__)
@@ -39,20 +39,22 @@ logger = logging.getLogger(__name__)
 # -- propose -----------------------------------------------------------------
 
 
-def propose_promotion(ctx: CurateContext, store: ProposalStore, *, identifier: str, severity: str, evidence: str,
-                      reason: str, report_subjects: Iterable[str], name: str = "") -> Proposal:
-    """A promotion proposal (dependency, kind=malware): checklist, first signature, stored."""
+def propose_promotion(ctx: CurateContext, store: ProposalStore, *, report: community.VerifiedReport, severity: str,
+                      evidence: str, reason: str) -> Proposal:
+    """A promotion proposal: ONE community report into the verified tier as
+    itself (:mod:`.promotion`) — checklist, first signature, stored."""
     _require_manifest(ctx)
     _require_verified_authority(ctx, "promote into the verified graph")
-    items = dossier.checklist(identifier, kind="malware", evidence=evidence, reason=reason)
+    items = dossier.checklist(report.identifier, kind="malware", evidence=evidence, reason=reason)
     if not dossier.passes(items):
         raise VerbError("checklist failed: " + "; ".join(f"{i.item}. {i.note}" for i in items if not i.ok))
-    advisory = evidence[len("advisory:"):] if evidence.startswith("advisory:") else ""
-    payload = promotion.payload_for(identifier, severity=severity, advisory=advisory, report_subjects=report_subjects,
-                                    provenance=promotion.ProvenanceMap(), name=name)
+    try:
+        payload = promotion.payload_for(report, severity=severity)
+    except promotion.PromotionError as exc:
+        raise VerbError(str(exc)) from exc
     key = keys.curator_key_store().load_or_create()
-    envelope = ctx.sign(PromotionDraft(payload, sequence=next_sequence(ctx, store, identifier)), key)
-    return _stored(store, CuratorStatement.PROMOTION.value, identifier, envelope, ctx.verified_graph,
+    envelope = ctx.sign(PromotionDraft(payload, sequence=next_sequence(ctx, store, report.identifier)), key)
+    return _stored(store, CuratorStatement.PROMOTION.value, report.identifier, envelope, ctx.verified_graph,
                    {signing.public_key_hex(key): evidence})
 
 
@@ -245,7 +247,7 @@ def approve(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, evide
     if proposal.kind == CuratorStatement.PROMOTION.value:
         if not evidence:
             raise VerbError("a promotion needs your own item-1 evidence (--evidence advisory:<id> …); each key checks the truth itself")
-        _validated_promotion(envelope)   # KI-195: never cosign a payload you did not check yourself
+        checked_promotion(ctx, envelope)   # KI-195: never cosign a report you did not check yourself
     if envelope.payload.get("evidence") and not community.EVIDENCE_REFERENCE.fullmatch(evidence.strip()):
         raise VerbError(f"this confirmation cites evidence; co-sign it only after your own check of it "
                         f"(--evidence {_EVIDENCE_HELP}) — each key checks the truth itself")

@@ -8,6 +8,9 @@ is never sent again on a guess (LES-011).
 * :class:`NodeBatchWriter` — a verified batch asset: seal it in working
   memory and share it in full (KI-351), submit it to ``/vm/publish``, ask the
   node for its UAL, read every signed row back.
+* :class:`NodeReportWriter` — a promoted report's own asset (the one-graph
+  flow): find the shared asset holding it, publish it as its reporter sealed
+  it, read the report back from Verified Memory.
 * :class:`SubmitReply` — what ``/vm/publish`` answered; :func:`definite_refusal`
   — whether a failed call definitely spent nothing.
 
@@ -26,8 +29,10 @@ from typing import Mapping, Optional
 from urllib.parse import quote, urlencode
 
 from ... import community
-from ...kernel import constants, signing, sparql_text
+from ...kernel import constants, node_routes, signing, sparql_text
 from ...kernel.dkg_client import DkgClient, DkgError
+from ...kernel.signing import promotion_statement as statement
+from .. import promotion
 
 
 @dataclass(frozen=True)
@@ -126,3 +131,92 @@ def _already_sealed(exc: DkgError) -> bool:
 def _text(reply: object, key: str) -> str:
     value = reply.get(key) if isinstance(reply, dict) else None
     return value.strip() if isinstance(value, str) else ""
+
+
+# ---------------------------------------------------------------- a promoted report's own asset
+
+
+@dataclass(frozen=True)
+class ReportAsset:
+    """The asset that holds a promoted report on this node: ``name`` — its
+    lifecycle name; ``author`` — its author's agent address (the reporter's
+    node); ``sub_graph`` — where it was shared; ``verified`` — Verified Memory
+    already holds the report (it was published: nothing is paid again)."""
+
+    name: str
+    author: str
+    sub_graph: str
+    verified: bool = False
+
+
+class NodeReportWriter:
+    """The node side of a promoted report's publish, one call per
+    publish-ledger step. The report is its reporter's own asset in the
+    verified graph's shared memory; it is published AS IT IS
+    (``node_routes.publish_shared_asset``): the reporter's seal and signature
+    stay on it, this node's wallet pays.
+
+    Every keep-alive copy carries the same signed report, so any shared copy
+    will do; the newest asset is chosen (an old one may be about to expire).
+
+    Usage::
+
+        writer = NodeReportWriter(ctx.client, ctx.verified_graph)
+        asset = writer.locate(found)           # None: no copy with the signed digest here
+        reply = writer.submit(asset)           # SUBMITTED → MINTED / BOUND
+        writer.readable(found)                 # True / False / None (could not tell)
+    """
+
+    def __init__(self, client: DkgClient, graph: str) -> None:
+        self._client = client
+        self._graph = graph
+
+    def locate(self, found: statement.Promotion) -> Optional[ReportAsset]:
+        """Where this node holds the report *found* names (its digest, signed by
+        its reporter key): a copy in Verified Memory first, else the newest
+        shared asset, named by the node. None when no such copy is held here;
+        raises :class:`DkgError` when the store or the node could not tell."""
+        copies = self._copies(found)
+        if copies is None:
+            raise DkgError("this node's store could not be read")
+        verified = next((copy for copy in copies if copy.verified), None)
+        if verified is not None:
+            return ReportAsset("", verified.author, verified.sub_graph, verified=True)
+        for copy in sorted(copies, key=lambda copy: int(copy.number), reverse=True):
+            descriptor = node_routes.shared_asset(self._client, self._graph, copy.asset_id, author=copy.author,
+                                                  sub_graph=copy.sub_graph)
+            if descriptor and _text(descriptor, "name"):
+                return ReportAsset(_text(descriptor, "name"), copy.author, copy.sub_graph,
+                                   verified=bool(_text(descriptor, "vmCurrentAssertion")))
+        return None
+
+    def submit(self, asset: ReportAsset) -> SubmitReply:
+        reply = node_routes.publish_shared_asset(self._client, self._graph, asset.name, author=asset.author,
+                                                 sub_graph=asset.sub_graph)
+        return SubmitReply(ual=_text(reply, "ual") or None, tx_hash=_text(reply, "txHash"))
+
+    def asset_ual(self, asset: ReportAsset) -> Optional[str]:
+        """The UAL the node names for *asset* once Verified Memory holds it;
+        None when it names none or cannot be asked (could not tell — never "not minted")."""
+        try:
+            descriptor = node_routes.shared_asset(self._client, self._graph, asset.name, author=asset.author,
+                                                  sub_graph=asset.sub_graph)
+        except DkgError:
+            return None
+        if not descriptor or not _text(descriptor, "vmCurrentAssertion"):
+            return None
+        return _text(descriptor, "publishedUal") or _text(descriptor, "reservedUal") or None
+
+    def readable(self, found: statement.Promotion) -> Optional[bool]:
+        """True when this node reads the report back from Verified Memory with
+        the signed digest; None when its store could not tell."""
+        copies = self._copies(found)
+        return None if copies is None else any(copy.verified for copy in copies)
+
+    def _copies(self, found: statement.Promotion) -> Optional[list[statement.ReportCopy]]:
+        """This node's copies of exactly the promoted report (its digest, signed by
+        its reporter key): another key's copy of the same words is never published."""
+        copies = promotion.report_copies(self._client, self._graph, [found.report])
+        if copies is None:
+            return None
+        return [copy for copy in copies if statement.is_the_report(found, copy.text)]

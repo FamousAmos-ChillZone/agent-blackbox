@@ -27,16 +27,22 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import AbstractSet, Callable, Iterable, Optional, Sequence, Tuple
+from typing import AbstractSet, Callable, Iterable, Optional, Protocol, Sequence, Tuple
 
 from ...kernel import threat_ids
-from .row_builders import ConfirmedEntry
 
 logger = logging.getLogger(__name__)
 
 #: The injected lookup — ``Ruleset.verified_subset``'s shape: which of these identifiers
 #: the verified graph lists.
 VerifiedSubset = Callable[[Iterable[str]], AbstractSet[str]]
+
+
+class Entry(Protocol):
+    """What the pre-check reads of a batch entry: the identifier it would publish."""
+
+    @property
+    def identifier(self) -> str: ...
 
 ALREADY_VERIFIED = "already-verified"
 COVERED_BY_WHOLE_PACKAGE = "covered-by-whole-package"
@@ -51,7 +57,7 @@ class DroppedEntry:
     """An entry the pre-check kept out of the batch: ``reason`` is one of the module's
     reason constants; ``covered_by`` is the canonical identifier that made it redundant."""
 
-    entry: ConfirmedEntry
+    entry: Entry
     reason: str
     covered_by: str
 
@@ -60,7 +66,7 @@ class DroppedEntry:
 class PrecheckResult:
     """``kept`` — the entries to publish, in their original order; ``dropped`` — the rest."""
 
-    kept: tuple[ConfirmedEntry, ...]
+    kept: tuple[Entry, ...]
     dropped: tuple[DroppedEntry, ...]
 
 
@@ -87,7 +93,7 @@ def whole_package_identifier(identifier: str) -> str:
     return threat_ids.dependency_identifier(ecosystem, name, WHOLE_PACKAGE_VERSION)
 
 
-def precheck(entries: Sequence[ConfirmedEntry], verified_subset: VerifiedSubset) -> PrecheckResult:
+def precheck(entries: Sequence[Entry], verified_subset: VerifiedSubset) -> PrecheckResult:
     """Split *entries* into kept and dropped against one *verified_subset* call (see the
     module doc). Exceptions from the lookup propagate: no answer, no publish."""
     canonical = [canonical_identifier(entry.identifier) for entry in entries]
@@ -105,7 +111,7 @@ def precheck(entries: Sequence[ConfirmedEntry], verified_subset: VerifiedSubset)
     return PrecheckResult(kept=tuple(kept), dropped=tuple(dropped))
 
 
-def _drop_reason(entry: ConfirmedEntry, identifier: str, listed: AbstractSet[str],
+def _drop_reason(entry: Entry, identifier: str, listed: AbstractSet[str],
                  seen: AbstractSet[str]) -> Optional[DroppedEntry]:
     if identifier in listed:
         return DroppedEntry(entry, ALREADY_VERIFIED, identifier)

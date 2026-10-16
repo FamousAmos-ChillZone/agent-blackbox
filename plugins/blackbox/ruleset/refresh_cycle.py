@@ -245,7 +245,7 @@ def _apply_overlays(rs: compiler.Ruleset, client: Optional[DkgClient], config: B
     """
     if client is None:
         return
-    curator_tier.apply_curator_tier(rs, client, config)
+    curator_tier.apply_curator_tier(rs, client, config, rs if reused else _latest_cached_ruleset(config.context_graph_id))
     # DKG-lookup B2: the live verified scope is rebuilt on every path, so a last-good
     # generation kept through an empty read still learns the assets confirmed since.
     rs.verified_scope = live.scope_for_generation(

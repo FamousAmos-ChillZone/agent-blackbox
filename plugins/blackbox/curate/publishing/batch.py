@@ -1,25 +1,21 @@
 """The batch publisher — beat step 8 on the wallet node (trust-and-threat-lab §03.4, D27).
 
 Quorum-signed promotions wait as APPROVED proposals; :class:`BatchPublisher`
-turns them into ONE verified-graph knowledge asset per batch (≤ 50 entries,
-one subject per threat at ``threat_uri(identifier)``, each row carrying its own
-2-of-N envelope) and walks that batch through the :class:`PublishLedger`.
-Pattern: Builder — the batch asset is assembled entry by entry from the
-per-category row builders, then written in the ledger's steps.
+turns them into ONE verified-graph knowledge asset per batch (≤ 50 promotion
+statements, each its own 2-of-N envelope pointing at the community report it
+promotes — ``kernel.signing.promotion_statement``) and walks it through the
+:class:`PublishLedger`. Each report is its reporter's own asset, published
+first on its own ledger record (:mod:`.reports`): the batch is sealed once
+every report it points at reads back from Verified Memory. Pattern: Builder.
 
-When a batch goes (D15, F-017), whichever comes first:
-
-* :data:`BATCH_ENTRIES` entries are waiting;
-* the oldest waiting entry has waited :data:`BATCH_SECONDS` (6 h);
-* a block-tier entry (package ``dep:``; skill ``skill:``, which also holds the
-  artifact fingerprint ``skill:artifact:…``) with ≥ :data:`FAST_LANE_REPORTERS`
-  reporters has waited :data:`FAST_LANE_HOLD_SECONDS` — held half an hour so
-  others can join it, which leaves the beat interval and the publish inside
-  the hour the proposal promises.
-
-Revocations and corrections are never batched: only ``blackbox.promotion``
-proposals are collected; every other kind goes at once through
-:func:`.publish.publish` (asymmetric safety, F-032).
+When a batch goes (D15, F-017), whichever comes first: :data:`BATCH_ENTRIES`
+entries wait; the oldest has waited :data:`BATCH_SECONDS` (6 h); a block-tier
+entry (``dep:``; ``skill:``, the artifact fingerprint ``skill:artifact:…``
+included) with ≥ :data:`FAST_LANE_REPORTERS` verified reporters (the community
+tier's count) has waited :data:`FAST_LANE_HOLD_SECONDS` — half an hour for
+others to join, inside the hour the proposal promises. Revocations and
+corrections are never batched: they go at once through :func:`.publish.publish`
+(asymmetric safety, F-032).
 
 Fail-closed rules (F-035, LES-011):
 
@@ -29,9 +25,10 @@ Fail-closed rules (F-035, LES-011):
   (its UAL). A MINTED batch (HTTP 207: paid, not readable) is NEVER submitted
   again: it is reconciled by reading it back, or written off by the operator.
   While any batch is unsettled no new batch is queued.
-* The pre-check (:func:`.precheck.precheck`) runs immediately before the paid
-  publish with :func:`strict_verified_subset`, which RAISES when the store
-  cannot tell — ``Ruleset.verified_subset`` would answer "none listed".
+* The pre-check (:func:`.precheck.precheck`) runs right before the paid
+  publishes with :func:`strict_verified_subset`, which RAISES when the store
+  cannot tell. An entry joins a batch only once its report reads back from
+  Verified Memory; until then it waits outside every batch.
 
 Usage (the beat wiring is SVC4)::
 
@@ -49,17 +46,17 @@ import time
 from dataclasses import dataclass
 from decimal import Decimal
 from types import MappingProxyType
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
-from ...kernel import signing, threat_ids
-from .. import promotion
+from ...kernel import threat_ids
+from ...kernel.signing import promotion_statement as statement
 from ..context import CurateContext
-from ..proposal import Proposal, ProposalError, ProposalState, ProposalStore
+from ..proposal import ProposalError, ProposalState, ProposalStore
 from .ledger import BatchEntry, BatchRecord, PublishLedger, PublishState
 from .precheck import VerifiedSubset, precheck
-from .node_writers import NodeBatchWriter, SubmitReply, definite_refusal
+from .node_writers import NodeBatchWriter, NodeReportWriter, SubmitReply, definite_refusal
 from .publish import has_quorum
-from .row_builders import PROMOTION_STATEMENT, ROW_BUILDERS, ConfirmedEntry
+from .reports import READY, PendingReport, ReportPublisher, is_report_record
 
 logger = logging.getLogger(__name__)
 
@@ -84,20 +81,28 @@ class PrecheckUnavailable(RuntimeError):
 
 @dataclass(frozen=True)
 class Candidate:
-    """One APPROVED promotion ready for a batch: its proposal, the entry its signed
-    payload names, the envelope, the rows already built, when it was approved and
-    how many reporters its provenance credits."""
+    """One APPROVED promotion ready for a batch: its proposal, the report its
+    signed payload points at, the statement's quads (built now, so a promotion
+    that cannot be written never reaches a batch), when it was approved and how
+    many verified reporters the community tier counts for its threat."""
 
     proposal_id: str
-    entry: ConfirmedEntry
-    envelope: signing.SignedEnvelope
+    pending: PendingReport
     quads: tuple[dict[str, str], ...]
     approved_at: float
     reporters: int
 
     @property
+    def identifier(self) -> str:
+        return self.pending.identifier
+
+    @property
+    def category(self) -> str:
+        return self.identifier.split(":", 1)[0]
+
+    @property
     def fast(self) -> bool:
-        return self.entry.category in BLOCK_TIER_CATEGORIES and self.reporters >= FAST_LANE_REPORTERS
+        return self.category in BLOCK_TIER_CATEGORIES and self.reporters >= FAST_LANE_REPORTERS
 
 
 @dataclass(frozen=True)
@@ -161,18 +166,21 @@ def strict_verified_subset(compiled: Any) -> VerifiedSubset:
 
 class BatchPublisher:
     """Owns beat step 8. ``store`` / ``ledger`` default to the curate home's;
-    ``writer`` — the node side (default :class:`.node_writers.NodeBatchWriter` on the
-    context's client); ``verified_subset`` — the pre-check lookup (default
+    ``writer`` / ``report_writer`` — the node side (default
+    :class:`.node_writers.NodeBatchWriter` / :class:`.node_writers.NodeReportWriter`
+    on the context's client); ``verified_subset`` — the pre-check lookup (default
     :func:`strict_verified_subset` over ``ctx.compiled``); ``wallet_balance`` — the
     wallet's TRAC, None when unknown; ``beat_seconds`` — the beat interval."""
 
     def __init__(self, store: Optional[ProposalStore] = None, ledger: Optional[PublishLedger] = None, *,
-                 writer: Optional[NodeBatchWriter] = None, verified_subset: Optional[VerifiedSubset] = None,
+                 writer: Optional[NodeBatchWriter] = None, report_writer: Optional[NodeReportWriter] = None,
+                 verified_subset: Optional[VerifiedSubset] = None,
                  wallet_balance: Callable[[], Optional[Decimal]] = lambda: None,
                  beat_seconds: float = DEFAULT_BEAT_SECONDS, clock: Callable[[], float] = time.time) -> None:
         self._store = store or ProposalStore()
         self._ledger = ledger or PublishLedger(clock=clock)
-        self._writer = writer
+        self._writer, self._report_writer = writer, report_writer
+        self._reports = ReportPublisher(self._ledger)
         self._verified_subset = verified_subset
         self._wallet_balance = wallet_balance
         self._beat_seconds = beat_seconds
@@ -183,13 +191,14 @@ class BatchPublisher:
     def run(self, ctx: CurateContext) -> BatchRunReport:
         """Settle earlier batches, then publish at most ONE new batch when a trigger fired."""
         writer = self._writer or NodeBatchWriter(ctx.client, ctx.verified_graph)
+        reports = self._report_writer or NodeReportWriter(ctx.client, ctx.verified_graph)
         candidates, _ = self._candidates(ctx)
         settled: Optional[BatchRunReport] = None
-        for record in [record for record in self._ledger.batches() if record.state in _UNSETTLED]:
+        for record in [record for record in self._batches() if record.state in _UNSETTLED]:
             settled = self._settle(record, candidates, writer)
             if settled.action != "published":
                 return settled
-        for record in self._ledger.batches():
+        for record in self._batches():
             if record.state in (PublishState.BOUND, PublishState.SEEN):
                 self._mark_published(record, candidates)
         waiting = self._waiting(candidates)
@@ -197,16 +206,18 @@ class BatchPublisher:
             return settled or BatchRunReport("waiting", entries=len(waiting))
         chosen = sorted(waiting, key=lambda c: (not c.fast, c.approved_at))[:BATCH_ENTRIES]
         try:
-            checked = precheck([c.entry for c in chosen], self._verified_subset or strict_verified_subset(ctx.compiled))
+            checked = precheck(chosen, self._verified_subset or strict_verified_subset(ctx.compiled))
         except Exception as exc:   # LES-011: no answer, no paid publish
             logger.warning("blackbox: batch pre-check could not tell (%s); nothing published", exc)
             return BatchRunReport("could-not-tell", entries=len(chosen), note=str(exc))
-        self._close_dropped(checked.dropped, candidates)
-        kept = [candidates[entry.identifier] for entry in checked.kept]
-        if not kept:
-            return BatchRunReport("waiting", dropped=len(checked.dropped), note="every chosen entry is already listed")
+        self._close_dropped(checked.dropped)
+        outcomes = self._reports.settle(ctx, reports, [c.pending for c in checked.kept])
+        kept = [c for c, (_, action, _) in zip(checked.kept, outcomes) if action == READY]
+        if not kept:   # nothing to batch until a report reads back from Verified Memory
+            action, note = next(((a, f"the report of {p.identifier}: {n}") for p, a, n in outcomes), ("waiting", ""))
+            return BatchRunReport(action, dropped=len(checked.dropped), note=note or "every chosen entry is already listed")
         batch_id = f"b-{int(self._clock())}-{secrets.token_hex(4)}"
-        record = self._ledger.queue(batch_id, [BatchEntry(c.entry.identifier, c.entry.category) for c in kept])
+        record = self._ledger.queue(batch_id, [BatchEntry(c.identifier, c.category) for c in kept])
         report = self._settle(record, candidates, writer)
         return BatchRunReport(report.action, batch_id, len(kept), len(checked.dropped), report.note)
 
@@ -214,28 +225,34 @@ class BatchPublisher:
 
     def _candidates(self, ctx: CurateContext) -> tuple[dict[str, Candidate], int]:
         """APPROVED, quorum-signed promotions for the verified graph, by identifier;
-        plus how many of them no row builder can write (held back, logged)."""
+        plus how many of them cannot be written (held back, logged)."""
         out: dict[str, Candidate] = {}
         held_back = 0
         for proposal in self._store.all():
-            if (proposal.state is not ProposalState.APPROVED or proposal.kind != PROMOTION_STATEMENT
+            if (proposal.state is not ProposalState.APPROVED or proposal.kind != statement.PROMOTION_STATEMENT
                     or proposal.graph != ctx.verified_graph):
                 continue
             envelope = proposal.parsed()
             if envelope is None or not has_quorum(ctx, proposal, envelope):
                 continue
+            found = statement.parse(envelope)
             try:
-                candidate = _candidate(proposal, envelope)
-            except ValueError as exc:   # RowBuildError, PromotionError, the store's literal cap
+                quads = tuple(statement.statement_quads(envelope))
+            except ValueError as exc:   # not a well-formed promotion of a report, or past the store's literal cap
                 held_back += 1
                 logger.warning("blackbox: promotion %s cannot be batched: %s", proposal.id, exc)
                 continue
-            out.setdefault(candidate.entry.identifier, candidate)
+            out.setdefault(found.identifier, Candidate(proposal.id, PendingReport(found.identifier, found, envelope), quads,
+                                                       proposal.updated, _reporters(ctx, found.identifier)))
         return out, held_back
+
+    def _batches(self) -> list[BatchRecord]:
+        """The statement batches in the ledger (a report's own publish has its own record, :mod:`.reports`)."""
+        return [record for record in self._ledger.batches() if not is_report_record(record)]
 
     def _waiting(self, candidates: Mapping[str, Candidate]) -> list[Candidate]:
         """Candidates in no batch yet (a written-off batch's entries wait again)."""
-        taken = {entry.identifier for record in self._ledger.batches()
+        taken = {entry.identifier for record in self._batches()
                  if record.state is not PublishState.WRITTEN_OFF for entry in record.entries}
         return [candidate for identifier, candidate in candidates.items() if identifier not in taken]
 
@@ -245,11 +262,10 @@ class BatchPublisher:
                 or any(now - c.approved_at >= BATCH_SECONDS for c in waiting)
                 or any(c.fast and now - c.approved_at >= FAST_LANE_HOLD_SECONDS for c in waiting))
 
-    def _close_dropped(self, dropped: Iterable[Any], candidates: Mapping[str, Candidate]) -> None:
+    def _close_dropped(self, dropped: Iterable[Any]) -> None:
         """A promotion the verified graph already covers is closed, so it is not re-checked every beat."""
         for drop in dropped:
-            self._transition(candidates[drop.entry.identifier].proposal_id, ProposalState.REJECTED,
-                             f"not published: {drop.reason} ({drop.covered_by})")
+            self._transition(drop.entry.proposal_id, ProposalState.REJECTED, f"not published: {drop.reason} ({drop.covered_by})")
 
     # ------------------------------------------------------------ the ledger steps
 
@@ -304,7 +320,7 @@ class BatchPublisher:
             logger.warning("blackbox: batch %s minted as %s but not readable (207); reconciled next beat",
                            record.batch_id, reply.ual)
             return BatchRunReport("minted", record.batch_id, len(batch))
-        self._mark_published(record, {c.entry.identifier: c for c in batch})
+        self._mark_published(record, {c.identifier: c for c in batch})
         return BatchRunReport("published", record.batch_id, len(batch))
 
     def _reconcile(self, record: BatchRecord, batch: Sequence[Candidate], writer: NodeBatchWriter) -> BatchRunReport:
@@ -312,7 +328,7 @@ class BatchPublisher:
         if writer.readable(_signed_rows(batch)) is not True:
             return BatchRunReport("held", record.batch_id, note="minted (207), not readable yet; not re-submitted")
         record = self._ledger.reconcile_minted(record.batch_id, readable_ual=record.ual, note="read back after a 207")
-        self._mark_published(record, {c.entry.identifier: c for c in batch})
+        self._mark_published(record, {c.identifier: c for c in batch})
         return BatchRunReport("published", record.batch_id, len(batch))
 
     def _mark_published(self, record: BatchRecord, candidates: Mapping[str, Candidate]) -> None:
@@ -364,25 +380,16 @@ def asset_name(batch_id: str) -> str:
     return f"verified-batch-{batch_id}"
 
 
-def _candidate(proposal: Proposal, envelope: signing.SignedEnvelope) -> Candidate:
-    """The entry the SIGNED payload names, built into its rows now so a
-    promotion no builder can write never reaches a batch."""
-    payload = envelope.payload
-    provenance = tuple(ident for ident in str(payload.get("provenance", "")).split(",") if ident)
-    entry = ConfirmedEntry(
-        identifier=str(payload.get("identifier", "")), severity=str(payload.get("severity", "")),
-        kind=str(payload.get("kind", "")), provenance=provenance,
-        evidence="; ".join(proposal.checks[key] for key in sorted(proposal.checks)),
-        name=str(payload.get("name", "")), advisory_id=str(payload.get("advisoryId", "")),
-    )
-    if entry.category == "dep":
-        promotion.validate_payload(payload)   # the dependency rule the second signer checked (KI-195)
-    quads = tuple(ROW_BUILDERS[entry.category].quads(entry, envelope))
-    return Candidate(proposal.id, entry, envelope, quads, proposal.updated, len(provenance))
+def _reporters(ctx: CurateContext, identifier: str) -> int:
+    """How many verified reporters this node's community tier counts for *identifier* (0 when unknown)."""
+    rule = getattr(ctx.compiled, "community", {}).get(identifier) if ctx.compiled is not None else None
+    return int((rule or {}).get("reporterCount") or 0)
 
 
 def _signed_rows(batch: Sequence[Candidate]) -> dict[str, str]:
-    return {threat_ids.threat_uri(c.entry.identifier): c.envelope.to_text() for c in batch}
+    """Statement subject → the envelope it must read back with."""
+    return {statement.statement_subject(c.identifier, c.pending.promotion.sequence): c.pending.envelope.to_text()
+            for c in batch}
 
 
 def _byte_size(batch: Sequence[Candidate]) -> int:

@@ -1,9 +1,10 @@
-"""P2 (trust-and-threat-lab §03.4) — row builders: one Strategy per promotable category.
+"""P5 (trust-and-threat-lab §03.4) — the signed correction rows (``curate/publishing/row_builders``).
 
-Every category D3 calls promotable has a builder; every row carries the signed
-``blackbox.promotion`` envelope whose payload names the rule; evidence is capped
-at 2 KB; a built row's envelope parses and a 2-key manifest accepts it; and the
-verified reader compiles each row back into the rule it was signed as.
+A correction suppresses exactly the subjects its signed payload names, one
+signed ``CorrectionSignal`` row per target, and the R3 reader honours what it
+writes. (Promotions no longer write rows — a report is promoted as itself:
+``test_blackbox_one_graph_curator.py``; the rows earlier promotions wrote stay
+served: ``test_blackbox_asset_tier.py``.)
 """
 
 from __future__ import annotations
@@ -13,29 +14,13 @@ import json
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from plugins.blackbox.curate import publishing
 from plugins.blackbox.curate.publishing import row_builders as rb
-from plugins.blackbox.kernel import constants, rdf_terms, signing, threat_ids
+from plugins.blackbox.kernel import constants, signing, threat_ids
 from plugins.blackbox.kernel.signing import key_manifest as km
-from plugins.blackbox.ruleset import row_adapters
-from plugins.blackbox.ruleset.partitions.rows import rows_from_triples
+from plugins.blackbox.kernel.signing.statement_order import CuratorStatement
 
 NETWORK = "sandbox-net"
 VERIFIED_GRAPH = "0xabc/agent-blackbox-vm"
-PROVENANCE = ("0123456789abcdef", "fedcba9876543210")
-INJECTION_PATTERN = r"ignore\s+(all\s+)?previous\s+instructions\\n"
-
-#: One confirmed entry per promotable category (D3: every listable type is promotable).
-ENTRIES = {
-    "dep": rb.ConfirmedEntry("dep:npm:evil-pkg@1.0.0", "critical", "malware", PROVENANCE, "advisory MAL-2026-1",
-                             advisory_id="MAL-2026-1"),
-    "ioc": rb.ConfirmedEntry(threat_ids.ioc_identifier("domain", "Evil.Example."), "high", "malware", PROVENANCE, "lab: C2 beacon"),
-    "skill": rb.ConfirmedEntry(threat_ids.skill_version_identifier("totally-safe-helper", "2.1.0"), "high", "malware", PROVENANCE),
-    "injection": rb.ConfirmedEntry(threat_ids.injection_identifier(INJECTION_PATTERN), "medium", "injection", PROVENANCE,
-                                   pattern=INJECTION_PATTERN),
-    "fileaccess": rb.ConfirmedEntry(threat_ids.fileaccess_identifier("read_file", "ssh-private-key"), "high", "exfiltration",
-                                    PROVENANCE),
-}
 
 
 @pytest.fixture(scope="module")
@@ -43,23 +28,10 @@ def keys():
     return Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate()
 
 
-@pytest.fixture(scope="module")
-def manifest(keys):
-    """A 2-of-2 curator manifest for the verified graph."""
-    pairs = sorted((signing.public_key_hex(key), f"operator-{i}") for i, key in enumerate(keys))
-    return km.KeyManifest(environment=NETWORK, graph=VERIFIED_GRAPH, chain="", root_epoch=1, version=1,
-                          curator_keys=tuple(key for key, _ in pairs), curator_operators=tuple(op for _, op in pairs),
-                          threshold=2, promotion_author="0x" + "1" * 40, legacy_assets_hash=km.legacy_assets_hash([]))
-
-
-def _envelope(keys, payload, statement_type=rb.PROMOTION_STATEMENT):
+def _envelope(keys, payload, statement_type=CuratorStatement.PROMOTION.value):
     first = signing.sign(keys[0], statement_type=statement_type, environment=NETWORK, graph=VERIFIED_GRAPH,
                          payload=payload, root_epoch=1, sequence=1)
     return signing.cosign(first, keys[1])
-
-
-def _built(keys, entry):
-    return rb.ROW_BUILDERS[entry.category].quads(entry, _envelope(keys, rb.promotion_payload(entry)))
 
 
 def _plain(term: str) -> str:
@@ -70,198 +42,6 @@ def _plain(term: str) -> str:
 def _signed_literal(quads):
     (term,) = [q["object"] for q in quads if q["predicate"] == constants.SIGNED_STATEMENT_PRED]
     return _plain(term)
-
-
-# ------------------------------------------------------------------ the registry
-
-
-def test_every_category_d3_calls_promotable_has_a_builder():
-    assert set(rb.ROW_BUILDERS) == {"dep", "ioc", "skill", "injection", "fileaccess"} == set(ENTRIES)
-    assert all(builder.category == category for category, builder in rb.ROW_BUILDERS.items())
-    assert publishing.ROW_BUILDERS is rb.ROW_BUILDERS
-
-
-def test_the_registry_is_frozen():
-    with pytest.raises(TypeError):
-        rb.ROW_BUILDERS["escalation"] = rb.ROW_BUILDERS["dep"]  # type: ignore[index]
-
-
-def test_an_unpromotable_category_is_refused_at_the_entry():
-    with pytest.raises(rb.RowBuildError):
-        rb.ConfirmedEntry(threat_ids.escalation_identifier("shell", "remote-script-pipe"), "high", "malware")
-
-
-@pytest.mark.parametrize("field_name,value", [("severity", "urgent"), ("kind", " "), ("provenance", ("urn:guardian:report:0xr:1",))])
-def test_an_ill_formed_entry_is_refused(field_name, value):
-    fields = {"identifier": "dep:npm:x@1", "severity": "high", "kind": "malware", field_name: value}
-    with pytest.raises(rb.RowBuildError):
-        rb.ConfirmedEntry(**fields)
-
-
-# ------------------------------------------------------------------ every row is signed
-
-
-@pytest.mark.parametrize("category", sorted(ENTRIES))
-def test_no_builder_writes_a_row_without_the_signed_statement(keys, category):
-    quads = _built(keys, ENTRIES[category])
-    subjects = {q["subject"] for q in quads}
-    assert subjects == {threat_ids.threat_uri(ENTRIES[category].identifier)}
-    assert [q["predicate"] for q in quads].count(constants.SIGNED_STATEMENT_PRED) == 1
-
-
-@pytest.mark.parametrize("category", sorted(ENTRIES))
-def test_the_signed_payload_carries_identifier_kind_severity_version_and_provenance(keys, category):
-    entry = ENTRIES[category]
-    payload = signing.from_text(_signed_literal(_built(keys, entry))).payload
-    assert set(payload) >= {"identifier", "kind", "severity", "ecosystem", "packageName", "packageVersion", "provenance"}
-    assert (payload["identifier"], payload["kind"], payload["severity"]) == (entry.identifier, entry.kind, entry.severity)
-    assert payload["provenance"] == ",".join(PROVENANCE)
-
-
-def test_the_payload_names_the_package_and_version_where_the_identifier_has_them():
-    dep = rb.promotion_payload(ENTRIES["dep"])
-    assert (dep["ecosystem"], dep["packageName"], dep["packageVersion"]) == ("npm", "evil-pkg", "1.0.0")
-    skill = rb.promotion_payload(ENTRIES["skill"])
-    assert (skill["packageName"], skill["packageVersion"]) == ("totally-safe-helper", "2.1.0")
-    assert rb.promotion_payload(ENTRIES["ioc"])["packageVersion"] == ""
-
-
-@pytest.mark.parametrize("name,version,shape", [
-    ("mail@helper", "", "exec-remote"),      # an '@' inside a shape id's name is not a version
-    ("@acme/tool", "", "exec-remote"),       # a scoped name with a shape
-    ("@acme/tool", "1.2.0", ""),             # a scoped name with a version
-])
-def test_a_skill_name_holding_an_at_sign_is_read_as_its_identifier_says(keys, name, version, shape):
-    """P2 review: an '@' in a skill name must not make the signed payload name a bogus version."""
-    identifier = (threat_ids.skill_version_identifier(name, version) if version
-                  else threat_ids.skill_shape_identifier(name, shape))
-    entry = rb.ConfirmedEntry(identifier, "high", "malware")
-    payload = rb.promotion_payload(entry)
-    assert (payload["packageName"], payload["packageVersion"]) == ((name, version) if version else ("", ""))
-    written = {q["predicate"]: _plain(q["object"]) for q in _built(keys, entry)}
-    assert written[constants.SKILL_NAME_PRED] == name
-    assert written.get(constants.SKILL_VERSION_PRED, "") == version
-    assert written.get(constants.DANGER_SHAPE_PRED, "") == shape
-
-
-def test_an_unsigned_envelope_is_refused(keys):
-    entry = ENTRIES["dep"]
-    unsigned = signing.SignedEnvelope(statement_type=rb.PROMOTION_STATEMENT, environment=NETWORK, graph=VERIFIED_GRAPH,
-                                      schema_version=1, payload=rb.promotion_payload(entry), signatures=())
-    with pytest.raises(rb.RowBuildError):
-        rb.ROW_BUILDERS["dep"].quads(entry, unsigned)
-
-
-def test_an_envelope_of_another_statement_type_is_refused(keys):
-    entry = ENTRIES["ioc"]
-    with pytest.raises(rb.RowBuildError):
-        rb.ROW_BUILDERS["ioc"].quads(entry, _envelope(keys, rb.promotion_payload(entry), "blackbox.confirmation"))
-
-
-@pytest.mark.parametrize("field_name", rb.SIGNED_RULE_FIELDS)
-def test_a_row_never_shows_a_rule_its_signatures_do_not_name(keys, field_name):
-    """a real envelope transplanted onto another entry is refused."""
-    entry = ENTRIES["dep"]
-    payload = {**rb.promotion_payload(entry), field_name: "tampered"}
-    with pytest.raises(rb.RowBuildError):
-        rb.ROW_BUILDERS["dep"].quads(entry, _envelope(keys, payload))
-
-
-def test_a_builder_refuses_another_category(keys):
-    entry = ENTRIES["ioc"]
-    with pytest.raises(rb.RowBuildError):
-        rb.ROW_BUILDERS["dep"].quads(entry, _envelope(keys, rb.promotion_payload(entry)))
-
-
-def test_an_injection_needs_the_pattern_its_hash_names(keys):
-    entry = rb.ConfirmedEntry(ENTRIES["injection"].identifier, "medium", "injection", pattern="something else")
-    with pytest.raises(rb.RowBuildError):
-        rb.ROW_BUILDERS["injection"].quads(entry, _envelope(keys, rb.promotion_payload(entry)))
-
-
-def test_a_non_canonical_ioc_identifier_is_refused(keys):
-    entry = rb.ConfirmedEntry("ioc:domain:Evil.Example.", "high", "malware")
-    with pytest.raises(rb.RowBuildError):
-        rb.ROW_BUILDERS["ioc"].quads(entry, _envelope(keys, rb.promotion_payload(entry)))
-
-
-# ------------------------------------------------------------------ evidence cap
-
-
-def _evidence_of(quads):
-    values = [_plain(q["object"]) for q in quads if q["predicate"] == constants.SCHEMA_DESCRIPTION_PRED]
-    return values[0] if values else ""
-
-
-@pytest.mark.parametrize("category", sorted(ENTRIES))
-def test_evidence_over_2kb_is_truncated_to_the_typed_cap(keys, category):
-    base = ENTRIES[category]
-    long_evidence = "é" * 3000   # 6000 UTF-8 bytes; a multi-byte character is never split
-    entry = rb.ConfirmedEntry(base.identifier, base.severity, base.kind, base.provenance, long_evidence, pattern=base.pattern)
-    evidence = _evidence_of(_built(keys, entry))
-    assert len(evidence.encode("utf-8")) <= rb.EVIDENCE_MAX_BYTES == 2048
-    assert evidence.endswith("[truncated]") and evidence.startswith("é" * 100)
-
-
-def test_evidence_within_the_cap_is_written_whole(keys):
-    assert _evidence_of(_built(keys, ENTRIES["ioc"])) == "lab: C2 beacon"
-    exact = "x" * rb.EVIDENCE_MAX_BYTES
-    entry = rb.ConfirmedEntry(ENTRIES["dep"].identifier, "critical", "malware", PROVENANCE, exact)
-    assert _evidence_of(_built(keys, entry)) == exact
-
-
-@pytest.mark.parametrize("category", sorted(ENTRIES))
-def test_every_literal_respects_the_store_cap(keys, category):
-    rdf_terms.assert_quads_literal_size(_built(keys, ENTRIES[category]))
-
-
-# ------------------------------------------------------------------ round trip
-
-
-@pytest.mark.parametrize("category", sorted(ENTRIES))
-def test_a_built_rows_envelope_parses_and_a_two_key_manifest_accepts_it(keys, manifest, category):
-    envelope = signing.from_text(_signed_literal(_built(keys, ENTRIES[category])))
-    assert envelope is not None and envelope.statement_type == rb.PROMOTION_STATEMENT
-    assert manifest.has_quorum(envelope, statement_type=rb.PROMOTION_STATEMENT, graph=VERIFIED_GRAPH)
-
-
-def test_one_signature_is_not_a_quorum(keys, manifest):
-    entry = ENTRIES["dep"]
-    single = signing.sign(keys[0], statement_type=rb.PROMOTION_STATEMENT, environment=NETWORK, graph=VERIFIED_GRAPH,
-                          payload=rb.promotion_payload(entry), root_epoch=1, sequence=1)
-    envelope = signing.from_text(_signed_literal(rb.ROW_BUILDERS["dep"].quads(entry, single)))
-    assert not manifest.has_quorum(envelope, statement_type=rb.PROMOTION_STATEMENT, graph=VERIFIED_GRAPH)
-
-
-_READER_CATEGORY = {"dep": "dependency", "ioc": "ioc", "skill": "skill", "injection": "injection", "fileaccess": "fileaccess"}
-
-
-@pytest.mark.parametrize("category", sorted(ENTRIES))
-def test_the_verified_reader_compiles_each_row_into_the_signed_rule(keys, category):
-    """The corpus's existing shape: the reader's own row rebuild + adapter yield the rule."""
-    entry = ENTRIES[category]
-    triples = [(q["subject"], q["predicate"], q["object"]) for q in _built(keys, entry)]
-    rules = [rule for row in rows_from_triples(VERIFIED_GRAPH, triples)
-             if (rule := row_adapters._row_to_rule(row, "public")) is not None]
-    assert rules, category
-    assert {(reader_category, rule["identifier"], rule["severity"]) for reader_category, _key, rule in rules} == {
-        (_READER_CATEGORY[category], entry.identifier, entry.severity)}
-    if category == "injection":
-        assert all(rule["pattern_src"] == INJECTION_PATTERN for _c, _k, rule in rules)
-    if category == "fileaccess":
-        assert all((rule["toolName"], rule["category"]) == ("read_file", "ssh-private-key") for _c, _k, rule in rules)
-
-
-def test_the_dependency_row_carries_the_locators_the_live_lookup_queries(keys):
-    """ruleset/live/lookup._dependency_sparql finds a DependencySignal by dp:package/dp:ecosystem/dp:version."""
-    found = {q["predicate"]: _plain(q["object"]) for q in _built(keys, ENTRIES["dep"]) if q["predicate"].startswith("urn:defender:p:")}
-    assert found == {"urn:defender:p:package": "evil-pkg", "urn:defender:p:ecosystem": "npm", "urn:defender:p:version": "1.0.0"}
-
-
-def test_the_ioc_row_carries_the_value_the_live_lookup_queries(keys):
-    """ruleset/live/lookup._ioc_sparql finds an IocSignal by dp:value."""
-    found = {q["predicate"]: _plain(q["object"]) for q in _built(keys, ENTRIES["ioc"]) if q["predicate"].startswith("urn:defender:p:")}
-    assert found == {"urn:defender:p:iocType": "domain", "urn:defender:p:value": "evil.example"}
 
 
 # ------------------------------------------------------------------ corrections (P5)

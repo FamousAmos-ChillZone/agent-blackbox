@@ -310,12 +310,13 @@ def test_the_opt_in_fallback_index_applies_the_same_flag_cap(tmp_path):
 # a promotion envelope that the manifest in force ON THE ASSET'S DAY accepts; the
 # rule is served from the signed payload; a row showing a rule its signature does
 # not name (a transplanted envelope) is never served, flags its asset and
-# raises the alarm input. Rows are written by the real row builders (P2).
+# raises the alarm input. Rows are the ones promotions wrote before the one-graph
+# flow (the retired builders, frozen in _legacy_promoted_rows): they stay served.
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from plugins.blackbox.community.trust import manifest_history
-from plugins.blackbox.curate.publishing import row_builders as rb
+import _legacy_promoted_rows as rb   # the verified rows promotions wrote before the one-graph flow
 from plugins.blackbox.kernel import constants, signing, threat_ids
 from plugins.blackbox.kernel.signing import key_manifest as km
 from plugins.blackbox.ruleset import graph_queries
