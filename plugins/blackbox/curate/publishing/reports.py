@@ -1,11 +1,13 @@
-"""The promoted reports a batch points at reach Verified Memory first (the one-graph flow, §03.4).
+"""A member-asset promotion's report reaches Verified Memory before its batch (§03.4, ``strategies``).
 
-A batch publishes the curators' promotion statements as ONE asset; each
-statement points at a report, and each report is its reporter's own asset,
-published on its own (:class:`.node_writers.NodeReportWriter`). A promotion
-enters a batch only once its report reads back from Verified Memory: no
-statement is paid for while its report cannot be published, and a report
-that cannot be keeps only its own promotion waiting, never a batch.
+A batch publishes the curators' promotions as ONE asset. A member-asset
+promotion is a statement pointing at a report, and the report is its
+reporter's own asset, published on its own
+(:class:`.node_writers.NodeReportWriter`). Such a promotion enters a batch
+only once its report reads back from Verified Memory: no statement is paid
+for while its report cannot be published, and a report that cannot be keeps
+only its own promotion waiting, never a batch. (A curator-asset promotion —
+the default — publishes nothing of the reporter's and never comes here.)
 
 Each report publish is paid, so it walks the publish ledger like a batch,
 under its own record — ``report:<sub-graph>:<author>:<asset name>`` (the
@@ -31,7 +33,6 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
-from ...kernel import signing
 from ...kernel.dkg_client import DkgError
 from ...kernel.signing import promotion_statement as statement
 from .. import promotion
@@ -52,12 +53,12 @@ MAX_SUBMITS_PER_RUN = 5
 
 @dataclass(frozen=True)
 class PendingReport:
-    """One promotion in a batch: its ``identifier``, the :class:`statement.Promotion`
-    its signed payload states, and the envelope (re-checked before paying)."""
+    """One member-asset promotion in a batch: its ``identifier`` and the report
+    (:class:`statement.ReportRef`) its signed payload names, re-checked before
+    paying."""
 
     identifier: str
-    promotion: statement.Promotion
-    envelope: signing.SignedEnvelope
+    ref: statement.ReportRef
 
 
 def is_report_record(record: BatchRecord) -> bool:
@@ -105,7 +106,7 @@ class ReportPublisher:
                 return "held", "submitted; the node has not named a UAL yet"
             return self._minted(record, writer, pending, SubmitReply(ual), "found after a restart")
         if record.state is PublishState.MINTED:
-            if writer.readable(pending.promotion) is not True:
+            if writer.readable(pending.ref) is not True:
                 return "held", "minted (207), not readable yet; not re-submitted"
             self._ledger.reconcile_minted(record.batch_id, readable_ual=record.ual, note="read back after a 207")
             return READY, ""
@@ -127,14 +128,14 @@ class ReportPublisher:
               pending: PendingReport) -> tuple[Optional[ReportAsset], str]:
         """``(None, "")`` — Verified Memory holds the report; ``(asset, "")`` —
         the shared asset to publish; ``(None, why)`` — neither (yet)."""
-        readable = writer.readable(pending.promotion)
+        readable = writer.readable(pending.ref)
         if readable is None:
             return None, _COULD_NOT_TELL
         if readable:
             return None, ""
         try:
-            promotion.checked_report(ctx, pending.envelope)
-            asset = writer.locate(pending.promotion)
+            promotion.checked_report(ctx, pending.ref)
+            asset = writer.locate(pending.ref)
         except (promotion.PromotionError, DkgError) as exc:
             return None, str(exc)
         if asset is None:
@@ -163,7 +164,7 @@ class ReportPublisher:
                 how: str) -> tuple[str, str]:
         """SUBMITTED → BOUND when the report reads back, else MINTED (a 207). The
         reply carries no TRAC figure: 0 is logged with the transaction named."""
-        state = PublishState.BOUND if writer.readable(pending.promotion) else PublishState.MINTED
+        state = PublishState.BOUND if writer.readable(pending.ref) else PublishState.MINTED
         self._ledger.advance(record.batch_id, state, ual=reply.ual, cost_trac="0", cost_bytes=0,
                              note=f"TRAC not in the reply; {how}")
         if state is PublishState.MINTED:

@@ -1,33 +1,36 @@
-"""The promotion statement: the verified authority's two-key decision that ONE community report is a verified rule.
+"""What a promotion names — ONE community report — and the member-asset promotion statement.
 
 Blackbox runs on one context graph. Edge nodes share signed reports into the
 verified graph's shared memory (its sub-graph ``reports``); the curators
-review one and publish THAT report to Verified Memory — the reporter's own
-knowledge asset, so it keeps the reporter's signature, agent address and
-reporter key — and beside it this statement, which points at the report
-instead of copying it. The report is the provenance:
+review one and promote it. Whatever way the promotion is published
+(``curate.publishing.strategies``), its two-key payload names the report it
+was made from — that report is its provenance, never a random id:
 
-* ``identifier`` — the threat: the report's own signed identifier (statements
-  about a threat are numbered per identifier, like every curator statement);
+* ``identifier`` — the threat: the report's own signed identifier;
 * ``report`` — the report's subject (``urn:guardian:report:<reporter>:<hash>``,
   the same in every keep-alive copy of the report);
 * ``reportDigest`` — :func:`.envelope.content_id` of the report's signed
   envelope: exactly what the report says, whichever copy holds it;
 * ``reporterKey`` — the reporter key that signed it. A digest names what was
   said, not who said it: any key can sign the same words (naming the
-  reporter's address, which is display only), so the statement names the key
-  too — the reporter's pseudonymous identity the promotion makes permanent;
-* ``severity`` — the curators' severity for the verified rule;
-* ``day`` — the UTC day it was signed; the key manifest in force on that day
-  judges it, as the manifest on its day judges a promoted row (a rotation
-  never turns a promoted report back into a report).
+  reporter's address, which is display only), so the payload names the key
+  too — the reporter's pseudonymous identity the promotion makes permanent.
 
-A reader serves a promoted report as a verified rule only when a statement
-signed by a quorum of the verified authority's curator keys names it and the
-report reads back from Verified Memory with that digest, signed by that key
+:func:`reference` reads those four from either payload (:class:`ReportRef`);
+:func:`is_the_report` says whether a signed report is exactly the one named.
+
+The MEMBER-ASSET statement (:class:`Promotion`, :func:`promotion_payload`,
+:func:`parse`) is a pointer: those four plus ``severity`` (the curators'
+severity for the verified rule) and ``day`` (the UTC day it was signed; the
+key manifest in force on that day judges it, as the manifest on its day
+judges a promoted row). It is published beside the reporter's own asset,
+promoted from shared memory to Verified Memory, and a reader serves the
+report as a verified rule only when a statement signed by a quorum of the
+verified authority's curator keys names it and the report reads back from
+Verified Memory with that digest, signed by that key
 (``ruleset/live/promoted.py``).
 
-On the graph a statement is a ``g:CuratorStatement`` subject
+On the graph such a statement is a ``g:CuratorStatement`` subject
 (:func:`statement_subject`, a new asset per statement) with
 ``g:promotesReport`` (the report, as an IRI) and ``g:signedStatement``. It
 carries NO ``g:identifier`` triple on purpose: the verified reader's
@@ -36,20 +39,22 @@ curator view would read it as a verdict.
 
 Where a node holds a report — shared or verified, in which asset — is read
 from the node's own store by subject (:func:`report_copies_sparql`,
-:func:`report_copy`): the curator publishes the asset that holds it, and a
-reader serves only a copy in Verified Memory.
+:func:`report_copy`): every curator key re-reads the report it signs for, the
+curator publishes the asset that holds it, and a reader serves only a copy in
+Verified Memory.
 
-Pattern: Value Objects (:class:`Promotion`, :class:`ReportCopy`) with paired
-build / parse functions.
+Pattern: Value Objects (:class:`ReportRef`, :class:`Promotion`,
+:class:`ReportCopy`) with paired build / parse functions.
 
 Usage::
 
     from ..kernel.signing import promotion_statement as statement
+    ref = statement.reference(envelope.payload)     # the report a promotion names (None: names none)
     payload = statement.promotion_payload("dep:npm:x@1.0.0", report=subject, report_digest=digest,
                                           reporter_key=key, severity="critical", day="2026-10-16")
-    quads = statement.statement_quads(envelope)     # the curators' co-signed envelope
-    found = statement.parse(envelope)               # None unless a well-formed promotion
-    rows = store.select(statement.report_copies_sparql(graph, [found.report], 64)).rows
+    quads = statement.statement_quads(envelope)     # the curators' co-signed member-asset envelope
+    found = statement.parse(envelope)               # None unless a well-formed member-asset promotion
+    rows = store.select(statement.report_copies_sparql(graph, [ref.report], 64)).rows
     copies = [copy for row in rows if (copy := statement.report_copy(graph, row))]
 """
 
@@ -72,7 +77,7 @@ PROMOTES_REPORT_PRED = f"{constants.BLACKBOX_ONTOLOGY}promotesReport"
 #: whole rule. Never an injection (a report carries the hash of the pattern, not the
 #: pattern) or an escalation shape (no verified escalation rule is promoted).
 PROMOTABLE_PREFIXES = ("dep:", "ioc:", "skill:", "fileaccess:")
-#: The payload's closed key set.
+#: The member-asset payload's closed key set.
 PAYLOAD_KEYS = frozenset({"identifier", "report", "reportDigest", "reporterKey", "severity", "day"})
 
 _DIGEST = _KEY = re.compile(r"[0-9a-f]{64}")
@@ -82,18 +87,14 @@ _MAX_IDENTIFIER_CHARS = 512
 
 
 @dataclass(frozen=True)
-class Promotion:
-    """One promotion as its signed payload states it (UNVERIFIED until the
-    caller checked the envelope's signatures). ``sequence`` — the envelope's
-    per-identifier sequence number."""
+class ReportRef:
+    """The ONE report a promotion names (UNVERIFIED until the caller checked
+    the envelope's signatures and re-read the report)."""
 
     identifier: str
     report: str
     report_digest: str
     reporter_key: str
-    severity: str
-    day: str
-    sequence: int
 
     @property
     def reporter(self) -> str:
@@ -101,11 +102,26 @@ class Promotion:
         match = _REPORT_SUBJECT.fullmatch(self.report)
         return match.group(1) if match else ""
 
+    def fields(self) -> dict[str, str]:
+        """The payload keys that name this report (:func:`reference` reads them back)."""
+        return {"identifier": self.identifier, "report": self.report, "reportDigest": self.report_digest,
+                "reporterKey": self.reporter_key}
+
+
+@dataclass(frozen=True)
+class Promotion(ReportRef):
+    """One member-asset promotion as its signed payload states it.
+    ``sequence`` — the envelope's per-identifier sequence number."""
+
+    severity: str
+    day: str
+    sequence: int
+
 
 def promotion_payload(identifier: str, *, report: str, report_digest: str, reporter_key: str, severity: str,
                       day: str) -> dict[str, str]:
-    """The flat payload the curators sign. Raises ``ValueError`` when it is not
-    a well-formed promotion (see :func:`parse`)."""
+    """The flat payload the curators sign for a member-asset promotion. Raises
+    ``ValueError`` when it is not a well-formed one (see :func:`parse`)."""
     payload = {"identifier": identifier, "report": report, "reportDigest": report_digest,
                "reporterKey": reporter_key, "severity": severity, "day": day}
     why = _refusal(payload)
@@ -115,11 +131,10 @@ def promotion_payload(identifier: str, *, report: str, report_digest: str, repor
 
 
 def parse(envelope: Optional[SignedEnvelope]) -> Optional[Promotion]:
-    """The promotion *envelope* states, or None for anything that is not a
-    well-formed promotion: another statement type, a payload outside the closed
-    key set, an identifier of a type no report is promoted as, a report subject
-    that is not a reporter's own subject for that identifier, a malformed
-    digest, reporter key, severity or day. Signatures are NOT checked here."""
+    """The member-asset promotion *envelope* states, or None for anything that
+    is not one: another statement type, a payload outside the closed key set,
+    no promotable report named (:func:`reference`), a malformed severity or
+    day. Signatures are NOT checked here."""
     if envelope is None or envelope.statement_type != PROMOTION_STATEMENT or _refusal(envelope.payload):
         return None
     payload = envelope.payload
@@ -128,20 +143,39 @@ def parse(envelope: Optional[SignedEnvelope]) -> Optional[Promotion]:
                      sequence=envelope.sequence)
 
 
-def _refusal(payload: Mapping[str, str]) -> str:
-    """Why *payload* is not a well-formed promotion ("" when it is)."""
-    if set(payload) != PAYLOAD_KEYS:
-        return f"the payload holds exactly {sorted(PAYLOAD_KEYS)}"
-    identifier, report = payload["identifier"], payload["report"]
+def reference(payload: Mapping[str, str]) -> Optional[ReportRef]:
+    """The report a promotion *payload* — of either shape — names; None when
+    it names none: an identifier of a type no report is promoted as, a report
+    subject that is not a reporter's own subject for that identifier, a
+    malformed digest or reporter key."""
+    if reference_refusal(payload):
+        return None
+    return ReportRef(identifier=payload["identifier"], report=payload["report"],
+                     report_digest=payload["reportDigest"], reporter_key=payload["reporterKey"])
+
+
+def reference_refusal(payload: Mapping[str, str]) -> str:
+    """Why *payload* names no promotable report ("" when it names one)."""
+    identifier, report = str(payload.get("identifier") or ""), str(payload.get("report") or "")
     if not identifier.startswith(PROMOTABLE_PREFIXES) or len(identifier) > _MAX_IDENTIFIER_CHARS:
         return f"a report is promoted as {PROMOTABLE_PREFIXES} only"
     match = _REPORT_SUBJECT.fullmatch(report)
     if match is None or threat_ids.report_uri(identifier, match.group(1)) != report:
         return "the report is not a reporter's own report of this identifier"
-    if not _DIGEST.fullmatch(payload["reportDigest"]):
+    if not _DIGEST.fullmatch(str(payload.get("reportDigest") or "")):
         return "the report digest is 64 lower-case hex characters"
-    if not _KEY.fullmatch(payload["reporterKey"]):
+    if not _KEY.fullmatch(str(payload.get("reporterKey") or "")):
         return "the reporter key is 64 lower-case hex characters"
+    return ""
+
+
+def _refusal(payload: Mapping[str, str]) -> str:
+    """Why *payload* is not a well-formed member-asset promotion ("" when it is)."""
+    if set(payload) != PAYLOAD_KEYS:
+        return f"the payload holds exactly {sorted(PAYLOAD_KEYS)}"
+    why = reference_refusal(payload)
+    if why:
+        return why
     if payload["severity"] not in constants.SEVERITY_ORDER:
         return f"severity is one of {constants.SEVERITY_ORDER}"
     if not _DAY.fullmatch(payload["day"]):
@@ -255,16 +289,16 @@ def report_copy(graph: str, row: Mapping[str, object]) -> Optional[ReportCopy]:
                       layer=layer, sub_graph=sub_graph or "", author=author.lower(), number=number)
 
 
-def is_the_report(promotion: Promotion, text: str) -> bool:
-    """True when the signed report *text* is exactly the one *promotion*
-    names: the same content (digest) and a valid signature by the named
-    reporter key, for the network and graph the text itself states. The caller
-    still checks the network is its own."""
+def is_the_report(ref: ReportRef, text: str) -> bool:
+    """True when the signed report *text* is exactly the one *ref* names: the
+    same content (digest) and a valid signature by the named reporter key,
+    for the network and graph the text itself states. The caller still checks
+    the network and graph are its own."""
     envelope = from_text(text)
-    if envelope is None or content_id(envelope) != promotion.report_digest:
+    if envelope is None or content_id(envelope) != ref.report_digest:
         return False
     signer = verify(envelope, statement_type=REPORT_STATEMENT, environment=envelope.environment, graph=envelope.graph)
-    return signer == promotion.reporter_key
+    return signer == ref.reporter_key
 
 
 def _data_prefix(graph: str) -> str:

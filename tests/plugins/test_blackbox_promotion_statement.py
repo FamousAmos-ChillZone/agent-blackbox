@@ -1,9 +1,10 @@
-"""The promotion statement's wire format (one-graph flow, ``kernel.signing.promotion_statement``).
+"""What a promotion names, and the member-asset statement's wire format (``kernel.signing.promotion_statement``).
 
-A promotion points at ONE report by subject + digest; its payload is a closed
-schema; on the graph it is a curator statement the verified reader never
-compiles into a rule and the curator view never reads as a verdict; and a
-node's copies of a report are read back with the asset that holds each.
+Every promotion names ONE report by subject, digest and reporter key; the
+member-asset pointer's payload is a closed schema; on the graph it is a
+curator statement the verified reader never compiles into a rule and the
+curator view never reads as a verdict; and a node's copies of a report are
+read back with the asset that holds each.
 """
 
 from __future__ import annotations
@@ -38,6 +39,20 @@ def test_a_promotion_points_at_one_report_by_subject_and_digest(report):
                                         reporter_key=EDGE.author, severity="high", day="2026-10-16", sequence=4)
     assert found.reporter == EDGE.address
     assert set(envelope.payload) == statement.PAYLOAD_KEYS   # no copied rule fields, no provenance ids
+
+
+def test_either_promotion_shape_names_its_report_by_the_same_four_keys(report):
+    """``reference`` reads the report a promotion names from the member-asset pointer and from the
+    curator-asset rule payload alike (``curate.publishing.strategies``)."""
+    ref = statement.reference(promotion_envelope(report, KEYS, sequence=2).payload)
+    assert ref == statement.ReportRef(EVIL, report.subject, report.digest, EDGE.author)
+    assert isinstance(statement.parse(promotion_envelope(report, KEYS, sequence=2)), statement.ReportRef)
+    rule_payload = {**ref.fields(), "severity": "high", "kind": "malware", "ecosystem": "npm", "packageName": "evil-pkg",
+                    "packageVersion": "1.0.0", "advisoryId": "", "name": EVIL}
+    assert statement.reference(rule_payload) == ref and statement.reference(ref.fields()) == ref
+    for broken in ({"reportDigest": "x"}, {"reporterKey": ""}, {"identifier": threat_ids.injection_identifier("x")},
+                   {"report": threat_ids.report_uri("dep:npm:other@1.0.0", EDGE.address)}):
+        assert statement.reference({**ref.fields(), **broken}) is None and statement.reference_refusal({**ref.fields(), **broken})
 
 
 @pytest.mark.parametrize("change, why", [

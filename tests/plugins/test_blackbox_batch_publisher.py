@@ -30,16 +30,20 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from plugins.blackbox.curate.proposal import Proposal, ProposalState, ProposalStore
 from plugins.blackbox.curate.publishing import batch as batch_module
-from plugins.blackbox.curate.publishing.batch import BatchPublisher, PrecheckUnavailable, strict_verified_subset
+from plugins.blackbox.curate.publishing import row_builders as rb
+from plugins.blackbox.curate.publishing.batch import BatchPublisher
 from plugins.blackbox.curate.publishing.ledger import PublishLedger, PublishState
 from plugins.blackbox.curate.publishing.node_writers import NodeBatchWriter, SubmitReply, definite_refusal
 from plugins.blackbox.curate.publishing.precheck import (
     ALREADY_VERIFIED,
     COVERED_BY_WHOLE_PACKAGE,
     DUPLICATE_IN_BATCH,
+    PrecheckUnavailable,
     canonical_identifier,
     precheck,
+    strict_verified_subset,
 )
+from plugins.blackbox.curate.publishing.row_builders import ConfirmedEntry
 from plugins.blackbox.kernel import constants, signing, threat_ids
 from plugins.blackbox.kernel.dkg_client import DkgError
 from plugins.blackbox.kernel.signing import key_manifest as km
@@ -58,18 +62,11 @@ VERIFIED_GRAPH = "0xabc/agent-blackbox-vm"
 START = 1_800_000_000.0
 HOUR = 3600.0
 UAL = "did:dkg:base:8453/0xka/42"
-#: The reporter every promotion here points at; the reports already read back from Verified
-#: Memory unless a test says otherwise (``FakeReportWriter``; the report side is
-#: ``test_blackbox_one_graph_curator.py``).
-REPORTER, REPORTER_KEY = "0x" + "e" * 40, "e" * 64
-PROMOTION = statement.PROMOTION_STATEMENT
 
 
-def _promotion_payload(identifier, severity="high"):
-    """A well-formed promotion of *identifier*'s report (one-graph flow)."""
-    return statement.promotion_payload(identifier, report=threat_ids.report_uri(identifier, REPORTER),
-                                       report_digest=threat_ids.stable_hash(identifier, 64), reporter_key=REPORTER_KEY,
-                                       severity=severity, day="2026-10-16")
+def _report(identifier):
+    """The community report each promotion here was made from (its provenance, the one-graph flow)."""
+    return statement.ReportRef(identifier, threat_ids.report_uri(identifier, "0x" + "e" * 40), "d" * 64, "e" * 64)
 
 
 @pytest.fixture(scope="module")
@@ -122,13 +119,6 @@ class FakeWriter:
         return self.readable_answer
 
 
-class FakeReportWriter:
-    """The reports' node side: each report reads back from Verified Memory already (nothing to publish)."""
-
-    def readable(self, _found):
-        return True
-
-
 @pytest.fixture
 def world(tmp_path, ctx, curator_keys):
     clock = Clock()
@@ -136,18 +126,16 @@ def world(tmp_path, ctx, curator_keys):
     ledger = PublishLedger(tmp_path / "publish_ledger.jsonl", clock=clock)
     writer = FakeWriter()
     lookup = FakeVerifiedSubset()
-    publisher = BatchPublisher(store, ledger, writer=writer, report_writer=FakeReportWriter(), verified_subset=lookup,
-                               clock=clock)
+    publisher = BatchPublisher(store, ledger, writer=writer, verified_subset=lookup, clock=clock)
     sequence = iter(range(1, 10_000))
-    # the community tier's verified-reporter counts (the fast lane reads them)
+    # the community tier's verified-reporter counts (the fast lane reads them; a promotion names ONE report)
     ctx = SimpleNamespace(**{**vars(ctx), "compiled": SimpleNamespace(community={})})
-    sequences = {}
 
-    def approve(identifier, *, reporters=1, at=None, kind=PROMOTION):
-        payload = _promotion_payload(identifier) if kind == PROMOTION else {"identifier": identifier, "reason": "fp"}
-        sequences[identifier] = next(sequence)
+    def approve(identifier, *, reporters=1, at=None, kind=rb.PROMOTION_STATEMENT):
+        entry = ConfirmedEntry(identifier, "high", "malware", _report(identifier), "advisory MAL-2026-9")
+        payload = rb.promotion_payload(entry) if kind == rb.PROMOTION_STATEMENT else {"identifier": identifier, "reason": "fp"}
         first = signing.sign(curator_keys[0], statement_type=kind, environment=NETWORK, graph=VERIFIED_GRAPH,
-                             payload=payload, root_epoch=1, sequence=sequences[identifier])
+                             payload=payload, root_epoch=1, sequence=next(sequence))
         envelope = signing.cosign(first, curator_keys[1])
         when = clock.now if at is None else at
         proposal = Proposal.new(kind, identifier, envelope, VERIFIED_GRAPH, checks={"k": "osv:MAL-2026-9"}, now=when)
@@ -157,7 +145,7 @@ def world(tmp_path, ctx, curator_keys):
         return proposal
 
     return SimpleNamespace(ctx=ctx, clock=clock, store=store, ledger=ledger, writer=writer, lookup=lookup,
-                           publisher=publisher, approve=approve, keys=curator_keys, sequences=sequences)
+                           publisher=publisher, approve=approve, keys=curator_keys)
 
 
 def _dep(n):
@@ -216,7 +204,7 @@ def test_a_skill_fingerprint_is_block_tier(world):
     assert world.publisher.run(world.ctx).action == "published"
 
 
-def test_one_asset_per_batch_one_statement_per_threat(world):
+def test_one_asset_per_batch_one_subject_per_threat(world):
     identifiers = [_dep(n) for n in range(30)] + [_ioc(n) for n in range(30)]
     for identifier in identifiers:
         world.approve(identifier)
@@ -225,11 +213,10 @@ def test_one_asset_per_batch_one_statement_per_threat(world):
     assert world.writer.submitted == [name]
     subjects = {quad["subject"] for quad in quads}
     [record] = world.ledger.batches()
-    assert subjects == {statement.statement_subject(entry.identifier, world.sequences[entry.identifier])
-                        for entry in record.entries}
+    assert subjects == {threat_ids.threat_uri(entry.identifier) for entry in record.entries}
     assert len(subjects) == 50 == len(record.entries)
     signed = [q for q in quads if q["predicate"] == constants.SIGNED_STATEMENT_PRED]
-    assert len(signed) == 50   # every statement carries its own two-key envelope
+    assert len(signed) == 50   # every row carries its own envelope
     # the ten left over are the next batch, never a second copy of the first
     world.clock.now = START + 6 * HOUR
     world.publisher.run(world.ctx)
@@ -333,9 +320,10 @@ def test_an_entry_the_verified_graph_now_lists_is_dropped_and_its_proposal_close
 
 
 def test_a_promotion_with_one_signature_is_not_batched(world, curator_keys):
-    single = signing.sign(curator_keys[0], statement_type=PROMOTION, environment=NETWORK,
-                          graph=VERIFIED_GRAPH, payload=_promotion_payload(_ioc(5)), root_epoch=1, sequence=9_999)
-    proposal = Proposal.new(PROMOTION, _ioc(5), single, VERIFIED_GRAPH, checks={}, now=START - 7 * HOUR)
+    entry = ConfirmedEntry(_ioc(5), "high", "malware", _report(_ioc(5)))
+    single = signing.sign(curator_keys[0], statement_type=rb.PROMOTION_STATEMENT, environment=NETWORK,
+                          graph=VERIFIED_GRAPH, payload=rb.promotion_payload(entry), root_epoch=1, sequence=9_999)
+    proposal = Proposal.new(rb.PROMOTION_STATEMENT, entry.identifier, single, VERIFIED_GRAPH, checks={}, now=START - 7 * HOUR)
     world.store.save(proposal.transition(ProposalState.PROPOSED).transition(ProposalState.APPROVED, now=START - 7 * HOUR))
     assert world.publisher.run(world.ctx).action == "waiting"
 
@@ -343,8 +331,8 @@ def test_a_promotion_with_one_signature_is_not_batched(world, curator_keys):
 def test_metrics_are_a_typed_record(world):
     world.approve(_dep(1), reporters=3, at=START - 600)
     world.approve(_ioc(1), at=START - 1200)
-    stalled = Proposal.new(PROMOTION, _ioc(9), signing.sign(
-        Ed25519PrivateKey.generate(), statement_type=PROMOTION, environment=NETWORK, graph=VERIFIED_GRAPH,
+    stalled = Proposal.new(rb.PROMOTION_STATEMENT, _ioc(9), signing.sign(
+        Ed25519PrivateKey.generate(), statement_type=rb.PROMOTION_STATEMENT, environment=NETWORK, graph=VERIFIED_GRAPH,
         payload={"identifier": _ioc(9)}, root_epoch=1, sequence=1), VERIFIED_GRAPH, checks={}, now=START - 3 * 300 - 1)
     world.store.save(stalled.transition(ProposalState.PROPOSED, now=START - 3 * 300 - 1))
     world.publisher._wallet_balance = lambda: None
@@ -424,7 +412,7 @@ class _Client:
 
 
 def test_the_node_writer_reads_back_every_signed_row_exactly(curator_keys):
-    envelope = signing.cosign(signing.sign(curator_keys[0], statement_type=PROMOTION, environment=NETWORK,
+    envelope = signing.cosign(signing.sign(curator_keys[0], statement_type=rb.PROMOTION_STATEMENT, environment=NETWORK,
                                            graph=VERIFIED_GRAPH, payload={"identifier": "x"}, root_epoch=1, sequence=1),
                               curator_keys[1])
     subject = threat_ids.threat_uri("x")
@@ -443,12 +431,13 @@ def test_the_node_writer_reads_back_every_signed_row_exactly(curator_keys):
 @pytest.mark.parametrize("kind", ["blackbox.revocation", "blackbox.correction"])
 def test_a_buildable_revocation_or_correction_never_enters_a_batch(world, kind):
     # The revocation tests above pass even without the kind filter, because their payload
-    # is no promotion. Here the payload is promotion-shaped, so only the promotion-only
-    # collection keeps it out (F-032: reductions go at once, never batched).
+    # cannot be row-built. Here the payload is promotion-shaped (buildable), so only the
+    # promotion-only collection keeps it out (F-032: reductions go at once, never batched).
+    entry = ConfirmedEntry(_dep(7), "high", "malware", _report(_dep(7)), "advisory MAL-2026-9")
     envelope = signing.cosign(signing.sign(world.keys[0], statement_type=kind, environment=NETWORK,
-                                           graph=VERIFIED_GRAPH, payload=_promotion_payload(_dep(7)), root_epoch=1,
+                                           graph=VERIFIED_GRAPH, payload=rb.promotion_payload(entry), root_epoch=1,
                                            sequence=7_777), world.keys[1])
-    proposal = Proposal.new(kind, _dep(7), envelope, VERIFIED_GRAPH, checks={}, now=START - 7 * HOUR)
+    proposal = Proposal.new(kind, entry.identifier, envelope, VERIFIED_GRAPH, checks={}, now=START - 7 * HOUR)
     world.store.save(proposal.transition(ProposalState.PROPOSED).transition(ProposalState.APPROVED, now=START - 7 * HOUR))
     for n in range(50):
         world.approve(_ioc(n))
@@ -543,9 +532,8 @@ def test_a_seal_that_timed_out_after_the_node_wrote_it_resumes_the_same_batch(wo
 # ---------------------------------------------------------------------------
 
 
-def _entry(identifier: str) -> SimpleNamespace:
-    """What the pre-check reads of a batch entry: its identifier."""
-    return SimpleNamespace(identifier=identifier)
+def _entry(identifier: str) -> ConfirmedEntry:
+    return ConfirmedEntry(identifier, "high", "malware")
 
 
 class FakeVerifiedSubset:

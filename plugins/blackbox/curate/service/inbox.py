@@ -9,7 +9,8 @@ and the graph, never from what a message claims:
 * :func:`published_elsewhere` — "whoever signs second publishes", so the node
   that signed FIRST never sees its own proposal change state. It is finished
   when the graph holds that same signed statement with enough signatures — a
-  promotion as its statement in the verified graph (the one-graph flow).
+  promotion in Verified Memory, where its way wrote it
+  (``publishing.strategies``).
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from typing import Optional
 from ... import community
 from ...kernel import constants, signing, sparql_text, threat_ids
 from ...kernel.signing import promotion_statement as statement
+from ..publishing import strategies
 from ...kernel.signing.authority import COMMUNITY_GRAPH
 from ...kernel.signing.key_manifest import KeyManifest
 from ...kernel.signing.statement_order import CuratorStatement
@@ -49,7 +51,7 @@ def published_elsewhere(ctx: CurateContext, proposal: Proposal, envelope: signin
     if manifest is None or proposal.graph != ctx.verified_graph:
         return False
     if proposal.kind == statement.PROMOTION_STATEMENT:
-        return _promotion_published(ctx, manifest, proposal.identifier, signing.content_id(envelope))
+        return _promotion_published(ctx, manifest, envelope)
     if ctx.home_of(proposal.kind) != COMMUNITY_GRAPH:
         return False
     try:
@@ -66,13 +68,24 @@ def published_elsewhere(ctx: CurateContext, proposal: Proposal, envelope: signin
     return False
 
 
-def _promotion_published(ctx: CurateContext, manifest: KeyManifest, identifier: str, wanted: str) -> bool:
-    """True when the verified graph holds a promotion statement about
-    *identifier* with the content *wanted* and a quorum of curator keys."""
-    rows = sparql_text.page_rows(ctx.client, ctx.verified_graph, constants.VIEW_VERIFIABLE_MEMORY,
-                                 lambda after: statement.statements_sparql(after, identifier)) or []
-    for row in rows:
-        held = signing.from_text(sparql_text.extract_binding(row.get("signedStatement")))
+def _promotion_published(ctx: CurateContext, manifest: KeyManifest, envelope: signing.SignedEnvelope) -> bool:
+    """True when Verified Memory holds the promotion *envelope* states — the
+    same content, under the subject its way writes it at — with a quorum of
+    curator keys."""
+    strategy = strategies.strategy_for(envelope)
+    try:
+        _name, quads = strategy.asset(envelope, "") if strategy is not None else ("", [])
+    except ValueError:
+        return False
+    subjects = sorted({quad["subject"] for quad in quads if quad["predicate"] == constants.SIGNED_STATEMENT_PRED})
+    if not subjects:
+        return False
+    values = " ".join(f"<{subject}>" for subject in subjects)
+    sparql = (f"SELECT ?o WHERE {{ VALUES ?r {{ {values} }} ?r <{constants.SIGNED_STATEMENT_PRED}> ?o }} "
+              "LIMIT 64")
+    wanted = signing.content_id(envelope)
+    for row in sparql_text.query_rows(ctx.client, sparql, ctx.verified_graph, constants.VIEW_VERIFIABLE_MEMORY) or []:
+        held = signing.from_text(sparql_text.extract_binding(row.get("o")))
         if held is not None and signing.content_id(held) == wanted and manifest.has_quorum(
                 held, statement_type=statement.PROMOTION_STATEMENT, graph=ctx.verified_graph):
             return True

@@ -92,7 +92,7 @@ def _add_propose(verbs_: Any) -> None:
     what = p.add_mutually_exclusive_group(required=True)
     what.add_argument("--promote", metavar="IDENTIFIER",
                       help="promote a community report of this threat (dep: malware, ioc:, skill:, fileaccess:) — "
-                           "the report itself is published, permanently, with its reporter's identity")
+                           "the verified rule names the report and its reporter, permanently")
     what.add_argument("--verdict", nargs=2, metavar=("KIND", "IDENTIFIER"),
                       help="confirmation | rejection | revocation | deferral | in-review | deferral-lapsed")
     what.add_argument("--nominate", metavar="KEY_HEX", help="counted-author entry for a reporter key")
@@ -105,6 +105,7 @@ def _add_propose(verbs_: Any) -> None:
     p.add_argument("--reason", default="", help="verdict reason / scope reason")
     p.add_argument("--report", default="", metavar="SUBJECT",
                    help="promotion: which report of the threat (default: the earliest one)")
+    p.add_argument("--name", default="", help="promotion: the rule's display name (default: from the identifier)")
     p.add_argument("--class", dest="author_class", default="established", choices=["partner", "established"])
     p.add_argument("--address", default="", help="nomination: the reporter's agent address")
     p.add_argument("--org", default="")

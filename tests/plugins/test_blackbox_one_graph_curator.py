@@ -1,12 +1,14 @@
-"""The curator side of the one-graph flow: a community report is promoted AS ITSELF.
+"""The member-asset way of the one-graph flow: a community report is promoted AS ITSELF.
 
-Two curator keys sign a promotion statement that points at one report in the
-verified graph's shared memory (sub-graph ``reports``); the publisher
-publishes the reporter's own asset to Verified Memory (the node resolves its
-author, this node pays) and the statement beside it; the verified reader then
-serves it as a blocking rule. Every key and the publisher re-check the report
-on their own node first; a report is paid for once; the batch publishes each
-report before the one statement asset of its batch.
+Not the active way (``publishing.strategies``: it waits for the DKG to let a
+curator publish a member's shared asset on this graph type), so every test here
+selects it. Two curator keys sign a promotion statement that points at one
+report in the verified graph's shared memory (sub-graph ``reports``); the
+publisher publishes the reporter's own asset to Verified Memory (the node
+resolves its author, this node pays) and the statement beside it; the verified
+reader then serves it as a blocking rule. Every key and the publisher re-check
+the report on their own node first; a report is paid for once; the batch
+publishes each report before the one statement asset of its batch.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from plugins.blackbox.curate import promotion, transport, verbs
 from plugins.blackbox.curate.context import CurateContext
 from plugins.blackbox.curate.proposal import Proposal, ProposalState, ProposalStore
 from plugins.blackbox.curate.publishing import commands as correction_verbs
+from plugins.blackbox.curate.publishing import strategies
 from plugins.blackbox.curate.publishing.batch import BatchPublisher
 from plugins.blackbox.curate.publishing.ledger import PublishLedger, PublishState
 from plugins.blackbox.curate.publishing.sequences import next_sequence
@@ -132,6 +135,12 @@ class CuratorNode:
         if self.bind:
             self.store.hold(asset["report"], layer=VERIFIED, number=asset["number"])
         return {"ual": ual, "txHash": "0xtx", "status": "confirmed" if self.bind else "partial"}
+
+
+@pytest.fixture(autouse=True)
+def member_asset(monkeypatch):
+    """New promotions take the member-asset way here."""
+    monkeypatch.setattr(strategies, "ACTIVE", strategies.MEMBER_ASSET)
 
 
 @pytest.fixture
@@ -275,7 +284,8 @@ def test_the_consent_summary_names_the_report_it_makes_permanent_and_a_whole_pac
     report = shared_report(EVIL, EDGE)
     proposal = _proposed(monkeypatch, tmp_path, node, curators, report, severity="high")
     summary = publish_module.summary(proposal)
-    assert f"PUBLISHES THE REPORT {report.subject} (permanent) · severity high" in summary and "WHOLE" not in summary
+    assert (f"PROMOTES THE REPORT {report.subject} (permanent; names its reporter) · severity high · publishes the "
+            "reporter's own asset") in summary and "WHOLE" not in summary
     whole = shared_report("dep:npm:evil-pkg@*", EDGE)            # a typosquat report names every version
     proposal = verbs.propose_promotion(_ctx(node, curators["manifest"]), ProposalStore(), report=whole.verified,
                                        severity="critical", evidence="advisory:MAL-1", reason="typosquat")
@@ -300,10 +310,13 @@ def test_only_a_malware_dependency_and_whole_reports_of_promotable_types_are_pro
     vulnerable = report.__class__(**{**report.__dict__, "fields": tuple((k, "vulnerability" if k == "kind" else v)
                                                                          for k, v in report.fields)})
     with pytest.raises(promotion.PromotionError, match="malware dependencies only"):
-        promotion.payload_for(vulnerable, severity="high")
+        promotion.report_reference(vulnerable)
     injection = report.__class__(**{**report.__dict__, "identifier": threat_ids.injection_identifier("ignore all")})
     with pytest.raises(promotion.PromotionError, match="injection report carries no pattern"):
-        promotion.payload_for(injection, severity="high")
+        promotion.report_reference(injection)
+    for strategy in strategies.STRATEGIES.values():   # neither way signs one
+        with pytest.raises(promotion.PromotionError):
+            strategy.payload(vulnerable, severity="high", advisory="", display_name="")
 
 
 # ------------------------------------------------------------------ the batch publisher (step 8)
@@ -331,7 +344,7 @@ def batch(monkeypatch, tmp_path, node, curators):
         return proposal
 
     return SimpleNamespace(ctx=_ctx(node, curators["manifest"]), node=node, store=store, ledger=ledger,
-                           publisher=publisher, approve=approve, clock=clock)
+                           publisher=publisher, approve=approve, clock=clock, keys=keys)
 
 
 def _reports(ledger):
@@ -370,6 +383,27 @@ def test_a_promotion_whose_report_is_not_held_here_waits_outside_every_batch(bat
     batch.node.share(missing, number=9)                       # the share arrives
     assert batch.publisher.run(batch.ctx).action == "published"
     assert batch.store.get(waiting.id).state is ProposalState.PUBLISHED
+
+
+def test_a_curator_asset_promotion_never_waits_for_a_member_asset_report(batch):
+    """Both ways in one store: the curator-asset entry (the default way) is batched at once as its rule row; the
+    member-asset one waits outside every batch until its report reads back."""
+    held_nowhere, other = shared_report("dep:npm:later@1.0.0", EDGE), shared_report(EVIL, Reporter("edge-2"))
+    waiting = batch.approve(held_nowhere)
+    payload = strategies.STRATEGIES[strategies.CURATOR_ASSET].payload(other.verified, severity="high", advisory="",
+                                                                       display_name="")
+    envelope = signing.cosign(signing.sign(batch.keys[0], statement_type=statement.PROMOTION_STATEMENT,
+                                           environment=NETWORK, graph=VM_GRAPH, payload=payload, root_epoch=1,
+                                           sequence=500), batch.keys[1])
+    at = START - 7 * HOUR
+    rule = Proposal.new(statement.PROMOTION_STATEMENT, EVIL, envelope, VM_GRAPH, checks={}, now=at)
+    batch.store.save(rule.transition(ProposalState.PROPOSED, now=at).transition(ProposalState.APPROVED, now=at))
+    report = batch.publisher.run(batch.ctx)
+    assert (report.action, report.entries) == ("published", 1) and batch.node.member_publishes == []
+    [(_graph, _name, quads)] = batch.node.statements
+    assert {q["subject"] for q in quads} == {threat_ids.threat_uri(EVIL)}      # the rule row, not a pointer
+    assert batch.store.get(rule.id).state is ProposalState.PUBLISHED
+    assert batch.store.get(waiting.id).state is ProposalState.APPROVED
 
 
 def test_a_refused_report_publish_is_retried_as_the_same_asset_and_no_statement_is_paid(batch):

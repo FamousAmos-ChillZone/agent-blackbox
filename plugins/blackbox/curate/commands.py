@@ -210,7 +210,7 @@ def _propose_promotion(ctx: CurateContext, store: ProposalStore, args: argparse.
     except promotion.PromotionError as exc:
         raise verbs.VerbError(str(exc)) from exc
     return verbs.propose_promotion(ctx, store, report=report, severity=args.severity, evidence=args.evidence,
-                                   reason=args.reason)
+                                   reason=args.reason, name=args.name)
 
 
 def _inbox(args: argparse.Namespace) -> int:

@@ -21,11 +21,12 @@ graph's shared memory (:func:`advisory_twin`, D26) so readers' 20 s pulse
 withdraws the rule instead of waiting for a full refresh. A correction publishes only
 under an EFFECTIVE manifest (:func:`require_effective_manifest`).
 
-A promotion is two publishes (:func:`_write_promotion`): the community report
-it points at — its reporter's own asset, from the verified graph's shared
-memory — then the curators' statement beside it; both must read back. Every
-key and the publisher first re-check the report on their own node
-(:func:`checked_promotion`).
+A promotion is published the way its payload says (:mod:`.strategies`,
+:func:`_write_promotion`): by default the curators' own verified-rule asset
+made from the report; a member-asset promotion first publishes the reporter's
+own asset from shared memory, then the statement beside it. Every key and the
+publisher first re-check the report on their own node
+(:func:`checked_promotion`); published means everything reads back.
 
 Usage::
 
@@ -46,8 +47,8 @@ from typing import Optional
 from ... import audit, community, killlist
 from ...kernel import constants, node_routes, rdf_terms, signing, sparql_text, threat_ids
 from ...kernel.dkg_client import DkgError
-from ...kernel.signing import promotion_statement as statement
 from ...kernel.signing import key_manifest
+from ...kernel.signing import promotion_statement as statement
 from ...kernel.signing.authority import COMMUNITY_GRAPH, VERIFIED_GRAPH
 from ...kernel.signing.statement_order import CuratorStatement
 from .. import consent, promotion
@@ -55,7 +56,7 @@ from ..ladder import outcomes
 from ..upkeep import published
 from ..context import CORRECTION_STATEMENT, CurateContext
 from ..proposal import Proposal, ProposalState, ProposalStore
-from . import row_builders
+from . import row_builders, strategies
 from .errors import VerbError
 from .node_writers import NodeReportWriter, definite_refusal
 
@@ -224,13 +225,37 @@ def _write(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedEnvel
 
 def _write_promotion(ctx: CurateContext, proposal: Proposal,
                      envelope: signing.SignedEnvelope) -> tuple[str, str, PublishOutcome]:
-    """A promotion is two publishes: the report it points at — its reporter's
-    own asset from shared memory, unless Verified Memory holds it already —
-    then the statement beside it. Published means both read back."""
-    checked_promotion(ctx, envelope)
-    found, graph = statement.parse(envelope), proposal.graph
-    writer = NodeReportWriter(ctx.client, graph)
-    asset = writer.locate(found)
+    """The promotion, the way its payload says: for a member-asset promotion
+    the reporter's own asset first (from shared memory, unless Verified Memory
+    holds it already), then the curators' own asset. Published means
+    everything reads back."""
+    strategy, _report = checked_promotion(ctx, envelope)
+    ref, graph = strategy.reference(envelope), proposal.graph
+    writer = _publish_report(ctx, ref) if strategy.publishes_report else None
+    try:
+        name, quads = strategy.asset(envelope, strategies.evidence_of(proposal))
+    except ValueError as exc:
+        raise VerbError(f"the promotion is not acceptable: {exc}") from exc
+    already = _readable(ctx, graph, constants.VIEW_VERIFIABLE_MEMORY, quads)
+    if not already:
+        try:
+            node_routes.publish_to_verified_memory(ctx.client, graph, name, quads)
+        except DkgError as exc:
+            if writer is None:
+                raise
+            raise VerbError(f"the report is published, its promotion statement is not ({exc}); "
+                            "run publish again") from exc
+    if not (already or _readable(ctx, graph, constants.VIEW_VERIFIABLE_MEMORY, quads)) or (
+            writer is not None and not writer.readable(ref)):
+        return name, graph, PublishOutcome.UNCONFIRMED
+    return name, graph, PublishOutcome.ALREADY_THERE if already else PublishOutcome.PUBLISHED
+
+
+def _publish_report(ctx: CurateContext, ref: statement.ReportRef) -> NodeReportWriter:
+    """A member-asset promotion's report: its reporter's own asset, published
+    from shared memory unless Verified Memory holds it already."""
+    writer = NodeReportWriter(ctx.client, ctx.verified_graph)
+    asset = writer.locate(ref)
     if asset is None:
         raise VerbError("this node holds no copy of the report the promotion points at; nothing was published")
     if not asset.verified:
@@ -240,24 +265,19 @@ def _write_promotion(ctx: CurateContext, proposal: Proposal,
             raise VerbError(f"the node refused to publish the report ({exc}); nothing was paid" if definite_refusal(exc)
                             else f"the report's publish could not tell whether it was paid ({exc}); "
                                  "it is looked up again before any retry") from exc
-    name, quads = promotion.asset_name(found.identifier, found.sequence), statement.statement_quads(envelope)
-    already = _readable(ctx, graph, constants.VIEW_VERIFIABLE_MEMORY, quads)
-    if not already:
-        try:
-            node_routes.publish_to_verified_memory(ctx.client, graph, name, quads)
-        except DkgError as exc:
-            raise VerbError(f"the report is published, its promotion statement is not ({exc}); "
-                            "run publish again") from exc
-    if not (writer.readable(found) and (already or _readable(ctx, graph, constants.VIEW_VERIFIABLE_MEMORY, quads))):
-        return name, graph, PublishOutcome.UNCONFIRMED
-    return name, graph, PublishOutcome.ALREADY_THERE if already else PublishOutcome.PUBLISHED
+    return writer
 
 
-def checked_promotion(ctx: CurateContext, envelope: Optional[signing.SignedEnvelope]) -> community.VerifiedReport:
-    """The report a promotion points at, re-read and checked on THIS node
-    (:func:`.promotion.checked_report`, KI-195) — refused as a :class:`VerbError`."""
+def checked_promotion(ctx: CurateContext, envelope: Optional[signing.SignedEnvelope]
+                      ) -> tuple[strategies.PromotionStrategy, community.VerifiedReport]:
+    """The way a promotion is published and the report it names, re-read and
+    checked on THIS node (:func:`.promotion.checked_report`, KI-195) —
+    refused as a :class:`VerbError`."""
+    strategy = strategies.strategy_for(envelope)
     try:
-        return promotion.checked_report(ctx, envelope)
+        if strategy is None:
+            raise promotion.PromotionError(strategies.refusal(envelope))
+        return strategy, promotion.checked_report(ctx, strategy.reference(envelope))
     except promotion.PromotionError as exc:
         raise VerbError(f"the promotion is not acceptable: {exc}") from exc
 
@@ -309,13 +329,18 @@ def summary(proposal: Proposal) -> str:
     """What the operator is asked to consent to (graph, kind, subject, signers);
     a promotion names the report it makes permanent and the severity it gets,
     and a whole-package one says so in words, so the second signer cannot miss
-    whose report it publishes or its scope."""
+    whose report it promotes or its scope."""
     envelope = proposal.parsed()
     signers = ", ".join(s[:12] + "…" for s in envelope.signers) if envelope else "?"
-    found = statement.parse(envelope)
-    scope = f" · PUBLISHES THE REPORT {found.report} (permanent) · severity {found.severity}" if found else ""
-    if found and found.identifier.endswith("@*"):
-        scope += " · WHOLE PACKAGE (every version)"
+    strategy = strategies.strategy_for(envelope)
+    ref = strategy.reference(envelope) if strategy is not None else None
+    scope = ""
+    if strategy is not None and ref is not None:
+        scope = (f" · PROMOTES THE REPORT {ref.report} (permanent; names its reporter) · severity "
+                 f"{envelope.payload.get('severity', '')}" + (" · publishes the reporter's own asset"
+                                                             if strategy.publishes_report else ""))
+        if ref.identifier.endswith("@*"):
+            scope += " · WHOLE PACKAGE (every version)"
     if envelope and proposal.kind == CORRECTION_STATEMENT:
         scope = f" · SUPPRESSES {len(str(envelope.payload.get('targetSubjects', '')).split())} subject(s)"
     return f"{proposal.kind} · {proposal.identifier}{scope} · graph {proposal.graph} · seq {envelope.sequence if envelope else '?'} · keys {signers}"

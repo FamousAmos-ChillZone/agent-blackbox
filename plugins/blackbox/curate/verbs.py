@@ -29,7 +29,7 @@ from ..kernel.signing.statement_order import CuratorStatement
 from . import dossier, keys, promotion, transport
 from .context import CurateContext, KillListDraft, ManifestDraft, PromotionDraft, StatementDraft
 from .proposal import Proposal, ProposalState, ProposalStore
-from .publishing import MANIFEST_KIND, VerbError, next_sequence, publish
+from .publishing import MANIFEST_KIND, VerbError, next_sequence, publish, strategies
 from .publishing.publish import checked_promotion
 from ..community import reputation
 
@@ -40,16 +40,19 @@ logger = logging.getLogger(__name__)
 
 
 def propose_promotion(ctx: CurateContext, store: ProposalStore, *, report: community.VerifiedReport, severity: str,
-                      evidence: str, reason: str) -> Proposal:
-    """A promotion proposal: ONE community report into the verified tier as
-    itself (:mod:`.promotion`) — checklist, first signature, stored."""
+                      evidence: str, reason: str, name: str = "") -> Proposal:
+    """A promotion proposal: ONE community report into the verified tier
+    (:mod:`.promotion`), signed the way new promotions take
+    (``publishing.strategies``) — checklist, first signature, stored. *name* —
+    the rule's display name ("" for the default)."""
     _require_manifest(ctx)
     _require_verified_authority(ctx, "promote into the verified graph")
     items = dossier.checklist(report.identifier, kind="malware", evidence=evidence, reason=reason)
     if not dossier.passes(items):
         raise VerbError("checklist failed: " + "; ".join(f"{i.item}. {i.note}" for i in items if not i.ok))
+    advisory = evidence[len("advisory:"):] if evidence.startswith("advisory:") else ""
     try:
-        payload = promotion.payload_for(report, severity=severity)
+        payload = strategies.active().payload(report, severity=severity, advisory=advisory, display_name=name)
     except promotion.PromotionError as exc:
         raise VerbError(str(exc)) from exc
     key = keys.curator_key_store().load_or_create()

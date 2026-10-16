@@ -8,9 +8,10 @@ is never sent again on a guess (LES-011).
 * :class:`NodeBatchWriter` — a verified batch asset: seal it in working
   memory and share it in full (KI-351), submit it to ``/vm/publish``, ask the
   node for its UAL, read every signed row back.
-* :class:`NodeReportWriter` — a promoted report's own asset (the one-graph
-  flow): find the shared asset holding it, publish it as its reporter sealed
-  it, read the report back from Verified Memory.
+* :class:`NodeReportWriter` — a member-asset promotion's report, its
+  reporter's own asset (``strategies.MEMBER_ASSET``): find the shared asset
+  holding it, publish it as its reporter sealed it, read the report back from
+  Verified Memory.
 * :class:`SubmitReply` — what ``/vm/publish`` answered; :func:`definite_refusal`
   — whether a failed call definitely spent nothing.
 
@@ -162,21 +163,21 @@ class NodeReportWriter:
     Usage::
 
         writer = NodeReportWriter(ctx.client, ctx.verified_graph)
-        asset = writer.locate(found)           # None: no copy with the signed digest here
+        asset = writer.locate(ref)             # None: no copy with the signed digest here
         reply = writer.submit(asset)           # SUBMITTED → MINTED / BOUND
-        writer.readable(found)                 # True / False / None (could not tell)
+        writer.readable(ref)                   # True / False / None (could not tell)
     """
 
     def __init__(self, client: DkgClient, graph: str) -> None:
         self._client = client
         self._graph = graph
 
-    def locate(self, found: statement.Promotion) -> Optional[ReportAsset]:
-        """Where this node holds the report *found* names (its digest, signed by
+    def locate(self, ref: statement.ReportRef) -> Optional[ReportAsset]:
+        """Where this node holds the report *ref* names (its digest, signed by
         its reporter key): a copy in Verified Memory first, else the newest
         shared asset, named by the node. None when no such copy is held here;
         raises :class:`DkgError` when the store or the node could not tell."""
-        copies = self._copies(found)
+        copies = self._copies(ref)
         if copies is None:
             raise DkgError("this node's store could not be read")
         verified = next((copy for copy in copies if copy.verified), None)
@@ -207,16 +208,16 @@ class NodeReportWriter:
             return None
         return _text(descriptor, "publishedUal") or _text(descriptor, "reservedUal") or None
 
-    def readable(self, found: statement.Promotion) -> Optional[bool]:
+    def readable(self, ref: statement.ReportRef) -> Optional[bool]:
         """True when this node reads the report back from Verified Memory with
         the signed digest; None when its store could not tell."""
-        copies = self._copies(found)
+        copies = self._copies(ref)
         return None if copies is None else any(copy.verified for copy in copies)
 
-    def _copies(self, found: statement.Promotion) -> Optional[list[statement.ReportCopy]]:
+    def _copies(self, ref: statement.ReportRef) -> Optional[list[statement.ReportCopy]]:
         """This node's copies of exactly the promoted report (its digest, signed by
         its reporter key): another key's copy of the same words is never published."""
-        copies = promotion.report_copies(self._client, self._graph, [found.report])
+        copies = promotion.report_copies(self._client, self._graph, [ref.report])
         if copies is None:
             return None
-        return [copy for copy in copies if statement.is_the_report(found, copy.text)]
+        return [copy for copy in copies if statement.is_the_report(ref, copy.text)]

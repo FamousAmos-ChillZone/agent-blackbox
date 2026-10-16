@@ -1,12 +1,13 @@
 """The batch publisher — beat step 8 on the wallet node (trust-and-threat-lab §03.4, D27).
 
 Quorum-signed promotions wait as APPROVED proposals; :class:`BatchPublisher`
-turns them into ONE verified-graph knowledge asset per batch (≤ 50 promotion
-statements, each its own 2-of-N envelope pointing at the community report it
-promotes — ``kernel.signing.promotion_statement``) and walks it through the
-:class:`PublishLedger`. Each report is its reporter's own asset, published
-first on its own ledger record (:mod:`.reports`): the batch is sealed once
-every report it points at reads back from Verified Memory. Pattern: Builder.
+turns them into ONE verified-graph knowledge asset per batch (≤ 50 entries,
+each written the way its payload says — :mod:`.strategies`: by default the
+verified rule made from the report at ``threat_uri(identifier)``, carrying its
+own 2-of-N envelope) and walks it through the :class:`PublishLedger`. A
+member-asset promotion's report is its reporter's own asset, published first
+on its own ledger record (:mod:`.reports`): such an entry joins a batch once
+its report reads back from Verified Memory. Pattern: Builder.
 
 When a batch goes (D15, F-017), whichever comes first: :data:`BATCH_ENTRIES`
 entries wait; the oldest has waited :data:`BATCH_SECONDS` (6 h); a block-tier
@@ -27,8 +28,8 @@ Fail-closed rules (F-035, LES-011):
   While any batch is unsettled no new batch is queued.
 * The pre-check (:func:`.precheck.precheck`) runs right before the paid
   publishes with :func:`strict_verified_subset`, which RAISES when the store
-  cannot tell. An entry joins a batch only once its report reads back from
-  Verified Memory; until then it waits outside every batch.
+  cannot tell. A member-asset entry joins a batch only once its report reads
+  back from Verified Memory; until then it waits outside every batch.
 
 Usage (the beat wiring is SVC4)::
 
@@ -48,12 +49,13 @@ from decimal import Decimal
 from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
-from ...kernel import threat_ids
+from ...kernel import constants, signing
 from ...kernel.signing import promotion_statement as statement
 from ..context import CurateContext
-from ..proposal import ProposalError, ProposalState, ProposalStore
+from ..proposal import Proposal, ProposalError, ProposalState, ProposalStore
+from . import strategies
 from .ledger import BatchEntry, BatchRecord, PublishLedger, PublishState
-from .precheck import VerifiedSubset, precheck
+from .precheck import VerifiedSubset, precheck, strict_verified_subset
 from .node_writers import NodeBatchWriter, NodeReportWriter, SubmitReply, definite_refusal
 from .publish import has_quorum
 from .reports import READY, PendingReport, ReportPublisher, is_report_record
@@ -75,26 +77,21 @@ BATCH_LANE = "batched"
 _UNSETTLED = frozenset({PublishState.QUEUED, PublishState.SEALED, PublishState.SUBMITTED, PublishState.MINTED})
 
 
-class PrecheckUnavailable(RuntimeError):
-    """The verified store could not tell whether an entry is listed: nothing is published."""
-
-
 @dataclass(frozen=True)
 class Candidate:
-    """One APPROVED promotion ready for a batch: its proposal, the report its
-    signed payload points at, the statement's quads (built now, so a promotion
-    that cannot be written never reaches a batch), when it was approved and how
-    many verified reporters the community tier counts for its threat."""
+    """One APPROVED promotion ready for a batch: its proposal, the threat, the
+    envelope, the rows of its asset (built now, so a promotion that cannot be
+    written never reaches a batch), when it was approved, how many verified
+    reporters the community tier counts for its threat, and — member-asset
+    only — the report published before it may join a batch."""
 
     proposal_id: str
-    pending: PendingReport
+    identifier: str
+    envelope: signing.SignedEnvelope
     quads: tuple[dict[str, str], ...]
     approved_at: float
     reporters: int
-
-    @property
-    def identifier(self) -> str:
-        return self.pending.identifier
+    report_first: Optional[PendingReport] = None
 
     @property
     def category(self) -> str:
@@ -136,32 +133,6 @@ class BatchMetrics:
     wallet_trac: Optional[Decimal]
     wallet_floor_trac: Optional[Decimal]    # two batches at the dearest recorded cost
     below_wallet_floor: Optional[bool]
-
-
-def strict_verified_subset(compiled: Any) -> VerifiedSubset:
-    """``Ruleset.verified_subset`` that RAISES :class:`PrecheckUnavailable` instead of
-    reading a store that could not tell as "none listed" (precheck's contract)."""
-
-    def lookup(identifiers: Iterable[str]) -> set[str]:
-        wanted = {str(identifier) for identifier in identifiers}
-        if compiled is None:
-            raise PrecheckUnavailable("no compiled ruleset to check against")
-        found = {str(rule.get("identifier") or "") for _category, rule in compiled.iter_rules()
-                 if rule.get("source") == "public" and rule.get("identifier") in wanted}
-        dependencies = [parsed for ident in wanted if (parsed := threat_ids.parse_dependency_identifier(ident))]
-        iocs = [ident for ident in wanted if ident.startswith("ioc:")]
-        if not dependencies and not iocs:
-            return found
-        live = compiled.live_lookup() if callable(getattr(compiled, "live_lookup", None)) else None
-        if live is None:
-            raise PrecheckUnavailable("the live verified lookup is not ready")
-        for answer in ([live.dependencies(dependencies)] if dependencies else []) + ([live.iocs(iocs)] if iocs else []):
-            if not answer.known:
-                raise PrecheckUnavailable(f"the verified store could not tell ({answer.reason or 'no reason'})")
-            found |= {rule["identifier"] for rule in answer.rules.values() if rule.get("identifier") in wanted}
-        return found
-
-    return lookup
 
 
 class BatchPublisher:
@@ -211,10 +182,9 @@ class BatchPublisher:
             logger.warning("blackbox: batch pre-check could not tell (%s); nothing published", exc)
             return BatchRunReport("could-not-tell", entries=len(chosen), note=str(exc))
         self._close_dropped(checked.dropped)
-        outcomes = self._reports.settle(ctx, reports, [c.pending for c in checked.kept])
-        kept = [c for c, (_, action, _) in zip(checked.kept, outcomes) if action == READY]
-        if not kept:   # nothing to batch until a report reads back from Verified Memory
-            action, note = next(((a, f"the report of {p.identifier}: {n}") for p, a, n in outcomes), ("waiting", ""))
+        kept, waits = self._ready(ctx, reports, checked.kept)
+        if not kept:   # nothing to batch until a member-asset report reads back from Verified Memory
+            action, note = next(((a, f"the report of {p.identifier}: {n}") for p, a, n in waits), ("waiting", ""))
             return BatchRunReport(action, dropped=len(checked.dropped), note=note or "every chosen entry is already listed")
         batch_id = f"b-{int(self._clock())}-{secrets.token_hex(4)}"
         record = self._ledger.queue(batch_id, [BatchEntry(c.identifier, c.category) for c in kept])
@@ -235,16 +205,24 @@ class BatchPublisher:
             envelope = proposal.parsed()
             if envelope is None or not has_quorum(ctx, proposal, envelope):
                 continue
-            found = statement.parse(envelope)
             try:
-                quads = tuple(statement.statement_quads(envelope))
-            except ValueError as exc:   # not a well-formed promotion of a report, or past the store's literal cap
+                candidate = _candidate(ctx, proposal, envelope)
+            except ValueError as exc:   # a promotion of a report by neither way, or past the store's literal cap
                 held_back += 1
                 logger.warning("blackbox: promotion %s cannot be batched: %s", proposal.id, exc)
                 continue
-            out.setdefault(found.identifier, Candidate(proposal.id, PendingReport(found.identifier, found, envelope), quads,
-                                                       proposal.updated, _reporters(ctx, found.identifier)))
+            out.setdefault(candidate.identifier, candidate)
         return out, held_back
+
+    def _ready(self, ctx: CurateContext, writer: NodeReportWriter, chosen: Sequence[Candidate]
+               ) -> tuple[list[Candidate], list[tuple[PendingReport, str, str]]]:
+        """The *chosen* entries that may join a batch now — every curator-asset
+        one, and a member-asset one once its report reads back — and the
+        member-asset reports still waiting, with why."""
+        settled = self._reports.settle(ctx, writer, [c.report_first for c in chosen if c.report_first is not None])
+        ready = {pending.identifier for pending, action, _note in settled if action == READY}
+        waits = [outcome for outcome in settled if outcome[1] != READY]
+        return [c for c in chosen if c.report_first is None or c.identifier in ready], waits
 
     def _batches(self) -> list[BatchRecord]:
         """The statement batches in the ledger (a report's own publish has its own record, :mod:`.reports`)."""
@@ -386,10 +364,23 @@ def _reporters(ctx: CurateContext, identifier: str) -> int:
     return int((rule or {}).get("reporterCount") or 0)
 
 
+def _candidate(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedEnvelope) -> Candidate:
+    """*proposal* as a batch entry, written the way its payload says; raises
+    ``ValueError`` when it is a promotion of a report by neither way."""
+    strategy = strategies.strategy_for(envelope)
+    ref = strategy.reference(envelope) if strategy is not None else None
+    if strategy is None or ref is None:
+        raise ValueError(strategies.refusal(envelope))
+    _name, quads = strategy.asset(envelope, strategies.evidence_of(proposal))
+    return Candidate(proposal.id, ref.identifier, envelope, tuple(quads), proposal.updated,
+                     _reporters(ctx, ref.identifier),
+                     PendingReport(ref.identifier, ref) if strategy.publishes_report else None)
+
+
 def _signed_rows(batch: Sequence[Candidate]) -> dict[str, str]:
-    """Statement subject → the envelope it must read back with."""
-    return {statement.statement_subject(c.identifier, c.pending.promotion.sequence): c.pending.envelope.to_text()
-            for c in batch}
+    """Each signed subject of the batch → the envelope it must read back with."""
+    return {quad["subject"]: c.envelope.to_text() for c in batch for quad in c.quads
+            if quad["predicate"] == constants.SIGNED_STATEMENT_PRED}
 
 
 def _byte_size(batch: Sequence[Candidate]) -> int:

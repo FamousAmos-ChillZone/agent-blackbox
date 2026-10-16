@@ -1,12 +1,14 @@
 """Refine R6 — curator tooling lite.
 
-The two-key flow's guards with a fake node: the proposer cannot be the second
-signer, a key outside the manifest is refused, a blockable kind needs
-evidence, the second key re-checks what it co-signs, the publish gate counts
-one key per operator. Plus the plan's tests: proposal expiry; consent refused
-on any byte change; no browser endpoint can publish; an already-verified
-threat never reaches a lane. (The promotion end to end — a report promoted as
-itself — is ``test_blackbox_one_graph_curator.py``.)
+The two-key flow end to end with a fake node: machine A proposes (checklist,
+first key, private message), machine B receives, co-signs, consents and
+publishes — a malware dependency's community report ends up as a BLOCKING
+verified rule that names that report as its provenance (the curator-asset
+way, ``publishing.strategies``). Plus the plan's tests: a blockable kind needs
+evidence; the second key re-checks what it co-signs; proposal expiry; consent
+refused on any byte change; no browser endpoint can publish; an
+already-verified threat never reaches a lane. (The member-asset way — the
+report published as itself — is ``test_blackbox_one_graph_curator.py``.)
 """
 
 from __future__ import annotations
@@ -21,12 +23,13 @@ from plugins.blackbox.community.statements import curator_view as cv
 from plugins.blackbox.curate import consent, dossier, keys, node_ui_views, publishing, queue, transport, verbs
 from plugins.blackbox.curate.context import CurateContext, PromotionDraft
 from plugins.blackbox.curate.proposal import Proposal, ProposalError, ProposalState, ProposalStore
+from plugins.blackbox.curate.publishing import strategies
 from plugins.blackbox.kernel import constants, node_routes, signing
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.kernel.signing import key_manifest as km
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind
 from _community_rows import Reporter
-from _one_graph import NodeStore, shared_report, use_store
+from _one_graph import SHARED, NodeStore, shared_report, use_store
 
 NETWORK = "sandbox-net"
 VM_GRAPH = "0xabc/agent-blackbox-vm"
@@ -114,6 +117,65 @@ def _machine(monkeypatch, tmp_path, name, key):
 
 
 # ------------------------------------------------------------------ the two-key flow
+
+
+class StoreNode(FakeNode):
+    """A fake node that also reports its local store (``_one_graph.NodeStore``)."""
+
+    def status(self, timeout=None):
+        return {"networkId": NETWORK, "storeUrl": "http://127.0.0.1:7878/query"}
+
+
+def _holding(monkeypatch, *reports):
+    """Every curator machine's node store holds *reports* in the graph's shared memory."""
+    store = NodeStore()
+    for number, report in enumerate(reports, start=5):
+        store.hold(report, layer=SHARED, number=number)
+    use_store(monkeypatch, store)
+    return store
+
+
+def test_a_malware_dependency_is_promoted_by_two_keys_on_two_machines_with_one_hand_off(monkeypatch, tmp_path, curators):
+    node = StoreNode()
+    _holding(monkeypatch, REPORT)
+    # Machine A: propose (checklist passes with an advisory), first signature, send.
+    _machine(monkeypatch, tmp_path, "A", curators["a"])
+    proposal = verbs.propose_promotion(_ctx(node, curators["manifest"]), ProposalStore(), report=REPORT.verified,
+                                       severity="critical", evidence="advisory:MAL-2026-0001", reason="")
+    assert proposal.state is ProposalState.PROPOSED and len(proposal.parsed().signatures) == 1
+    verbs.send(_ctx(node, curators["manifest"]), proposal, "B")
+    # Machine B: receive, approve (own evidence; it re-reads the report on its node), consent (sandbox --yes), publish.
+    _machine(monkeypatch, tmp_path, "B", curators["b"])
+    received = transport.receive_proposals(node, transport.InboxCursor())
+    assert [p.id for p in received] == [proposal.id]
+    store_b = ProposalStore()
+    store_b.save(received[0])
+    _published, outcome = verbs.approve(_ctx(node, curators["manifest"]), store_b, proposal.id,
+                                       evidence="advisory:MAL-2026-0001", typed_code=None, yes=True)
+    assert outcome.startswith("published to " + VM_GRAPH)
+    assert store_b.get(proposal.id).state is ProposalState.PUBLISHED
+    # The write: the curators' own verified-rule KA, two curator signatures, the report as its provenance;
+    # nothing of the reporter's is published or shared.
+    (graph, _path, quads), = node.vm_published
+    assert graph == VM_GRAPH and node.shared == []
+    envelope = signing.from_text(json.loads(next(q["object"] for q in quads if q["predicate"] == constants.SIGNED_STATEMENT_PRED)))
+    assert curators["manifest"].has_quorum(envelope, statement_type=Kind.PROMOTION.value)
+    assert (envelope.payload["report"], envelope.payload["reportDigest"], envelope.payload["reporterKey"]) == (
+        REPORT.subject, REPORT.digest, REPORT.verified.author)                     # it names its reporter, permanently
+    provenance = json.loads(json.loads(next(q["object"] for q in quads if q["predicate"] == constants.SOURCE_OBSERVATION_PROVENANCE_JSON_PRED)))
+    assert provenance == [REPORT.subject]                                          # never a random id
+    # The verified reader compiles it into a BLOCKING rule (kind malware, source public).
+    row = {"threat": quads[0]["subject"], "rdfType": constants.DEFENDER_DEPENDENCY_TYPE_IRI}
+    var_for = {constants.IDENTIFIER_PRED: "identifier", constants.SEVERITY_PRED: "severity", constants.KIND_PRED: "kind",
+               constants.PACKAGE_NAME_PRED: "packageName", constants.PACKAGE_VERSION_PRED: "packageVersion",
+               constants.PACKAGE_ECOSYSTEM_PRED: "packageEcosystem", constants.SCHEMA_NAME_PRED: "name",
+               constants.SCHEMA_IDENTIFIER_PRED: "advisoryId"}
+    for q in quads:
+        if q["predicate"] in var_for:
+            row[var_for[q["predicate"]]] = json.loads(q["object"])
+    rs = ruleset.build_from_rows([(row, "public")])
+    rule = rs.dependency["npm:evil-pkg@1.0.0"]
+    assert (rule["kind"], rule["source"], rule["advisoryId"]) == ("malware", "public", "MAL-2026-0001")
 
 
 def test_the_proposer_cannot_be_the_second_signer(monkeypatch, tmp_path, curators):
@@ -249,35 +311,38 @@ def test_a_flood_of_unlisted_singletons_reaches_no_lane_and_no_webhook(tmp_path)
     assert intake.IntakeWatcher(tmp_path / "seen.json").poll(view, _Sink()) == ["dep:npm:real@1"] and len(announced) == 1
 
 
-class StoreNode(FakeNode):
-    """A fake node that also reports its local store (``_one_graph.NodeStore``)."""
-
-    def status(self, timeout=None):
-        return {"networkId": NETWORK, "storeUrl": "http://127.0.0.1:7878/query"}
+def _payload(report=REPORT, **change):
+    """What the curators sign to promote *report* the default way, with *change* applied."""
+    payload = strategies.active().payload(report.verified, severity="critical", advisory="MAL-1", display_name="")
+    return {**payload, **change}
 
 
 def test_the_second_signer_refuses_a_crafted_promotion_payload(monkeypatch, tmp_path, curators):
-    """KI-195: a modified client on machine A can sign any payload; machine B re-checks the report on its OWN
-    node before cosigning — a payload that is no promotion of a report, or one naming a report B cannot find."""
-    from plugins.blackbox.curate import promotion
+    """KI-195: a modified client on machine A can sign any payload; machine B checks it and re-reads the report
+    on its OWN node before cosigning."""
     node = StoreNode()
-    store_b_node = NodeStore()
-    store_b_node.hold(REPORT, layer="_shared_memory", number=5)
-    use_store(monkeypatch, store_b_node)
+    _holding(monkeypatch, REPORT)
     _machine(monkeypatch, tmp_path, "A", curators["a"])
-    rule_payload = {"identifier": THREAT, "severity": "critical", "kind": "malware", "ecosystem": "npm",
-                    "packageName": "evil-pkg", "packageVersion": "1.0.0", "advisoryId": "MAL-1", "name": "x", "provenance": ""}
-    unseen = {**promotion.payload_for(REPORT.verified, severity="critical"), "reportDigest": "ab" * 32}
+    earlier_shape = {**{k: v for k, v in _payload().items() if k not in ("report", "reportDigest", "reporterKey")},
+                     "provenance": "0123456789abcdef"}                       # random ids, no report: proposed again
+    crafted = [(_payload(kind="vulnerability"), "promoted as malware only"),
+               (_payload(packageName="left-pad"), "do not match its identifier"),
+               (earlier_shape, "not a well-formed promotion"),
+               (_payload(reportDigest="ab" * 32), "does not hold the report")]
     proposals = [Proposal.new(Kind.PROMOTION.value, THREAT, _ctx(node, curators["manifest"]).sign(PromotionDraft(payload, sequence=1), curators["a"]),
-                              VM_GRAPH, checks={}).transition(ProposalState.PROPOSED) for payload in (rule_payload, unseen)]
+                              VM_GRAPH, checks={}).transition(ProposalState.PROPOSED) for payload, _why in crafted]
     _machine(monkeypatch, tmp_path, "B", curators["b"])
     store = ProposalStore()
-    for proposal, why in zip(proposals, ("not a well-formed promotion", "does not hold the report")):
+    for proposal, (_payload_, why) in zip(proposals, crafted):
         store.save(proposal)
         with pytest.raises(verbs.VerbError, match=why):
             verbs.approve(_ctx(node, curators["manifest"]), store, proposal.id, evidence="advisory:MAL-1", typed_code=None, yes=True)
         assert store.get(proposal.id).state is ProposalState.PROPOSED
     assert node.vm_published == []
+    whole = shared_report("dep:npm:evil-pkg@*", Reporter("edge-1"), graph=VM_GRAPH, network=NETWORK)
+    envelope = _ctx(node, curators["manifest"]).sign(PromotionDraft(_payload(whole), sequence=2), curators["b"])
+    proposal = Proposal.new(Kind.PROMOTION.value, "dep:npm:evil-pkg@*", envelope, VM_GRAPH, checks={})
+    assert "WHOLE PACKAGE" in publishing.summary(proposal) and f"PROMOTES THE REPORT {whole.subject}" in publishing.summary(proposal)
 
 
 @pytest.mark.parametrize("operators,break_glass,signed_by,publishes", [
@@ -288,7 +353,6 @@ def test_the_second_signer_refuses_a_crafted_promotion_payload(monkeypatch, tmp_
 def test_the_promotion_publish_gate_counts_one_key_per_operator(monkeypatch, tmp_path, operators, break_glass,
                                                                 signed_by, publishes):
     """K2: publish's PROMOTION gate used to count raw keys, so it would write a promotion every reader refuses."""
-    from plugins.blackbox.curate import promotion
     node = FakeNode()
     curator_keys = [Ed25519PrivateKey.generate() for _ in range(3)]
     hexes = [signing.public_key_hex(k) for k in curator_keys]
@@ -297,7 +361,7 @@ def test_the_promotion_publish_gate_counts_one_key_per_operator(monkeypatch, tmp
                               legacy_assets_hash=km.legacy_assets_hash([]),
                               break_glass_key=hexes[2] if break_glass else "")
     _machine(monkeypatch, tmp_path, "A", curator_keys[signed_by[1]])
-    payload = promotion.payload_for(REPORT.verified, severity="critical")
+    payload = _payload()
     publish_module = __import__("importlib").import_module("plugins.blackbox.curate.publishing.publish")
     monkeypatch.setattr(publish_module, "_write", lambda ctx, proposal, envelope:   # the gate is under test, not the write
                         ("promotion-x", VM_GRAPH, publish_module.PublishOutcome.PUBLISHED))

@@ -64,8 +64,8 @@ CompiledRuleset = Callable[[Any], Any]
 
 @dataclass(frozen=True)
 class PromotionDraft:
-    """A promotion payload (``promotion.payload_for``), bound to the acting
-    authority's manifest graph at *sequence*."""
+    """A promotion payload (``publishing.strategies``: the way new promotions
+    take), bound to the acting authority's manifest graph at *sequence*."""
 
     payload: Mapping[str, str]
     sequence: int
