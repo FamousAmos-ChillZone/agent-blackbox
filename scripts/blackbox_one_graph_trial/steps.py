@@ -287,6 +287,7 @@ class Trial:
         identity = reporter.call("identity", {"reporter_key": True})
         self.state.reporter_keys["reporter-a"] = identity["reporter_key"]
         self.state.reporter_addresses["reporter-a"] = identity["reporter_address"]
+        sharing = self._enable_sharing("reporter-a")
         filed = _cli(reporter, self.state.promoted.report_argv())
         own, waited = self._landed("reporter-a", self.state.promoted, filed)
         if own is None:
@@ -294,7 +295,16 @@ class Trial:
                              last_read=reporter.call("read"))
         how = "at once" if filed["rc"] == 0 else "through Blackbox's retry queue"
         return {"summary": f"{self.state.promoted.identifier} shared by reporter-a {how}; its own reader has it "
-                           f"after {waited:.0f} s", "report": filed, "reporter": identity}
+                           f"after {waited:.0f} s", "sharing": sharing, "report": filed, "reporter": identity}
+
+    def _enable_sharing(self, name: str) -> dict[str, Any]:
+        """``blackbox report --enable-sharing``, the operator's opt-in: community
+        sharing stays off until a node records it (since umanitek/agent-blackbox#41).
+        Where sharing was on by default it records a fresh acceptance."""
+        answer = _cli(self.cluster.actor(name), ["report", "--enable-sharing"])
+        if answer["rc"] != 0:
+            raise StepFailed(f"`blackbox report --enable-sharing` did not turn sharing on for {name}", answer=answer)
+        return {"rc": answer["rc"], "stdout": answer["stdout"][-400:]}
 
     def _landed(self, name: str, threat: Threat, filed: dict[str, Any]) -> tuple[Optional[dict[str, Any]], float]:
         """Wait for *name*'s own reader to return its report of *threat*. A share
@@ -479,11 +489,12 @@ class Trial:
         identity = reporter.call("identity", {"reporter_key": True})
         self.state.reporter_keys["reporter-b"] = identity["reporter_key"]
         self.state.reporter_addresses["reporter-b"] = identity["reporter_address"]
+        sharing = self._enable_sharing("reporter-b")
         filed = _cli(reporter, self.state.control.report_argv(severity="high"))
         own, waited = self._landed("reporter-b", self.state.control, filed)
         if own is None:
             raise StepFailed("reporter-b's control report did not land on its own node", report=filed)
-        return {"identifier": self.state.control.identifier, "landed_after_s": round(waited),
+        return {"identifier": self.state.control.identifier, "landed_after_s": round(waited), "sharing": sharing,
                 "stdout": filed["stdout"][-400:]}
 
     def _beater(self, name: str) -> Callable[[], None]:

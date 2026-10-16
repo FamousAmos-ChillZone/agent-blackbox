@@ -533,7 +533,7 @@ machines would run it:
 | `edges` | two Edge nodes run Blackbox's node settings, taken from this checkout: the installer's config writer, the native sync profile (`sync/node_profile.py`) and the launch environment Blackbox starts its node with |
 | `keys` | test curator keys for the devnet's network only (below); a manifest with two curator keys of two operators is published and trusted |
 | `subscribe` | the reporters subscribe with `blackbox sync`; each node then lists the graph with its definition, as Blackbox's membership requires (the listing's `synced` flag is recorded as a known DKG gap, not awaited: on a registered graph the DKG can leave it false while the node takes writes, OriginTrail/dkg#3281 and #3296) |
-| `share`, `read` | reporter A files a report with `blackbox report`; reporter B's community reader returns it |
+| `share`, `read` | reporter A opts in to community sharing (`blackbox report --enable-sharing`) and files a report with `blackbox report`; reporter B's community reader returns it |
 | `promote` | curator 1 proposes, curator 2 co-signs and publishes. Verified Memory then holds a promotion statement both curator keys signed that names the report (subject and digest), with the curators' own asset built from the report, or the report itself |
 | `compile` | both reporters' rulesets serve the report as a verified rule, and their guards in block mode refuse to install the package; reporter B's unpromoted report does not become one |
 | `late-join`, `restart` | a reporter added later gets the reports and the rule; after a node restart they are still there |
