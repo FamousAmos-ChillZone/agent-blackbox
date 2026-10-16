@@ -125,7 +125,14 @@ def test_status_lines_sharing_off(bb_home, capsys):
     cfg = BlackboxConfig(report=False, community_graph_id=DEV_GRAPH)
     report_command.print_community_status(cfg)
     out = capsys.readouterr().out
-    assert "threat sharing:    off (config key `report` is false)" in out
+    assert "threat sharing:    off — opt-in; `blackbox report --enable-sharing` turns it on" in out
+
+
+def test_status_lines_switch_on_without_an_opt_in_reads_off(bb_home, capsys, real_consent):
+    """`report: true` alone (a hand edit) is not sharing: status agrees with the share gate."""
+    report_command.print_community_status(BlackboxConfig(report=True, community_graph_id=DEV_GRAPH))
+    out = capsys.readouterr().out
+    assert "threat sharing:    off — community sharing is off — `blackbox report --enable-sharing`" in out
 
 
 def test_status_lines_unconfigured(bb_home, capsys):

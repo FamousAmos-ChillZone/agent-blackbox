@@ -4068,7 +4068,7 @@
     var last = s.last_share;
     $("stat-sharing-meta").textContent = last
       ? "last share " + fmtAgo(last.ts) + " \u00b7 " + (last.outcome || (last.ok ? "accepted" : "failed"))
-      : (s.sharing_enabled ? "on by default \u00b7 nothing shared yet" : "off \u00b7 turn on in settings");
+      : (s.sharing_enabled ? "on \u00b7 nothing shared yet" : "off \u00b7 opt in from settings");
   }
 
   function loadCommunityStats() {
@@ -8311,7 +8311,7 @@
         <div class="set-row">
           <div class="set-rl">
             <div class="set-rt">Community sharing</div>
-            <div class="set-rh">On by default. When your agent meets a threat the verified graph already lists, share a privacy-safe statement with the community graph: the threat's identifier and type, the tool that met it, whether it was blocked or flagged, and what the threat targets. Your prompts, commands and files never leave this machine. Switch off any time.</div>
+            <div class="set-rh">Off until you turn it on. Once on, when your agent meets a threat the verified graph already lists, share a privacy-safe statement with the community graph: the threat's identifier and type, the tool that met it, whether it was blocked or flagged, and what the threat targets. Your prompts, commands and files never leave this machine. Turning it on records your agreement to the reporter terms; switch off any time.</div>
           </div>
           <div class="set-rc">
             <label class="set-toggle"><input type="checkbox" id="set-report" /><span class="set-track"></span></label>

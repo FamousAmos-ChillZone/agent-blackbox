@@ -274,7 +274,7 @@ def test_attach_openclaw_writes_blackbox_block(fake_env):
     # the graph + owner-peer pair, the switch and the cap travel with the attach.
     for key in ("communityGraphId", "communityGraphPeerId", "report", "dailyReportLimit", "reportMinSeverity"):
         assert key in entry["config"], key
-    assert entry["config"]["report"] is True and entry["config"]["dailyReportLimit"] >= 1   # on by default (2026-10-12)
+    assert entry["config"]["report"] is False and entry["config"]["dailyReportLimit"] >= 1   # opt-in (2026-10-16)
     # Unrelated keys preserved.
     assert data["someKey"] == "keepme"
     # A backup was made.

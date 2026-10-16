@@ -434,19 +434,38 @@ def _opted_out_home(tmp_path: Path) -> Path:
     return home
 
 
-def test_unix_installer_fresh_config_turns_community_sharing_on(tmp_path: Path) -> None:
-    """Founder decision 2026-10-12: sharing is ON by default (opt-out)."""
-    blackbox = _configure(tmp_path, tmp_path / "config.yaml", tmp_path / "fresh-home")
+def _opted_in_home(tmp_path: Path) -> Path:
+    import json
+    home = tmp_path / "opted-in-home"
+    home.mkdir()
+    (home / "sharing_consent.json").write_text(json.dumps({
+        "terms_hash": "a", "terms_version": "1.4", "accepted_at": "2026-10-16T00:00:00+00:00", "withdrawn_at": ""}),
+        encoding="utf-8")
+    return home
 
-    assert blackbox["report"] is True and blackbox["sharing_default"] == "on-2026-10-12"
+
+def test_unix_installer_fresh_config_leaves_community_sharing_off(tmp_path: Path) -> None:
+    """Sharing is opt-in (2026-10-16, Hermes plugin catalog review): a fresh install writes
+    `report: false` and never records an acceptance on the operator's behalf."""
+    home = tmp_path / "fresh-home"
+    blackbox = _configure(tmp_path, tmp_path / "config.yaml", home)
+
+    assert blackbox["report"] is False and "sharing_default" not in blackbox
+    assert not (home / "sharing_consent.json").exists()
     assert blackbox["daily_report_limit"] == 100   # the plugin default; 0 meant "no cap" (Refine R1)
 
 
-def test_unix_installer_turns_sharing_on_once_for_an_install_from_before(tmp_path: Path) -> None:
-    """Older installers wrote `report: false` automatically ("not shipped yet")."""
-    config_path = _write_config(tmp_path, "      report: false\n")
+def test_unix_installer_turns_off_sharing_that_only_the_old_default_turned_on(tmp_path: Path) -> None:
+    """A 2026-10-12 install: `report: true` and the default marker, but no acceptance on record."""
+    config_path = _write_config(tmp_path, "      report: true\n      sharing_default: on-2026-10-12\n")
     blackbox = _configure(tmp_path, config_path, tmp_path / "home")
-    assert blackbox["report"] is True and blackbox["sharing_default"] == "on-2026-10-12"
+    assert blackbox["report"] is False and "sharing_default" not in blackbox
+
+
+def test_unix_installer_keeps_sharing_on_for_an_operator_who_opted_in(tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path, "      report: true\n      sharing_default: on-2026-10-12\n")
+    blackbox = _configure(tmp_path, config_path, _opted_in_home(tmp_path))
+    assert blackbox["report"] is True and "sharing_default" not in blackbox
 
 
 def test_unix_installer_never_overrides_an_opt_out_or_a_later_choice(tmp_path: Path) -> None:
@@ -459,12 +478,14 @@ def test_unix_installer_never_overrides_an_opt_out_or_a_later_choice(tmp_path: P
     assert chosen["report"] is False                                            # off after the default step: kept off
 
 
-def test_windows_installer_fresh_config_turns_community_sharing_on() -> None:
+def test_windows_installer_fresh_config_leaves_community_sharing_off() -> None:
     writer = _extract_powershell_function_body("Enable-AndConfigure")
 
-    assert '"report": True' in writer and '"report": False,' not in writer
+    assert '"report": False,' in writer and '"report": True' not in writer
     assert '"daily_report_limit": 100' in writer
-    assert 'SHARING_DEFAULT_MARK = "on-2026-10-12"' in INSTALL_PS1.read_text(encoding="utf-8")
+    installer = INSTALL_PS1.read_text(encoding="utf-8")
+    assert 'blackbox.pop("sharing_default", None)' in installer            # the old default's marker is removed
+    assert "SHARING_DEFAULT_MARK" not in installer
     assert '"daily_report_limit": 9999' not in writer
 
 

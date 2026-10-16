@@ -197,17 +197,23 @@ def test_no_step_after_hermes_reads_the_checkout_directly():
     assert stray == []
 
 
-def test_setup_only_keeps_community_sharing_on_by_reading_consent_from_the_plugin_folder(tmp_path, monkeypatch):
+def test_setup_only_reads_the_operators_opt_in_from_the_plugin_folder(tmp_path, monkeypatch):
     """Stock Hermes has its own `plugins` package, so the config writer's consent check must load
     Blackbox from the plugin folder it is given. If it could not, it would answer "no consent" and
-    turn sharing OFF on every catalog install (found while building setup-only mode, 2026-10-14)."""
+    turn sharing OFF for every catalog operator who opted in (found while building setup-only mode,
+    2026-10-14). Sharing is opt-in (2026-10-16): no record reads as off, an acceptance as on."""
+    import json
     helper = INSTALL_SH.read_text(encoding="utf-8").split("def _consent_in_force(checkout):", 1)[1].split("\nif ", 1)[0]
     namespace: dict = {"sys": sys, "os": os}
     exec("def _consent_in_force(checkout):" + helper, namespace)
-    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bb"))   # no sharing record: the default, sharing on
+    home = tmp_path / "bb"
+    monkeypatch.setenv("BLACKBOX_HOME", str(home))
     plugin_dir = Path(__file__).resolve().parents[1] / "plugins" / "blackbox"
 
-    assert namespace["_consent_in_force"](str(plugin_dir)) is True
+    assert namespace["_consent_in_force"](str(plugin_dir)) is False                 # no record: the default, off
+    home.mkdir()
+    (home / "sharing_consent.json").write_text(json.dumps({"accepted_at": "2026-10-16T00:00:00+00:00"}), encoding="utf-8")
+    assert namespace["_consent_in_force"](str(plugin_dir)) is True                  # the operator's opt-in is read
 
 
 def test_the_config_writer_is_given_the_plugin_folder_in_setup_only_mode():
