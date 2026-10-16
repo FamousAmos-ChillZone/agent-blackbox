@@ -19,6 +19,7 @@ from typing import Optional
 from ... import community
 from ...kernel import constants, signing, sparql_text, threat_ids
 from ...kernel.signing import promotion_statement as statement
+from ...kernel.signing.authority import COMMUNITY_GRAPH
 from ...kernel.signing.key_manifest import KeyManifest
 from ...kernel.signing.statement_order import CuratorStatement
 from ..context import CurateContext
@@ -42,12 +43,14 @@ def from_a_curator(manifest: Optional[KeyManifest], proposal: Proposal) -> bool:
 def published_elsewhere(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedEnvelope) -> bool:
     """True when the graph holds the statement *proposal* proposes — the same
     signed content — carrying the signatures its kind needs (another curator
-    co-signed and published it): a promotion's statement in the verified
-    graph, anything else in the community graph."""
+    co-signed and published it): a promotion's statement in Verified Memory,
+    an advisory statement in the shared memory."""
     manifest = ctx.manifest
-    if manifest is not None and proposal.kind == statement.PROMOTION_STATEMENT and proposal.graph == ctx.verified_graph:
+    if manifest is None or proposal.graph != ctx.verified_graph:
+        return False
+    if proposal.kind == statement.PROMOTION_STATEMENT:
         return _promotion_published(ctx, manifest, proposal.identifier, signing.content_id(envelope))
-    if manifest is None or proposal.graph != ctx.community_graph:
+    if ctx.home_of(proposal.kind) != COMMUNITY_GRAPH:
         return False
     try:
         kind = CuratorStatement(proposal.kind)

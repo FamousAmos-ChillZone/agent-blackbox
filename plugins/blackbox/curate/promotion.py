@@ -118,14 +118,13 @@ def verified_copy(ctx: CurateContext, promotion: statement.Promotion,
                   copies: Iterable[statement.ReportCopy]) -> Optional[community.VerifiedReport]:
     """The report among *copies* that IS the one *promotion* names — its
     digest, signed by its reporter key (:func:`statement.is_the_report`) for
-    this network and one of this node's graphs — reporting the promoted
-    identifier; None when no copy is."""
-    graphs = {graph for graph in (ctx.verified_graph, ctx.community_graph) if graph}
+    this network and the one graph — reporting the promoted identifier; None
+    when no copy is."""
     for copy in copies:
         envelope = signing.from_text(copy.text)
-        if envelope is None or envelope.graph not in graphs or not statement.is_the_report(promotion, copy.text):
+        if envelope is None or envelope.graph != ctx.verified_graph or not statement.is_the_report(promotion, copy.text):
             continue
-        report = community.ReportVerifier(ctx.environment, envelope.graph).verify_signed(copy.text)
+        report = community.ReportVerifier(ctx.environment, ctx.verified_graph).verify_signed(copy.text)
         if report is not None and (report.subject, report.identifier) == (promotion.report, promotion.identifier):
             return report
     return None

@@ -43,8 +43,7 @@ from test_blackbox_curate import _machine
 # The package re-exports the publish FUNCTION under the submodule's name.
 publish_module = importlib.import_module("plugins.blackbox.curate.publishing.publish")
 
-COMMUNITY = "0xabc/agent-blackbox-community-dev"
-CFG = BlackboxConfig(report=True, community_graph_id=COMMUNITY, context_graph_id=VM_GRAPH)
+CFG = BlackboxConfig(report=True, context_graph_id=VM_GRAPH)
 EVIL = "dep:npm:evil-pkg@1.0.0"
 EDGE = Reporter("edge-1")
 START = 1_800_000_000.0

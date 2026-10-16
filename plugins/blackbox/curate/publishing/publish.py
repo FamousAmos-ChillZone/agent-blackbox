@@ -1,9 +1,11 @@
 """Publishing an APPROVED curator proposal: quorum check, consent, the write, the read-back.
 
-A proposal is written to the graph it was SIGNED for (``proposal.graph``): the
-verified graph is published to verifiable memory, the community graph is
-shared into shared memory. Which graph a statement belongs in was decided when
-it was proposed, from the acting authority (``kernel.signing.authority``).
+A proposal is written where its kind lives (``CurateContext.home_of``, from
+the acting authority's table in ``kernel.signing.authority``): an enforcement
+statement is published to the graph's Verified Memory, an advisory one is
+shared into its shared memory, beside the community's reports. One graph since
+2026-10-16, so the home decides, never the graph id the proposal was signed
+for (which must be this node's graph).
 
 "Published" means the statement can be READ BACK from that graph (KI-246): a
 node reply that only says "accepted", "already there" or "partly failed" is
@@ -15,8 +17,8 @@ Every outward write sits behind content-bound consent and is ledgered.
 
 A revocation or a correction (P5) is published at once, never batched, and
 once it reads back the verified authority also posts its ADVISORY TWIN in the
-community graph (:func:`advisory_twin`, D26) so readers' 20 s pulse withdraws
-the rule instead of waiting for a full refresh. A correction publishes only
+graph's shared memory (:func:`advisory_twin`, D26) so readers' 20 s pulse
+withdraws the rule instead of waiting for a full refresh. A correction publishes only
 under an EFFECTIVE manifest (:func:`require_effective_manifest`).
 
 A promotion is two publishes (:func:`_write_promotion`): the community report
@@ -46,6 +48,7 @@ from ...kernel import constants, node_routes, rdf_terms, signing, sparql_text, t
 from ...kernel.dkg_client import DkgError
 from ...kernel.signing import promotion_statement as statement
 from ...kernel.signing import key_manifest
+from ...kernel.signing.authority import COMMUNITY_GRAPH, VERIFIED_GRAPH
 from ...kernel.signing.statement_order import CuratorStatement
 from .. import consent, promotion
 from ..ladder import outcomes
@@ -106,7 +109,7 @@ def publish(ctx: CurateContext, store: ProposalStore, proposal_id: str, *, typed
     audit.record_share_outcome(identifier=proposal.identifier, category=f"curator:{proposal.kind.split('.', 1)[-1]}",
                                severity="info", subject=proposal.id, asset_name=name, ok=True, outcome="accepted")
     store.save(proposal.transition(ProposalState.PUBLISHED, note=f"published to {graph} as {name}"))
-    if graph == ctx.community_graph:   # shared memory forgets: this node keeps its statement alive
+    if ctx.home_of(proposal.kind) == COMMUNITY_GRAPH:   # shared memory forgets: this node keeps its statement alive
         published.remember(ctx.cfg, graph=graph, name=name, quads=_asset(proposal, envelope)[1])
     _credit_reporters(ctx, proposal)
     already = " (the node already held it)" if outcome is PublishOutcome.ALREADY_THERE else ""
@@ -127,14 +130,14 @@ def require_effective_manifest(ctx: CurateContext) -> None:
 
 # ---------------------------------------------------------------- the advisory twin (D26)
 
-#: The statements whose advisory twin the verified authority posts in the community graph.
+#: The statements whose advisory twin the verified authority posts in the graph's shared memory.
 TWINNED_STATEMENTS = frozenset({CuratorStatement.REVOCATION.value, CORRECTION_STATEMENT})
 
 
 def advisory_twin(envelope: signing.SignedEnvelope) -> tuple[str, list[dict[str, str]]]:
     """``(asset name, quads)`` of a revocation's or correction's advisory twin:
     the same signed text under a ``g:CuratorStatement`` subject, which changes
-    the community graph's pulse fingerprint (``community.pulse``), so the pulse
+    the shared memory's pulse fingerprint (``community.pulse``), so the pulse
     re-applies the curator tier within ~20 s (R4).
 
     It says nothing by itself: the envelope is bound to the verified graph and
@@ -151,13 +154,11 @@ def advisory_twin(envelope: signing.SignedEnvelope) -> tuple[str, list[dict[str,
 
 
 def post_advisory_twin(ctx: CurateContext, envelope: signing.SignedEnvelope) -> str:
-    """Share *envelope*'s advisory twin into the community graph, AFTER the
-    verified-graph asset reads back (the pulse reads the verified graph: a twin
-    that synced first would find nothing). Best effort — readers still withdraw
-    the rule on their next full refresh — so it reports, never raises."""
-    graph = ctx.community_graph
-    if not graph or graph == ctx.verified_graph:
-        return "no community graph: no advisory twin (readers act on their next full refresh)"
+    """Share *envelope*'s advisory twin into the graph's shared memory, AFTER
+    the Verified Memory asset reads back (the pulse then re-reads Verified
+    Memory: a twin that synced first would find nothing). Best effort — readers
+    still withdraw the rule on their next full refresh — so it reports, never raises."""
+    graph = ctx.verified_graph
     name, quads = advisory_twin(envelope)
     try:
         _share(ctx, graph, name, quads)
@@ -202,19 +203,20 @@ def has_quorum(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedE
 
 
 def _write(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedEnvelope) -> tuple[str, str, PublishOutcome]:
-    """Build the quads, write them to the graph the proposal was signed for and
-    read them back; (asset name, graph, outcome)."""
+    """Build the quads, write them where the proposal's kind lives (Verified
+    Memory or the graph's shared memory) and read them back; (asset name, graph, outcome)."""
+    graph, home = proposal.graph, ctx.home_of(proposal.kind)
+    if not graph or graph != ctx.verified_graph or home is None:
+        raise VerbError(f"the proposal was signed for {graph or 'no graph'}, where this node does not publish "
+                        f"{proposal.kind} statements")
     if proposal.kind == CuratorStatement.PROMOTION.value:
         return _write_promotion(ctx, proposal, envelope)
     name, quads = _asset(proposal, envelope)
-    graph = proposal.graph
-    if graph == ctx.verified_graph:
+    if home == VERIFIED_GRAPH:
         node_routes.publish_to_verified_memory(ctx.client, graph, name, quads)
         already, view = False, constants.VIEW_VERIFIABLE_MEMORY
-    elif graph and graph == ctx.community_graph:
-        already, view = _share(ctx, graph, name, quads), constants.VIEW_SHARED_WORKING_MEMORY
     else:
-        raise VerbError(f"the proposal was signed for {graph or 'no graph'}, which is neither of this node's graphs")
+        already, view = _share(ctx, graph, name, quads), constants.VIEW_SHARED_WORKING_MEMORY
     if not _readable(ctx, graph, view, quads):
         return name, graph, PublishOutcome.UNCONFIRMED
     return name, graph, PublishOutcome.ALREADY_THERE if already else PublishOutcome.PUBLISHED
@@ -225,8 +227,6 @@ def _write_promotion(ctx: CurateContext, proposal: Proposal,
     """A promotion is two publishes: the report it points at — its reporter's
     own asset from shared memory, unless Verified Memory holds it already —
     then the statement beside it. Published means both read back."""
-    if proposal.graph != ctx.verified_graph:
-        raise VerbError("a promotion is published in the verified graph only")
     checked_promotion(ctx, envelope)
     found, graph = statement.parse(envelope), proposal.graph
     writer = NodeReportWriter(ctx.client, graph)
@@ -280,8 +280,8 @@ def _asset(proposal: Proposal, envelope: signing.SignedEnvelope) -> tuple[str, l
 
 
 def _share(ctx: CurateContext, graph: str, name: str, quads: list[dict[str, str]]) -> bool:
-    """Share into the community graph; True when the node already held this
-    asset (an earlier attempt got it there). Any other failure is raised."""
+    """Share into the graph's shared memory; True when the node already held
+    this asset (an earlier attempt got it there). Any other failure is raised."""
     try:
         community.ensure_report_lane(ctx.client, graph)
         result = ctx.client.share_knowledge_asset(graph, name, quads)
