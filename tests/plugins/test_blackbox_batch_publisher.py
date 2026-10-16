@@ -33,7 +33,7 @@ from plugins.blackbox.curate.publishing import batch as batch_module
 from plugins.blackbox.curate.publishing import row_builders as rb
 from plugins.blackbox.curate.publishing.batch import BatchPublisher, PrecheckUnavailable, strict_verified_subset
 from plugins.blackbox.curate.publishing.ledger import PublishLedger, PublishState
-from plugins.blackbox.curate.publishing.publish import NodeBatchWriter, SubmitReply, definite_refusal
+from plugins.blackbox.curate.publishing.node_writers import NodeBatchWriter, SubmitReply, definite_refusal
 from plugins.blackbox.curate.publishing.precheck import (
     ALREADY_VERIFIED,
     COVERED_BY_WHOLE_PACKAGE,

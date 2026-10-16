@@ -57,7 +57,8 @@ from ..context import CurateContext
 from ..proposal import Proposal, ProposalError, ProposalState, ProposalStore
 from .ledger import BatchEntry, BatchRecord, PublishLedger, PublishState
 from .precheck import VerifiedSubset, precheck
-from .publish import NodeBatchWriter, SubmitReply, definite_refusal, has_quorum
+from .node_writers import NodeBatchWriter, SubmitReply, definite_refusal
+from .publish import has_quorum
 from .row_builders import PROMOTION_STATEMENT, ROW_BUILDERS, ConfirmedEntry
 
 logger = logging.getLogger(__name__)
@@ -160,7 +161,7 @@ def strict_verified_subset(compiled: Any) -> VerifiedSubset:
 
 class BatchPublisher:
     """Owns beat step 8. ``store`` / ``ledger`` default to the curate home's;
-    ``writer`` — the node side (default :class:`.publish.NodeBatchWriter` on the
+    ``writer`` — the node side (default :class:`.node_writers.NodeBatchWriter` on the
     context's client); ``verified_subset`` — the pre-check lookup (default
     :func:`strict_verified_subset` over ``ctx.compiled``); ``wallet_balance`` — the
     wallet's TRAC, None when unknown; ``beat_seconds`` — the beat interval."""
