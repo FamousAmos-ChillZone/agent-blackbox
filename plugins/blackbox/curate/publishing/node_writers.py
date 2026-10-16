@@ -141,8 +141,9 @@ def _text(reply: object, key: str) -> str:
 class ReportAsset:
     """The asset that holds a promoted report on this node: ``name`` — its
     lifecycle name; ``author`` — its author's agent address (the reporter's
-    node); ``sub_graph`` — where it was shared; ``verified`` — Verified Memory
-    already holds the report (it was published: nothing is paid again)."""
+    node); ``sub_graph`` — where it was shared; ``verified`` — this node's
+    store holds the report in Verified Memory (it was published: nothing is
+    paid again)."""
 
     name: str
     author: str
@@ -175,8 +176,11 @@ class NodeReportWriter:
     def locate(self, ref: statement.ReportRef) -> Optional[ReportAsset]:
         """Where this node holds the report *ref* names (its digest, signed by
         its reporter key): a copy in Verified Memory first, else the newest
-        shared asset, named by the node. None when no such copy is held here;
-        raises :class:`DkgError` when the store or the node could not tell."""
+        shared asset, named by the node. Whether Verified Memory holds it is
+        read from the store, never from the node's lifecycle record (that still
+        names a shared-memory pointer after the publish). None when no such
+        copy is held here; raises :class:`DkgError` when the store or the node
+        could not tell."""
         copies = self._copies(ref)
         if copies is None:
             raise DkgError("this node's store could not be read")
@@ -187,8 +191,7 @@ class NodeReportWriter:
             descriptor = node_routes.shared_asset(self._client, self._graph, copy.asset_id, author=copy.author,
                                                   sub_graph=copy.sub_graph)
             if descriptor and _text(descriptor, "name"):
-                return ReportAsset(_text(descriptor, "name"), copy.author, copy.sub_graph,
-                                   verified=bool(_text(descriptor, "vmCurrentAssertion")))
+                return ReportAsset(_text(descriptor, "name"), copy.author, copy.sub_graph)
         return None
 
     def submit(self, asset: ReportAsset) -> SubmitReply:

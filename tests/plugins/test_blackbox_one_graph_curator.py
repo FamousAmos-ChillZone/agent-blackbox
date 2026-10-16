@@ -265,6 +265,19 @@ def test_a_report_already_in_verified_memory_is_never_paid_for_again(monkeypatch
     assert outcome.startswith("published") and node.member_publishes == [] and len(node.statements) == 1
 
 
+def test_the_nodes_lifecycle_record_never_decides_that_a_report_was_promoted(monkeypatch, tmp_path, node, curators):
+    """The record names Verified Memory pointers whatever the store holds (and keeps the shared-memory one after a
+    publish): only a copy in this node's Verified Memory counts, so the report is published."""
+    report = shared_report(EVIL, EDGE)
+    asset = node.share(report)
+    node.assets[f"{EDGE.address.lower()}:5"]["ual"] = "did:dkg:31337/edge/5"   # the record says "published"
+    proposal = _proposed(monkeypatch, tmp_path, node, curators, report)
+    store_b = _on_b(monkeypatch, tmp_path, node, curators, proposal)
+    _, outcome = verbs.approve(_ctx(node, curators["manifest"]), store_b, proposal.id, evidence="advisory:MAL-1",
+                               typed_code=None, yes=True)
+    assert outcome.startswith("published") and [name for name, _body in node.member_publishes] == [asset]
+
+
 def test_a_refused_report_publish_pays_for_no_statement_and_can_be_published_again(monkeypatch, tmp_path, node, curators):
     report = shared_report(EVIL, EDGE)
     node.share(report)
