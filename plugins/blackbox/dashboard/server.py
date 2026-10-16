@@ -66,6 +66,16 @@ _connection_states: dict[str, dict[str, Any]] = {}
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 _FONTS_DIR = _ASSETS_DIR / "fonts"
+# Exact allowlist keeps the font route traversal-safe and limits the dashboard
+# to the licensed brand faces shipped by this plugin.
+_FONT_FILES = frozenset({
+    "archivo-latin.woff2", "archivo-latin-ext.woff2",
+    "ibm-plex-mono-400-latin.woff2", "ibm-plex-mono-400-latin-ext.woff2",
+    "ibm-plex-mono-500-latin.woff2", "ibm-plex-mono-500-latin-ext.woff2",
+    "ibm-plex-mono-600-latin.woff2", "ibm-plex-mono-600-latin-ext.woff2",
+})
+#: The sub-packages that add their own routes and pages, each through ``register(app, swr)``.
+_ROUTE_PACKAGES = (shields_routes,)
 def _dkg_durable_progress(dkg_home: str, context_graph_id: str) -> dict[str, Any]:
     """Read the latest resumable VM offset reported by the managed DKG."""
     return read_durable_progress(dkg_home, context_graph_id)
@@ -778,8 +788,6 @@ def _profile_activity_state(
     return states
 
 
-
-
 def create_app(*, manage_blackbox: bool = False):
     """Build and return the FastAPI application."""
     from fastapi import Body, FastAPI, Query
@@ -1143,19 +1151,7 @@ def create_app(*, manage_blackbox: bool = False):
 
     @app.get("/fonts/{name}")
     def font(name: str) -> Any:
-        # Exact allowlist keeps this static route traversal-safe and limits the
-        # dashboard to the licensed brand faces shipped by this plugin.
-        allowed = {
-            "archivo-latin.woff2",
-            "archivo-latin-ext.woff2",
-            "ibm-plex-mono-400-latin.woff2",
-            "ibm-plex-mono-400-latin-ext.woff2",
-            "ibm-plex-mono-500-latin.woff2",
-            "ibm-plex-mono-500-latin-ext.woff2",
-            "ibm-plex-mono-600-latin.woff2",
-            "ibm-plex-mono-600-latin-ext.woff2",
-        }
-        if name not in allowed:
+        if name not in _FONT_FILES:
             return JSONResponse({"error": "not found"}, status_code=404)
         path = _FONTS_DIR / name
         if not path.exists():
@@ -1805,7 +1801,8 @@ def create_app(*, manage_blackbox: bool = False):
 
     community_endpoints = community_routes.register_community_routes(app, community_read=_community_read, node_reachable=_node_reachable)
     sync_meter.register_sync_meter_routes(app, load_config=load_blackbox_config, node_reachable=_node_reachable, verified_rules=lambda cfg: _graph_source_count(ruleset.peek(cfg), "public"))
-    shields_routes.register(app, _swr)   # GET /api/shields*, each shield page and its files
+    for routes in _ROUTE_PACKAGES:   # GET /api/shields*, each shield page and its files
+        routes.register(app, _swr)
     @app.get("/api/threat")
     def threat(identifier: str = Query(..., min_length=1), tier: str = Query("public")) -> Any:
         """Full detail for ONE threat via a targeted point-lookup.
