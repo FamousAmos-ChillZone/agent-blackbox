@@ -15,7 +15,7 @@ and flags or blocks it before anything happens.
 | **Catches** | prompt injection, dangerous commands, sensitive-file access, secret exposure, malicious packages, unsafe skills, known-bad domains and wallets, attempts on crypto wallets and keys |
 | **Learns from** | Umanitek's verified threat graph (may block) and an open community graph (flags only), both on the OriginTrail Decentralized Knowledge Graph (DKG) |
 | **Shows** | every finding in a local dashboard and audit trail |
-| **Shares** | privacy-safe, signed threat reports with the community graph — on by default, one command to turn off |
+| **Shares** | privacy-safe, signed threat reports with the community graph — opt-in: off until you turn it on |
 
 Contents: [How it works](#how-it-works) · [Install](#install) ·
 [What Blackbox does on your machine](#what-blackbox-does-on-your-machine) ·
@@ -105,13 +105,15 @@ Read this before installing. Blackbox sends **no telemetry or usage data**.
 - **Network calls.**
   - Blackbox's own DKG node keeps a copy of the public verified threat graph
     current by syncing with DKG network peers.
-  - **Community sharing is on by default.** Blackbox shares privacy-safe threat
-    reports with the open community graph: the threat's name, category and
-    severity, and the day — never prompts, commands, file contents or secrets
-    (see [what a report carries](#what-a-report-carries)). It also reads other
-    nodes' reports, which only ever flag and never block. Turn sharing off with
-    `blackbox report --disable-sharing`, the dashboard toggle, or `report: false`
-    (`BLACKBOX_REPORT=0`).
+  - **Community sharing is opt-in: off until you turn it on.** Turned on with
+    `blackbox report --enable-sharing` or the dashboard toggle (either records
+    your agreement to the reporter terms; nothing else does), Blackbox shares
+    privacy-safe threat reports with the open community graph: the threat's
+    name, category and severity, and the day — never prompts, commands, file
+    contents or secrets (see [what a report carries](#what-a-report-carries)).
+    It reads other nodes' reports either way; they only ever flag and never
+    block. Turn sharing off again with `blackbox report --disable-sharing`, the
+    dashboard toggle, or `report: false` (`BLACKBOX_REPORT=0`).
   - Package installs are looked up on OSV.dev (`api.osv.dev`): the package name
     and version are sent, never your code. Turn this off with `osv_lookup: false`.
   - The optional AI reviewer is off until you set it up. Once on, it sends the
@@ -367,7 +369,7 @@ Every command is also `hermes blackbox …`.
 
 | Command | What it does |
 |---|---|
-| `blackbox report --disable-sharing` / `--enable-sharing` | turn sharing off or back on |
+| `blackbox report --enable-sharing` / `--disable-sharing` | turn sharing on (opt in; records your agreement to the reporter terms) or off |
 | `blackbox report --consent` | read the reporter terms |
 | `blackbox report --type ioc --ioc-type domain --value evil.example --context fetched-by-tool` | file a report by hand (same checks and signer as automatic sharing) |
 | `blackbox report --status` | every report you shared: outcome, current stage and reason |
@@ -427,7 +429,7 @@ accept a `BLACKBOX_*` environment variable, such as `BLACKBOX_MODE`.
 |---|---|---|
 | `mode` | `audit` | `audit` records, `block` stops confirmed threats |
 | `block_severity` | `critical` | the lowest severity blocked in block mode |
-| `report` | `true` | share privacy-safe reports with the community graph |
+| `report` | `false` | share privacy-safe reports with the community graph (opt-in: turn on with `blackbox report --enable-sharing`) |
 | `report_min_severity` | `high` | the lowest severity a built-in check must reach to be flagged or shared |
 | `daily_report_limit` | `100` | outbound reports per day (cannot be switched off) |
 | `detection.<category>.enabled` | `true` | turn a category on or off: `injection`, `escalation`, `dependency`, `fileaccess`, `skill` |

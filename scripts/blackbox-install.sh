@@ -2111,11 +2111,12 @@ defaults = {
     "context_graph_id": context_graph_id,
     "graph_peer_id": graph_peer_id,
     "sync_interval": 3600,
-    # Community sharing is ON by default with an easy opt-out (2026-10-12):
-    # privacy-safe threat statements only, never prompts, commands, paths or
-    # files. The daily cap is the plugin's default bound (100 since 2026-10-12; 20 before): 0 used to mean
+    # Community sharing is OPT-IN (2026-10-16): off until the operator runs
+    # `blackbox report --enable-sharing` or uses the dashboard toggle, which also
+    # record the acceptance. The installer never records it. The daily cap is the
+    # plugin's default bound (100 since 2026-10-12; 20 before): 0 used to mean
     # NO cap, and the plugin no longer accepts it (Refine R1).
-    "report": True,
+    "report": False,
     "daily_report_limit": 100,
     "report_min_severity": "high",
     "block_severity": "critical",
@@ -2154,18 +2155,13 @@ def _consent_in_force(checkout):
 if blackbox.get("report") is True and not _consent_in_force(repo_dir):
     blackbox["report"] = False
     added.append("report")
-# Sharing became ON by default on 2026-10-12. Older installers wrote
-# `report: False` automatically ("not shipped yet"), so an upgrade turns it on
-# ONCE, recorded by the marker below. An operator who opted out (a withdrawn
-# record: _consent_in_force says no) is left off, and a `report: false` set
-# after the marker exists is never flipped again.
-SHARING_DEFAULT_MARK = "on-2026-10-12"
-if blackbox.get("sharing_default") != SHARING_DEFAULT_MARK:
-    if blackbox.get("report") is not True and _consent_in_force(repo_dir):
-        blackbox["report"] = True
-        added.append("report")
-    blackbox["sharing_default"] = SHARING_DEFAULT_MARK
-    added.append("sharing_default")
+# Sharing is opt-in again (2026-10-16). The 2026-10-12 installers turned sharing
+# on by default and wrote a `sharing_default` marker; the KI-184 rule above has
+# already turned off every such install that never recorded an acceptance, and
+# the marker now means nothing, so it is removed. An operator who opted in keeps
+# sharing. The installer never turns sharing on.
+if blackbox.pop("sharing_default", None) is not None:
+    added.append("sharing_default (removed)")
 # `daily_report_limit: 0` was the pre-R1 "no cap" and the plugin refuses it;
 # 20 is what earlier installers wrote as the default (raised to 100 on
 # 2026-10-12), so it moves with the default. Any other operator-chosen cap is kept.
@@ -2374,18 +2370,19 @@ start_dashboard() {
     step "Log: $log_file"
 }
 
-# Community sharing is ON by default (2026-10-12): every summary says so, what
-# is sent, and the one command that turns it off.
+# Community sharing is OPT-IN (2026-10-16): every summary says it is off unless
+# the operator turned it on, what would be sent, and the one command that turns it on.
 print_sharing_notice() {
     cat <<'EOF'
 
-  Community sharing is ON: when your agent meets a threat already listed in the
-  verified threat graph, this node shares a privacy-safe statement (the threat's
-  identifier and type, the tool that met it, blocked or flagged, and what the
-  threat targets; never prompts, commands, file paths or files) with the
-  Blackbox community graph. Turn it off any time:
+  Community sharing is OFF unless you turn it on (it is opt-in). When on, and
+  your agent meets a threat already listed in the verified threat graph, this
+  node shares a privacy-safe statement (the threat's identifier and type, the
+  tool that met it, blocked or flagged, and what the threat targets; never
+  prompts, commands, file paths or files) with the Blackbox community graph.
+  Turn it on (this records your agreement to the reporter terms):
 
-      blackbox report --disable-sharing        (or the dashboard's sharing toggle)
+      blackbox report --enable-sharing         (or the dashboard's sharing toggle)
 EOF
 }
 

@@ -1,6 +1,16 @@
 # Agent Blackbox — Reporter Terms (community graph)
 
-Version: 1.3 (draft for counsel review, 2026-10-12)
+Version: 1.4 (draft for counsel review, 2026-10-16)
+
+## What changed in version 1.4
+
+- Community sharing is OPT-IN again: it is off when Blackbox is installed and
+  stays off until you turn it on with `blackbox report --enable-sharing` or the
+  dashboard's sharing toggle. Turning it on records your agreement to these
+  terms; no installer, upgrade or automatic step ever turns it on for you.
+- An installation that was sharing only because of the version 1.2 default
+  (you never turned it on yourself) stops sharing when Blackbox is updated. If
+  you turned sharing on yourself, it stays on.
 
 ## What changed in version 1.3
 
@@ -36,10 +46,11 @@ Version: 1.3 (draft for counsel review, 2026-10-12)
   by it (section 5).
 
 These terms apply to the OPERATOR of a machine running Agent Blackbox.
-Community sharing is ON by default (`report: true`). You can turn it off at
+Community sharing is OFF until you turn it on (`report: false` by default).
+Turn it on with `blackbox report --enable-sharing` or the dashboard's sharing
+toggle; that records your agreement to these terms. You can turn it off at
 any time with `blackbox report --disable-sharing`, `blackbox report
---withdraw-consent` or the dashboard's sharing toggle; sharing stops on the
-next action, and turning it back on is just as easy.
+--withdraw-consent` or the toggle; sharing stops on the next action.
 
 ## 1. What you share
 
@@ -141,6 +152,8 @@ stops counting it, but the record of the statement stays on the network.
   every statement also carries, is not changed by this command. Each group of
   curators deletes its ledger salt on request (crypto-shredding) and stops
   keeping your listing alive.
+- **Turn sharing on (opt in):** `blackbox report --enable-sharing` (or the
+  dashboard toggle).
 - **Turn sharing off (opt out):** `blackbox report --withdraw-consent` (or
   `--disable-sharing`, or the dashboard toggle).
 - Requests that need a human: the contact points in the controller map
@@ -150,5 +163,6 @@ stops counting it, but the record of the statement stays on the network.
 ## 6. Changes
 
 The version in force is the one shipped with your installation, and its
-"What changed" section lists every change. An opt-out stays in force across
-versions until you turn sharing back on.
+"What changed" section lists every change. Your choice stays in force across
+versions: a change of these terms never turns sharing on, and never pauses
+sharing you turned on.

@@ -75,7 +75,8 @@ def run_local_verb(args: argparse.Namespace) -> int:
 
 def record_consent() -> int:
     """``--consent``: print the reporter terms and record acceptance of them — the
-    opt-back-in after an opt-out (sharing is on by default, 2026-10-12)."""
+    operator's opt-in (sharing is opt-in, 2026-10-16). It does not flip the
+    ``report`` switch; ``--enable-sharing`` does both."""
     text = consent.terms_text()
     earlier = consent.current()
     if text and earlier is not None and earlier.terms_hash and earlier.terms_hash != consent.terms_hash(text):
@@ -102,10 +103,10 @@ def record_consent() -> int:
 def set_sharing(on: bool) -> int:
     """``--enable-sharing`` / ``--disable-sharing``: the ``report`` switch (KI-299).
 
-    Sharing is on by default (2026-10-12). Turning it ON is also the opt-back-in
-    after an earlier opt-out, so it records a fresh acceptance first; the write
-    goes through ``kernel.settings.write_settings``, the path the dashboard
-    toggle uses, with the resulting state.
+    Sharing is opt-in (2026-10-16). Turning it ON is the operator's opt-in, so it
+    records an acceptance of the reporter terms first (``consent.for_settings``);
+    the write goes through ``kernel.settings.write_settings``, the path the
+    dashboard toggle uses, with the resulting state. No other path records it.
     """
     from ...kernel import settings
     payload = {"report": on}
@@ -115,7 +116,9 @@ def set_sharing(on: bool) -> int:
             print(f"Not changed: {error}")
         return 1
     if on:
-        print("Sharing is on: findings that pass the sharing rules are shared with the community graph.")
+        print("Sharing is on: when your agent meets a threat the verified graph already lists, a privacy-safe")
+        print("statement (the threat's identifier and type, blocked or flagged; never prompts, commands, paths")
+        print("or files) is shared with the community graph. Turn it off with `blackbox report --disable-sharing`.")
     else:
         print("Sharing is off: nothing new leaves this node.")
     return 0

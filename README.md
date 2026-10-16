@@ -22,7 +22,7 @@ community threat intelligence, and flags or blocks it before damage is done.
 | **Catches** | prompt injection, dangerous commands, sensitive-file access, secret exposure, malicious packages, unsafe skills, known-bad indicators |
 | **Learns from** | Umanitek's **verified graph** (may block) and the open **community graph** (flags only) on the OriginTrail DKG |
 | **Shows** | every finding in a local dashboard and audit trail |
-| **Shares** | signed, privacy-safe threat statements with the community graph — on by default, one command to turn off (`blackbox report --disable-sharing`) |
+| **Shares** | signed, privacy-safe threat statements with the community graph — opt-in: off until you turn it on (`blackbox report --enable-sharing`) |
 
 _This README documents the mainline as of 2026-10-14. The file inventory below is generated from the code (`scripts/blackbox-readme-inventory.py`)._
 
@@ -157,12 +157,12 @@ bash blackbox-install.sh
 | `blackbox attach` / `detach` | protect every local agent at once / turn it off |
 | `blackbox setup-llm` | optional second-opinion LLM reviewer for prompt injection (flags only, verdicts stay local) |
 
-### Community graph (sharing is on by default)
+### Community graph (sharing is opt-in)
 
 | Command | What it does |
 |---|---|
+| `blackbox report --enable-sharing` | turn sharing on (records your agreement to the reporter terms; nothing else does) |
 | `blackbox report --disable-sharing` | sharing stops on the next action; retractions still work |
-| `blackbox report --enable-sharing` | sharing back on |
 | `blackbox report --consent` | read the reporter terms |
 | `blackbox report --type ioc --ioc-type domain --value evil.example --context fetched-by-tool --severity high` | file a report by hand (same gates, signer and ledger as automatic sharing) |
 | `blackbox report --status` | every report you shared: outcome, current stage and reason |
@@ -1210,7 +1210,7 @@ environment override, for example `BLACKBOX_MODE` or `BLACKBOX_REPORT`.
 | `graph_peer_id` | bundled publisher peer | authoritative source for the verified graph |
 | `community_graph_id` | `0x37b1Fdfd…/agent-blackbox-community` | the community graph this node reads and writes; empty keeps every community path off |
 | `community_graph_peer_id` | `""` | peer id of the node that owns the community graph; dialled before the first subscribe; ships as a pair with the graph id |
-| `report` | `true` | share privacy-safe reports to the community graph (on by default; `blackbox report --disable-sharing` turns it off) |
+| `report` | `false` | share privacy-safe reports to the community graph (opt-in; `blackbox report --enable-sharing` turns it on, `--disable-sharing` off) |
 | `report_min_severity` | `high` | lowest severity a built-in discovery candidate must reach to be flagged or shared |
 | `daily_report_limit` | `100` | cap on outbound reports per day; never "no cap" |
 | `community_poll_interval` | `20` | seconds between community-graph pulses (0 off) |
@@ -1232,13 +1232,13 @@ pair) and writes them into the config.
 
 ## Privacy and your rights
 
-Sharing is privacy by design: a report has no field that could carry a prompt, command, path or file, and secrets never leave. It is on by default and one command turns it off. The reporter terms, the data-protection impact assessment
+Sharing is privacy by design: a report has no field that could carry a prompt, command, path or file, and secrets never leave. It is off until you turn it on (opt-in), and one command turns it off again. The reporter terms, the data-protection impact assessment
 and the controller map ship in `plugins/blackbox/docs/`.
 
 | Right | Command | What actually happens |
 |---|---|---|
 | Objection | `blackbox report --disable-sharing` | automatic sharing, manual reports, keep-alive, retries and digests stop on the next action |
-| Information | `blackbox report --consent` | shows the reporter terms; sharing is on by default under them |
+| Information | `blackbox report --consent` | shows the reporter terms you agree to when you turn sharing on |
 | Access and portability | `blackbox report --export FILE` | key backup, share ledger, consent record, keep-alive memory, retry queue, sighting tally, as JSON |
 | Rectification | `--retract`, `--false-positive` | always allowed, even with sharing off; stops a statement counting on every current reader |
 | Erasure | `blackbox report --erase-identity --confirm` | destroys the signing key, ledger, keep-alive memory, retry queue, sharing record and tally; sharing stays off afterwards |

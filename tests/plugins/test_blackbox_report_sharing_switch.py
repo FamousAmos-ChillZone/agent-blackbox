@@ -1,9 +1,10 @@
-"""Turning community sharing on and off from the command line (KI-299).
+"""Turning community sharing on and off from the command line and the dashboard (KI-299).
 
-Sharing is ON by default (2026-10-12). `--disable-sharing` sets `report: false`;
-`--enable-sharing` turns it back on and, after an opt-out
-(`--withdraw-consent`), is itself the opt-back-in. `--consent` records an
-acceptance and says plainly whether the `report` switch is on.
+Sharing is OPT-IN (2026-10-16): off on a fresh install. `--enable-sharing` and the
+dashboard toggle are the two ways in — each records the acceptance and sets
+`report: true`; after an opt-out (`--withdraw-consent`) they are the opt-back-in.
+`--disable-sharing` sets `report: false`. `--consent` records an acceptance and
+says plainly whether the `report` switch is on.
 """
 
 from __future__ import annotations
@@ -127,3 +128,30 @@ def test_the_threat_sharing_tile_reads_off_over_a_withdrawn_consent(real_consent
     stats = community_routes.community_stats_payload(lambda cfg: SimpleNamespace())
 
     assert stats["sharing_enabled"] is False
+
+
+def test_a_fresh_install_shares_nothing_until_enable_sharing(real_consent, capsys):
+    assert load_blackbox_config().report is False and real_consent.current() is None   # the opt-in default
+
+    code = report_command.cmd_report(_parse("--enable-sharing"))
+
+    assert code == 0 and load_blackbox_config().report is True and real_consent.in_force()
+    assert real_consent.current().accepted_at                                          # the acceptance is recorded
+
+
+def test_the_dashboard_toggle_records_the_opt_in_and_other_saves_do_not(real_consent, monkeypatch, tmp_path):
+    import pytest
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+    from plugins.blackbox.dashboard import server
+
+    monkeypatch.setenv("HOME", str(tmp_path))                # agent discovery must not see the real ~/.hermes
+    with TestClient(server.create_app(), base_url="http://127.0.0.1:9700") as client:
+        token = {"X-Blackbox-Token": client.get("/api/session").json()["token"]}
+        assert client.get("/api/settings").json()["report"] is False                   # a fresh install reads off
+        assert client.post("/api/settings", json={"mode": "block"}, headers=token).status_code == 200
+        assert real_consent.current() is None                                           # an unrelated save records nothing
+        assert client.post("/api/settings", json={"report": True}, headers=token).status_code == 200
+        assert client.get("/api/settings").json()["report"] is True
+
+    assert real_consent.in_force() and load_blackbox_config().report is True            # the toggle is the opt-in
