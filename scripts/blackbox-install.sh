@@ -102,6 +102,12 @@ BLACKBOX_DKG_NODE_OPTIONS=""
 BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED="${BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED:-1}"
 BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED="${BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED:-1}"
 NODE_MAJOR="${BLACKBOX_NODE_MAJOR:-22}"
+# nvm's installer is run only after its bytes match this pinned sha256 (Hermes catalog review,
+# 2026-10-16): a changed or tampered script never reaches bash. The hash is of
+# https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh and equals install.sh in the
+# v0.40.3 release archive. Moving to a new nvm release moves both lines together.
+NVM_INSTALL_VERSION_PIN="v0.40.3"
+NVM_INSTALL_SHA256="2d8359a64a3cb07c02389ad88ceecd43f2fa469c06104f92f98df5b6f315275f"
 BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID="0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"
 BLACKBOX_CONTEXT_GRAPH_ID="${BLACKBOX_CONTEXT_GRAPH_ID:-$BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID}"
 BLACKBOX_GRAPH_PEER_ID="${BLACKBOX_GRAPH_PEER_ID:-12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyKndHXjZM}"
@@ -1276,7 +1282,7 @@ ensure_node() {
     warn "Node.js $NODE_MAJOR+ not found — installing it automatically (via nvm)…"
     if [ ! -s "$NVM_DIR/nvm.sh" ]; then
         step "Installing nvm into $NVM_DIR …"
-        if ! curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash >/dev/null 2>&1; then
+        if ! install_nvm_verified; then
             warn "Could not install nvm automatically."
             _node_manual_hint
             HAS_NODE=false
@@ -1294,6 +1300,39 @@ ensure_node() {
         _node_manual_hint
         HAS_NODE=false
     fi
+}
+
+# The sha256 of a file, by whichever tool this system has (macOS: shasum; Linux: sha256sum).
+_sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -d' ' -f1
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | cut -d' ' -f1
+    else
+        return 1
+    fi
+}
+
+# Download nvm's installer to a file, check it against NVM_INSTALL_SHA256, and only then run it.
+# Fails (non-zero) without running anything when the download fails, no sha256 tool exists, or
+# the bytes differ from the pin — a mismatch is said plainly, it is never retried or skipped.
+install_nvm_verified() {
+    local script actual
+    script="$(mktemp "${TMPDIR:-/tmp}/blackbox-nvm-install.XXXXXX")" || return 1
+    if ! curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_INSTALL_VERSION_PIN}/install.sh" -o "$script"; then
+        rm -f "$script"
+        return 1
+    fi
+    actual="$(_sha256_of "$script")" || { warn "No sha256 tool (sha256sum or shasum) to check nvm's installer; not running it."; rm -f "$script"; return 1; }
+    if [ "$actual" != "$NVM_INSTALL_SHA256" ]; then
+        warn "nvm's installer did not match its pinned checksum (expected $NVM_INSTALL_SHA256, got $actual); not running it."
+        rm -f "$script"
+        return 1
+    fi
+    local status=0
+    bash "$script" >/dev/null 2>&1 || status=$?
+    rm -f "$script"
+    return "$status"
 }
 
 _node_manual_hint() {
