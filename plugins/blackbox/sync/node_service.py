@@ -26,6 +26,7 @@ Usage::
 
 from __future__ import annotations
 
+import logging
 import os
 import plistlib
 import subprocess
@@ -38,9 +39,18 @@ import psutil
 
 from ..kernel.config import BlackboxConfig
 
+logger = logging.getLogger(__name__)
+
 LAUNCHD_LABEL = "ai.umanitek.blackbox-dkg"   # = BLACKBOX_DKG_LAUNCHD_LABEL in scripts/blackbox-install.sh
 SYSTEMD_UNIT = "blackbox-dkg"
 SYSTEM_UNIT_DIR = Path("/etc/systemd/system")
+# launchd keeps no journal, so the installer sends the LaunchAgent node's stderr here (in the node's
+# home, = blackbox_dkg_launchd_error_log in the installer). The node writes its warnings there too,
+# a few MB a day, so it is trimmed in place: launchd holds it open for appending, and a replaced
+# file would leave launchd writing into a deleted one.
+LAUNCHD_ERROR_LOG = "launchd-errors.log"
+ERROR_LOG_MAX_BYTES = 5 * 1024 * 1024
+ERROR_LOG_KEEP_BYTES = 1024 * 1024
 _COMMAND_TIMEOUT_SECONDS = 120
 
 
@@ -162,3 +172,28 @@ def registered(cfg: BlackboxConfig, home: Optional[Path] = None) -> Optional[Nod
     if sys.platform.startswith("linux"):
         return _systemd_unit(cfg, home)
     return None
+
+
+def trim_error_log(dkg_home: Path, max_bytes: int = ERROR_LOG_MAX_BYTES, keep_bytes: int = ERROR_LOG_KEEP_BYTES) -> bool:
+    """Cut the LaunchAgent error log to its newest *keep_bytes* once it passes *max_bytes*.
+
+    Trims IN PLACE (read the tail, rewrite from the start, truncate) so launchd's open append
+    handle keeps writing into the same file. Returns whether it trimmed. Best effort: an
+    unreadable or missing log is left alone and logged at DEBUG — the log is diagnostics only.
+    """
+    path = dkg_home / LAUNCHD_ERROR_LOG
+    try:
+        if path.stat().st_size <= max_bytes:
+            return False
+        with path.open("r+b") as log:
+            log.seek(-keep_bytes, os.SEEK_END)
+            tail = log.read()
+            tail = tail[tail.find(b"\n") + 1:]   # start at a whole line
+            log.seek(0)
+            log.write(tail)
+            log.truncate()
+        return True
+    except OSError as exc:
+        logger.debug("blackbox: could not trim %s: %s", path, exc)
+        return False
+

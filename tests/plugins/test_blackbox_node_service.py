@@ -208,3 +208,45 @@ def test_the_launchd_label_matches_the_installer():
     installer = (REPO / "scripts" / "blackbox-install.sh").read_text(encoding="utf-8")
     match = re.search(r"^BLACKBOX_DKG_LAUNCHD_LABEL=(\S+)", installer, re.MULTILINE)
     assert match is not None and match.group(1) == node_service.LAUNCHD_LABEL == LABEL
+
+
+# ── the LaunchAgent error log stays bounded ──────────────────────────────────
+
+def test_a_large_error_log_is_trimmed_in_place_to_its_newest_whole_lines(tmp_path):
+    """launchd keeps the file open for appending: the trim must keep the same file, not replace it."""
+    log = tmp_path / node_service.LAUNCHD_ERROR_LOG
+    log.write_bytes(b"".join(f"warning {number:06d}\n".encode() for number in range(20_000)))
+    inode = log.stat().st_ino
+    with log.open("ab") as launchd_handle:   # what launchd holds
+        assert node_service.trim_error_log(tmp_path, max_bytes=100_000, keep_bytes=10_000) is True
+        launchd_handle.write(b"written after the trim\n")
+    text = log.read_bytes()
+    assert log.stat().st_ino == inode
+    assert len(text) < 10_100
+    assert text.startswith(b"warning ") and text.endswith(b"warning 019999\nwritten after the trim\n")
+
+
+def test_a_small_or_missing_error_log_is_left_alone(tmp_path):
+    log = tmp_path / node_service.LAUNCHD_ERROR_LOG
+    assert node_service.trim_error_log(tmp_path) is False   # missing
+    log.write_bytes(b"Daemon already running (PID 1).\n")
+    assert node_service.trim_error_log(tmp_path) is False
+    assert log.read_bytes() == b"Daemon already running (PID 1).\n"
+
+
+def test_every_blackbox_sync_trims_the_error_log(cfg, monkeypatch):
+    from plugins.blackbox import sync
+
+    trimmed: list[Path] = []
+    monkeypatch.setattr(sync, "load_blackbox_config", lambda: cfg)
+    monkeypatch.setattr(sync.health, "node_installed", lambda _cfg, _reachable: True)
+    monkeypatch.setattr(sync.DkgClient, "reachable", lambda self, **_kwargs: True)
+    monkeypatch.setattr(sync.node_service, "trim_error_log", lambda home: trimmed.append(home))
+    monkeypatch.setattr(sync, "_sync_with_node", lambda _args: 0)
+    assert sync.cmd_sync(argparse.Namespace(wait=False)) == 0
+    assert trimmed == [Path(cfg.dkg_home)]
+
+
+def test_the_error_log_name_matches_the_installer():
+    installer = (REPO / "scripts" / "blackbox-install.sh").read_text(encoding="utf-8")
+    assert f"printf '%s/{node_service.LAUNCHD_ERROR_LOG}' \"$BLACKBOX_DKG_HOME\"" in installer
