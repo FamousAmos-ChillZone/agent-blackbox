@@ -14,6 +14,11 @@
       "keplr-extension@keplr.app"
     ]
   },
+  "logo": {
+    "file": "logo.svg",
+    "terms": "NOTICE.md",
+    "source": "https://raw.githubusercontent.com/chainapsis/keplr-rainbow-connector/main/packages/rainbow-connector/src/assets/keplrWallet.svg"
+  },
   "availability": [
     {
       "store": "Chrome Web Store",

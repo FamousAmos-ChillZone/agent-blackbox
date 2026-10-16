@@ -99,7 +99,8 @@ def test_traversal_and_unknown_names_are_404_before_any_file_is_opened(app, path
         assert client.get(path, follow_redirects=False).status_code == 404
 
 
-@pytest.mark.parametrize("pack_id", ["exodus", "electrum", "solana-cli"])
+#: OKX publishes no square icon as an SVG on its own domain (2026-10-16), so its pack ships none.
+@pytest.mark.parametrize("pack_id", ["okx-wallet"])
 def test_a_pack_without_a_logo_is_404(app, pack_id):
     assert shields.pack_logo("trader", pack_id) is None
     with TestClient(app, base_url=LOCAL) as client:
@@ -123,7 +124,8 @@ LOGO_PACKS = [(shield.id, pack.id) for shield in shields.all_shields() for pack 
 
 
 def test_the_logo_packs_are_the_ones_shipped_with_terms():
-    assert LOGO_PACKS == [("trader", "metamask"), ("trader", "phantom")]
+    assert LOGO_PACKS == [("trader", pack_id) for pack_id in (
+        "metamask", "phantom", "exodus", "electrum", "solana-cli", "rabby", "coinbase-wallet", "trust-wallet", "keplr", "solflare")]
 
 
 @pytest.mark.parametrize("shield_id, pack_id", LOGO_PACKS)

@@ -11,6 +11,11 @@
       "hnfanknocfeofbddgcijnmhnfnkdnaad"
     ]
   },
+  "logo": {
+    "file": "logo.svg",
+    "terms": "NOTICE.md",
+    "source": "https://raw.githubusercontent.com/coinbase/coinbase-wallet-sdk/master/assets/coinbase_wallet_logo_kit.zip (zip member: \"Coinbase Wallet Logos/Icon/coinbase_wallet_appicon.svg\", extracted unmodified)"
+  },
   "availability": [
     {
       "store": "Chrome Web Store",

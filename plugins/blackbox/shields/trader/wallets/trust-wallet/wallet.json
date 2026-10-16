@@ -11,6 +11,11 @@
       "egjidjbpglichdcondbcbdnbeeppgdph"
     ]
   },
+  "logo": {
+    "file": "logo.svg",
+    "terms": "NOTICE.md",
+    "source": "https://trustwallet.com/icon.svg"
+  },
   "availability": [
     {
       "store": "Chrome Web Store",

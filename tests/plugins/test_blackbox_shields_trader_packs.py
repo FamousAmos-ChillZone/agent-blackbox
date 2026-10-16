@@ -92,12 +92,13 @@ def test_mode_and_settings_read_the_packs():
 
 
 def test_logos_ship_with_their_terms():
-    for pack_id in ("metamask", "phantom"):
+    for pack_id in ("metamask", "phantom", "exodus", "electrum", "solana-cli", "rabby", "coinbase-wallet",
+                    "trust-wallet", "keplr", "solflare"):
         pack = SUPPORTED[pack_id]
         assert pack.logo is not None and (pack.folder / pack.logo.file).is_file()
         assert (pack.folder / pack.logo.terms).read_text(encoding="utf-8").strip()
         assert shields.pack_logo("trader", pack_id) == pack.folder / "logo.svg"
-    assert shields.pack_logo("trader", "exodus") is None
+    assert shields.pack_logo("trader", "okx-wallet") is None   # no official square SVG found (2026-10-16)
 
 
 # ------------------------------- the same as the old code, recorded on its last green run

@@ -121,7 +121,7 @@ def test_found_rows_are_one_per_wallet_in_the_panels_words(home, monkeypatch):
     assert firefox.sub == ("every extension's storage in 2 Firefox profiles — "
                            "protected — blocked if the agent reaches for it")
     electrum = rows["Electrum · Desktop app"]
-    assert (electrum.icon, electrum.state, electrum.logo) == ("–", "none", "")
+    assert (electrum.icon, electrum.state, electrum.logo) == ("–", "none", "/shields/trader/packs/electrum/logo.svg")
     assert electrum.sub == "wallet folder — not selected in Settings, so not protected"
 
     _config(monkeypatch, "audit")

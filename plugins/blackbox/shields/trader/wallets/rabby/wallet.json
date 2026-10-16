@@ -11,6 +11,11 @@
       "acmacodkjbdgmoleebolmdjonilkdbch"
     ]
   },
+  "logo": {
+    "file": "logo.svg",
+    "terms": "NOTICE.md",
+    "source": "https://raw.githubusercontent.com/RabbyHub/logo/master/symbol.svg"
+  },
   "availability": [
     {
       "store": "Chrome Web Store",
