@@ -48,7 +48,8 @@ export interface BlackboxConfig {
   syncInterval: number; // seconds
   /**
    * Share privacy-safe reports with the community: the shared memory of `contextGraphId`, sub-graph
-   * "reports" (one graph since 2026-10-16). ON by default (2026-10-12); an opt-out record stops it at send time.
+   * "reports" (one graph since 2026-10-16). Opt-in (2026-10-16): off by default, and a consent record
+   * (R13) is still required at send time.
    */
   report: boolean;
   /** Daily cap on outbound reports; never "no cap" — 0 or less means the default (Refine R1). */
@@ -135,7 +136,7 @@ const DEFAULTS: BlackboxConfig = {
   dkgUrl: DEFAULT_DKG_URL,
   dkgHome: "",
   syncInterval: 300,
-  report: true,
+  report: false,
   dailyReportLimit: DEFAULT_DAILY_REPORT_LIMIT,
   reportMinSeverity: "high",
   blockSeverity: "critical",
@@ -299,7 +300,7 @@ export function resolveConfig(pluginConfig: Record<string, unknown> = {}): Black
       num(pluginConfig.sync_interval) ??
       DEFAULTS.syncInterval,
     // KI-182 port: the bridge builds R1-schema, signed reports for the community (the shared
-    // memory of contextGraphId), so the switch is wired; an opt-out record gates every send.
+    // memory of contextGraphId), so the switch is wired. Still opt-in, and a consent record gates every send.
     report: bool(env.BLACKBOX_REPORT) ?? bool(pluginConfig.report) ?? DEFAULTS.report,
     dailyReportLimit: effectiveDailyReportLimit(
       num(env.BLACKBOX_DAILY_REPORT_LIMIT) ?? num(pluginConfig.dailyReportLimit) ?? num(pluginConfig.daily_report_limit),
