@@ -11,7 +11,7 @@ target. Callers use this surface:
 * :func:`is_declined` — whether the operator switched a target off (automatic sweeps skip it).
 * :func:`discover_hermes_homes`, :func:`discover_openclaw_workspaces`,
   :func:`is_managed_blackbox_chat_profile`, :func:`enabled_list_has`.
-* :func:`cmd_attach` / :func:`cmd_detach` — the CLI commands, and the
+* :func:`add_attach_parsers`, :func:`cmd_attach` / :func:`cmd_detach` — the CLI commands, and the
   :func:`print_hermes_attach_row` / :func:`print_openclaw_attach_row` report rows.
 * :func:`copy_plugin_tree`, :func:`repo_root` — the copy step and the source
   checkout root (used by the dev sync script and the dashboard).
@@ -27,7 +27,7 @@ Usage::
 
 from __future__ import annotations
 
-from .command import cmd_attach, cmd_detach, print_hermes_attach_row, print_openclaw_attach_row
+from .command import add_attach_parsers, cmd_attach, cmd_detach, print_hermes_attach_row, print_openclaw_attach_row
 from .hermes_homes import (
     attach_hermes,
     detach_hermes,
@@ -42,6 +42,7 @@ from .declined import is_declined
 from .sweep import attach_all, detach_all
 
 __all__ = [
+    "add_attach_parsers",
     "attach_all",
     "attach_hermes",
     "attach_openclaw",

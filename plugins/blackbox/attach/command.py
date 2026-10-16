@@ -6,6 +6,27 @@ import argparse
 from typing import Any, Dict
 from .. import attach
 
+
+def add_attach_parsers(sub: argparse._SubParsersAction) -> None:
+    """Register ``blackbox attach`` and ``blackbox detach`` on the CLI's sub-parsers
+    (called once by ``cli.setup_cli``); the parsed namespaces go to :func:`cmd_attach`
+    and :func:`cmd_detach`."""
+    attach_p = sub.add_parser(
+        "attach", help="Auto-protect every local Hermes home + OpenClaw workspace"
+    )
+    attach_p.add_argument("--dry-run", action="store_true", help="Show what would change; write nothing")
+    attach_p.add_argument("--hermes-only", action="store_true", help="Only attach to Hermes homes")
+    attach_p.add_argument("--openclaw-only", action="store_true", help="Only attach to OpenClaw workspaces")
+    attach_p.set_defaults(func=cmd_attach)
+
+    detach_p = sub.add_parser("detach", help="Disable Blackbox in every local agent")
+    detach_p.add_argument("--dry-run", action="store_true", help="Show what would change; write nothing")
+    detach_p.add_argument("--remove-files", action="store_true", help="Also delete copied plugin files")
+    detach_p.add_argument("--hermes-only", action="store_true", help="Only detach from Hermes homes")
+    detach_p.add_argument("--openclaw-only", action="store_true", help="Only detach from OpenClaw workspaces")
+    detach_p.set_defaults(func=cmd_detach)
+
+
 def cmd_attach(args: argparse.Namespace) -> int:
     do_hermes = not args.openclaw_only
     do_openclaw = not args.hermes_only
