@@ -128,10 +128,12 @@ def _auto_attach_due() -> bool:
 
 
 def _spawn_auto_attach(cfg: BlackboxConfig) -> None:
-    """Re-run the attach sweep on a daemon thread (throttled, fail-open).
+    """Re-run the attach sweep on a daemon thread (throttled, fail-open) — ONLY when the
+    operator opted in with ``auto_attach: true`` (default off: each Hermes profile is its
+    own trust and credential boundary, so Blackbox joins the ones the operator names).
 
-    Keeps protection current: a Hermes home or OpenClaw workspace created after
-    install gets attached the next time any protected agent starts a session.
+    Opted in, a Hermes home or OpenClaw workspace created after install gets attached the
+    next time any protected agent starts a session; one the operator switched off is skipped.
     """
     import threading
 

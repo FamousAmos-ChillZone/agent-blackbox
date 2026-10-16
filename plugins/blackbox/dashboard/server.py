@@ -941,15 +941,14 @@ def create_app(*, manage_blackbox: bool = False):
                 _blackbox_stop.wait(_BLACKBOX_RESTART_DELAY_SEC)
 
     def _rescan_once(*, force: bool = False) -> list[dict[str, Any]]:
-        """Discover local Hermes/OpenClaw workspaces and hook Blackbox into them.
+        """Discover local Hermes/OpenClaw workspaces and keep Blackbox hooked into the chosen ones.
 
-        ``force`` re-attaches every discovered workspace — an idempotent
-        self-heal used by the manual refresh, so a freshly installed or upgraded
-        agent is (re-)protected at once. Otherwise only newly appeared
-        workspaces are attached: the cheap diff the background loop runs every
-        few seconds. Returns the attach-result row for each workspace it touched.
-        Serialized so the loop and a manual refresh never write one config at the
-        same time. Fail-open per target."""
+        Which targets it may attach is ``attach.automatic_targets`` (one policy): with
+        ``auto_attach`` off (the default) nothing new is ever attached and a reconcile
+        (``force`` = the manual refresh, or every 60 s) only re-hooks targets already
+        attached; with it on, new targets too. Never one the operator switched off.
+        Returns the attach-result row for each target it touched. Serialized so the
+        loop and a manual refresh never write one config at once. Fail-open per target."""
         with _rescan_state["lock"]:
             current: set[tuple[str, str]] = set()
             for h in attach.discover_hermes_homes():
@@ -961,7 +960,7 @@ def create_app(*, manage_blackbox: bool = False):
             touched: list[dict[str, Any]] = []
             now = time.monotonic()
             reconcile = force or now - float(_rescan_state["last_reconcile"] or 0.0) >= _RECONCILE_INTERVAL_SEC
-            targets = {t for t in (current if reconcile else current - known) if not attach.is_declined(*t)}   # never one the operator switched off
+            targets = attach.automatic_targets(current, known, reconcile=reconcile, auto_attach=load_blackbox_config().auto_attach)
             if reconcile:
                 _rescan_state["last_reconcile"] = now
             for kind, target in sorted(targets):
