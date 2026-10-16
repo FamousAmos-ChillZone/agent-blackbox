@@ -86,13 +86,18 @@ _EVIDENCE_HELP = "advisory:<id> | registry-action:<url> | reproduced:<sha256>"
 
 def _with_confirmation_evidence(ctx: CurateContext, kind: CuratorStatement, fields: Mapping[str, str],
                                 evidence: str) -> Mapping[str, str]:
-    """A COMMUNITY confirmation signs the evidence its curators checked (plan
-    §08); without evidence the honest statement is a deferral, never a confirmation."""
-    if kind is not CuratorStatement.CONFIRMATION or ctx.authority is not Authority.COMMUNITY:
-        return fields
+    """A confirmation signs the evidence its curators checked (plan §08). The
+    COMMUNITY authority's must: without evidence the honest statement is a
+    deferral. The verified authority's signs it whenever one is given — the
+    curator service always gives one, and its co-signer checks it (one graph:
+    the verified curators confirm the community's threats) — and stays valid
+    without, as people have always signed it."""
     cited = evidence.strip()
+    if kind is not CuratorStatement.CONFIRMATION or (ctx.authority is not Authority.COMMUNITY and not cited):
+        return fields
     if not community.EVIDENCE_REFERENCE.fullmatch(cited):
-        raise VerbError(f"a community confirmation needs --evidence {_EVIDENCE_HELP}; without evidence, propose a deferral")
+        raise VerbError(f"a confirmation's evidence is {_EVIDENCE_HELP}" if ctx.authority is not Authority.COMMUNITY else
+                        f"a community confirmation needs --evidence {_EVIDENCE_HELP}; without evidence, propose a deferral")
     return {**fields, "evidence": cited}
 
 

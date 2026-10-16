@@ -141,6 +141,7 @@ CLASSIFIED = {
     "curate/self_test.json": "the last self-test result over synthetic fixtures: names nobody",
     "curate/undelivered.json": "proposal ids no other curator received yet and for how many beats: names nobody",
     "curate/curator_key.pem": "this curator's own key",
+    "curate/root_key.pem": "the SANDBOX verified root key (never on a pinned network)",
     "curate/community_root_key.pem": "the SANDBOX community root key (never on a pinned network)",
 }
 

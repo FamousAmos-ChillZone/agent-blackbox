@@ -21,7 +21,7 @@ from ... import community
 from ...kernel import constants, signing, sparql_text, threat_ids
 from ...kernel.signing import promotion_statement as statement
 from ..publishing import strategies
-from ...kernel.signing.authority import COMMUNITY_GRAPH
+from ...kernel.signing.authority import VERIFIED_GRAPH
 from ...kernel.signing.key_manifest import KeyManifest
 from ...kernel.signing.statement_order import CuratorStatement
 from ..context import CurateContext
@@ -45,22 +45,24 @@ def from_a_curator(manifest: Optional[KeyManifest], proposal: Proposal) -> bool:
 def published_elsewhere(ctx: CurateContext, proposal: Proposal, envelope: signing.SignedEnvelope) -> bool:
     """True when the graph holds the statement *proposal* proposes — the same
     signed content — carrying the signatures its kind needs (another curator
-    co-signed and published it): a promotion's statement in Verified Memory,
-    an advisory statement in the shared memory."""
+    co-signed and published it), where its kind lives: a promotion or an
+    enforcement statement in Verified Memory, an advisory one in shared memory."""
     manifest = ctx.manifest
     if manifest is None or proposal.graph != ctx.verified_graph:
         return False
     if proposal.kind == statement.PROMOTION_STATEMENT:
         return _promotion_published(ctx, manifest, envelope)
-    if ctx.home_of(proposal.kind) != COMMUNITY_GRAPH:
-        return False
+    home = ctx.home_of(proposal.kind)
     try:
         kind = CuratorStatement(proposal.kind)
     except ValueError:
         return False
+    if home is None:
+        return False
     wanted = signing.content_id(envelope)
     needed = manifest.threshold if kind.needs_quorum else 1
-    for _graph, row in community.known_curator_statements(ctx.client, ctx.cfg, [proposal.identifier]):
+    for _graph, row in community.known_curator_statements(ctx.client, ctx.cfg, [proposal.identifier],
+                                                          verified_graph=home == VERIFIED_GRAPH):
         held = signing.from_text(row.get("signedStatement", ""))
         if held is not None and signing.content_id(held) == wanted and len(
                 manifest.curator_signers(held, statement_type=kind.value, graph=proposal.graph)) >= needed:

@@ -4,7 +4,7 @@ The confirmed pool is the hand-off to the verified graph's owner; without a
 signed reference to what the curators checked it would be a list of opinions.
 So: the reference has a closed format; the curator verbs refuse to sign a
 community confirmation without one; and the verified authority's confirmations
-stay exactly as shipped.
+carry one when given (the curator service always gives one).
 
 One graph (2026-10-16): there are no community curators for now, so the
 community authority is dormant and no community confirmation counts on a
@@ -89,8 +89,12 @@ def test_the_verified_authoritys_confirmation_is_unchanged_and_needs_no_evidence
 # ------------------------------------------------------------------ what a curator may sign
 
 
-def test_the_verified_authoritys_confirmation_verb_signs_no_evidence_field(tmp_path, monkeypatch):
-    """Shipped readers refuse a confirmation with extra fields, so the verified authority's stays bare."""
+def test_the_verified_authoritys_confirmation_signs_the_evidence_it_is_given(tmp_path, monkeypatch):
+    """One graph: the verified curators confirm the community's threats, and the curator service's co-signer
+    checks the advisory a confirmation cites. A verified confirmation now lives in the verified graph's
+    shared memory, which only readers of this release read, and they accept one evidence reference
+    (``curator_statements._confirmation``); readers shipped before still read the retired community graph,
+    so they never meet it. Without evidence it stays as people have always signed it."""
     side = Side(VM_GRAPH)
     monkeypatch.setenv("BLACKBOX_CURATOR_ROOT_KEYS", side.root_hex)
     view = read_curator_view(Graphs(verified=[side.manifest_row()]), CFG)
@@ -98,6 +102,8 @@ def test_the_verified_authoritys_confirmation_verb_signs_no_evidence_field(tmp_p
     from plugins.blackbox.curate.context import CurateContext
     ctx = CurateContext(cfg=CFG, client=Graphs(verified=[side.manifest_row()]), environment=NETWORK, view=view, sandbox=True,
                         compiled=None, authority=Authority.VERIFIED)
-    proposal = verbs.propose_statement(ctx, ProposalStore(), kind=Kind.CONFIRMATION, identifier=THREAT, fields={},
-                                       evidence="advisory:MAL-2026-0001")
-    assert "evidence" not in signing.from_text(proposal.envelope).payload
+    cited = verbs.propose_statement(ctx, ProposalStore(), kind=Kind.CONFIRMATION, identifier=THREAT, fields={},
+                                    evidence="advisory:MAL-2026-0001")
+    bare = verbs.propose_statement(ctx, ProposalStore(), kind=Kind.CONFIRMATION, identifier="ioc:ip:198.51.100.4", fields={})
+    assert signing.from_text(cited.envelope).payload["evidence"] == "advisory:MAL-2026-0001"
+    assert "evidence" not in signing.from_text(bare.envelope).payload

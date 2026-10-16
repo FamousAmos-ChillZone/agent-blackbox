@@ -234,6 +234,20 @@ def test_advisory_statements_go_to_the_community_graph_enforcement_to_the_verifi
     assert [cg for cg, _p, _q in node.vm_published] == [VM_GRAPH]              # revocation: enforcement
 
 
+def test_a_verified_confirmation_signs_the_evidence_given_and_stays_valid_without(monkeypatch, tmp_path, curators):
+    """One graph: the verified curators confirm the community's threats, and the curator service's co-signer
+    checks the advisory a confirmation cites — so a verified confirmation carries the evidence it is given."""
+    _machine(monkeypatch, tmp_path, "A", curators["a"])
+    ctx = _ctx(FakeNode(), curators["manifest"])
+    cited = verbs.propose_statement(ctx, ProposalStore(), kind=Kind.CONFIRMATION, identifier=THREAT, fields={},
+                                    evidence="advisory:MAL-2026-0001")
+    plain = verbs.propose_statement(ctx, ProposalStore(), kind=Kind.CONFIRMATION, identifier="dep:npm:other@1.0.0", fields={})
+    assert cited.parsed().payload["evidence"] == "advisory:MAL-2026-0001" and "evidence" not in plain.parsed().payload
+    with pytest.raises(verbs.VerbError, match="a confirmation's evidence is"):
+        verbs.propose_statement(ctx, ProposalStore(), kind=Kind.CONFIRMATION, identifier=THREAT, fields={},
+                                evidence="see the forum thread")
+
+
 # ------------------------------------------------------------------ lifecycle + consent
 
 
