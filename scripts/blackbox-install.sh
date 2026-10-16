@@ -787,7 +787,9 @@ if native_profile:
     data["vmRecoveryPrefetchEnabled"] = True
 data.pop("syncAgentsMeta", None)
 data["syncGlobalMaxInflight"] = 1
-data["syncGlobalQueueLimit"] = 0
+# Waiting sync work queues for the one slot instead of being refused (as in
+# sync/node_profile.py): several always-on graphs ask for it.
+data["syncGlobalQueueLimit"] = 4
 data.pop("restrictAutoSubscribeContextGraphs", None)
 # One graph (2026-10-16): community reports live in the shared memory of the
 # verified graph; ones written while this node was offline come back on connect.
