@@ -320,6 +320,8 @@ function Invoke-BlackboxDkg {
         $env:DKG_SYNC_GLOBAL_QUEUE_LIMIT = "$DkgSyncGlobalQueueLimit"
         $env:DKG_CATCHUP_MAX_CONCURRENT_PEERS = "$DkgCatchupMaxConcurrentPeers"
         $env:DKG_STORE_QUEUE_WAIT_TIMEOUT_MS = "$DkgStoreQueueWaitTimeoutMs"
+        # No effect: the node reads neither of the next two (DKG 10.0.25 has its
+        # sync limits built in).
         $env:DKG_SYNC_TOTAL_TIMEOUT_MS = "1800000"
         $env:DKG_SWM_RECOVERY_TIMEOUT_MS = "3600000"
         $env:DKG_EXACT_BATCH_STREAM_ENABLED = "$DkgExactBatchStreamEnabled"

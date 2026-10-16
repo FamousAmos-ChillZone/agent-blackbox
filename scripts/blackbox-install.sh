@@ -223,6 +223,8 @@ blackbox_dkg() {
     fi
     # Process-level guards intentionally wrap the DKG entrypoint, not a store
     # adapter, so Blazegraph and managed Oxigraph receive identical protection.
+    # DKG_SYNC_TOTAL_TIMEOUT_MS and DKG_SWM_RECOVERY_TIMEOUT_MS have no effect: the
+    # node reads neither (DKG 10.0.25 has its sync limits built in).
     PATH="$node_bin_dir:$PATH" \
     DKG_HOME="$BLACKBOX_DKG_HOME" \
     DKG_ACCEPT_STORE_RESET="$accept_store_reset" \
