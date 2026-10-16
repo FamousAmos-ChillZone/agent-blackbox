@@ -44,6 +44,13 @@ BEAT_S = 45.0
 POLL_S = 10.0
 #: The file in the run folder a resumed run starts from.
 STATE_FILE = "trial-state.json"
+#: Why a node that holds a registered graph's definition can still list it synced=false
+#: (Blackbox reads the flag only to trust an empty community read).
+_SYNCED_FLAG_GAPS = {
+    "OriginTrail/dkg#3281": "OriginTrail/dkg#3281: the first catch-up can run before the graph's authority and "
+                            "is not repeated (fix #3287 not merged)",
+    "OriginTrail/dkg#3296": "OriginTrail/dkg#3296: a node that already holds the graph's data is never marked synced",
+}
 
 
 @dataclass(frozen=True)
@@ -257,12 +264,14 @@ class Trial:
             raise StepFailed("a subscribed node does not act on the curators' manifest", join=joined,
                              trust={name: self.cluster.actor(name).call("trust") for name in names})
         unsynced = [name for name in names if not ready[name]["synced"]]
-        note = (f"; the node's listing still says synced=false for {', '.join(unsynced)} (DKG's readiness flag "
-                "for a registered graph; Blackbox does not wait for it, the next step shows whether writes go "
-                "through)") if unsynced else ""
+        evidence: dict[str, Any] = {"ready": ready, "join": joined, "sync": answers}
+        note = ""
+        if unsynced:
+            evidence["known_dkg_gap"] = {"listing_synced_false": unsynced, "issues": list(_SYNCED_FLAG_GAPS)}
+            note = (f"; known DKG gap, not a pass condition: the listing says synced=false for "
+                    f"{', '.join(unsynced)} ({'; '.join(_SYNCED_FLAG_GAPS.values())})")
         return {"summary": f"reporter-a, reporter-b and curator-1's node joined the graph (definition in) "
-                           f"and trust the manifest (after {waited:.0f} s more){note}", "ready": ready,
-                "join": joined, "sync": answers}
+                           f"and trust the manifest (after {waited:.0f} s more){note}", **evidence}
 
     def _trusts_manifest(self, name: str) -> bool:
         return self._manifest_is_ours(self.cluster.actor(name).call("trust"))
@@ -415,9 +424,8 @@ class Trial:
         definition (an access policy): what Blackbox's membership confirms, and
         what the node's write check needs with the graph content it holds. The
         listing's ``synced`` flag is recorded, not awaited: on a registered graph
-        the DKG can leave it false while the node takes writes (OriginTrail/dkg
-        #3281, and its member-sharing suite's case 8). Blackbox's own beat runs
-        meanwhile, as a running Blackbox's would."""
+        the DKG can leave it false while the node takes writes (``_SYNCED_FLAG_GAPS``).
+        Blackbox's own beat runs meanwhile, as a running Blackbox's would."""
         last: dict[str, Any] = {}
         beat = self._beater(name)
 
