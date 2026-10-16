@@ -46,7 +46,7 @@
     "sync/command.py::_catchup_authoritative_vm": 463,
     "sync/command.py::_cmd_sync_impl": 622,
     "sync/managed_node.py::_managed_dkg_node_executable": 40,
-    "sync/managed_node.py::_restart_managed_dkg": 52,
+    "sync/managed_node.py::_restart_managed_dkg": 43,
     "sync/progress.py::read_durable_progress": 62
   }
 }
