@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Blackbox Docs</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='8' y='8' width='48' height='48' rx='13' fill='%230B0B0D' stroke='%23F1EFE9' stroke-width='5'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%23FF4F00'/%3E%3C/svg%3E" />
+<script>
+  // The dashboard's own appearance setting (same key), applied before paint.
+  (function () {
+    var preference = "system";
+    try {
+      var saved = localStorage.getItem("blackbox.dashboard.theme.v1");
+      if (saved === "light" || saved === "dark" || saved === "system") preference = saved;
+    } catch (_) {}
+    var resolved = preference === "system"
+      ? (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
+      : preference;
+    document.documentElement.setAttribute("data-theme", resolved);
+    document.documentElement.style.colorScheme = resolved;
+  })();
+</script>
+<link rel="stylesheet" href="/docs/assets/docs.css" />
+</head>
+<body>
+<a class="skip" href="#overview">Skip to the docs</a>
+<header class="topbar">
+  <a class="wordmark" href="/" aria-label="Back to the Blackbox dashboard"><span class="dot" aria-hidden="true"></span>BLACKBOX<span class="sub">Docs</span></a>
+  <label class="search"><span class="sr">Search the docs</span><input id="search" type="search" placeholder="Search the docs" autocomplete="off" /></label>
+  <button id="toc-toggle" class="toc-toggle" type="button" aria-expanded="false" aria-controls="toc">Contents</button>
+  <a class="back" href="/">Dashboard</a>
+</header>
+
+<div class="layout">
+<nav id="toc" class="toc" aria-label="Contents">
+  <p class="toc-title">Contents</p>
+  <ol>
+    <li><a href="#overview">What Blackbox is</a></li>
+    <li><a href="#check">How a check works</a></li>
+    <li><a href="#flows">The four flows</a></li>
+    <li><a href="#decisions">Block, flag or allow</a></li>
+    <li><a href="#graph">The threat graph</a></li>
+    <li><a href="#shields">Shields</a></li>
+    <li class="sub"><a href="#wallets">Wallets protected</a></li>
+    <li class="sub"><a href="#browsers">Browser support</a></li>
+    <li class="sub"><a href="#not-supported">Not supported</a></li>
+    <li class="sub"><a href="#tested">What was tested</a></li>
+    <li class="sub"><a href="#field">Real-machine runs</a></li>
+    <li class="sub"><a href="#sources">Sources</a></li>
+    <li><a href="#privacy">Privacy and sharing</a></li>
+    <li><a href="#install">Install and services</a></li>
+    <li><a href="#cli">Commands</a></li>
+    <li><a href="#trouble">When something looks wrong</a></li>
+    <li><a href="#glossary">Glossary</a></li>
+  </ol>
+</nav>
+
+<main id="docs">
+<section id="overview" class="hero doc" data-keywords="overview what is blackbox agent protect">
+  <p class="eyebrow">Agent Blackbox · <span id="version">docs</span></p>
+  <h1>Every action your AI agent takes is checked <em>before it runs</em>.</h1>
+  <p class="lede">Blackbox sits between your agent and the world. When the agent is about to run a command, open a file, install a package, fetch a page or call a model, Blackbox looks at that one action first and decides: block it, flag it for you, or let it through. It runs on your machine, works offline, and never sends your commands or prompts anywhere.</p>
+  <div class="hero-stats" aria-live="polite">
+    <div class="stat"><b id="stat-wallets">—</b><span>wallets protected</span></div>
+    <div class="stat"><b id="stat-attacks">—</b><span>attacks in the tested table</span></div>
+    <div class="stat"><b id="stat-browsers">—</b><span>browser folders known</span></div>
+  </div>
+  <div class="scanline" aria-hidden="true"></div>
+</section>
+
+<section id="check" class="doc" data-keywords="check pipeline hook intercept name match decide record">
+  <h2>How a check works</h2>
+  <p>Each step below happens for every single action, in a fraction of a millisecond. Press a step to read what it does.</p>
+  <div class="pipeline-wrap">
+    <svg id="pipeline" class="pipeline" viewBox="0 0 980 170" role="img" aria-label="The check: action, intercept, name, match, decide, record">
+      <path class="rail" d="M70 85 H910" />
+      <path class="rail-live" d="M70 85 H910" />
+      <circle class="packet" r="7" cx="70" cy="85" />
+    </svg>
+  </div>
+  <div id="step-detail" class="step-detail" aria-live="polite"></div>
+</section>
+
+<section id="flows" class="doc" data-keywords="flows sync check record report down up">
+  <h2>The four flows</h2>
+  <p>Everything Blackbox does belongs to one of four flows. Two keep it informed, one protects you in the moment, and one remembers.</p>
+  <div class="flow-tabs" role="tablist" aria-label="The four flows">
+    <button role="tab" aria-selected="true" data-flow="sync">Sync down</button>
+    <button role="tab" aria-selected="false" data-flow="check">Check</button>
+    <button role="tab" aria-selected="false" data-flow="record">Record</button>
+    <button role="tab" aria-selected="false" data-flow="report">Report up</button>
+  </div>
+  <div class="flow-stage">
+    <svg id="flow-diagram" class="flow-diagram" viewBox="0 0 640 220" role="img" aria-label="Diagram of the selected flow"></svg>
+    <div id="flow-text" class="flow-text" role="tabpanel"></div>
+  </div>
+</section>
+
+<section id="decisions" class="doc" data-keywords="block flag allow audit mode severity trust tier verified community">
+  <h2>Block, flag or allow</h2>
+  <p>What Blackbox does with a finding depends on two settings and one rule.</p>
+  <div class="cards three">
+    <article class="card"><h3>Mode</h3><p><b>Audit</b> records and shows every finding but stops nothing — good for getting to know what your agent does. <b>Block</b> stops serious findings before they run. You switch in Settings.</p></article>
+    <article class="card"><h3>Severity</h3><p>Each finding is low, medium, high or critical. In block mode, findings at or above your block level are stopped; the rest are flagged.</p></article>
+    <article class="card"><h3>Trust</h3><p>Only <b>verified</b> threats (from Umanitek's curated graph) and protections you switch on yourself, like Trader Shield, can block. Community reports and guesses only ever flag, so nobody else can stop your agent.</p></article>
+  </div>
+  <p class="note">Blackbox fails open: if Blackbox itself ever has a problem, your agent keeps working. A security tool must never become the reason your work stops.</p>
+</section>
+
+<section id="graph" class="doc" data-keywords="threat graph dkg node verified community sync lookup">
+  <h2>The threat graph</h2>
+  <p>Blackbox's knowledge of known threats — malicious packages, wallet drainers, scam sites, dangerous commands — comes from a <b>verified threat graph</b> that Umanitek curates and publishes on the OriginTrail Decentralized Knowledge Graph (DKG). Your install runs its own small DKG node, which keeps a copy of that graph on your machine. Checks then ask your own node, never a server, so they are fast and private.</p>
+  <div class="cards two">
+    <article class="card"><h3>Verified graph</h3><p>Curated by Umanitek. Only its curator can write to it. Its threats may block. <code>blackbox status</code> shows how many of its assets are on your machine.</p></article>
+    <article class="card"><h3>Community graph</h3><p>A separate graph where Blackbox users can share sightings — only if they choose to. Community findings only flag, never block.</p></article>
+  </div>
+</section>
+
+<section id="shields" class="doc" data-keywords="shields trader shield protection packs">
+  <h2>Shields</h2>
+  <p>A shield is an optional protection pack for one kind of risk. You switch it on in Settings; while it is on, its findings stay on your machine and can block in block mode. The shields installed here:</p>
+  <div id="shield-list" class="cards two"></div>
+</section>
+
+<section id="wallets" class="doc" data-keywords="wallets metamask phantom rabby coinbase trust okx keplr solflare exodus electrum solana">
+  <h2>Wallets protected</h2>
+  <p>Trader Shield keeps your agent out of your crypto wallets: their key stores in browser profiles, desktop wallets' folders and command-line key files. Blackbox only checks that those folders exist; it never opens or reads them. Each wallet below is listed from the product's own wallet packs.</p>
+  <div id="wallet-grid" class="wallet-grid"></div>
+</section>
+
+<section id="browsers" class="doc" data-keywords="browser support chrome brave edge opera vivaldi arc firefox safari store">
+  <h2>Browser support</h2>
+  <p>A browser wallet is protected wherever its <b>official</b> version can be installed. Chrome, Brave, Edge, Opera, Vivaldi and Arc all install extensions from the Chrome Web Store, so a wallet installed from there is protected in all of them. Firefox and Edge also have stores of their own, where a wallet may or may not be published.</p>
+  <div class="legend" aria-hidden="true"><span class="chip protected">protected</span><span class="chip not-covered">exists, not covered yet</span><span class="chip not-offered">publisher does not offer it</span><span class="chip not-found">no official listing found</span></div>
+  <div class="table-wrap"><table id="browser-matrix" class="matrix"><caption class="sr">Wallet support by store</caption></table></div>
+</section>
+
+<section id="not-supported" class="doc" data-keywords="not supported unsupported firefox safari edge gap">
+  <h2>Not supported</h2>
+  <p>Said plainly, so nobody assumes protection that is not there:</p>
+  <ul id="unsupported" class="plain-list"></ul>
+  <p class="note">A copycat or lookalike extension is never treated as the real wallet: Blackbox recognises each wallet by the exact store ids its publisher uses.</p>
+</section>
+
+<section id="tested" class="doc" data-keywords="tested attacks table evidence blocked flagged allowed">
+  <h2>What was tested</h2>
+  <p id="tested-with" class="note"></p>
+  <div id="evidence-legend" class="evidence-legend"></div>
+  <div id="attack-groups" class="attack-groups"></div>
+</section>
+
+<section id="field" class="doc" data-keywords="field test real machine linux mac bench">
+  <h2>Real-machine runs</h2>
+  <p>Tests on fresh machines, set up the way a real person would: real browsers, real wallets from the official stores, Blackbox from the one-line installer.</p>
+  <div id="field-runs" class="timeline"></div>
+</section>
+
+<section id="sources" class="doc" data-keywords="sources download store listing official">
+  <h2>Sources</h2>
+  <p>Where every claim on this page about a wallet comes from: the publisher's own download page or the store's own listing. Search results were not used as evidence; several led to copycat wallet sites.</p>
+  <ul id="source-list" class="source-list"></ul>
+</section>
+
+<section id="privacy" class="doc" data-keywords="privacy sharing consent redaction logs report community">
+  <h2>Privacy and sharing</h2>
+  <div class="cards two">
+    <article class="card"><h3>Stays on your machine</h3><p>Your commands, prompts, files and findings. Blackbox's logs are redacted: seed phrases, keys and other secrets are removed before anything is written.</p></article>
+    <article class="card"><h3>Leaves only if you say so</h3><p>Sharing a threat with the community graph is off until you turn it on. A shared report says which threat was seen and how severe it was — never your command or prompt text. Shield findings (wallets, secrets) are never shared. Turn sharing off any time with <code>blackbox report --disable-sharing</code> or the dashboard's switch.</p></article>
+  </div>
+</section>
+
+<section id="install" class="doc" data-keywords="install installer service launchd systemd lingering reboot files">
+  <h2>Install and services</h2>
+  <p>The one-line installer sets up Hermes (the agent framework), the Blackbox plugin, a DKG node and this dashboard, then protects every agent it finds on the machine.</p>
+  <div class="cards three">
+    <article class="card"><h3>Starts at login</h3><p>On macOS the DKG node and the dashboard run as LaunchAgents. On Linux they run as systemd services; for a normal user the installer turns on "lingering" so they keep running after you log out and start at boot.</p></article>
+    <article class="card"><h3>Where things live</h3><p>Blackbox's records: <code>~/.hermes/blackbox/</code>. The DKG node: <code>agent-blackbox/.dkg/</code> next to the installed checkout. Settings: the Hermes <code>config.yaml</code>.</p></article>
+    <article class="card"><h3>Updating</h3><p>Run the same one-line installer again. It keeps your settings and services, and new wallets are offered to you rather than switched on behind your back.</p></article>
+  </div>
+</section>
+
+<section id="cli" class="doc" data-keywords="commands cli blackbox status sync attach report dashboard">
+  <h2>Commands</h2>
+  <p>Every command is <code>blackbox &lt;command&gt;</code> (the same as <code>hermes blackbox &lt;command&gt;</code>).</p>
+  <div class="table-wrap"><table class="commands">
+    <tr><th scope="row"><code>status</code></th><td>Settings, whether the DKG node answers, the rules loaded and how many findings were logged.</td></tr>
+    <tr><th scope="row"><code>sync</code></th><td>Refresh the threat rules from your DKG node now. <code>--wait</code> waits for the first full download.</td></tr>
+    <tr><th scope="row"><code>dashboard</code></th><td>Start this dashboard at http://127.0.0.1:9700.</td></tr>
+    <tr><th scope="row"><code>attach</code> / <code>detach</code></th><td>Protect every local Hermes home and OpenClaw workspace, or switch Blackbox off in all of them.</td></tr>
+    <tr><th scope="row"><code>report</code></th><td>Share a threat with the community graph, see what you shared, or turn sharing on or off.</td></tr>
+    <tr><th scope="row"><code>rules</code></th><td>Local overrides: let one verified rule only flag on this machine, undo that, or list your overrides.</td></tr>
+    <tr><th scope="row"><code>setup</code></th><td>Finish an install that came from the Hermes plugin catalog: DKG node, threat graphs, agents, dashboard.</td></tr>
+    <tr><th scope="row"><code>setup-llm</code></th><td>Set up the optional second-opinion model that reviews possible prompt injections (advisory only).</td></tr>
+    <tr><th scope="row"><code>chat</code></th><td>Start a Hermes chat in Blackbox's own profile.</td></tr>
+    <tr><th scope="row"><code>curate</code></th><td>Tools for community-graph curators.</td></tr>
+  </table></div>
+</section>
+
+<section id="trouble" class="doc" data-keywords="trouble problem node unreachable ruleset empty sync stale">
+  <h2>When something looks wrong</h2>
+  <div class="cards two">
+    <article class="card"><h3>"Node unreachable"</h3><p>The DKG node is not answering. Protection still works from the rules already on disk. Check its service (LaunchAgent on macOS, systemd on Linux), or re-run the installer.</p></article>
+    <article class="card"><h3>Few verified assets</h3><p>A fresh install downloads the verified graph in the background over about half an hour. <code>blackbox status</code> shows the count growing.</p></article>
+    <article class="card"><h3>A wallet is not listed</h3><p>Blackbox lists a wallet once its store exists on disk. Open the browser with the extension once, and make sure the wallet is ticked in Trader Shield's settings.</p></article>
+    <article class="card"><h3>Something was blocked that should not be</h3><p>The finding explains why. For a verified rule, <code>blackbox rules</code> can make it flag only on this machine.</p></article>
+  </div>
+</section>
+
+<section id="glossary" class="doc" data-keywords="glossary terms">
+  <h2>Glossary</h2>
+  <dl class="glossary">
+    <dt>Agent</dt><dd>An AI assistant that can take actions on your computer, such as running commands or editing files.</dd>
+    <dt>Finding</dt><dd>What Blackbox reports when an action matches a threat or a protection: what it saw, how serious it is, and what it did.</dd>
+    <dt>Key store / vault</dt><dd>The encrypted files where a wallet keeps your keys. Copied off your machine, a vault can be attacked offline.</dd>
+    <dt>Seed phrase</dt><dd>The 12 to 24 recovery words that are the wallet: whoever has them controls it.</dd>
+    <dt>DKG</dt><dd>OriginTrail's Decentralized Knowledge Graph, a shared network for verifiable data. Blackbox's threat graphs live on it.</dd>
+    <dt>Shield</dt><dd>An optional protection pack for one kind of risk, such as Trader Shield for crypto wallets.</dd>
+  </dl>
+</section>
+<p id="no-results" class="no-results" hidden>No section matches that search.</p>
+</main>
+</div>
+<script src="/docs/assets/docs.js" defer></script>
+</body>
+</html>
