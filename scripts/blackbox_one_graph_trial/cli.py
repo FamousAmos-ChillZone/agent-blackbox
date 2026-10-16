@@ -17,7 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="blackbox-one-graph-trial",
-                                     description="End-to-end trial of Agent Blackbox's one-graph flow on a DKG devnet.")
+                                     description="End-to-end trial of Agent Blackbox's one-graph flow on a DKG devnet "
+                                                 "or on the public testnet.")
     sub = parser.add_subparsers(dest="command", required=True)
     run = sub.add_parser("run", help="run the trial and write its report")
     run.add_argument("--dkg-repo", type=Path, required=True,
@@ -44,6 +45,32 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--no-assist", action="store_true",
                      help="never apply the documented DKG work-around (a forced catch-up) when Blackbox's own flow "
                           "stalls; the step then fails instead of being marked ASSISTED")
+    run.add_argument("--network", choices=("devnet", "testnet"), default="devnet",
+                     help="devnet (default): a scripts/devnet.sh devnet; testnet: the trial's own nodes on the "
+                          "public testnet, built from --dkg-repo, reaching each other only through its relays")
+    run.add_argument("--node-homes", type=Path, default=None,
+                     help="testnet: where the nodes' homes go (they hold keys; default ~/.dkg-bbtrial/<stamp>)")
+    run.add_argument("--wallet-source", type=Path, default=None,
+                     help="testnet: a funded node's home; the curator node pays with some of its operational "
+                          "wallets (copied encrypted, never read)")
+    run.add_argument("--wallet-indexes", default="2,1",
+                     help="testnet: which operational wallets of --wallet-source, first = the curator's agent "
+                          "(default 2,1; never 0, the source node's own agent)")
+    run.add_argument("--api-port-base", type=int, default=19360, help="testnet: node n's API on base + n")
+    run.add_argument("--store-port-base", type=int, default=47960, help="testnet: node n's Oxigraph on base + n")
+    run.add_argument("--node-bin", default="node", help="testnet: the Node.js binary that runs cli.js")
+    run.add_argument("--machine-lock", type=Path, default=None,
+                     help="testnet: a lock directory the sessions sharing this machine agree on, held while the "
+                          "trial's nodes run")
+    run.add_argument("--oxigraph-seed", type=Path, default=None,
+                     help="testnet: a managed Oxigraph binary of another node, copied into each new node "
+                          "(checked against the node's pinned checksum) instead of a download")
+    run.add_argument("--keep-going", action="store_true",
+                     help="run every step even when a step it needs did not pass (default: SKIP it)")
+    run.add_argument("--cosigner-reporter", default="reporter-b", choices=("reporter-a", "reporter-b"),
+                     help="testnet: the reporter whose node curator 1 works through (default reporter-b)")
+    run.add_argument("--timeout-scale", type=float, default=0.0,
+                     help="multiply every wait (default 1 on a devnet, 2 on the testnet)")
     run.add_argument("--verbose", action="store_true")
     actor = sub.add_parser("actor", help=argparse.SUPPRESS)
     actor.add_argument("action")

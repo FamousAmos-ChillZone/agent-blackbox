@@ -18,14 +18,17 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Optional
 
-from plugins.blackbox.kernel import threat_ids
+from plugins.blackbox.kernel import constants, sparql_text, threat_ids
+from plugins.blackbox.kernel.dkg_client import DkgError
 
 from .actors import Actor, ActorError
 from .cluster import Cluster
+from .devnet import NodeApi
 from .report import ASSISTED, ERROR, FAIL, PASS, SKIP, StepFailed, StepResult, TrialReport
 
 logger = logging.getLogger(__name__)
@@ -44,6 +47,29 @@ BEAT_S = 45.0
 POLL_S = 10.0
 #: The file in the run folder a resumed run starts from.
 STATE_FILE = "trial-state.json"
+#: Seconds the proposal from curator 1 may take to reach the graph owner's node.
+PROPOSAL_TIMEOUT_S = 180.0
+#: What Blackbox's membership logs when it applies its own DKG #3264 work-around (dial the
+#: owner, subscribe again with forceCatchup), and when its dial of the owner failed.
+WORKAROUND_MARK = "lacks the graph's definition"
+OWNER_DIAL_FAILED_MARK = "could not reach the graph owner"
+#: The node's log line for a subscribe; ``forceCatchup=true`` = a forced catch-up reached it.
+SUBSCRIBE_LOG_MARK = "[subscribe] contextGraph="
+#: The node's refusal of a write into a graph it lists but has not proven synced.
+NOT_WRITABLE = "CONTEXT_GRAPH_NOT_WRITABLE"
+#: A node's log line when its shared-memory pull fetched triples and its verifier threw them away
+#: (a graph-scoped share whose metadata names no root entity), and the fetch line before it.
+PULL_DROP_MARK = "SWM sync dropped"
+PULL_FETCH_MARK = "triples fetched"
+#: How long a check of community reports waits once the run has shown that pulled reports
+#: are dropped (the step 7 gap): it records the same failure without waiting it out again.
+KNOWN_GAP_REPORT_WAIT_S = 180.0
+#: Titles that differ on the testnet (the step keys stay the same).
+TESTNET_TITLES = {
+    "devnet": "Curator node up on the testnet (relay-only)",
+    "edges": "Two reporter Edges on the testnet with Blackbox's node settings (relay-only)",
+    "keys": "Curator keys: test root for the testnet's network id, manifest published",
+}
 #: Why a node that holds a registered graph's definition can still list it synced=false
 #: (Blackbox reads the flag only to trust an empty community read).
 _SYNCED_FLAG_GAPS = {
@@ -122,13 +148,27 @@ class Trial:
     """The trial run over one :class:`.cluster.Cluster` (the devnet and its actors)."""
 
     def __init__(self, cluster: Cluster, report: TrialReport, state: TrialState, until: Optional[str] = None,
-                 assist: bool = True) -> None:
+                 assist: bool = True, timeout_scale: float = 1.0, keep_going: bool = False) -> None:
         self.cluster = cluster
         self.report = report
         self.state = state
         self.until = until
         self.assist = assist
+        #: Run a step even when a step it needs did not pass (what it finds is still evidence;
+        #: a step whose inputs are missing then ERRORs instead of being SKIPped).
+        self.keep_going = keep_going
         self._assists: list[str] = []
+        #: Every wait of the trial, scaled (the testnet's chain and relays are slower than a devnet)
+        self.read_timeout = READ_TIMEOUT_S * timeout_scale
+        self.compile_timeout = COMPILE_TIMEOUT_S * timeout_scale
+        self.late_join_timeout = LATE_JOIN_TIMEOUT_S * timeout_scale
+        self.ready_timeout = READY_TIMEOUT_S * timeout_scale
+        self.proposal_timeout = PROPOSAL_TIMEOUT_S * timeout_scale
+        self.command_timeout_scale = timeout_scale
+        self.arrivals: Optional[ArrivalWatcher] = None
+        #: Set when step 7 failed and the reader's node had dropped the pulled share.
+        self.known_pull_drop: dict[str, Any] = {}
+        self._step_started = 0.0
 
     # -- running ------------------------------------------------------------------
 
@@ -136,17 +176,24 @@ class Trial:
         """Run every step in order (a resumed run skips the steps that passed
         before), saving the state after each one (:meth:`save`)."""
         for key, title, needs in STEPS:
+            if self.cluster.testnet:
+                title = TESTNET_TITLES.get(key, title)
             if self._passed(key):
                 logger.info("step %s: passed in the run being resumed", key)
             else:
                 missing = [need for need in needs if not self._passed(need)]
-                if missing:
+                if missing and not self.keep_going:
                     self.report.add(StepResult(key, title, SKIP, summary=f"not run: {', '.join(missing)} did not pass"))
                 else:
-                    self.report.add(self._run_one(key, title))
+                    result = self._run_one(key, title)
+                    if missing:
+                        result.summary = f"(ran although {', '.join(missing)} did not pass) {result.summary}"
+                    self.report.add(result)
                 self.save()
             if key == self.until:
                 break
+        if self.arrivals is not None:   # the last word on when A's report reached each node
+            self.report.facts["report_arrivals"] = self.arrivals.result()
         return self.report
 
     def save(self) -> None:
@@ -162,7 +209,9 @@ class Trial:
     def _run_one(self, key: str, title: str) -> StepResult:
         method: Callable[[], dict[str, Any]] = getattr(self, "step_" + key.replace("-", "_"))
         result = StepResult(key, title, started_at=time.time())
+        self._step_started = result.started_at
         self._assists = []
+        offsets = self._call_log_offsets()
         logger.info("step %s: %s", key, title)
         try:
             evidence = method() or {}
@@ -182,6 +231,11 @@ class Trial:
             logger.exception("step %s errored", key)
             result.status, result.summary, result.error = ERROR, f"{type(exc).__name__}: {exc}", repr(exc)
         result.seconds = time.time() - result.started_at
+        dkg_3264 = self._workaround_seen(offsets, since=result.started_at)
+        if dkg_3264:
+            result.evidence["dkg_3264_workaround"] = dkg_3264
+        if self.cluster.links is not None:
+            result.evidence["links"] = self.cluster.links.summary(since=result.started_at)
         if result.status != PASS:
             result.logs = self.cluster.log_excerpts(since=result.started_at)
         logger.info("step %s: %s (%.0f s) %s", key, result.status, result.seconds, result.summary)
@@ -193,6 +247,8 @@ class Trial:
         facts = self.cluster.ensure_devnet()
         self.state.network_id = facts["network_id"]
         self.report.facts.update({"dkg": facts.get("dkg_version", ""), "network_id": self.state.network_id})
+        if facts.get("dkg_status_commit"):
+            self.report.facts["dkg_commit_running"] = facts["dkg_status_commit"]
         return {"summary": f"{facts['nodes']} node(s) answering, network {self.state.network_id}", **facts}
 
     def step_graph(self) -> dict[str, Any]:
@@ -234,19 +290,54 @@ class Trial:
                                     "--threshold", "2", "--promotion-author", self.state.curator_address,
                                     "--root-epoch", "1", "--manifest-version", "1"])
             staged = _word_after(manifest["stdout"], "staged as")
-            answer = _cli(owner, ["curate", "--authority", "verified", "publish", staged, "--yes"], timeout=600.0)
+            answer, owner_write = self._owner_write(["curate", "--authority", "verified", "publish", staged, "--yes"])
             published = answer["stdout"].strip()
             if answer["rc"] != 0 and not _not_readable_yet(answer):
-                raise StepFailed("the key manifest was not published", manifest=manifest, publish=answer)
-        trusted, _waited = _wait(lambda: self._trusts_manifest("curator-2"), READ_TIMEOUT_S)
+                raise StepFailed("the key manifest was not published", manifest=manifest, publish=answer,
+                                 owner_write=owner_write)
+        else:
+            owner_write = {}
+        trusted, _waited = _wait(lambda: self._trusts_manifest("curator-2"), self.read_timeout)
         trust = owner.call("trust")
         if not trusted:
             raise StepFailed("the curator node does not act on the published manifest", trust=trust, publish=published)
+        note = ""
+        if owner_write:
+            note = (f"; the owner's node first refused its own write ({NOT_WRITABLE}), listing "
+                    f"{owner_write.get('listing')} " + (f"until synced {owner_write['owner_synced_after_s']} s later"
+                                                         if owner_write.get("owner_synced_after_s") is not None
+                                                         else "and never synced"))
         return {"summary": f"root {self.state.root_key[:12]}… trusted on network {self.state.network_id} only "
                            "(environment variable, no pin changed); manifest with 2 curator keys of 2 operators "
-                           "published and trusted on the curator node",
+                           f"published and trusted on the curator node{note}",
                 "root_key": self.state.root_key, "curator_keys": self.state.curator_keys,
-                "trusted_roots_seen": seen.get("trusted_roots"), "manifest_publish": published, "trust": trust}
+                "trusted_roots_seen": seen.get("trusted_roots"), "manifest_publish": published, "trust": trust,
+                **({"owner_write": owner_write} if owner_write else {})}
+
+    def _owner_write(self, argv: list[str]) -> tuple[dict[str, Any], dict[str, Any]]:
+        """``blackbox <argv>`` on curator 2, a command that writes into the graph. When the
+        owner's own node refuses it as not synced for writes (a registered graph whose
+        catch-up after a restart ran before the node had the graph's authority), wait for
+        the node's listing to say synced — first on its own, then after the documented
+        forced catch-up (an assist) — and run the command once more. Returns the last
+        answer and what happened ({} when the first attempt was not refused that way)."""
+        owner = self.cluster.actor("curator-2")
+        answer = _cli(owner, argv, timeout=600.0)
+        if NOT_WRITABLE not in answer["stdout"]:
+            return answer, {}
+        last: dict[str, Any] = {}
+
+        def synced() -> Optional[dict[str, Any]]:
+            nonlocal last
+            last = self.cluster.graph_row("curator-2") or {}
+            return last if last.get("synced") else None
+
+        row, waited = self._assisted_wait("curator-2", synced, self.ready_timeout,
+                                          lambda: f"its own listing was {_row_state(last)} (writes refused)")
+        retry = _cli(owner, argv, timeout=600.0)
+        return retry, {"first_refusal": answer["stdout"][-500:], "listing": _row_state(last),
+                       "owner_synced_after_s": round(waited) if row else None, "assisted": bool(self._assists),
+                       "retry_rc": retry["rc"]}
 
     def step_subscribe(self) -> dict[str, Any]:
         """The reporters and curator 1's node subscribe the way Blackbox does
@@ -259,7 +350,7 @@ class Trial:
         if any(state != "joined" for state in joined.values()):
             raise StepFailed("Blackbox does not see a node as joined to the graph", join=joined, ready=ready,
                              sync=answers)
-        trusted, waited = _wait(lambda: all(self._trusts_manifest(name) for name in names), READ_TIMEOUT_S)
+        trusted, waited = _wait(lambda: all(self._trusts_manifest(name) for name in names), self.read_timeout)
         if not trusted:
             raise StepFailed("a subscribed node does not act on the curators' manifest", join=joined,
                              trust={name: self.cluster.actor(name).call("trust") for name in names})
@@ -288,7 +379,13 @@ class Trial:
         self.state.reporter_keys["reporter-a"] = identity["reporter_key"]
         self.state.reporter_addresses["reporter-a"] = identity["reporter_address"]
         sharing = self._enable_sharing("reporter-a")
+        self.arrivals = ArrivalWatcher(
+            {name: self.cluster.api_of(name) for name in ("reporter-a", "reporter-b", "curator-2")},
+            graph=self.state.graph_id, subject=self._report_subject("reporter-a"),
+            timeout=self.read_timeout * 3)
+        self.arrivals.start()
         filed = _cli(reporter, self.state.promoted.report_argv())
+        self.arrivals.filed_at = time.time()
         own, waited = self._landed("reporter-a", self.state.promoted, filed)
         if own is None:
             raise StepFailed("reporter-a's report did not land: its own node does not read it back", report=filed,
@@ -321,7 +418,7 @@ class Trial:
 
         if filed["rc"] != 0 and "retry" not in filed["stdout"].lower():
             raise StepFailed("`blackbox report` refused the report", report=filed)
-        return _wait(probe, READ_TIMEOUT_S)
+        return _wait(probe, self.read_timeout)
 
     def step_read(self) -> dict[str, Any]:
         threat = self.state.promoted
@@ -334,13 +431,27 @@ class Trial:
                 beat()
             return found
 
-        seen, waited = self._assisted_wait("reporter-b", probe, READ_TIMEOUT_S, lambda: "A's report not read yet")
+        seen, waited = self._assisted_wait("reporter-b", probe, self.read_timeout, lambda: "A's report not read yet")
+        read_at = time.time()
+        arrivals = self.arrivals.result() if self.arrivals else {}
         if seen is None:
-            raise StepFailed(f"reporter-b's community reader did not return A's report within {READ_TIMEOUT_S:.0f} s",
-                             last_read=self.cluster.actor("reporter-b").call("read"))
+            drops = self._pull_drops("reporter-b", since=self.arrivals.started_at if self.arrivals else read_at - 900)
+            if drops.get("dropped"):
+                self.known_pull_drop = drops
+            # later steps (run with --keep-going) need B's control report, so B files it anyway
+            control = self._file_control_report() if self.keep_going else None
+            cause = (f"; B's node fetched the report {drops['fetched_with_data']} time(s) by pull and dropped it every "
+                     f"time ({drops['first_drop']})" if drops.get("dropped") else "")
+            raise StepFailed(f"reporter-b's community reader did not return A's report within "
+                             f"{self.read_timeout:.0f} s{cause}",
+                             last_read=self.cluster.actor("reporter-b").call("read"),
+                             arrivals=arrivals, control_report=control, pull_drops=drops)
         control = self._file_control_report()
-        return {"summary": f"reporter-b reads A's signed report after {waited:.0f} s", "report": seen,
-                "control_report": control}
+        filed = (self.arrivals.filed_at if self.arrivals else 0.0) or read_at
+        return {"summary": f"reporter-b reads A's signed report after {waited:.0f} s "
+                           f"({read_at - filed:.0f} s after A's share returned); {_arrival_text(arrivals)}",
+                "report": seen, "control_report": control, "arrivals": arrivals,
+                "reader_seconds_after_share": round(read_at - filed, 1)}
 
     def step_promote(self) -> dict[str, Any]:
         """The promotion reads back from Verified Memory: a statement both curator
@@ -365,7 +476,7 @@ class Trial:
             as_curator_asset = statement is not None and statement.get("in_curator_asset") is not False
             return statement if statement is not None and (as_itself or as_curator_asset) else None
 
-        statement, waited = _wait(read_back, READ_TIMEOUT_S)
+        statement, waited = _wait(read_back, self.read_timeout)
         if statement is None:
             raise StepFailed("Verified Memory does not hold the promotion: a statement signed by both curator keys "
                              "that names reporter-a's report (subject and digest), with the report itself or the "
@@ -391,7 +502,7 @@ class Trial:
             return proposal_id in inbox["stdout"] or proposal_id in _cli(
                 owner, ["curate", "--authority", "verified", "list"])["stdout"]
 
-        got, waited = _wait(received, 180.0)
+        got, waited = _wait(received, self.proposal_timeout)
         if not got:
             raise StepFailed("curator-2 never received curator-1's proposal", proposal=proposed)
         approved = _cli(owner, ["curate", "--authority", "verified", "approve", proposal_id, "--evidence", evidence,
@@ -402,7 +513,10 @@ class Trial:
                 "approved": approved["stdout"][-800:]}
 
     def step_compile(self) -> dict[str, Any]:
-        found = {name: self._verified_rule(name, COMPILE_TIMEOUT_S) for name in ("reporter-a", "reporter-b")}
+        checks = _Checks(self.keep_going)
+        found = {name: checks.run(f"{name}'s verified rule", lambda name=name: self._verified_rule(
+            name, self.compile_timeout)) for name in ("reporter-a", "reporter-b")}
+        checks.done()
         return {"summary": "both rulesets serve the promoted dependency as a verified rule and their guards in "
                            "block mode refuse installing it; the unpromoted control report is not verified",
                 "rulesets": found}
@@ -411,8 +525,13 @@ class Trial:
         node = self.cluster.add_reporter_edge("reporter-c")
         sync = self._sync("reporter-c")
         ready = self._graph_ready("reporter-c")
-        reports = self._reports_present("reporter-c", LATE_JOIN_TIMEOUT_S)
-        rule = self._verified_rule("reporter-c", LATE_JOIN_TIMEOUT_S)
+        checks = _Checks(self.keep_going)
+        # the verified rule first: what the community reports check finds is already known when step 7 failed
+        rule = checks.run("reporter-c's verified rule",
+                          lambda: self._verified_rule("reporter-c", self.late_join_timeout))
+        reports = checks.run("reporter-c reads both community reports",
+                             lambda: self._reports_present("reporter-c", self._report_wait(self.late_join_timeout)))
+        checks.done(pull_drops=self._pull_drops("reporter-c", since=self._step_started) if checks.failed else None)
         return {"summary": "reporter-c (added after the promotion) reads both reports and holds the verified rule",
                 "node": node, "sync": sync, "ready": ready, "reports": reports, "ruleset": rule}
 
@@ -422,20 +541,92 @@ class Trial:
             restarted[name] = self.cluster.restart_node_of(name)
         # fresh: the reporter's ruleset cache is dropped first, so the rule can only come from
         # what the restarted node holds now, never from Blackbox's last-good generation.
-        after = {name: {"reports": self._reports_present(name, READ_TIMEOUT_S),
-                        "ruleset": self._verified_rule(name, COMPILE_TIMEOUT_S, fresh=True)} for name in restarted}
+        checks = _Checks(self.keep_going)
+        after = {name: {"ruleset": checks.run(f"{name}'s verified rule after the restart", lambda name=name:
+                                              self._verified_rule(name, self.compile_timeout, fresh=True)),
+                        "reports": checks.run(f"{name} reads both community reports after the restart",
+                                              lambda name=name: self._reports_present(
+                                                  name, self._report_wait(self.read_timeout)))}
+                 for name in restarted}
+        checks.done(restart=restarted)
         return {"summary": "after restarting reporter-b's and reporter-c's nodes both still read the reports and "
                            "hold the verified rule", "restart": restarted, "after": after}
 
+    def _report_wait(self, timeout: float) -> float:
+        """How long a community-reports check waits: the step's wait, or a short one once
+        step 7 showed that pulled reports are dropped (the outcome is then already known)."""
+        return min(timeout, KNOWN_GAP_REPORT_WAIT_S) if self.known_pull_drop else timeout
+
+    def _pull_drops(self, name: str, *, since: float) -> dict[str, Any]:
+        """What *name*'s node logged about pulled shared memory since *since*: how often a pull
+        fetched data, how often its verifier dropped what it fetched, and the first and last
+        drop lines. {} when the node's log cannot be read here."""
+        window = getattr(self.cluster.devnet, "log_window", None)
+        if window is None or name not in self.cluster.actors:
+            return {}
+        lines = window(self.cluster._node_of(name).number, since)
+        drops = [line for line in lines if PULL_DROP_MARK in line]
+        fetched = [line for line in lines if "shared memory: " in line and PULL_FETCH_MARK in line
+                   and "shared memory: 0 data" not in line]
+        return {"node": self.cluster.actors[name].node.label, "dropped": len(drops), "fetched_with_data": len(fetched),
+                "first_drop": drops[0][-160:] if drops else "", "last_drop": drops[-1][-160:] if drops else ""}
+
     # -- helpers ------------------------------------------------------------------
 
-    def _graph_ready(self, name: str, timeout: float = READY_TIMEOUT_S) -> dict[str, Any]:
+    def _call_log_offsets(self) -> dict[str, int]:
+        """Where each actor's call log ends now (a step reads only what it added)."""
+        offsets = {}
+        for name, actor in self.cluster.actors.items():
+            log = actor.home / "calls.log"
+            offsets[name] = log.stat().st_size if log.is_file() else 0
+        return offsets
+
+    def _workaround_seen(self, offsets: dict[str, int], *, since: float) -> dict[str, Any]:
+        """Whether Blackbox's own DKG #3264 work-around ran during the step: its membership's
+        log line in each actor's calls, and the forced catch-ups each node logged. Empty when
+        neither happened."""
+        blackbox: dict[str, int] = {}
+        dial_failures: dict[str, int] = {}
+        for name, actor in self.cluster.actors.items():
+            log = actor.home / "calls.log"
+            if not log.is_file():
+                continue
+            with log.open("rb") as handle:
+                handle.seek(offsets.get(name, 0))
+                added = handle.read().decode("utf-8", errors="replace")
+            if added.count(WORKAROUND_MARK):
+                blackbox[name] = added.count(WORKAROUND_MARK)
+            if added.count(OWNER_DIAL_FAILED_MARK):
+                dial_failures[name] = added.count(OWNER_DIAL_FAILED_MARK)
+        forced: dict[str, int] = {}
+        window = getattr(self.cluster.devnet, "log_window", None)
+        if window is not None and self.state.graph_id:
+            labels = {actor.node.label for actor in self.cluster.actors.values()}
+            for label in sorted(labels):
+                lines = window(int(label[len("node"):]), since)
+                count = sum(1 for line in lines if SUBSCRIBE_LOG_MARK + self.state.graph_id in line
+                            and "forceCatchup=true" in line)
+                if count:
+                    forced[label] = count
+        found: dict[str, Any] = {}
+        if blackbox:
+            found["blackbox_fired"] = blackbox
+        if dial_failures:
+            found["owner_dial_failed"] = dial_failures
+        if forced:
+            found["node_forced_catchups"] = forced
+        if found:
+            found["trial_assists"] = len(self._assists)
+        return found
+
+    def _graph_ready(self, name: str, timeout: float = 0.0) -> dict[str, Any]:
         """Wait until *name*'s node lists the graph as subscribed with its
         definition (an access policy): what Blackbox's membership confirms, and
         what the node's write check needs with the graph content it holds. The
         listing's ``synced`` flag is recorded, not awaited: on a registered graph
         the DKG can leave it false while the node takes writes (``_SYNCED_FLAG_GAPS``).
         Blackbox's own beat runs meanwhile, as a running Blackbox's would."""
+        timeout = timeout or self.ready_timeout
         last: dict[str, Any] = {}
         beat = self._beater(name)
 
@@ -478,7 +669,7 @@ class Trial:
     def _sync(self, name: str) -> dict[str, Any]:
         """``blackbox sync``: subscribe to the graph and refresh once. Not ``--wait``:
         that waits for the graph to hold verified rules, which a new graph does not."""
-        answer = _cli(self.cluster.actor(name), ["sync"], timeout=420.0)
+        answer = _cli(self.cluster.actor(name), ["sync"], timeout=420.0 * self.command_timeout_scale)
         return {"rc": answer["rc"], "tail": answer["stdout"][-1500:]}
 
     def _file_control_report(self) -> dict[str, Any]:
@@ -649,6 +840,95 @@ def _wait(probe: Callable[[], Any], timeout: float, interval: float = POLL_S) ->
         if value or waited >= timeout:
             return (value or None), waited
         time.sleep(interval)
+
+
+class _Checks:
+    """The checks of one step. Without *keep_going* the first failing check ends the step at
+    once (as always); with it every check runs, and the step then fails with the first
+    failing check as its summary and every failing one in its evidence."""
+
+    def __init__(self, keep_going: bool) -> None:
+        self.keep_going = keep_going
+        self.failed: list[tuple[str, StepFailed]] = []
+
+    def run(self, label: str, check: Callable[[], Any]) -> Any:
+        try:
+            return check()
+        except StepFailed as failed:
+            if not self.keep_going:
+                raise
+            self.failed.append((label, failed))
+            return {"failed": failed.summary}
+
+    def done(self, **evidence: Any) -> None:
+        if not self.failed:
+            return
+        label, first = self.failed[0]
+        more = f" (and {len(self.failed) - 1} more failing check(s))" if len(self.failed) > 1 else ""
+        raise StepFailed(f"first failing check, {label}: {first.summary}{more}",
+                         failing_checks={name: {"summary": failed.summary, **failed.evidence}
+                                         for name, failed in self.failed},
+                         **{key: value for key, value in evidence.items() if value is not None})
+
+
+class ArrivalWatcher:
+    """When a report's signed statement first shows in each node's shared memory
+    (sub-graph ``reports``), polled every *interval* seconds straight from the node
+    — the network's delivery, before any Blackbox reader looks. ``filed_at`` is
+    set when ``blackbox report`` returned; times are seconds after it."""
+
+    def __init__(self, apis: dict[str, NodeApi], *, graph: str, subject: str, timeout: float,
+                 interval: float = 2.0) -> None:
+        self._apis = apis
+        self._body = {"sparql": f"SELECT ?o WHERE {{ <{subject}> <{constants.SIGNED_STATEMENT_PRED}> ?o }} LIMIT 1",
+                      "contextGraphId": graph, "view": constants.VIEW_SHARED_WORKING_MEMORY,
+                      "subGraphName": constants.COMMUNITY_SUB_GRAPH}
+        self._timeout, self._interval = timeout, interval
+        self.started_at = time.time()
+        self.filed_at = 0.0
+        self.seen: dict[str, float] = {}
+        self.errors: dict[str, str] = {}
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, name="arrivals", daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _loop(self) -> None:
+        deadline = time.monotonic() + self._timeout
+        while not self._stop.is_set() and time.monotonic() < deadline and len(self.seen) < len(self._apis):
+            for name, api in self._apis.items():
+                if name in self.seen:
+                    continue
+                try:
+                    rows = sparql_text.recognized_bindings(api.call("POST", "/api/query", dict(self._body),
+                                                                    timeout=20.0))
+                except (DkgError, OSError, ValueError) as exc:   # one failed poll; the next one asks again
+                    self.errors[name] = f"{type(exc).__name__}: {str(exc)[:160]}"
+                    continue
+                if rows is None:
+                    self.errors[name] = "the node's answer had no bindings"
+                elif rows:
+                    self.seen[name] = time.time()
+            self._stop.wait(self._interval)
+
+    def result(self) -> dict[str, Any]:
+        """Per node: seconds after ``blackbox report`` returned (negative: before) or None."""
+        base = self.filed_at or self.started_at
+        return {"seconds_after_share": {name: (round(self.seen[name] - base, 1) if name in self.seen else None)
+                                        for name in self._apis},
+                "poll_interval_s": self._interval, "still_polling": self._thread.is_alive(),
+                "errors": dict(self.errors)}
+
+
+def _arrival_text(arrivals: dict[str, Any]) -> str:
+    seconds = arrivals.get("seconds_after_share") or {}
+    parts = [f"{name}'s node " + (f"+{value:.0f} s" if value is not None else "not yet")
+             for name, value in sorted(seconds.items()) if name != "reporter-a"]
+    return ("in shared memory: " + ", ".join(parts)) if parts else "arrival not measured"
 
 
 def run_stamp() -> str:

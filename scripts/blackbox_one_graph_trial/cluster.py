@@ -1,4 +1,5 @@
-"""The devnet the trial runs on, and the Blackbox actors bound to its nodes.
+"""The network the trial runs on (a devnet, or its own nodes on the testnet), and the
+Blackbox actors bound to its nodes.
 
 Roles (node numbers are the devnet's, chosen at run time):
 
@@ -11,6 +12,12 @@ Roles (node numbers are the devnet's, chosen at run time):
   Blackbox's node settings: the installer's config and the native sync
   profile, and the launch environment Blackbox starts its node with
   (``actor_actions.node_settings`` derives them from the checked-out code).
+
+On the testnet (``--network testnet``, :mod:`.testnet`) the trial starts its own
+nodes and they reach each other only through the network's relays: the curator
+node first, then reporter A's and B's Edges, and reporter C's for the late join.
+Curator 1 works through reporter B's node (a proposal cannot be sent to the
+node it comes from, and the trial runs three nodes, not four).
 """
 
 from __future__ import annotations
@@ -26,6 +33,7 @@ from typing import Any, Optional
 
 from .actors import Actor, NodeEndpoint
 from .devnet import Devnet, DevnetError, DevnetNode, NodeApi, store_port
+from .testnet import LinkWatcher, Testnet, TestnetOptions
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +55,10 @@ class ClusterOptions:
     curator_node: int = 0
     cosigner_node: int = 0
     curator_settings: bool = True
+    network: str = "devnet"                       # "devnet" or "testnet"
+    testnet: Optional[TestnetOptions] = None
+    #: On the testnet, the reporter whose node curator 1 works through.
+    cosigner_reporter: str = "reporter-b"
 
 
 @dataclass
@@ -61,7 +73,13 @@ class Cluster:
 
     def __init__(self, options: ClusterOptions) -> None:
         self.options = options
-        self.devnet = Devnet(options.dkg_repo, options.run_dir)
+        self.testnet = options.network == "testnet"
+        self.devnet: Any = (Testnet(options.dkg_repo, options.run_dir, options.testnet)
+                            if self.testnet and options.testnet else Devnet(options.dkg_repo, options.run_dir))
+        self.links: Optional[LinkWatcher] = (LinkWatcher(options.run_dir, self.local_nodes)
+                                             if self.testnet else None)
+        #: The node's own waits (a registration, a sub-graph) take longer on the public chain.
+        self._slow = 2.5 if self.testnet else 1.0
         self.settings: dict[str, str] = dict(_BASE_SETTINGS)
         self.actors: dict[str, Actor] = {}
         self.reporters: dict[str, _Reporter] = {}
@@ -69,10 +87,13 @@ class Cluster:
         self.cosigner: Optional[DevnetNode] = None
         self.graph_id = ""
         self._token = ""
+        self._peer_ids: dict[str, str] = {}   # node label -> peer id (the link watcher names links by them)
 
     # -- the devnet ---------------------------------------------------------------
 
     def ensure_devnet(self) -> dict[str, Any]:
+        if self.testnet:
+            return self._ensure_testnet()
         if self.options.start_devnet:
             self.devnet.start(self.options.devnet_nodes)
         numbers = self.devnet.numbers()
@@ -100,14 +121,62 @@ class Cluster:
                 "dkg_version": str(curator_status.get("version") or curator_status.get("nodeVersion") or ""),
                 "started_here": self.options.start_devnet}
 
+    def _ensure_testnet(self) -> dict[str, Any]:
+        """The curator node on the testnet: started here (a resumed run finds it
+        running), relay-only, paying with the wallets it was given. Curator 1's
+        node is reporter B's, bound once that Edge exists (``add_reporter_edge``)."""
+        if self.options.start_devnet:
+            self.devnet.start()
+        from .testnet import CURATOR_NUMBER
+
+        self.curator = self.devnet.node(CURATOR_NUMBER)
+        status = self.api(self.curator).wait_ready(timeout=300.0)
+        self._bind("curator-2", self.curator)
+        self._peer_ids[self.curator.label] = str(status.get("peerId") or "")
+        if self.links is not None:
+            self.links.start()
+        relays = self.devnet.relays()
+        return {"nodes": len(self.devnet.numbers()), "network_id": str(status.get("networkId") or ""),
+                "network_config": self.options.testnet.network_config if self.options.testnet else "",
+                "curator_node": CURATOR_NUMBER, "cosigner_node": f"{self.options.cosigner_reporter}'s node (added in step edges)",
+                "dkg_version": str(status.get("version") or status.get("nodeVersion") or ""),
+                "dkg_status_commit": str(status.get("commit") or ""),
+                "curator_wallets": self.devnet.wallet_addresses(CURATOR_NUMBER),
+                "relays": [relay.rsplit("/p2p/", 1)[-1] for relay in relays],
+                "announce": "dead loopback address + a circuit through each relay (no direct address)",
+                "relay_status": _relay_block(status), "started_here": self.options.start_devnet}
+
     def stop_devnet(self) -> None:
+        if self.links is not None:
+            self.links.stop()
         try:
             self.devnet.stop()
         except DevnetError as exc:
             logger.warning("devnet stop: %s", exc)
 
     def api(self, node: DevnetNode) -> NodeApi:
-        return NodeApi(node, self._token or self.devnet.token())
+        return NodeApi(node, self._token_of(node))
+
+    def api_of(self, name: str) -> NodeApi:
+        """The API of the node actor *name* works through."""
+        return self.api(self._node_of(name))
+
+    def _token_of(self, node: DevnetNode) -> str:
+        """The API token of *node*: its own on the testnet, the devnet's shared one otherwise."""
+        if self.testnet:
+            return self.devnet.token_for(node.number)
+        return self._token or self.devnet.token()
+
+    def local_nodes(self) -> dict[str, tuple[NodeApi, str]]:
+        """The trial's running nodes by label, with their peer ids (for the link watcher)."""
+        found: dict[str, tuple[NodeApi, str]] = {}
+        for name, actor in sorted(dict(self.actors).items()):   # a copy: the trial may bind meanwhile
+            label = actor.node.label
+            if label in found:
+                continue
+            node = self._node_of(name)
+            found[label] = (self.api(node), self._peer_ids.get(label, ""))
+        return found
 
     # -- the graph ----------------------------------------------------------------
 
@@ -126,11 +195,11 @@ class Cluster:
                     "curator_settings": curator_config}
         created = api.call("POST", "/api/context-graph/create",
                            {"id": graph, "name": name, "accessPolicy": 0, "publishPolicy": 0, "register": True},
-                           timeout=240.0)
+                           timeout=240.0 * self._slow)
         if created.get("created") != graph or created.get("registered") is not True:
             raise DevnetError(f"the graph was not created and registered: {json.dumps(created)[:600]}")
         sub = api.call("POST", "/api/sub-graph/create", {"contextGraphId": graph, "subGraphName": REPORTS_SUB_GRAPH},
-                       timeout=180.0)
+                       timeout=180.0 * self._slow)
         self.graph_id = graph
         listed = api.graph_entry(graph) or {}
         curator_config = self._curator_settings(graph) if self.options.curator_settings else "not applied"
@@ -180,20 +249,26 @@ class Cluster:
             raise DevnetError("no free devnet node number left (devnet.sh allows 1-10)")
         number = candidates[0]
         settings = self._blackbox_node_settings(number)
-        overrides = {**settings["config"], "store": {"backend": "oxigraph-server",
-                                                     "options": {"port": store_port(number)}},
+        port = self.devnet.store_port(number) if self.testnet else store_port(number)
+        overrides = {**settings["config"], "store": {"backend": "oxigraph-server", "options": {"port": port}},
                      "contextGraphs": [], "localBootstrapContextGraphs": []}
         node = self.devnet.add_edge(number, overrides=overrides, env=settings["env"], unset=settings["env_removed"])
         self.reporters[name] = _Reporter(node, settings["env"], settings["env_removed"])
-        status = self.api(node).wait_ready()
+        status = self.api(node).wait_ready(timeout=300.0 if self.testnet else 180.0)
         self._bind(name, node)
+        self._peer_ids[node.label] = str(status.get("peerId") or "")
+        if self.testnet and name == self.options.cosigner_reporter:
+            self.cosigner = node
+            self._bind("curator-1", node)
         applied = self.devnet.config(number)
         mismatched = sorted(key for key, value in overrides.items() if not _holds(applied.get(key), value))
         if mismatched:
             raise DevnetError(f"{node.label} does not run Blackbox's settings: {mismatched}")
         return {"node": node.label, "peer_id": str(status.get("peerId") or ""),
                 "store_url_reported": bool(status.get("storeUrl")),
-                "settings_keys": settings["changed_keys"], "env": settings["env"]}
+                "settings_keys": settings["changed_keys"], "env": settings["env"],
+                **({"announce": applied.get("announceAddresses"), "relay_status": _relay_block(status),
+                    "also_curator_1": name == self.options.cosigner_reporter} if self.testnet else {})}
 
     def _blackbox_node_settings(self, number: int) -> dict[str, Any]:
         """Blackbox's settings for a fresh node (``actor_actions.node_settings``),
@@ -219,7 +294,8 @@ class Cluster:
         is not re-run: subscribe again with ``forceCatchup``."""
         return self.api(self._node_of(name)).call(
             "POST", "/api/context-graph/subscribe",
-            {"contextGraphId": self.graph_id, "includeSharedMemory": True, "forceCatchup": True}, timeout=180.0)
+            {"contextGraphId": self.graph_id, "includeSharedMemory": True, "forceCatchup": True},
+            timeout=180.0 * self._slow)
 
     def _node_of(self, name: str) -> DevnetNode:
         return self.devnet.node(int(self.actors[name].node.label[len("node"):]))
@@ -247,12 +323,14 @@ class Cluster:
             "actors": {name: actor.node.label for name, actor in self.actors.items()},
             "reporters": {name: {"node": r.node.number, "env": r.env, "unset": r.unset}
                           for name, r in self.reporters.items()},
+            "peer_ids": dict(self._peer_ids),
         }
 
     def restore(self, snapshot: dict[str, Any]) -> None:
         self._token = self.devnet.token()
         self.graph_id = str(snapshot.get("graph_id") or "")
         self.settings.update(snapshot.get("settings") or {})
+        self._peer_ids.update(snapshot.get("peer_ids") or {})
         if snapshot.get("curator_node"):
             self.curator = self.devnet.node(int(snapshot["curator_node"]))
         if snapshot.get("cosigner_node"):
@@ -272,7 +350,7 @@ class Cluster:
 
     def _bind(self, name: str, node: DevnetNode) -> None:
         self.actors[name] = Actor(name, self.options.run_dir,
-                                  NodeEndpoint(node.label, node.api_url, self._token or self.devnet.token()),
+                                  NodeEndpoint(node.label, node.api_url, self._token_of(node)),
                                   settings=dict(self.settings))
 
     def log_excerpts(self, *, since: float) -> dict[str, list[str]]:
@@ -285,6 +363,33 @@ class Cluster:
                 if lines:
                     excerpts[f"{actor.node.label} ({name})"] = lines
         return excerpts
+
+
+def _relay_block(status: dict[str, Any]) -> dict[str, Any]:
+    """What a node's status says about its reachability: relay reservations held and
+    what it advertises — circuits counted, any direct address only by its kind (no IP)."""
+    relay = status.get("relay") if isinstance(status.get("relay"), dict) else {}
+    advertised = [str(address) for address in relay.get("advertisedAddresses") or []]
+    direct = [_address_kind(address) for address in advertised if "/p2p-circuit" not in address]
+    return {"relayConnected": status.get("relayConnected"), "connectedPeers": status.get("connectedPeers"),
+            "reservationsHeld": relay.get("reservationsHeld"), "natStatus": relay.get("natStatus"),
+            "advertised_circuits": len(advertised) - len(direct), "advertised_direct": direct}
+
+
+def _address_kind(address: str) -> str:
+    """``loopback:<port>``, ``private:<port>``, ``tailnet:<port>`` or ``public:<port>`` for a direct multiaddr."""
+    parts = address.split("/")
+    host = parts[2] if len(parts) > 2 else ""
+    port = parts[4] if len(parts) > 4 else "?"
+    if host.startswith("127.") or host == "::1":
+        kind = "loopback"
+    elif host.startswith(("10.", "192.168.")) or any(host.startswith(f"172.{n}.") for n in range(16, 32)):
+        kind = "private"
+    elif host.startswith("100.") and 64 <= int((host.split(".") + ["0", "0"])[1] or 0) <= 127:
+        kind = "tailnet"
+    else:
+        kind = "public"
+    return f"{kind}:{port}"
 
 
 def _holds(actual: Any, expected: Any) -> bool:
