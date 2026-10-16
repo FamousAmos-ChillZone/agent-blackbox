@@ -1,4 +1,4 @@
-"""Whether this machine may share with the community graph — the ONE gate
+"""Whether this machine may share with the community — the ONE gate
 every send path asks (Refine R13, revised 2026-10-12).
 
 Community sharing is ON BY DEFAULT with an easy opt-out (founder decision

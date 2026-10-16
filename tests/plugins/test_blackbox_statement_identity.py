@@ -15,7 +15,7 @@ import json
 
 import pytest
 from _community_rows import GRAPH
-from test_blackbox_authority import CFG, CITED, TODAY, Side
+from test_blackbox_authority import CFG, CITED, DORMANT, Side, TODAY
 from test_blackbox_trust_store import Store
 
 from plugins.blackbox.community import read_curator_view
@@ -37,9 +37,8 @@ def home(monkeypatch, tmp_path):
 
 @pytest.fixture
 def community(monkeypatch):
-    side = Side(GRAPH)
-    monkeypatch.setenv("BLACKBOX_COMMUNITY_ROOT_KEYS", side.root_hex)
-    return side
+    """An active community authority — dormant under one graph (2026-10-16)."""
+    pytest.skip(DORMANT)
 
 
 def _upper(text: str, nth: int = 0) -> str:

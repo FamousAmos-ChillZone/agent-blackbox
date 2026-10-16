@@ -10,6 +10,12 @@ own sequence; between them the most restrictive current word wins.
 
 Every test here drives one attack or one rule from the proposal (KI-242,
 KI-243, KI-245), on rows served by a fake node — keys are generated at runtime.
+
+One graph (2026-10-16): the community lives in the verified graph's shared
+memory and the two authorities may never share a graph, so the community
+authority is DORMANT — a community root grants nothing. The tests of what an
+active community authority does are kept, skipped, until the project lead
+decides whether its curators speak in the verified graph's shared memory instead.
 """
 
 from __future__ import annotations
@@ -32,8 +38,13 @@ from plugins.blackbox.kernel.signing.authority import Authority, allowed_kinds, 
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind
 from plugins.blackbox.ruleset import community_tier, compiler
 
-VM_GRAPH = "0x37b1Fdfd/agent-blackbox-vm"
-CFG = BlackboxConfig(report=True, community_graph_id=GRAPH, context_graph_id=VM_GRAPH)
+VM_GRAPH = GRAPH   # one graph (2026-10-16): Verified Memory and the community's shared memory
+CFG = BlackboxConfig(report=True, context_graph_id=VM_GRAPH)
+SHARED = "shared-working-memory"
+#: An active community authority needs a graph of its own (see the module docstring): the
+#: tests of what one does are skipped with this reason, and fixtures that stand one up skip too.
+DORMANT = "the community authority is dormant under one graph (2026-10-16), pending the project lead's decision"
+COMMUNITY_AUTHORITY_DORMANT = pytest.mark.skip(reason=DORMANT)
 THREAT = "ioc:domain:evil.example"
 TODAY = date(2026, 10, 2).isoformat()   # the day the helper rows are signed
 #: What a community confirmation must carry: the signed reference to the evidence its curators checked.
@@ -74,11 +85,12 @@ class Side:
 
 
 class Graphs:
-    """A node serving two graphs. Rows are never consumed; a graph listed in
-    *failing* answers every query with the caller's error sentinel."""
+    """A node serving the graph's Verified Memory and its shared memory. Rows are
+    never consumed; a memory listed in *failing* (``SHARED`` or ``"verified"``)
+    answers every query with the caller's error sentinel."""
 
     def __init__(self, verified=(), community=(), failing=()):
-        self.rows = {VM_GRAPH: list(verified), GRAPH: list(community)}
+        self.rows = {"verified": list(verified), SHARED: list(community)}
         self.failing = set(failing)
 
     def status(self):
@@ -88,9 +100,10 @@ class Graphs:
         return []
 
     def query(self, sparql, cg_id, view=None, on_error=None, **kw):
-        if cg_id in self.failing:
+        memory = SHARED if view == SHARED else "verified"
+        if memory in self.failing:
             return on_error
-        rows = self.rows.get(cg_id, [])
+        rows = self.rows[memory]
         if "g:KeyManifest" in sparql:
             return [r for r in rows if "key-manifest" in r["r"]]
         if "g:CuratorStatement" in sparql:
@@ -197,17 +210,20 @@ def test_a_pinned_community_graph_ignores_the_environment(monkeypatch, community
 
 
 def test_the_two_authorities_never_share_a_graph(community_trusted, community):
-    """A community graph that is also the configured verified graph gets no community authority."""
+    """One graph (2026-10-16): the community authority would share the verified
+    authority's graph, so it gets nothing — a trusted community root and a
+    quorum-signed listing in the shared memory count for no one."""
     alice = Reporter("0xa")
     node = Graphs(community=[community.manifest_row(),
                              community.row(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _entry(alice.author))])
-    same = BlackboxConfig(report=True, community_graph_id=GRAPH, context_graph_id=GRAPH)
-    assert not read_curator_view(node, same).counted
+    view = read_curator_view(node, CFG)
+    assert not view.counted and view.community is None
 
 
 # ------------------------------------------------------------------ what the community authority can do
 
 
+@COMMUNITY_AUTHORITY_DORMANT
 def test_the_community_authority_lists_a_reporter_from_the_community_graph(community_trusted, community):
     alice, bob = Reporter("0xa"), Reporter("0xb")
     node = Graphs(community=[community.manifest_row(),
@@ -220,6 +236,7 @@ def test_the_community_authority_lists_a_reporter_from_the_community_graph(commu
     assert view.community.authority is Authority.COMMUNITY
 
 
+@COMMUNITY_AUTHORITY_DORMANT
 def test_the_community_authority_confirms_rejects_and_pauses(community_trusted, community):
     node = Graphs(community=[community.manifest_row(),
                              community.row(Kind.CONFIRMATION, THREAT, CITED),
@@ -257,6 +274,7 @@ def test_a_community_confirmation_never_displaces_a_verified_revocation(both_tru
     assert view.verdict(THREAT) is Kind.REVOCATION and THREAT in view.revoked
 
 
+@COMMUNITY_AUTHORITY_DORMANT
 def test_a_rejection_from_either_authority_beats_the_other_authoritys_confirmation(both_trusted, verified, community):
     other = "ioc:domain:other.example"
     node = _both(verified, community, community_rows=[
@@ -268,6 +286,7 @@ def test_a_rejection_from_either_authority_beats_the_other_authoritys_confirmati
     assert view.rejected(THREAT) and view.rejected(other)
 
 
+@COMMUNITY_AUTHORITY_DORMANT
 def test_a_notice_does_not_cancel_the_other_authoritys_confirmation_but_a_live_deferral_does(both_trusted, verified, community):
     deferred, lapsed = "ioc:domain:deferred.example", "ioc:domain:lapsed.example"
     node = _both(verified, community, community_rows=[
@@ -285,6 +304,7 @@ def test_a_notice_does_not_cancel_the_other_authoritys_confirmation_but_a_live_d
     assert later.verdict(lapsed) is Kind.CONFIRMATION       # 44 days on, the deferral no longer holds it down
 
 
+@COMMUNITY_AUTHORITY_DORMANT
 def test_a_delisting_by_either_authority_removes_the_reporter(both_trusted, verified, community):
     alice, bob, carol = Reporter("0xa"), Reporter("0xb"), Reporter("0xc")
     node = _both(verified, community,
@@ -298,6 +318,7 @@ def test_a_delisting_by_either_authority_removes_the_reporter(both_trusted, veri
     assert view.delisted == {alice.author, bob.author}
 
 
+@COMMUNITY_AUTHORITY_DORMANT
 def test_a_listing_and_a_delisting_with_the_same_number_resolve_to_delisted_in_either_order(community_trusted, community):
     """KI-245: the outcome must not depend on which row the node returns first."""
     alice = Reporter("0xa")
@@ -308,6 +329,7 @@ def test_a_listing_and_a_delisting_with_the_same_number_resolve_to_delisted_in_e
         assert not view.counted and view.delisted == {alice.author}
 
 
+@COMMUNITY_AUTHORITY_DORMANT
 def test_two_attestations_resolve_to_the_one_that_enforces_less(both_trusted, verified, community):
     tied = "ioc:domain:tied.example"
     node = _both(verified, community, community_rows=[
@@ -320,6 +342,7 @@ def test_two_attestations_resolve_to_the_one_that_enforces_less(both_trusted, ve
     assert view.community.attestation(tied).field("stage") == "reported"   # a tie inside one authority
 
 
+@COMMUNITY_AUTHORITY_DORMANT
 def test_a_pause_from_either_authority_is_in_force(both_trusted, verified, community):
     node = _both(verified, community,
                  verified_rows=[verified.row(Kind.PAUSE, "curator", {"until": "2026-10-03"})],
@@ -328,6 +351,7 @@ def test_a_pause_from_either_authority_is_in_force(both_trusted, verified, commu
     assert view.pause_until == "2026-10-06" and view.pause_active("2026-10-05")
 
 
+@COMMUNITY_AUTHORITY_DORMANT
 def test_the_combined_view_keeps_the_verified_manifest_for_the_verified_tier(both_trusted, verified, community):
     view = read_curator_view(_both(verified, community), CFG)
     assert view.manifest == verified.manifest and view.authority is Authority.VERIFIED
@@ -337,9 +361,10 @@ def test_the_combined_view_keeps_the_verified_manifest_for_the_verified_tier(bot
 # ------------------------------------------------------------------ failure is not emptiness
 
 
+@COMMUNITY_AUTHORITY_DORMANT
 def test_a_failed_community_page_freezes_the_view_instead_of_delisting_everyone(community_trusted, community):
     """KI-244: with trust hosted in the community graph, a failed page must not read as 'no statements'."""
-    view = read_curator_view(Graphs(community=[community.manifest_row()], failing={GRAPH}), CFG)
+    view = read_curator_view(Graphs(community=[community.manifest_row()], failing={SHARED}), CFG)
     assert view.unavailable
 
 
@@ -368,7 +393,7 @@ class Network(Graphs):
         return [{"id": GRAPH, "subscribed": True, "synced": True}]
 
     def query(self, sparql, cg_id, view=None, on_error=None, **kw):
-        if cg_id == GRAPH and "g:ThreatReport" in sparql and cg_id not in self.failing:
+        if view == SHARED and "g:ThreatReport" in sparql and SHARED not in self.failing:
             return list(self.reports)
         return super().query(sparql, cg_id, view=view, on_error=on_error, **kw)
 
@@ -379,6 +404,7 @@ def _tier(node):
     return rs
 
 
+@COMMUNITY_AUTHORITY_DORMANT
 def test_a_report_by_a_community_listed_reporter_flags_and_becomes_matchable(monkeypatch, community_trusted, community):
     """The point of the proposal: with a community-authority listing, a report
     stops being 'reported, monitor only' and can fire on another node — and a
@@ -399,6 +425,7 @@ def test_a_report_by_a_community_listed_reporter_flags_and_becomes_matchable(mon
     assert untrusted not in rs.ioc
 
 
+@COMMUNITY_AUTHORITY_DORMANT
 def test_a_community_rejection_ends_a_listed_reporters_threat(monkeypatch, community_trusted, community):
     monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda client, cfg: None)
     alice = Reporter("0xa")

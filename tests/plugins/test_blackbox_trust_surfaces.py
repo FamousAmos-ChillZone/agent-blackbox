@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 from _community_rows import GRAPH, Reporter, signed_row
-from test_blackbox_authority import CFG, CITED, TODAY, VM_GRAPH, Side
+from test_blackbox_authority import CFG, CITED, DORMANT, TODAY, VM_GRAPH, Side
 from test_blackbox_curator_view import _entry
 from test_blackbox_trust_store import Store
 
@@ -44,7 +44,9 @@ def home(monkeypatch, tmp_path):
 
 def _network(monkeypatch):
     """Both authorities trusted; the verified one lists a partner, the community one lists alice,
-    confirms IP with evidence and has ONE of its three keys heartbeating."""
+    confirms IP with evidence and has ONE of its three keys heartbeating. An active community
+    authority: dormant under one graph (2026-10-16)."""
+    pytest.skip(DORMANT)
     ours, theirs = Side(GRAPH), Side(VM_GRAPH)
     monkeypatch.setenv("BLACKBOX_COMMUNITY_ROOT_KEYS", ours.root_hex)
     monkeypatch.setenv("BLACKBOX_CURATOR_ROOT_KEYS", theirs.root_hex)
@@ -92,6 +94,7 @@ def test_a_heartbeat_is_silent_after_48_hours():
         assert (beat["key"], beat["silent"]) == (key, silent), age
 
 
+@pytest.mark.skip(reason=DORMANT)
 def test_a_confirmation_the_verified_authority_overruled_is_not_shown_as_confirmed(monkeypatch):
     ours, theirs = Side(GRAPH), Side(VM_GRAPH)
     monkeypatch.setenv("BLACKBOX_COMMUNITY_ROOT_KEYS", ours.root_hex)
@@ -161,7 +164,7 @@ def test_blackbox_status_prints_the_trust_lines_beside_the_health_items(monkeypa
     assert all(line[:21].strip().endswith(":") for line in printed if line.strip())      # every value starts in one column
     cli._print_health(CFG, rs, object(), False)                                          # the node is down: said, not guessed
     assert "  trust:             unavailable (not read yet)" in capsys.readouterr().out.splitlines()
-    cli._print_health(replace(CFG, community_graph_id=""), rs, object(), True)
+    cli._print_health(replace(CFG, context_graph_id=""), rs, object(), True)
     assert "trust" not in capsys.readouterr().out
 
 
@@ -199,7 +202,7 @@ def test_the_endpoint_sanitizes_every_string_that_came_from_someone_else(monkeyp
 
 
 def test_the_endpoint_says_unconfigured_and_unavailable(monkeypatch):
-    monkeypatch.setattr("plugins.blackbox.kernel.config.load_blackbox_config", lambda: replace(CFG, community_graph_id=""))
+    monkeypatch.setattr("plugins.blackbox.kernel.config.load_blackbox_config", lambda: replace(CFG, context_graph_id=""))
     assert trust_routes.trust_payload(lambda cfg: None) == {"configured": False}
     monkeypatch.setattr("plugins.blackbox.kernel.config.load_blackbox_config", lambda: CFG)
     assert trust_routes.trust_payload(lambda cfg: None) == {"configured": True, "available": False, "reason": "not read yet"}
@@ -323,6 +326,7 @@ def test_the_alarms_reach_the_operators_health_from_a_real_read(monkeypatch):
     assert any("trust lookup was cut short" in message for message in after)
 
 
+@pytest.mark.skip(reason=DORMANT)
 def test_only_a_community_authority_still_counts_as_trusted_curators(monkeypatch):
     ours = Side(GRAPH)
     monkeypatch.setenv("BLACKBOX_COMMUNITY_ROOT_KEYS", ours.root_hex)

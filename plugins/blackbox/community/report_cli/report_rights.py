@@ -115,7 +115,7 @@ def set_sharing(on: bool) -> int:
             print(f"Not changed: {error}")
         return 1
     if on:
-        print("Sharing is on: findings that pass the sharing rules are shared with the community graph.")
+        print("Sharing is on: findings that pass the sharing rules are shared with the community.")
     else:
         print("Sharing is off: nothing new leaves this node.")
     return 0
@@ -135,7 +135,7 @@ def withdraw_consent() -> int:
         print("Community sharing was already off.")
         return 0
     if consent.withdraw():
-        print("Community sharing turned off: nothing further leaves this machine for the community graph.")
+        print("Community sharing turned off: nothing further leaves this machine for the community.")
         return 0
     print("Could not save the opt-out, so sharing is still ON. Check that the Blackbox home is writable and try again.")
     return 1

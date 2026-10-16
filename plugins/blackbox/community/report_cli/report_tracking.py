@@ -25,7 +25,8 @@ from ..statements.curator_view import today_utc as curator_today
 #: How a ledger outcome is shown (community.ShareOutcome values).
 _OUTCOME_LABELS = {"accepted": "ok", "already-shared": "already shared", "failed": "FAILED",
                    "retrying": "retrying", "failed-after-retries": "FAILED after retries",   # R16
-                   "kept-alive": "kept alive"}                                                # R5
+                   "kept-alive": "kept alive",                                                # R5
+                   "moved": "moved to the verified graph"}                                    # one graph, 2026-10-16
 
 
 def outcome_line(row: dict[str, Any], compiled: dict[str, dict[str, Any]]) -> str:
@@ -50,13 +51,13 @@ def report_standing(cfg) -> int:
         print("This node has not signed a report yet; standing starts with the first report.")
         return 0
     own = store.public_key_hex()
-    if not cfg.community_graph_id:
-        print("No community graph configured.")
+    if not cfg.context_graph_id:
+        print("No graph configured.")
         return 0
     client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
     read = graph_reader.read_verified_reports(client, cfg)
     if not read.available:
-        print(f"Community graph unavailable right now: {display_safety.term_safe(read.reason, 160)}")
+        print(f"Community reports unavailable right now: {display_safety.term_safe(read.reason, 160)}")
         return 1
     for line in standing_lines(own, read):
         print(line)

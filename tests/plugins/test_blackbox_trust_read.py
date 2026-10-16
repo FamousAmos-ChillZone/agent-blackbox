@@ -19,6 +19,7 @@ import json
 
 import pytest
 from _community_rows import GRAPH, NETWORK, Reporter, signed_row
+from test_blackbox_authority import DORMANT
 
 from plugins.blackbox.community import ReadState, pulse, read_curator_view, read_verified_reports
 from plugins.blackbox.community.statements import curator_view
@@ -27,7 +28,7 @@ from plugins.blackbox.kernel import sparql_text
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.ruleset import community_tier, compiler
 
-CFG = BlackboxConfig(report=True, community_graph_id=GRAPH, context_graph_id="0x37b1Fdfd/agent-blackbox-vm")
+CFG = BlackboxConfig(report=True, context_graph_id=GRAPH)   # one graph: its shared memory is the community's
 VIEW = "shared-working-memory"
 THREAT = "ioc:ip:203.0.113.7"
 
@@ -275,6 +276,7 @@ def test_an_old_store_file_without_effective_order_loads_as_none(tmp_path):
     assert store.load("boolean").effective_order is None
 
 
+@pytest.mark.skip(reason=DORMANT)
 def test_a_freeze_survives_a_flood_of_conflicting_versions_pushing_it_out_of_the_store(monkeypatch):
     # T1 review: one counter-list at v2 must stop v3…v12 for good (D31 rule 2). The store
     # keeps only the newest MAX_STORED_MANIFESTS lists, so the flood evicted the v2 conflict;

@@ -1,13 +1,15 @@
 /**
- * Community-graph membership — TypeScript mirror of `community/membership.py` (FIX-0039).
+ * Community membership — TypeScript mirror of `community/membership.py`.
  *
- * A fresh node cannot FIND an unregistered public graph until it is connected to the
- * graph's owner (KI-216), so: dial the owner by peer id (DHT-resolved), subscribe with
- * shared memory, remember a confirmed subscription for RETRY_MS, retry a refused
- * subscribe after FAILED_RETRY_MS. Public graphs have no join step (D-040) and this
- * bridge never sends one. Fail-open: errors are logged, never thrown.
+ * Since 2026-10-16 the community lives in the verified graph's shared memory (sub-graph
+ * "reports"), so membership is that graph's subscription WITH shared memory. The graph is
+ * registered on chain, so no owner peer is dialled first, and it is public: no join step
+ * (D-040). Subscribe with shared memory once per process — a node subscribed VM-only gets its
+ * shared memory added — and believe it when the node's answer covers shared memory; otherwise
+ * (a refusal, or a VM-only catch-up still running) retry after FAILED_RETRY_MS. Before the first
+ * write the "reports" sub-graph is registered on this node. Fail-open: errors are logged, never thrown.
  */
-import type { DkgClient } from "./dkgClient.js";
+import { COMMUNITY_SUB_GRAPH, type DkgClient } from "./dkgClient.js";
 
 export const RETRY_MS = 600_000;
 export const FAILED_RETRY_MS = 60_000;
@@ -15,12 +17,22 @@ export const FAILED_RETRY_MS = 60_000;
 export interface MembershipState {
   confirmedAt?: number;
   lastAttemptAt?: number;
+  /** The node took the subscription WITH shared memory (this process). */
+  withSharedMemory?: boolean;
+  /** The "reports" sub-graph is registered on this node. */
+  laneReady?: boolean;
+}
+
+/** Whether a subscribe answer covers shared memory: an already-running catch-up keeps its own setting. */
+function includesSharedMemory(reply: unknown): boolean {
+  const catchup = (reply as { catchup?: Record<string, unknown> } | null)?.catchup;
+  if (!catchup || typeof catchup !== "object") return true;
+  return (catchup.includeSharedMemory ?? catchup.includeWorkspace) !== false;
 }
 
 export async function ensureCommunitySubscription(
   client: DkgClient,
   graph: string,
-  ownerPeerId: string,
   state: MembershipState,
   log: (msg: string) => void,
   now = Date.now(),
@@ -30,23 +42,40 @@ export async function ensureCommunitySubscription(
   if (state.lastAttemptAt !== undefined && now - state.lastAttemptAt < FAILED_RETRY_MS) return false;
   state.lastAttemptAt = now;
   try {
-    const listed = (await client.contextGraphs()).find((e) => e.id === graph);
-    if (listed?.subscribed) {
-      state.confirmedAt = now;
-      return true;
-    }
-    if (ownerPeerId) {
-      try {
-        await client.connectPeer(ownerPeerId);
-      } catch (err) {
-        log(`blackbox: could not reach the community graph owner ${ownerPeerId}: ${(err as Error).message}`);
+    if (state.withSharedMemory) {
+      const listed = (await client.contextGraphs()).find((e) => e.id === graph);
+      if (listed?.subscribed) {
+        state.confirmedAt = now;
+        return true;
       }
     }
-    await client.subscribeContextGraph(graph, true);
+    const reply = await client.subscribeContextGraph(graph, true);
+    if (!includesSharedMemory(reply)) return true; // subscribed; shared memory follows the running catch-up
+    state.withSharedMemory = true;
     state.confirmedAt = now;
     return true;
   } catch (err) {
-    log(`blackbox: community subscribe failed (retry in ${FAILED_RETRY_MS / 1000}s): ${(err as Error).message}`);
+    log(`blackbox: subscribe with shared memory failed (retry in ${FAILED_RETRY_MS / 1000}s): ${(err as Error).message}`);
     return false;
   }
+}
+
+/** Register the community sub-graph on this node before its first write there ("already exists" counts as ready). */
+export async function ensureReportLane(
+  client: DkgClient,
+  graph: string,
+  state: MembershipState,
+  log: (msg: string) => void,
+): Promise<boolean> {
+  if (state.laneReady) return true;
+  try {
+    await client.createSubGraph(graph, COMMUNITY_SUB_GRAPH);
+  } catch (err) {
+    if (!String((err as Error).message).includes("already exists")) {
+      log(`blackbox: could not register the community sub-graph on this node: ${(err as Error).message}`);
+      return false;
+    }
+  }
+  state.laneReady = true;
+  return true;
 }

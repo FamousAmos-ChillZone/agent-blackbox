@@ -19,7 +19,7 @@ from _community_rows import GRAPH, NETWORK, Reporter, signed_row
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from _machines import SWM, Machine, share_report
 from test_blackbox_authority import CFG as AUTHORITY_CFG
-from test_blackbox_authority import CITED, Side
+from test_blackbox_authority import CITED, DORMANT, Side
 from test_blackbox_curate_community import CFG, EVIDENCE, Curators, _listing
 from test_blackbox_trust_store import Store
 
@@ -380,6 +380,7 @@ def test_two_root_signed_manifests_that_disagree_fail_the_whole_bundle():
     assert "disagree" in report.error and not report.ok
 
 
+@pytest.mark.skip(reason=DORMANT)
 def test_a_threat_the_verified_authority_rejected_is_not_in_the_pool(monkeypatch, tmp_path):
     """The most restrictive word wins: the community curators confirmed it, the verified authority rejected it."""
     monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "home"))

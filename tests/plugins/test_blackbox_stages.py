@@ -185,7 +185,7 @@ def test_the_tier_stores_stage_reason_and_source_and_materializes_only_flag_leve
     monkeypatch.setattr(community_tier.community, "community_pause_active", lambda c, cfg: False)
     monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda c, cfg: None)
     rs = compiler.Ruleset()
-    community_tier.apply_community_tier(rs, _FrozenClient(), BlackboxConfig(community_graph_id=GRAPH))
+    community_tier.apply_community_tier(rs, _FrozenClient(), BlackboxConfig(context_graph_id=GRAPH))
     flagged, monitored = rs.community["ioc:domain:listed.example"], rs.community["ioc:domain:unlisted.example"]
     assert (flagged["stage"], flagged["enforcement"], flagged["stageSource"]) == ("reported", "flag", "local")
     assert (monitored["stage"], monitored["enforcement"]) == ("reported", "monitor") and monitored["stageReason"]
@@ -200,7 +200,7 @@ def test_an_unavailable_read_freezes_the_last_stages():
                                        "reporterCount": 3, "firstSeen": 5.0, "stage": "corroborated",
                                        "enforcement": "flag", "stageReason": "r", "stageSource": "local"}}
     rs = compiler.Ruleset()
-    community_tier.apply_community_tier(rs, _FrozenClient(), BlackboxConfig(community_graph_id=GRAPH), prior)
+    community_tier.apply_community_tier(rs, _FrozenClient(), BlackboxConfig(context_graph_id=GRAPH), prior)
     assert rs.community["dep:npm:x@1"]["stage"] == "corroborated"
 
 
@@ -212,7 +212,7 @@ def test_verified_rules_never_expire_or_gain_a_stage(monkeypatch):
     monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda c, cfg: None)
     rs = compiler.Ruleset()
     rs.ioc = {"ioc:ip:203.0.113.7": {"identifier": "ioc:ip:203.0.113.7", "source": "public", "severity": "high"}}
-    community_tier.apply_community_tier(rs, _FrozenClient(), BlackboxConfig(community_graph_id=GRAPH))
+    community_tier.apply_community_tier(rs, _FrozenClient(), BlackboxConfig(context_graph_id=GRAPH))
     assert rs.ioc["ioc:ip:203.0.113.7"]["source"] == "public" and "stage" not in rs.ioc["ioc:ip:203.0.113.7"]
 
 
@@ -269,7 +269,7 @@ def test_the_unsigned_pause_flag_is_honoured_only_while_no_manifest_exists(monke
     monkeypatch.setattr(community_tier.community, "community_pause_active", lambda c, cfg: True)
     monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda c, cfg: None)
     rs = compiler.Ruleset()
-    community_tier.apply_community_tier(rs, _FrozenClient(), BlackboxConfig(community_graph_id=GRAPH))
+    community_tier.apply_community_tier(rs, _FrozenClient(), BlackboxConfig(context_graph_id=GRAPH))
     assert rs.community_paused is True
 
 
@@ -287,7 +287,7 @@ def test_the_unsigned_pause_flag_is_ignored_once_a_trusted_manifest_exists(monke
     monkeypatch.setattr(community_tier.community, "community_pause_active", lambda c, cfg: True)
     monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda c, cfg: None)
     rs = compiler.Ruleset()
-    community_tier.apply_community_tier(rs, _FrozenClient(), BlackboxConfig(community_graph_id=GRAPH))
+    community_tier.apply_community_tier(rs, _FrozenClient(), BlackboxConfig(context_graph_id=GRAPH))
     assert rs.community_paused is False
 
 

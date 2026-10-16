@@ -123,7 +123,7 @@ def test_an_undated_manifest_never_beats_a_dated_one_and_a_conflict_freezes(keys
 
 
 def test_withdrawn_consent_stops_keep_alive_retries_and_digests(real_consent, tmp_path, monkeypatch):
-    cfg = BlackboxConfig(report=True, community_graph_id=GRAPH)
+    cfg = BlackboxConfig(report=True, context_graph_id=GRAPH)
     store = keep_alive.LiveReportStore(tmp_path / "live.json", clock=lambda: 1_800_000_000.0)
     store.remember(graph=GRAPH, name="report-a", identifier=THREAT, subject="s", severity="high", quads=[{"a": "b"}], epoch=keep_alive.Epoch(1))
     queue = share_retry.ShareRetryQueue(tmp_path / "q.json", clock=lambda: 1_800_000_000.0 + 100)
@@ -197,7 +197,7 @@ def test_a_listing_longer_than_twelve_months_is_refused_and_a_signed_pause_is_en
     monkeypatch.setattr(community_tier.community, "read_verified_reports",
                         lambda client, cfg, **kw: CommunityRead(ReadState.ROWS, reports=(), curator=view))
     rs = compiler.Ruleset()
-    community_tier.apply_community_tier(rs, FakeClient(), BlackboxConfig(community_graph_id=GRAPH), None)
+    community_tier.apply_community_tier(rs, FakeClient(), BlackboxConfig(context_graph_id=GRAPH), None)
     assert rs.community_paused is True and rs.community == {}
 
 

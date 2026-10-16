@@ -5,6 +5,10 @@ Three curator machines and a reader over one shared in-memory network
 listings and its verdicts are all published in the COMMUNITY graph — the
 verified graph is never written — and "published" means the statement was read
 back from the graph, not that the node said yes.
+
+One graph (2026-10-16): the community authority may never share the verified
+authority's graph and there is no other, so it is dormant and every team of
+community curators here is skipped (``Curators``) until the project lead decides.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from datetime import date
 import pytest
 from _community_rows import GRAPH, NETWORK, Reporter
 from _machines import SWM, VM, Machine, Network, Node
+from test_blackbox_authority import DORMANT
 
 from plugins.blackbox.community import read_curator_view
 from plugins.blackbox.community.statements import curator_view as cv
@@ -27,8 +32,8 @@ from plugins.blackbox.kernel.signing import key_manifest, trust_anchors
 from plugins.blackbox.kernel.signing.authority import Authority
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind
 
-VM_GRAPH = "0x37b1Fdfd/agent-blackbox-vm"
-CFG = BlackboxConfig(report=True, community_graph_id=GRAPH, context_graph_id=VM_GRAPH)
+VM_GRAPH = GRAPH   # one graph (2026-10-16): the community lives in the verified graph's shared memory
+CFG = BlackboxConfig(report=True, context_graph_id=VM_GRAPH)
 THREAT = "ioc:ip:203.0.113.7"
 ADDRESS = "0x" + "a" * 40
 EVIDENCE = "advisory:MAL-2026-0001"
@@ -39,6 +44,7 @@ class Curators:
     community root held on A and a published 2-of-3 community manifest."""
 
     def __init__(self, tmp_path, monkeypatch, *, publish_manifest=True):
+        pytest.skip(DORMANT)
         self.net = Network()
         self.monkeypatch = monkeypatch
         self.a, self.b, self.c, self.reader = (Machine(self.net, tmp_path, monkeypatch, name) for name in "ABCR")
@@ -387,7 +393,7 @@ def test_a_revocations_advisory_twin_makes_the_next_pulse_withdraw_the_blocked_r
     graph = _TwinGraph()
     monkeypatch.setattr(pulse_beat, "DkgClient", lambda *a, **k: graph)
 
-    cfg = BlackboxConfig(report=True, community_graph_id=GRAPH, context_graph_id=VM_GRAPH, community_poll_interval=20)
+    cfg = BlackboxConfig(report=True, context_graph_id=VM_GRAPH, community_poll_interval=20)
     rule = {"identifier": blocked, "source": "public", "severity": "critical", "kind": "malware",
             "ecosystem": "npm", "packageName": "evil-pkg", "packageVersion": "1.2.3"}
     rs = compiler.Ruleset(context_graph_id=VM_GRAPH, dependency={"npm:evil-pkg@1.2.3": rule},

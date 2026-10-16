@@ -3,9 +3,9 @@
   "files": {
     "dashboard/server.py": 1975,
     "guard/hooks.py": 406,
-    "kernel/config.py": 424,
+    "kernel/config.py": 423,
     "kernel/dkg_client.py": 639,
-    "sync/command.py": 1397
+    "sync/command.py": 1395
   },
   "functions": {
     "attach/hermes_homes.py::attach_hermes": 58,
@@ -36,7 +36,7 @@
     "detection/detectors.py::discover_dependency_candidates": 51,
     "detection/reviewer_setup/__init__.py::cmd_setup_llm": 76,
     "guard/hooks.py::on_pre_tool_call": 43,
-    "kernel/config.py::load_blackbox_config": 130,
+    "kernel/config.py::load_blackbox_config": 119,
     "kernel/settings.py::_validate": 80,
     "ruleset/compiler.py::Ruleset.graph_entries": 47,
     "ruleset/compiler.py::build_from_rows": 51,
@@ -45,7 +45,7 @@
     "ruleset/refresh_cycle.py::_refresh_unlocked": 69,
     "ruleset/row_adapters.py::_row_to_rule": 100,
     "sync/command.py::_catchup_authoritative_vm": 463,
-    "sync/command.py::_cmd_sync_impl": 622,
+    "sync/command.py::_cmd_sync_impl": 619,
     "sync/managed_node.py::_managed_dkg_node_executable": 40,
     "sync/managed_node.py::_restart_managed_dkg": 82,
     "sync/progress.py::read_durable_progress": 62

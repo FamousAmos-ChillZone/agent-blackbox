@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 from _community_rows import GRAPH
-from test_blackbox_authority import CFG, CITED, THREAT, VM_GRAPH, Graphs, Side
+from test_blackbox_authority import CFG, CITED, DORMANT, THREAT, VM_GRAPH, Graphs, Side
 from test_blackbox_curate_community import EVIDENCE, Curators
 from test_blackbox_curate_community import THREAT as IP_THREAT
 
@@ -73,6 +73,7 @@ def test_the_curators_checklist_and_the_signed_field_share_one_format():
 # ------------------------------------------------------------------ what a reader counts
 
 
+@pytest.mark.skip(reason=DORMANT)
 def test_a_community_confirmation_without_evidence_does_not_count(monkeypatch):
     side = Side(GRAPH)
     monkeypatch.setenv("BLACKBOX_COMMUNITY_ROOT_KEYS", side.root_hex)
@@ -80,6 +81,7 @@ def test_a_community_confirmation_without_evidence_does_not_count(monkeypatch):
     assert bare.verdict(THREAT) is None and THREAT not in bare.community.verdicts
 
 
+@pytest.mark.skip(reason=DORMANT)
 def test_a_community_confirmation_with_evidence_counts_and_readers_see_what_was_checked(monkeypatch, tmp_path):
     side = Side(GRAPH)
     monkeypatch.setenv("BLACKBOX_COMMUNITY_ROOT_KEYS", side.root_hex)
@@ -88,6 +90,7 @@ def test_a_community_confirmation_with_evidence_counts_and_readers_see_what_was_
     assert view.community.verdicts[THREAT].field("evidence") == CITED["evidence"]
 
 
+@pytest.mark.skip(reason=DORMANT)
 def test_a_bare_confirmation_never_displaces_an_evidenced_one(monkeypatch):
     """A later confirmation without evidence is not a statement the community authority can make: the earlier one stands."""
     side = Side(GRAPH)
