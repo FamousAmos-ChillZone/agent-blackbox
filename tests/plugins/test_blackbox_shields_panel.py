@@ -32,6 +32,8 @@ STATIC = Path(shields_routes.SHIELDS_SCRIPT).parent
 INDEX = (STATIC / "index.html").read_text(encoding="utf-8")
 SCRIPT = (STATIC / "shields.js").read_text(encoding="utf-8")
 FIXTURE = Path(__file__).with_name("fixtures") / "shields_api_payload.json"
+#: Whether any Trader Shield pack is still planned (the Settings list then shows it as "coming soon").
+HAS_UNSUPPORTED_PACK = any(pack.status != "supported" for pack in shields.loaded_packs("trader"))
 REPLAY = Path(__file__).with_name("shields_replay.mjs")
 REPO = Path(__file__).resolve().parents[2]
 TRADER = shields.get("trader")
@@ -236,7 +238,10 @@ def test_the_captured_payload_replays_clean_at_desktop_and_phone_widths(served, 
         assert found["injected"] is False and found["windowFacts"] >= 5 and found["windowSteps"] >= 3
         assert found["windowAfterEscape"]["hidden"]
         assert not found["settings"]["hidden"] and found["settingsInputs"] >= 3, (width, found["settings"])
-        assert "engage trader shield" in found["settings"]["text"].lower() and "coming soon" in found["settings"]["text"].lower()
+        settings_text = found["settings"]["text"].lower()
+        assert "engage trader shield" in settings_text
+        # A pack that is not supported yet is offered disabled as "coming soon"; with every pack supported, none is.
+        assert ("coming soon" in settings_text) == HAS_UNSUPPORTED_PACK, (width, settings_text)
         # A refused line is named as left out, and the save carries only the accepted one.
         assert "1 line is not accepted" in found["linesNote"]["text"], (width, found["linesNote"])
         assert found["linesSent"] == ["0x" + "a" * 40], (width, found["linesSent"])
