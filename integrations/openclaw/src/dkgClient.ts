@@ -165,9 +165,13 @@ export class DkgClient {
     return this.request("/api/connect", { peerId }, "POST", 15_000);
   }
 
-  /** Subscribe the node to a context graph (idempotent on the daemon). */
-  async subscribeContextGraph(contextGraphId: string, includeSharedMemory = true): Promise<unknown> {
-    return this.request("/api/context-graph/subscribe", { contextGraphId, includeSharedMemory });
+  /**
+   * Subscribe the node to a context graph (idempotent on the daemon). `forceCatchup` starts a new
+   * catch-up even on a ready subscription: it fetches a graph definition that never arrived (DKG #3264).
+   */
+  async subscribeContextGraph(contextGraphId: string, includeSharedMemory = true, forceCatchup = false): Promise<unknown> {
+    const body = { contextGraphId, includeSharedMemory, ...(forceCatchup ? { forceCatchup: true } : {}) };
+    return this.request("/api/context-graph/subscribe", body);
   }
 
   /** Register a named sub-graph of a context graph on this node (a node writes into one only once it is). */

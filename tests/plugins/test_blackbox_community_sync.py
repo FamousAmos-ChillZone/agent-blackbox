@@ -2,7 +2,8 @@
 
 * ensure_community_subscription: idempotent subscribe of the verified graph WITH
   its shared memory, where the community lives (KI-007; one graph since
-  2026-10-16), no join step for the public graph, fail-open always.
+  2026-10-16), after dialling the graph's owner; no join step for the public
+  graph, fail-open always.
 * Status renders the real community state for on/off/unconfigured configs.
 * The empty ruleset is a loud UNPROTECTED state (KI-023).
 * Terminal output of community-derived strings is ANSI-safe (KI-009).
@@ -39,7 +40,7 @@ class FakeClient:
         self.dials = []
         self._subscribe_fails = subscribe_fails
 
-    def subscribe_context_graph(self, cg_id, include_shared_memory=False):
+    def subscribe_context_graph(self, cg_id, include_shared_memory=False, force_catchup=False):
         if self._subscribe_fails:
             raise DkgError("node down")
         self.subscribes.append((cg_id, include_shared_memory))
@@ -54,6 +55,9 @@ class FakeClient:
 
     def reachable(self):
         return True
+
+    def status(self):
+        return {"peerId": "12D3KooWedge"}
 
     def context_graphs(self):
         # The node lists a graph only once subscribed.
@@ -89,14 +93,15 @@ def test_subscribe_failure_is_fail_open():
     assert "failed" in detail  # reported, never raised
 
 
-def test_the_registered_public_graph_needs_no_owner_dial_and_no_join():
-    """One graph (2026-10-16): the verified graph is registered on chain, so a fresh
-    node finds it without dialling an owner peer (KI-216 was the unregistered community
-    graph's problem), and it is public, so there is no join step (D-040)."""
+def test_the_graph_owner_is_dialled_before_the_subscribe_and_no_join_is_sent():
+    """One graph (2026-10-16): an edge that reaches the verified graph only through
+    relays gets its definition from the owner (DKG #3264), so the owner is dialled
+    first; the graph is public, so there is no join step (D-040)."""
     client = FakeClient()
-    ok, _ = membership.ensure_community_subscription(client, BlackboxConfig(report=True, context_graph_id=DEV_GRAPH))
+    cfg = BlackboxConfig(report=True, context_graph_id=DEV_GRAPH, graph_peer_id="12D3KooWowner")
+    ok, _ = membership.ensure_community_subscription(client, cfg)
     assert ok is True
-    assert client.subscribes == [(DEV_GRAPH, True)] and client.dials == [] and client.joins == []
+    assert client.dials == ["12D3KooWowner"] and client.subscribes == [(DEV_GRAPH, True)] and client.joins == []
 
 
 # ---------------------------------------------------------------------------

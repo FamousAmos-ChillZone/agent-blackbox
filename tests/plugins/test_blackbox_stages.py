@@ -15,6 +15,7 @@ from plugins.blackbox.community import CommunityRead, ReadState, aggregate_commu
 from plugins.blackbox.community.statements import curator_view as cv
 from plugins.blackbox.community.stages import Enforcement, Stage
 from plugins.blackbox.kernel.config import BlackboxConfig
+from plugins.blackbox.kernel.dkg_client import DkgError
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind
 from plugins.blackbox.ruleset import community_tier, compiler
 from datetime import UTC
@@ -165,11 +166,19 @@ def _read(reports, view):
 
 
 class _FrozenClient:
+    """A node that answers its status but nothing else: the client raises DkgError."""
+
     def status(self):
         return {"networkId": "n"}
 
     def context_graphs(self):
         return []
+
+    def connect_peer(self, peer_id):
+        raise DkgError("node unavailable")
+
+    def subscribe_context_graph(self, cg_id, **_kw):
+        raise DkgError("node unavailable")
 
     def query(self, sparql, cg_id, view=None, on_error=None, **kw):
         return on_error

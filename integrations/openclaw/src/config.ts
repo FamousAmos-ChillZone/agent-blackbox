@@ -38,6 +38,11 @@ export interface CategorySetting {
 export interface BlackboxConfig {
   mode: "audit" | "block";
   contextGraphId: string;
+  /**
+   * Peer id of the graph's owner (the curator), dialled before the first share: an edge that
+   * reaches the graph only through relays gets the graph's definition from it (DKG #3264).
+   */
+  graphPeerId: string;
   dkgUrl: string;
   dkgHome: string;
   syncInterval: number; // seconds
@@ -126,6 +131,7 @@ const DEFAULT_DKG_URL = `http://127.0.0.1:${DEFAULT_DKG_PORT}`;
 const DEFAULTS: BlackboxConfig = {
   mode: "audit",
   contextGraphId: "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm",
+  graphPeerId: "12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyKndHXjZM",
   dkgUrl: DEFAULT_DKG_URL,
   dkgHome: "",
   syncInterval: 300,
@@ -271,6 +277,11 @@ export function resolveConfig(pluginConfig: Record<string, unknown> = {}): Black
       str(pluginConfig.contextGraphId) ??
       str(pluginConfig.context_graph_id) ??
       DEFAULTS.contextGraphId,
+    graphPeerId:
+      str(env.BLACKBOX_GRAPH_PEER_ID) ??
+      str(pluginConfig.graphPeerId) ??
+      str(pluginConfig.graph_peer_id) ??
+      DEFAULTS.graphPeerId,
     dkgUrl:
       envDkgUrl() ??
       str(pluginConfig.dkgUrl)?.replace(/\/+$/, "") ??
