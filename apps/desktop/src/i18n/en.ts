@@ -1,3 +1,5 @@
+// health: allow FILE_LINES -- one translations object (5211 lines on main); `npm run fix` wraps a hint the
+// v0.21.7 port added (+1) and there is no function to move out. Lines are added only by new strings.
 import { FIELD_DESCRIPTIONS, FIELD_LABELS } from '@/app/settings/constants'
 
 import { enAppTour, enHandoffTour } from './en_app_tour'
@@ -2356,7 +2358,8 @@ export const en: Translations = {
     importedBadge: 'imported map',
     resetToMine: 'Back to my map',
     detailControl: 'Graph detail',
-    detailHint: 'Overview keeps the map quiet. Explore expands selected neighborhoods. All fits the full graph and labels every visible node that can fit.',
+    detailHint:
+      'Overview keeps the map quiet. Explore expands selected neighborhoods. All fits the full graph and labels every visible node that can fit.',
     detailOverview: 'Overview',
     detailExplore: 'Explore',
     detailAll: 'All',
