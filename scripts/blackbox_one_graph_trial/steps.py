@@ -36,7 +36,7 @@ READ_TIMEOUT_S = 300.0
 COMPILE_TIMEOUT_S = 420.0
 #: Seconds a node that joins later may take to catch up.
 LATE_JOIN_TIMEOUT_S = 600.0
-#: Seconds a subscribed node may take to list the graph as synced and defined.
+#: Seconds a subscribed node may take to list the graph with its definition.
 READY_TIMEOUT_S = 240.0
 #: How often a wait runs the beat a running Blackbox performs (a ruleset refresh:
 #: membership check, retry queue, keep-alive); its pulse runs every 20 s, a refresh hourly.
@@ -167,6 +167,8 @@ class Trial:
                 result.evidence["assists"] = list(self._assists)
         except StepFailed as failed:
             result.status, result.summary, result.evidence = FAIL, failed.summary, failed.evidence
+            if self._assists:   # the work-around was tried and did not help: part of the evidence
+                result.evidence["assists"] = list(self._assists)
         except ActorError as exc:
             result.status, result.summary, result.error = ERROR, "an actor gave no answer", str(exc)
         except Exception as exc:   # the trial's own failure: recorded, the run goes on
@@ -254,9 +256,13 @@ class Trial:
         if not trusted:
             raise StepFailed("a subscribed node does not act on the curators' manifest", join=joined,
                              trust={name: self.cluster.actor(name).call("trust") for name in names})
-        return {"summary": f"reporter-a, reporter-b and curator-1's node joined the graph (synced, definition in) "
-                           f"and trust the manifest (after {waited:.0f} s more)", "ready": ready, "join": joined,
-                "sync": answers}
+        unsynced = [name for name in names if not ready[name]["synced"]]
+        note = (f"; the node's listing still says synced=false for {', '.join(unsynced)} (DKG's readiness flag "
+                "for a registered graph; Blackbox does not wait for it, the next step shows whether writes go "
+                "through)") if unsynced else ""
+        return {"summary": f"reporter-a, reporter-b and curator-1's node joined the graph (definition in) "
+                           f"and trust the manifest (after {waited:.0f} s more){note}", "ready": ready,
+                "join": joined, "sync": answers}
 
     def _trusts_manifest(self, name: str) -> bool:
         return self._manifest_is_ours(self.cluster.actor(name).call("trust"))
@@ -309,7 +315,7 @@ class Trial:
                 beat()
             return found
 
-        seen, waited = _wait(probe, READ_TIMEOUT_S)
+        seen, waited = self._assisted_wait("reporter-b", probe, READ_TIMEOUT_S, lambda: "A's report not read yet")
         if seen is None:
             raise StepFailed(f"reporter-b's community reader did not return A's report within {READ_TIMEOUT_S:.0f} s",
                              last_read=self.cluster.actor("reporter-b").call("read"))
@@ -405,13 +411,13 @@ class Trial:
     # -- helpers ------------------------------------------------------------------
 
     def _graph_ready(self, name: str, timeout: float = READY_TIMEOUT_S) -> dict[str, Any]:
-        """Wait until *name*'s node lists the graph as subscribed, synced and with
-        its definition (what the node needs before it accepts writes), running
-        Blackbox's own beat meanwhile (a running Blackbox would). When it is not
-        there halfway, the documented DKG work-around for a registered graph
-        whose catch-up is not re-run — a subscribe with forceCatchup — is applied
-        by the trial (an assist), unless assists are off."""
-        node = self.cluster.actors[name].node.label
+        """Wait until *name*'s node lists the graph as subscribed with its
+        definition (an access policy): what Blackbox's membership confirms, and
+        what the node's write check needs with the graph content it holds. The
+        listing's ``synced`` flag is recorded, not awaited: on a registered graph
+        the DKG can leave it false while the node takes writes (OriginTrail/dkg
+        #3281, and its member-sharing suite's case 8). Blackbox's own beat runs
+        meanwhile, as a running Blackbox's would."""
         last: dict[str, Any] = {}
         beat = self._beater(name)
 
@@ -423,17 +429,29 @@ class Trial:
             beat()   # Blackbox's own membership check repairs what it can before any assist
             return None
 
-        row, waited = _wait(probe, timeout / 2 if self.assist else timeout)
-        if row is None and self.assist:
-            self.cluster.force_catchup(name)
-            self._assists.append(f"forced a catch-up on {node} ({name}): after {waited:.0f} s its listing "
-                                 f"was {_row_state(last)}")
-            row, more = _wait(probe, timeout / 2)
-            waited += more
+        row, waited = self._assisted_wait(name, probe, timeout, lambda: f"its listing was {_row_state(last)}")
         if row is None:
-            raise StepFailed(f"{name}'s node does not list the graph as subscribed, synced and defined within "
+            raise StepFailed(f"{name}'s node does not list the graph as subscribed with its definition within "
                              f"{timeout:.0f} s", listing=last)
-        return {"seconds": round(waited), "listing": _row_state(row)}
+        return {"seconds": round(waited), "listing": _row_state(row), "synced": bool(row.get("synced"))}
+
+    def _assisted_wait(self, name: str, probe: Callable[[], Any], timeout: float,
+                       state: Callable[[], str]) -> tuple[Any, float]:
+        """:func:`_wait` for *probe*. When it is not there halfway, the trial applies
+        the documented DKG work-around for a registered graph whose catch-up is
+        not re-run, a subscribe with forceCatchup on *name*'s node, and records it
+        as an assist (*state* says what was missing); ``--no-assist`` waits the
+        whole time without it."""
+        if not self.assist:
+            return _wait(probe, timeout)
+        found, waited = _wait(probe, timeout / 2)
+        if found is None:
+            self.cluster.force_catchup(name)
+            self._assists.append(f"forced a catch-up on {self.cluster.actors[name].node.label} ({name}) after "
+                                 f"{waited:.0f} s: {state()}")
+            found, more = _wait(probe, timeout / 2)
+            waited += more
+        return found, waited
 
     def _report_subject(self, name: str) -> str:
         """The subject of *name*'s report of the promoted threat."""
@@ -489,7 +507,8 @@ class Trial:
             beat()
             return None
 
-        seen, waited = _wait(probe, timeout)
+        seen, waited = self._assisted_wait(name, probe, timeout,
+                                           lambda: f"it read {len(last.get('reports', []))} of the 2 reports")
         if seen is None:
             raise StepFailed(f"{name} does not read both reports within {timeout:.0f} s", last_read=last)
         return {"seconds": round(waited), "state": seen.get("state"), "reports": len(seen.get("reports", []))}
@@ -508,7 +527,7 @@ class Trial:
             last = self.cluster.actor(name).call("ruleset", params, timeout=600.0)
             return last if _is_verified(last, promoted) else None
 
-        seen, waited = _wait(probe, timeout)
+        seen, waited = self._assisted_wait(name, probe, timeout, lambda: "no verified rule for it yet")
         if seen is None:
             raise StepFailed(f"{name}'s ruleset does not hold {promoted.identifier} as a verified rule within "
                              f"{timeout:.0f} s", last_ruleset=last)
@@ -580,7 +599,7 @@ def _own_asset(graphs: Optional[list[str]], address: str) -> bool:
 
 
 def _ready(row: dict[str, Any]) -> bool:
-    return bool(row.get("subscribed") and row.get("synced") and str(row.get("accessPolicy") or "").strip())
+    return bool(row.get("subscribed") and str(row.get("accessPolicy") or "").strip())
 
 
 def _row_state(row: dict[str, Any]) -> str:

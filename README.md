@@ -532,7 +532,7 @@ machines would run it:
 | `devnet`, `graph` | a devnet is up; the curator node creates one public graph, registered on chain with a curated publish policy, and its `reports` sub-graph; the curator node gets Blackbox's curator settings (`scripts/blackbox-curator-config.py`) |
 | `edges` | two Edge nodes run Blackbox's node settings, taken from this checkout: the installer's config writer, the native sync profile (`sync/node_profile.py`) and the launch environment Blackbox starts its node with |
 | `keys` | test curator keys for the devnet's network only (below); a manifest with two curator keys of two operators is published and trusted |
-| `subscribe` | the reporters subscribe with `blackbox sync` |
+| `subscribe` | the reporters subscribe with `blackbox sync`; each node then lists the graph with its definition, as Blackbox's membership requires (the listing's `synced` flag is recorded, not awaited: the DKG can leave it false on a registered graph while the node takes writes) |
 | `share`, `read` | reporter A files a report with `blackbox report`; reporter B's community reader returns it |
 | `promote` | curator 1 proposes, curator 2 co-signs and publishes. Verified Memory then holds a promotion statement both curator keys signed that names the report (subject and digest), with the curators' own asset built from the report, or the report itself |
 | `compile` | both reporters' rulesets serve the report as a verified rule, and their guards in block mode refuse to install the package; reporter B's unpromoted report does not become one |
