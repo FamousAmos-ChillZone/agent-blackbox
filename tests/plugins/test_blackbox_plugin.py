@@ -268,7 +268,7 @@ def test_managed_sync_repairs_native_reconciliation_before_sync(
     assert persisted["syncOnConnectEnabled"] is True
     assert persisted["syncReconcilerEnabled"] is True
     assert persisted["durableSyncEnabled"] is True
-    assert persisted["syncSharedMemoryOnConnect"] is False
+    assert persisted["syncSharedMemoryOnConnect"] is True   # one graph: missed reports come back on connect
     assert persisted["syncGlobalMaxInflight"] == 1
     assert persisted["syncGlobalQueueLimit"] == 0
 
@@ -286,7 +286,7 @@ def test_managed_sync_keeps_existing_steady_node_running(monkeypatch, tmp_path):
                 "durableSyncEnabled": True,
                 "syncGlobalMaxInflight": 1,
                 "syncGlobalQueueLimit": 0,
-                "syncSharedMemoryOnConnect": False,
+                "syncSharedMemoryOnConnect": True,
             }
         ),
         encoding="utf-8",

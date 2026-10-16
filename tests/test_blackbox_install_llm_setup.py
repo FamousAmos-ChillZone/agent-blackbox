@@ -1605,7 +1605,7 @@ def test_installers_use_native_dkg_membership_without_sync_overrides() -> None:
         assert 'data["syncGlobalMaxInflight"] = 1' in text
         assert 'data["syncGlobalQueueLimit"] = 0' in text
         assert 'data.pop("restrictAutoSubscribeContextGraphs", None)' in text
-        assert 'data["syncSharedMemoryOnConnect"] = False' in text
+        assert 'data["syncSharedMemoryOnConnect"] = True' in text
         assert 'data["syncContextGraphPriorities"] = priorities' in text
         assert '"backend": "blazegraph"' in text
         assert '"options": {"url": store_url, "managedByDkg": store_managed, "timeout": 900000}' in text

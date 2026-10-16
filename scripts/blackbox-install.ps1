@@ -841,7 +841,9 @@ data.pop("syncAgentsMeta", None)
 data["syncGlobalMaxInflight"] = 1
 data["syncGlobalQueueLimit"] = 0
 data.pop("restrictAutoSubscribeContextGraphs", None)
-data["syncSharedMemoryOnConnect"] = False
+# One graph (2026-10-16): community reports live in the verified graph's shared
+# memory; ones written while this node was offline come back on connect.
+data["syncSharedMemoryOnConnect"] = True
 priorities = data.get("syncContextGraphPriorities")
 if not isinstance(priorities, dict):
     priorities = {}
