@@ -2263,18 +2263,30 @@ configure_blackbox_mode() {
     fi
 }
 
-# ── Auto-protect every local agent (best-effort, non-fatal) ─────────────────
-# Discovers every local Hermes home + OpenClaw workspace and enables Blackbox
-# in each, so protection is on everywhere without per-instance setup.
+# ── Protect agents (best-effort, non-fatal) ─────────────────────────────────
+# Blackbox protects the Hermes home this installer set up ($HERMES_HOME). Every
+# other Hermes profile or OpenClaw workspace is its own trust and credential
+# boundary, so it is attached only when the operator says so: `blackbox attach`
+# lists the ones not yet protected and asks [y/N] on the terminal (/dev/tty, so
+# it works under `curl | bash`); with no terminal it attaches none of them.
+# Scripted installs that want every agent protected set BLACKBOX_ATTACH_ALL=1.
 attach_all_agents() {
-    heading "Protecting all local agents"
-    step "Discovering local Hermes homes + OpenClaw workspaces (blackbox attach) ..."
-    if "$HERMES_BIN" blackbox attach; then
-        ok "Blackbox attached to all discovered local agents"
+    heading "Protecting your agents"
+    step "Protecting the Hermes home at $HERMES_HOME (blackbox attach) ..."
+    if "$HERMES_BIN" blackbox attach "$HERMES_HOME"; then
+        ok "Blackbox protects $HERMES_HOME"
     else
-        warn "Could not auto-attach to every local agent (this is non-fatal)."
-        step "Re-run anytime with:  blackbox attach"
+        warn "Could not protect $HERMES_HOME (this is non-fatal)."
+        step "Re-run anytime with:  blackbox attach $HERMES_HOME"
     fi
+    case "$(printf '%s' "${BLACKBOX_ATTACH_ALL:-}" | tr '[:upper:]' '[:lower:]')" in
+        1|true|yes)
+            step "BLACKBOX_ATTACH_ALL is set: protecting every Hermes home + OpenClaw workspace found ..."
+            "$HERMES_BIN" blackbox attach --all || warn "Could not protect every agent (this is non-fatal)."
+            return 0 ;;
+    esac
+    step "Looking for other agents on this machine (Hermes profiles, OpenClaw workspaces) ..."
+    "$HERMES_BIN" blackbox attach || step "Protect others later with:  blackbox attach <home>   (or --all)"
 }
 
 # ── Optional: configure the LLM prompt-injection reviewer ───────────────────

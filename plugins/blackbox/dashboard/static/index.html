@@ -3945,7 +3945,7 @@
       '</div>';
     }).join("");
     // "+ Attach another" tile — always present as the manual escape hatch, even
-    // when agents are already connected (auto-attach covers the common case).
+    // when agents are already connected: Blackbox joins only the agents the operator chooses.
     var addTile = '<button type="button" class="agent-add-tile" id="attach-open" title="Manage local agents">' +
       '<span class="agent-add-ico">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>' +

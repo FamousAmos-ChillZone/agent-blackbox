@@ -171,7 +171,7 @@
 
 <section id="install" class="doc" data-keywords="install installer service launchd systemd lingering reboot files">
   <h2>Install and services</h2>
-  <p>The one-line installer sets up Hermes (the agent framework), the Blackbox plugin, a DKG node and this dashboard, then protects every agent it finds on the machine.</p>
+  <p>The one-line installer sets up Hermes (the agent framework), the Blackbox plugin, a DKG node and this dashboard, and protects the Hermes home it set up. If it finds other agents (Hermes profiles, OpenClaw workspaces) it lists them and asks first; each profile is its own trust boundary, so Blackbox never adds itself to one on its own.</p>
   <div class="cards three">
     <article class="card"><h3>Starts at login</h3><p>On macOS the DKG node and the dashboard run as LaunchAgents. On Linux they run as systemd services; for a normal user the installer turns on "lingering" so they keep running after you log out and start at boot.</p></article>
     <article class="card"><h3>Where things live</h3><p>Blackbox's records: <code>~/.hermes/blackbox/</code>. The DKG node: <code>agent-blackbox/.dkg/</code> next to the installed checkout. Settings: the Hermes <code>config.yaml</code>.</p></article>
@@ -186,7 +186,7 @@
     <tr><th scope="row"><code>status</code></th><td>Settings, whether the DKG node answers, the rules loaded and how many findings were logged.</td></tr>
     <tr><th scope="row"><code>sync</code></th><td>Refresh the threat rules from your DKG node now. <code>--wait</code> waits for the first full download.</td></tr>
     <tr><th scope="row"><code>dashboard</code></th><td>Start this dashboard at http://127.0.0.1:9700.</td></tr>
-    <tr><th scope="row"><code>attach</code> / <code>detach</code></th><td>Protect every local Hermes home and OpenClaw workspace, or switch Blackbox off in all of them.</td></tr>
+    <tr><th scope="row"><code>attach</code> / <code>detach</code></th><td>Protect the Hermes homes or OpenClaw workspaces you name (<code>blackbox attach ~/.hermes/profiles/work</code>), or every one found with <code>--all</code>; <code>detach</code> switches Blackbox off, and it stays off.</td></tr>
     <tr><th scope="row"><code>report</code></th><td>Share a threat with the community graph, see what you shared, or turn sharing on or off.</td></tr>
     <tr><th scope="row"><code>rules</code></th><td>Local overrides: let one verified rule only flag on this machine, undo that, or list your overrides.</td></tr>
     <tr><th scope="row"><code>setup</code></th><td>Finish an install that came from the Hermes plugin catalog: DKG node, threat graphs, agents, dashboard.</td></tr>

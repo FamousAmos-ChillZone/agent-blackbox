@@ -142,7 +142,7 @@ class BlackboxConfig:
     dashboard_port: int = 9700
     discover: bool = True
     osv_lookup: bool = True
-    auto_attach: bool = True
+    auto_attach: bool = False   # opt-in: each Hermes profile is its own trust boundary (attach.automatic_targets)
     #: Optional LLM reviewer (opt-in, off by default): an LLM gives a second opinion on prompt
     #: injection over the observer path. Provider ``openai`` or ``anthropic``. Config keys:
     #: ``plugins.entries.blackbox.llm.{enabled,provider,model,api_key_env|api_key}`` — ``api_key_env``
@@ -375,7 +375,7 @@ def load_blackbox_config() -> BlackboxConfig:
         dashboard_port=_as_int(_env_or(entry, env="BLACKBOX_DASHBOARD_PORT", key="dashboard_port", default=9700), 9700),
         discover=_as_bool(_env_or(entry, env="BLACKBOX_DISCOVER", key="discover", default=True), True),
         osv_lookup=_as_bool(_env_or(entry, env="BLACKBOX_OSV_LOOKUP", key="osv_lookup", default=True), True),
-        auto_attach=_as_bool(_env_or(entry, env="BLACKBOX_AUTO_ATTACH", key="auto_attach", default=True), True),
+        auto_attach=_as_bool(_env_or(entry, env="BLACKBOX_AUTO_ATTACH", key="auto_attach", default=False), False),
         categories=categories,
         protected_paths=protected_paths,
         llm_enabled=llm_enabled,

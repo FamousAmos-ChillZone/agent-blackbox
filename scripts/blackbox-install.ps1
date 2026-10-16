@@ -1653,20 +1653,32 @@ function Configure-BlackboxMode {
     }
 }
 
-# ── Auto-protect every local agent (best-effort, non-fatal) ─────────────────
-# Discovers every local Hermes home + OpenClaw workspace and enables Blackbox
-# in each, so protection is on everywhere without per-instance setup.
+# ── Protect agents (best-effort, non-fatal) ─────────────────────────────────
+# Blackbox protects the Hermes home this installer set up ($HermesHome). Every
+# other Hermes profile or OpenClaw workspace is its own trust and credential
+# boundary, so it is attached only when the operator says so: `blackbox attach`
+# lists the ones not yet protected and asks [y/N] on the console; with no console
+# it attaches none of them. Scripted installs set BLACKBOX_ATTACH_ALL=1.
 function Protect-AllAgents {
-    Write-Heading "Protecting all local agents"
-    Write-Step "Discovering local Hermes homes + OpenClaw workspaces (blackbox attach) ..."
+    Write-Heading "Protecting your agents"
+    Write-Step "Protecting the Hermes home at $HermesHome (blackbox attach) ..."
     try {
-        & $HermesBin blackbox attach
+        & $HermesBin blackbox attach $HermesHome
         if ($LASTEXITCODE -ne 0) { throw "hermes exit $LASTEXITCODE" }
-        Write-Ok "Blackbox attached to all discovered local agents"
+        Write-Ok "Blackbox protects $HermesHome"
     } catch {
-        Write-Warn2 "Could not auto-attach to every local agent (this is non-fatal)."
-        Write-Step "Re-run anytime with:  blackbox attach"
+        Write-Warn2 "Could not protect $HermesHome (this is non-fatal)."
+        Write-Step "Re-run anytime with:  blackbox attach $HermesHome"
     }
+    if (@('1', 'true', 'yes') -contains "$env:BLACKBOX_ATTACH_ALL".ToLower()) {
+        Write-Step "BLACKBOX_ATTACH_ALL is set: protecting every Hermes home + OpenClaw workspace found ..."
+        & $HermesBin blackbox attach --all
+        if ($LASTEXITCODE -ne 0) { Write-Warn2 "Could not protect every agent (this is non-fatal)." }
+        return
+    }
+    Write-Step "Looking for other agents on this machine (Hermes profiles, OpenClaw workspaces) ..."
+    & $HermesBin blackbox attach
+    if ($LASTEXITCODE -ne 0) { Write-Step "Protect others later with:  blackbox attach <home>   (or --all)" }
 }
 
 # ── Guided next steps (single source of truth) ──────────────────────────────

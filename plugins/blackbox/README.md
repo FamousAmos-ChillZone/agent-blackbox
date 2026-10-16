@@ -56,8 +56,8 @@ hermes blackbox setup
 
 `hermes blackbox setup` runs the same installer as the one-line install below,
 inside the Hermes you already have: it installs Blackbox's DKG node (a pinned,
-checksum-verified release), joins both threat graphs, protects every local agent,
-runs the first sync and starts the dashboard. Use `--store oxigraph` to set up
+checksum-verified release), joins both threat graphs, protects the Hermes home it
+was set up in (and asks before protecting any other agent it finds), runs the first sync and starts the dashboard. Use `--store oxigraph` to set up
 without Docker. Until setup has run, the built-in rules (protected paths, secrets,
 Trader Shield) already protect, and `blackbox status` says setup is still needed.
 
@@ -81,7 +81,7 @@ The installer sets up everything Blackbox needs:
 | A local DKG node | Blackbox's own node (npm package `@origintrail-official/dkg`) on 127.0.0.1, in its own home — it never touches another DKG installation, and reading needs no funds |
 | The verified threat graph | Umanitek's curated graph, synced to your node |
 | The community graph | joined automatically, so your node can read and share reports |
-| Protection for every local agent | `blackbox attach` wires every Hermes home and OpenClaw workspace it finds |
+| Protection for the agents you choose | the Hermes home the installer set up; `blackbox attach <home>` or `--all` adds others |
 | The dashboard | at http://127.0.0.1:9700, reachable from this computer only |
 
 The node's default store is Blazegraph, which runs in Docker. On macOS the
@@ -128,7 +128,12 @@ Read this before installing. Blackbox sends **no telemetry or usage data**.
   (which add-on lives in which folder) and the Solana CLI's `config.yml` (where
   its keypair is). It never reads wallet contents or keys. `blackbox attach`
   writes Blackbox's plugin entry into the Hermes homes and OpenClaw workspaces
-  you choose to protect.
+  you choose to protect: the ones you name (`blackbox attach ~/.hermes/profiles/work`)
+  or, after `--all` or a yes at the prompt, every one it finds. Each Hermes profile
+  is its own trust boundary, so Blackbox never adds itself to one on its own:
+  automatic attaching (`auto_attach: true`, `BLACKBOX_AUTO_ATTACH=1`) is off unless
+  you turn it on, and an agent you switch off with `blackbox detach` or the
+  dashboard stays off.
 - **Stored credentials.** These live in Blackbox's own folder (`$BLACKBOX_HOME`,
   default `~/.hermes/blackbox`): this node's DKG identity and API token, and the
   key that signs your community reports (`reporter_key.pem`, readable by you
@@ -354,7 +359,7 @@ Every command is also `hermes blackbox …`.
 | `blackbox status` | config, node health, ruleset and findings counts, operator alarms |
 | `blackbox sync --wait` | pull the latest verified threat graph now |
 | `blackbox dashboard` | the live dashboard at http://127.0.0.1:9700 |
-| `blackbox attach` / `detach` | protect every local agent at once / remove protection |
+| `blackbox attach <home>` / `--all` / `detach` | protect the agents you name, or every one found / remove protection |
 | `blackbox chat` | a Blackbox-focused assistant chat |
 | `blackbox setup-llm` | the optional AI reviewer for prompt injection (flags only; `--disable` turns it off) |
 
@@ -525,7 +530,7 @@ shrink).
 | `setup/` | `blackbox setup`: the full install after a plugin-catalog install |
 | `audit/` | local logs and the share ledger |
 | `dashboard/` | the local web UI and its API |
-| `attach/` | finding and protecting every local agent |
+| `attach/` | finding local agents and protecting the ones you choose |
 | `overrides/` | the local release valve (`blackbox rules`) |
 | `killlist/` | the curators' signed kill list for skills and MCP servers |
 | `curate/` | curator-node tooling |
