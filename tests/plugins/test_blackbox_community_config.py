@@ -52,7 +52,6 @@ def test_a_fresh_install_reads_and_shares_in_the_verified_graph(clean_env):
     verified graph and sharing is on (opt-out); the operator's `report: false` still wins."""
     cfg = _load_with_entry(clean_env, {})
     assert cfg.context_graph_id == constants.DEFAULT_CONTEXT_GRAPH_ID
-    assert cfg.community_graph_id == cfg.context_graph_id   # the name curate/ and ruleset/ still read
     assert cfg.report is True and cfg.community_enabled is True
     assert _load_with_entry(clean_env, {"report": False}).community_enabled is False
 
@@ -67,7 +66,7 @@ def test_a_config_that_still_names_the_retired_community_graph_keeps_working(cle
         first = _load_with_entry(clean_env, entry)
         second = _load_with_entry(clean_env, entry)
     assert first == second
-    assert first.community_graph_id == first.context_graph_id == DEV_GRAPH
+    assert first.context_graph_id == DEV_GRAPH
     assert first.community_enabled is True
     ignored = sorted(record.getMessage().split()[1] for record in caplog.records if "is ignored" in record.getMessage())
     assert ignored == ["BLACKBOX_COMMUNITY_GRAPH_PEER_ID", "community_graph_id"]

@@ -159,12 +159,6 @@ class BlackboxConfig:
         return self.mode.lower() == "block"
 
     @property
-    def community_graph_id(self) -> str:
-        """Where community statements live: the verified graph (one graph since 2026-10-16). Kept for the
-        callers in ``curate/`` and ``ruleset/`` that still use this name; new code reads ``context_graph_id``."""
-        return self.context_graph_id
-
-    @property
     def community_enabled(self) -> bool:
         """True when outbound community sharing may run — THE single gate.
 
