@@ -131,7 +131,9 @@ def read_curator_view(client: DkgClient, cfg: BlackboxConfig, environment: str =
 def _community_roots(cfg: BlackboxConfig) -> trust_anchors.RootPins:
     """None. The community authority speaks only in a graph of its own — the two
     authorities must never share a graph — and since 2026-10-16 the only graph
-    is the verified one (*cfg*'s ``context_graph_id``), so the authority is dormant."""
+    is the verified one (*cfg*'s ``context_graph_id``), so the authority is dormant.
+    There are no community curators for now; it is kept, not deleted, so that
+    curators can be added later."""
     return trust_anchors.RootPins()
 
 

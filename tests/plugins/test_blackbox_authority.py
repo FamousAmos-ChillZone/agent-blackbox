@@ -12,10 +12,12 @@ Every test here drives one attack or one rule from the proposal (KI-242,
 KI-243, KI-245), on rows served by a fake node — keys are generated at runtime.
 
 One graph (2026-10-16): the community lives in the verified graph's shared
-memory and the two authorities may never share a graph, so the community
-authority is DORMANT — a community root grants nothing. The tests of what an
-active community authority does are kept, skipped, until the project lead
-decides whether its curators speak in the verified graph's shared memory instead.
+memory, and the two authorities may never share a graph. There are no community
+curators for now (the project lead's decision), so the community authority is
+DORMANT: kept, not deleted, so that curators can be added later. What an active
+community authority would do is not tested while it sleeps; these tests pin what
+dormant means — a community root and a community quorum grant nothing, and the
+verified authority's word reads the same whatever is signed beside it.
 """
 
 from __future__ import annotations
@@ -29,7 +31,6 @@ from test_blackbox_curator_view import _curator_row, _entry, _manifest_row
 
 from plugins.blackbox.community import read_curator_view
 from plugins.blackbox.community.statements import curator_view as cv
-from plugins.blackbox.community.trust.combine import combine
 from plugins.blackbox.kernel import signing
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.kernel.signing import key_manifest as km
@@ -41,10 +42,6 @@ from plugins.blackbox.ruleset import community_tier, compiler
 VM_GRAPH = GRAPH   # one graph (2026-10-16): Verified Memory and the community's shared memory
 CFG = BlackboxConfig(report=True, context_graph_id=VM_GRAPH)
 SHARED = "shared-working-memory"
-#: An active community authority needs a graph of its own (see the module docstring): the
-#: tests of what one does are skipped with this reason, and fixtures that stand one up skip too.
-DORMANT = "the community authority is dormant under one graph (2026-10-16), pending the project lead's decision"
-COMMUNITY_AUTHORITY_DORMANT = pytest.mark.skip(reason=DORMANT)
 THREAT = "ioc:domain:evil.example"
 TODAY = date(2026, 10, 2).isoformat()   # the day the helper rows are signed
 #: What a community confirmation must carry: the signed reference to the evidence its curators checked.
@@ -209,43 +206,30 @@ def test_a_pinned_community_graph_ignores_the_environment(monkeypatch, community
     assert trust_anchors.community_roots("", env) == frozenset()
 
 
-def test_the_two_authorities_never_share_a_graph(community_trusted, community):
-    """One graph (2026-10-16): the community authority would share the verified
-    authority's graph, so it gets nothing — a trusted community root and a
-    quorum-signed listing in the shared memory count for no one."""
+def _community_statement(side, kind):
+    """One quorum-signed statement of *kind*, as the community authority would publish it."""
     alice = Reporter("0xa")
-    node = Graphs(community=[community.manifest_row(),
-                             community.row(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _entry(alice.author))])
-    view = read_curator_view(node, CFG)
-    assert not view.counted and view.community is None
+    identifier, fields = {Kind.COUNTED_AUTHORS: (f"author:{alice.author}", _entry(alice.author)),
+                          Kind.CONFIRMATION: (THREAT, CITED),
+                          Kind.REJECTION: (THREAT, {"reason": "benign"}),
+                          Kind.ATTESTATION: (THREAT, {"stage": "corroborated"}),
+                          Kind.DEFERRAL: (THREAT, {}),
+                          Kind.IN_REVIEW: (THREAT, {}),
+                          Kind.PAUSE: ("curator", {"until": "2026-10-05"})}[kind]
+    return side.row(kind, identifier, fields)
 
 
-# ------------------------------------------------------------------ what the community authority can do
-
-
-@COMMUNITY_AUTHORITY_DORMANT
-def test_the_community_authority_lists_a_reporter_from_the_community_graph(community_trusted, community):
-    alice, bob = Reporter("0xa"), Reporter("0xb")
-    node = Graphs(community=[community.manifest_row(),
-                             community.row(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _entry(alice.author)),
-                             community.row(Kind.COUNTED_AUTHORS, f"author:{bob.author}", _entry(bob.author), signers=1)])
-    view = read_curator_view(node, CFG)
-    assert set(view.counted) == {alice.author}            # bob's listing has one signature: no quorum
-    assert view.manifest is None                          # the VERIFIED manifest stays what `manifest` means
-    assert view.community is not None and view.community.manifest == community.manifest
-    assert view.community.authority is Authority.COMMUNITY
-
-
-@COMMUNITY_AUTHORITY_DORMANT
-def test_the_community_authority_confirms_rejects_and_pauses(community_trusted, community):
-    node = Graphs(community=[community.manifest_row(),
-                             community.row(Kind.CONFIRMATION, THREAT, CITED),
-                             community.row(Kind.REJECTION, "dep:npm:left-pad@1.0.0", {"reason": "benign"}),
-                             community.row(Kind.PAUSE, "curator", {"until": "2026-10-05"})])
-    view = read_curator_view(node, CFG)
-    assert view.verdict(THREAT) is Kind.CONFIRMATION
-    assert view.rejected("dep:npm:left-pad@1.0.0")
-    assert view.pause_active("2026-10-04") and not view.pause_active("2026-10-06")
+@pytest.mark.parametrize("kind", [Kind.COUNTED_AUTHORS, Kind.CONFIRMATION, Kind.REJECTION, Kind.ATTESTATION,
+                                  Kind.DEFERRAL, Kind.IN_REVIEW, Kind.PAUSE])
+def test_the_two_authorities_never_share_a_graph(both_trusted, verified, community, kind):
+    """One graph (2026-10-16): the community authority would share the verified
+    authority's graph, so it is dormant. With its root trusted and its manifest
+    published, a quorum-signed statement of any kind it may publish changes
+    nothing the reader sees."""
+    alone = read_curator_view(Graphs(verified=[verified.manifest_row()]), CFG)
+    beside = read_curator_view(Graphs(verified=[verified.manifest_row()],
+                                      community=[community.manifest_row(), _community_statement(community, kind)]), CFG)
+    assert beside == alone and beside.manifest == verified.manifest and beside.community is None
 
 
 def test_the_community_authority_cannot_revoke_whatever_its_keys_sign(community_trusted, community):
@@ -257,7 +241,7 @@ def test_the_community_authority_cannot_revoke_whatever_its_keys_sign(community_
     assert view.revoked == frozenset() and view.verdict(THREAT) is None
 
 
-# ------------------------------------------------------------------ between the two: the most restrictive word wins
+# ------------------------------------------------------------------ between the two: only the verified word counts
 
 
 def _both(verified, community, *, verified_rows=(), community_rows=()):
@@ -274,98 +258,39 @@ def test_a_community_confirmation_never_displaces_a_verified_revocation(both_tru
     assert view.verdict(THREAT) is Kind.REVOCATION and THREAT in view.revoked
 
 
-@COMMUNITY_AUTHORITY_DORMANT
-def test_a_rejection_from_either_authority_beats_the_other_authoritys_confirmation(both_trusted, verified, community):
-    other = "ioc:domain:other.example"
-    node = _both(verified, community, community_rows=[
-        verified.row(Kind.REJECTION, THREAT, {"reason": "benign"}, graph=GRAPH, sequence=1),
-        community.row(Kind.CONFIRMATION, THREAT, CITED, sequence=7),
-        verified.row(Kind.CONFIRMATION, other, {}, graph=GRAPH, sequence=7),
-        community.row(Kind.REJECTION, other, {"reason": "benign"}, sequence=1)])
-    view = read_curator_view(node, CFG)
-    assert view.rejected(THREAT) and view.rejected(other)
-
-
-@COMMUNITY_AUTHORITY_DORMANT
-def test_a_notice_does_not_cancel_the_other_authoritys_confirmation_but_a_live_deferral_does(both_trusted, verified, community):
-    deferred, lapsed = "ioc:domain:deferred.example", "ioc:domain:lapsed.example"
-    node = _both(verified, community, community_rows=[
-        verified.row(Kind.IN_REVIEW, THREAT, {}, graph=GRAPH, signers=1),
-        community.row(Kind.CONFIRMATION, THREAT, CITED),
-        verified.row(Kind.DEFERRAL, deferred, {}, graph=GRAPH, signers=1),
-        community.row(Kind.CONFIRMATION, deferred, CITED),
-        verified.row(Kind.DEFERRAL, lapsed, {}, graph=GRAPH, signers=1),
-        community.row(Kind.CONFIRMATION, lapsed, CITED)])
-    view = read_curator_view(node, CFG)
-    assert view.verdict(THREAT) is Kind.CONFIRMATION
-    assert view.verdict(deferred) is Kind.DEFERRAL
-    later = combine(cv.CuratorView(verdicts={lapsed: view.verdicts[deferred]}),
-                    cv.CuratorView(verdicts={lapsed: view.community.verdicts[lapsed]}), today="2026-11-15")
-    assert later.verdict(lapsed) is Kind.CONFIRMATION       # 44 days on, the deferral no longer holds it down
-
-
-@COMMUNITY_AUTHORITY_DORMANT
-def test_a_delisting_by_either_authority_removes_the_reporter(both_trusted, verified, community):
-    alice, bob, carol = Reporter("0xa"), Reporter("0xb"), Reporter("0xc")
+def test_beside_the_verified_authority_a_community_quorum_changes_no_word(both_trusted, verified, community):
+    """What the most-restrictive-wins rule would combine never reaches the view while
+    the community authority is dormant: every line read is the verified authority's own."""
+    alice, bob = Reporter("0xa"), Reporter("0xb")
+    held, other = "ioc:domain:held.example", "ioc:domain:other.example"
     node = _both(verified, community,
-                 verified_rows=[verified.row(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _entry(alice.author, listed="no")),
-                                verified.row(Kind.COUNTED_AUTHORS, f"author:{bob.author}", _entry(bob.author)),
-                                verified.row(Kind.COUNTED_AUTHORS, f"author:{carol.author}", _entry(carol.author))],
-                 community_rows=[community.row(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _entry(alice.author)),
-                                 community.row(Kind.COUNTED_AUTHORS, f"author:{bob.author}", _entry(bob.author, listed="no"))])
-    view = read_curator_view(node, CFG)
-    assert set(view.counted) == {carol.author}
-    assert view.delisted == {alice.author, bob.author}
-
-
-@COMMUNITY_AUTHORITY_DORMANT
-def test_a_listing_and_a_delisting_with_the_same_number_resolve_to_delisted_in_either_order(community_trusted, community):
-    """KI-245: the outcome must not depend on which row the node returns first."""
-    alice = Reporter("0xa")
-    listed = community.row(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _entry(alice.author), sequence=4)
-    delisted = dict(community.row(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _entry(alice.author, listed="no"), sequence=4))
-    for order in ([listed, delisted], [delisted, listed]):
-        view = read_curator_view(Graphs(community=[community.manifest_row(), *order]), CFG)
-        assert not view.counted and view.delisted == {alice.author}
-
-
-@COMMUNITY_AUTHORITY_DORMANT
-def test_two_attestations_resolve_to_the_one_that_enforces_less(both_trusted, verified, community):
-    tied = "ioc:domain:tied.example"
-    node = _both(verified, community, community_rows=[
-        verified.row(Kind.ATTESTATION, THREAT, {"stage": "held"}, graph=GRAPH),
-        community.row(Kind.ATTESTATION, THREAT, {"stage": "corroborated"}, sequence=9),
-        community.row(Kind.ATTESTATION, tied, {"stage": "corroborated"}, sequence=3),
-        dict(community.row(Kind.ATTESTATION, tied, {"stage": "reported"}, sequence=3))])
-    view = read_curator_view(node, CFG)
-    assert view.attestation(THREAT).field("stage") == "held"           # across authorities
-    assert view.community.attestation(tied).field("stage") == "reported"   # a tie inside one authority
-
-
-@COMMUNITY_AUTHORITY_DORMANT
-def test_a_pause_from_either_authority_is_in_force(both_trusted, verified, community):
-    node = _both(verified, community,
-                 verified_rows=[verified.row(Kind.PAUSE, "curator", {"until": "2026-10-03"})],
-                 community_rows=[community.row(Kind.PAUSE, "curator", {"until": "2026-10-06"})])
-    view = read_curator_view(node, CFG)
-    assert view.pause_until == "2026-10-06" and view.pause_active("2026-10-05")
-
-
-@COMMUNITY_AUTHORITY_DORMANT
-def test_the_combined_view_keeps_the_verified_manifest_for_the_verified_tier(both_trusted, verified, community):
-    view = read_curator_view(_both(verified, community), CFG)
-    assert view.manifest == verified.manifest and view.authority is Authority.VERIFIED
-    assert view.community.manifest == community.manifest
+                 verified_rows=[verified.row(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _entry(alice.author)),
+                                verified.row(Kind.PAUSE, "curator", {"until": "2026-10-03"})],
+                 community_rows=[verified.row(Kind.REJECTION, THREAT, {"reason": "benign"}),
+                                 verified.row(Kind.ATTESTATION, held, {"stage": "held"}),
+                                 community.row(Kind.CONFIRMATION, THREAT, CITED, sequence=7),
+                                 community.row(Kind.REJECTION, other, {"reason": "benign"}),
+                                 community.row(Kind.ATTESTATION, held, {"stage": "corroborated"}, sequence=9),
+                                 community.row(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _entry(alice.author, listed="no")),
+                                 community.row(Kind.COUNTED_AUTHORS, f"author:{bob.author}", _entry(bob.author)),
+                                 community.row(Kind.PAUSE, "curator", {"until": "2026-10-06"})])
+    view = read_curator_view(node, CFG, interest=[THREAT, held, other, f"author:{alice.author}", f"author:{bob.author}"])
+    assert set(view.counted) == {alice.author} and not view.delisted       # no community listing or delisting
+    assert view.rejected(THREAT) and view.verdict(other) is None             # no community confirmation or rejection
+    assert view.attestation(held).field("stage") == "held"                  # no community attestation
+    assert view.pause_until == "2026-10-03"                                 # no community pause
+    assert view.manifest == verified.manifest and view.community is None
 
 
 # ------------------------------------------------------------------ failure is not emptiness
 
 
-@COMMUNITY_AUTHORITY_DORMANT
-def test_a_failed_community_page_freezes_the_view_instead_of_delisting_everyone(community_trusted, community):
-    """KI-244: with trust hosted in the community graph, a failed page must not read as 'no statements'."""
-    view = read_curator_view(Graphs(community=[community.manifest_row()], failing={SHARED}), CFG)
-    assert view.unavailable
+def test_a_failed_shared_memory_page_freezes_the_view_instead_of_dropping_verdicts(monkeypatch, verified):
+    """KI-244: the verified authority's advisory statements live in the shared memory; a
+    page that fails there, with nothing stored yet, must not read as 'no statements'."""
+    monkeypatch.setenv("BLACKBOX_CURATOR_ROOT_KEYS", verified.root_hex)
+    view = read_curator_view(Graphs(verified=[verified.manifest_row()], failing={SHARED}), CFG)
+    assert view.unavailable and view.manifest == verified.manifest
 
 
 def test_a_node_with_no_community_root_reads_exactly_as_before(monkeypatch, verified, community):
@@ -379,7 +304,7 @@ def test_a_node_with_no_community_root_reads_exactly_as_before(monkeypatch, veri
     assert set(view.counted) == {alice.author} and view.community is None
 
 
-# ------------------------------------------------------------------ end to end: the community tier finally fires
+# ------------------------------------------------------------------ end to end: what makes the community tier fire
 
 
 class Network(Graphs):
@@ -404,34 +329,35 @@ def _tier(node):
     return rs
 
 
-@COMMUNITY_AUTHORITY_DORMANT
-def test_a_report_by_a_community_listed_reporter_flags_and_becomes_matchable(monkeypatch, community_trusted, community):
-    """The point of the proposal: with a community-authority listing, a report
-    stops being 'reported, monitor only' and can fire on another node — and a
-    report by an unlisted reporter still cannot."""
-    monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda client, cfg: None)
-    alice, mallory = Reporter("0xa"), Reporter("0xb")
-    trusted, untrusted = "ioc:ip:203.0.113.7", "ioc:ip:203.0.113.9"
-    reports = [signed_row(trusted, alice), signed_row(untrusted, mallory)]
-    listing = community.row(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _entry(alice.author))
-
-    without = _tier(Network(reports=reports, community=[community.manifest_row()]))
-    assert without.community[trusted]["enforcement"] == "monitor" and trusted not in without.ioc
-
-    rs = _tier(Network(reports=reports, community=[community.manifest_row(), listing]))
-    assert (rs.community[trusted]["stage"], rs.community[trusted]["enforcement"], rs.community[trusted]["counted"]) == ("reported", "flag", "1")
-    assert rs.community[untrusted]["enforcement"] == "monitor"
-    assert trusted in rs.ioc and rs.ioc[trusted]["source"] == "community"
-    assert untrusted not in rs.ioc
-
-
-@COMMUNITY_AUTHORITY_DORMANT
-def test_a_community_rejection_ends_a_listed_reporters_threat(monkeypatch, community_trusted, community):
+def test_a_report_fires_on_the_verified_authoritys_listing_never_on_a_community_one(monkeypatch, both_trusted,
+                                                                                    verified, community):
+    """A report stops being 'reported, monitor only' and can fire on another node once
+    the verified authority lists its reporter. A community quorum's listing, with its
+    root trusted, leaves it monitor-only while the community authority is dormant."""
     monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda client, cfg: None)
     alice = Reporter("0xa")
     threat = "ioc:ip:203.0.113.7"
-    rows = [community.manifest_row(),
-            community.row(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _entry(alice.author)),
-            community.row(Kind.REJECTION, threat, {"reason": "benign"})]
-    rs = _tier(Network(reports=[signed_row(threat, alice)], community=rows))
+    reports = [signed_row(threat, alice)]
+    listing = f"author:{alice.author}"
+
+    rs = _tier(Network(reports=reports, verified=[verified.manifest_row()],
+                       community=[community.manifest_row(), community.row(Kind.COUNTED_AUTHORS, listing, _entry(alice.author))]))
+    assert rs.community[threat]["enforcement"] == "monitor" and threat not in rs.ioc
+
+    rs = _tier(Network(reports=reports, verified=[verified.manifest_row(),
+                                                  verified.row(Kind.COUNTED_AUTHORS, listing, _entry(alice.author))]))
+    assert (rs.community[threat]["stage"], rs.community[threat]["enforcement"], rs.community[threat]["counted"]) == ("reported", "flag", "1")
+    assert threat in rs.ioc and rs.ioc[threat]["source"] == "community"
+
+
+def test_a_verified_rejection_in_shared_memory_ends_a_listed_reporters_threat(monkeypatch, verified):
+    monkeypatch.setenv("BLACKBOX_CURATOR_ROOT_KEYS", verified.root_hex)
+    monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda client, cfg: None)
+    alice = Reporter("0xa")
+    threat = "ioc:ip:203.0.113.7"
+    node = Network(reports=[signed_row(threat, alice)],
+                   verified=[verified.manifest_row(),
+                             verified.row(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _entry(alice.author))],
+                   community=[verified.row(Kind.REJECTION, threat, {"reason": "benign"})])
+    rs = _tier(node)
     assert threat not in rs.ioc and threat not in rs.community    # rejected reports stop counting (terminal)

@@ -19,7 +19,6 @@ import json
 
 import pytest
 from _community_rows import GRAPH, NETWORK, Reporter, signed_row
-from test_blackbox_authority import DORMANT
 
 from plugins.blackbox.community import ReadState, pulse, read_curator_view, read_verified_reports
 from plugins.blackbox.community.statements import curator_view
@@ -274,32 +273,6 @@ def test_an_old_store_file_without_effective_order_loads_as_none(tmp_path):
     assert old.effective_order is None and old.effective_hash == "" and old.baseline_until == 1_800_000_000.0
     assert store.load("malformed").effective_order is None and store.load("malformed").effective_hash == ""
     assert store.load("boolean").effective_order is None
-
-
-@pytest.mark.skip(reason=DORMANT)
-def test_a_freeze_survives_a_flood_of_conflicting_versions_pushing_it_out_of_the_store(monkeypatch):
-    # T1 review: one counter-list at v2 must stop v3…v12 for good (D31 rule 2). The store
-    # keeps only the newest MAX_STORED_MANIFESTS lists, so the flood evicted the v2 conflict;
-    # once a junk flood also hid v2 from the unordered type lookup, the reader forgot the
-    # freeze and acted on the conflicting v12.
-    from test_blackbox_authority import Graphs, Side
-    from test_blackbox_curator_view import _manifest_row
-    community = Side(GRAPH)
-    monkeypatch.setenv("BLACKBOX_COMMUNITY_ROOT_KEYS", community.root_hex)
-    monkeypatch.delenv("BLACKBOX_CURATOR_ROOT_KEYS", raising=False)
-    monkeypatch.setattr(curator_view, "_today", lambda: "2026-10-11")
-    listed = dataclasses.replace(community.manifest, issued_day="2026-09-01")
-    conflicting = [dataclasses.replace(listed, version=version, promotion_author="0x" + "9" * 40)
-             for version in range(2, 3 + trust_store.MAX_STORED_MANIFESTS + 2)]
-    counter = dataclasses.replace(listed, version=2, promotion_author="0x" + "8" * 40)
-    frozen_rows = [_manifest_row(conflicting[0], community.root), _manifest_row(counter, community.root)]
-    node = Graphs(community=[_manifest_row(listed, community.root), *frozen_rows,
-                             *(_manifest_row(manifest, community.root) for manifest in conflicting[1:])])
-    view = read_curator_view(node, CFG).community
-    assert view.manifest == listed and view.manifest_conflict
-    node.rows[GRAPH] = [row for row in node.rows[GRAPH] if row not in frozen_rows]   # hidden by a junk flood
-    view = read_curator_view(node, CFG).community
-    assert view.manifest == listed and view.manifest_conflict
 
 
 # ------------------------------------------------------- T2: the successor graph readers follow
