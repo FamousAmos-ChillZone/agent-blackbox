@@ -41,13 +41,16 @@ def phrase() -> str:
 
 
 def solana_export() -> str:
+    """A fresh keypair as Phantom exports it: canonical base58, one '1' per leading zero byte.
+    Without the padding a key whose seed starts with a zero byte (1 in 256) decodes to 63 bytes
+    and the verifier rightly rejects it (CI flake, run 38927008162)."""
     private = Ed25519PrivateKey.generate()
     data = private.private_bytes_raw() + private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
     number, out = int.from_bytes(data, "big"), ""
     while number:
         number, digit = divmod(number, 58)
         out = BASE58[digit] + out
-    return out
+    return "1" * (len(data) - len(data.lstrip(b"\0"))) + out
 
 
 def chat(tool_name: str, output: str, ask: str = "Read the file and summarise it.") -> list[dict]:
