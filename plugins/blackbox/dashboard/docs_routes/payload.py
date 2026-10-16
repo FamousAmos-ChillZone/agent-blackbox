@@ -2,8 +2,9 @@
 
 The Docs page explains Blackbox in prose it ships with (``docs.html``), and reads everything that
 changes with the product from ``GET /api/docs`` — built here, live, from the shields registry:
-each shield, its packs (with each wallet's stores, browsers and sources), the browser folders it
-knows and its tested attack table. Nothing here is a hand-kept copy of product data, so the docs
+each shield, its page prose (what it does today, what it cannot yet, what comes next), its packs
+(with each pack's stores, browsers and sources), the browser folders it knows, its tested attack
+table and the real-machine runs that exercised it. Nothing here is a hand-kept copy of product data, so the docs
 cannot drift from what the product does. The one hand-written record is ``field_tests.json``: the
 real-machine test runs, which are past events, not product state.
 
@@ -71,8 +72,18 @@ class BrowserDoc(TypedDict):
     install: str
 
 
+class ContentDoc(TypedDict):
+    """A shield page's prose (its ``content.json``): ``can`` and ``cannot`` are ``[title, detail]``
+    pairs, ``coming`` is a list of names. Empty lists when the shield ships no prose."""
+
+    can: list[list[str]]
+    cannot: list[list[str]]
+    coming: list[str]
+
+
 class ShieldDoc(TypedDict):
-    """One shield: who it is, what it can do, what it guards, where it looks and what was tested."""
+    """One shield: who it is, what it can do, what it guards, where it looks, what was tested
+    and the real-machine runs that exercised it (``field_tests``, runs naming this shield)."""
 
     id: str
     name: str
@@ -83,10 +94,13 @@ class ShieldDoc(TypedDict):
     packs: list[PackDoc]
     browsers: list[BrowserDoc]
     attacks: dict[str, Any]
+    content: ContentDoc
+    field_tests: list[dict[str, Any]]
 
 
 class DocsPayload(TypedDict):
-    """``GET /api/docs``: the product version, every shield and the real-machine test runs."""
+    """``GET /api/docs``: the product version, every shield, and the real-machine runs that name
+    no shield (a run naming one is listed under that shield)."""
 
     version: str
     shields: list[ShieldDoc]
@@ -119,14 +133,37 @@ def _attacks_doc(shield_id: str) -> dict[str, Any]:
             "rows": [{field: row[field] for field in ATTACK_FIELDS if field in row} for row in table.get("attacks", [])]}
 
 
-def _shield_doc(shield: Any) -> ShieldDoc:
+def _pairs(value: Any) -> list[list[str]]:
+    """``[[title, detail], …]`` from a content list; anything else in it is dropped."""
+    return [[str(item[0]), str(item[1])] for item in value or []
+            if isinstance(item, list) and len(item) == 2 and all(isinstance(part, str) for part in item)]
+
+
+def _content_doc(shield_id: str) -> ContentDoc:
+    from ..shields_routes import shield_file   # the one place that knows where a shield keeps its prose
+
+    path = shield_file(shield_id, "content.json")
+    data: Any = {}
+    if path is not None:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            logger.warning("blackbox docs: the %s page prose could not be read: %s", shield_id, exc)
+    if not isinstance(data, dict):
+        data = {}
+    return ContentDoc(can=_pairs(data.get("can")), cannot=_pairs(data.get("cannot")),
+                      coming=[str(name) for name in data.get("coming") or [] if isinstance(name, str)])
+
+
+def _shield_doc(shield: Any, runs: list[dict[str, Any]]) -> ShieldDoc:
     return ShieldDoc(
         id=shield.id, name=shield.name, tagline=shield.tagline, beta=shield.beta, page=f"/shields/{shield.id}",
         capabilities=[{"id": cap.id, "name": cap.name, "note": cap.note} for cap in shield.capabilities],
         packs=[_pack_doc(shield.id, pack) for pack in shields.loaded_packs(shield.id)],
         browsers=[BrowserDoc(browser=root.browser, engine=root.engine, os=root.os, install=root.install)
                   for root in shields.browser_roots(shield.id)],
-        attacks=_attacks_doc(shield.id))
+        attacks=_attacks_doc(shield.id), content=_content_doc(shield.id),
+        field_tests=[run for run in runs if run.get("shield") == shield.id])
 
 
 def _field_tests() -> list[dict[str, Any]]:
@@ -135,10 +172,12 @@ def _field_tests() -> list[dict[str, Any]]:
     except (OSError, ValueError) as exc:
         logger.warning("blackbox docs: field tests could not be read: %s", exc)
         return []
-    return runs if isinstance(runs, list) else []
+    return [run for run in runs if isinstance(run, dict)] if isinstance(runs, list) else []
 
 
 def build_payload() -> DocsPayload:
     """The Docs page's live data (see :class:`DocsPayload`)."""
-    return DocsPayload(version=__version__, shields=[_shield_doc(shield) for shield in shields.all_shields()],
-                       field_tests=_field_tests())
+    runs = _field_tests()
+    registered = {shield.id for shield in shields.all_shields()}
+    return DocsPayload(version=__version__, shields=[_shield_doc(shield, runs) for shield in shields.all_shields()],
+                       field_tests=[run for run in runs if run.get("shield") not in registered])

@@ -33,20 +33,21 @@
 
 <div class="layout">
 <nav id="toc" class="toc" aria-label="Contents">
-  <p class="toc-title">Contents</p>
+  <p class="toc-title">Blackbox</p>
   <ol>
     <li><a href="#overview">What Blackbox is</a></li>
+    <li><a href="#protection">Built-in protection</a></li>
     <li><a href="#check">How a check works</a></li>
     <li><a href="#flows">The four flows</a></li>
     <li><a href="#decisions">Block, flag or allow</a></li>
     <li><a href="#graph">The threat graph</a></li>
-    <li><a href="#shields">Shields</a></li>
-    <li class="sub"><a href="#wallets">Wallets protected</a></li>
-    <li class="sub"><a href="#browsers">Browser support</a></li>
-    <li class="sub"><a href="#not-supported">Not supported</a></li>
-    <li class="sub"><a href="#tested">What was tested</a></li>
-    <li class="sub"><a href="#field">Real-machine runs</a></li>
-    <li class="sub"><a href="#sources">Sources</a></li>
+  </ol>
+  <p class="toc-title">Shields</p>
+  <ol id="toc-shields">
+    <li><a href="#shields">What a shield is</a></li>
+  </ol>
+  <p class="toc-title">Using Blackbox</p>
+  <ol>
     <li><a href="#privacy">Privacy and sharing</a></li>
     <li><a href="#install">Install and services</a></li>
     <li><a href="#cli">Commands</a></li>
@@ -61,11 +62,67 @@
   <h1>Every action your AI agent takes is checked <em>before it runs</em>.</h1>
   <p class="lede">Blackbox sits between your agent and the world. When the agent is about to run a command, open a file, install a package, fetch a page or call a model, Blackbox looks at that one action first and decides: block it, flag it for you, or let it through. It runs on your machine, works offline, and never sends your commands or prompts anywhere.</p>
   <div class="hero-stats" aria-live="polite">
-    <div class="stat"><b id="stat-wallets">—</b><span>wallets protected</span></div>
+    <div class="stat"><b id="stat-shields">—</b><span id="stat-shields-label">shields</span></div>
+    <div class="stat"><b id="stat-wallets">—</b><span>things shields protect</span></div>
     <div class="stat"><b id="stat-attacks">—</b><span>attacks in the tested table</span></div>
     <div class="stat"><b id="stat-browsers">—</b><span>browser folders known</span></div>
   </div>
   <div class="scanline" aria-hidden="true"></div>
+</section>
+
+<section id="protection" class="doc" data-keywords="built-in protection default prompt injection malware packages secrets protected files commands skills osv">
+  <h2>Built-in protection</h2>
+  <p>Everything here works the moment Blackbox is installed, for every agent it protects, with no shield switched on. Each card is one kind of danger Blackbox checks every action for.</p>
+  <div class="protect-grid">
+    <article class="protect" data-tier="graph">
+      <svg class="protect-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
+      <h3>Known threats</h3>
+      <p>Malicious packages (npm, PyPI and more), scam sites, bad IP addresses, malware file hashes, drainer wallets and known-bad skill versions — matched against the verified threat graph on your own machine.</p>
+      <span class="tier">Verified threats can block</span>
+    </article>
+    <article class="protect" data-tier="mixed">
+      <svg class="protect-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M9 9h6M9 12h4"/></svg>
+      <h3>Prompt injection</h3>
+      <p>Hidden instructions planted in web pages, files and tool output the agent reads, and in the requests it sends to its model — found by the graph's patterns and by Blackbox's own built-in checks.</p>
+      <span class="tier">Graph patterns can block; built-in checks flag</span>
+    </article>
+    <article class="protect" data-tier="mixed">
+      <svg class="protect-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6l5 5-5 5"/><path d="M12 18h8"/></svg>
+      <h3>Dangerous commands</h3>
+      <p>Command shapes that hand the machine over: a remote script piped straight into a shell, deleting system folders and other escalations — named the same way every time so the graph can recognise them.</p>
+      <span class="tier">Verified shapes can block; others flag</span>
+    </article>
+    <article class="protect" data-tier="block">
+      <svg class="protect-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+      <h3>Protected files</h3>
+      <p>SSH keys, <code>.env</code> files, <code>.pem</code>, <code>.key</code> and <code>.p12</code> key files, cloud credentials and Blackbox's own files — whether the agent opens them with a file tool or through the terminal. You can add your own paths in Settings.</p>
+      <span class="tier">Blocks in block mode</span>
+    </article>
+    <article class="protect" data-tier="block">
+      <svg class="protect-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="12" r="3"/><path d="M11 12h10M17 12v3M20 12v2"/></svg>
+      <h3>Secrets leaving</h3>
+      <p>API keys, tokens and private keys inside commands, web addresses and model requests. A secret the agent merely handles is flagged; the same secret on its way off the machine is stopped. Secrets never reach Blackbox's own logs.</p>
+      <span class="tier">Sending a secret out blocks in block mode</span>
+    </article>
+    <article class="protect" data-tier="flag">
+      <svg class="protect-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>
+      <h3>Risky skills</h3>
+      <p>Dangerous code or over-broad permissions in a skill the agent is installing or changing, before it is saved.</p>
+      <span class="tier">Flags; known-bad versions can block</span>
+    </article>
+    <article class="protect" data-tier="flag">
+      <svg class="protect-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>
+      <h3>Vulnerable packages</h3>
+      <p>A package version with a published vulnerability is looked up on OSV.dev (name and version only) when the agent installs it, so you hear about it before it lands.</p>
+      <span class="tier">Flags only — never blocks</span>
+    </article>
+    <article class="protect" data-tier="flag">
+      <svg class="protect-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 10h.01M15 10h.01M9 15c1.5 1 4.5 1 6 0"/></svg>
+      <h3>A second opinion (optional)</h3>
+      <p>Off unless you set it up with <code>blackbox setup-llm</code>: a model you choose reviews text the agent reads for injection attempts. Its answers are advice, never a block on their own.</p>
+      <span class="tier">Off by default · advisory</span>
+    </article>
+  </div>
 </section>
 
 <section id="check" class="doc" data-keywords="check pipeline hook intercept name match decide record">
@@ -116,50 +173,24 @@
   </div>
 </section>
 
-<section id="shields" class="doc" data-keywords="shields trader shield protection packs">
-  <h2>Shields</h2>
-  <p>A shield is an optional protection pack for one kind of risk. You switch it on in Settings; while it is on, its findings stay on your machine and can block in block mode. The shields installed here:</p>
-  <div id="shield-list" class="cards two"></div>
+<section id="shields" class="doc" data-keywords="shields concept industry layer extend pack">
+  <h2>What a shield is</h2>
+  <p>Blackbox's built-in protection is the same for everyone. A <b>shield</b> adds protection made for one kind of work on top of it: what that field keeps, where it keeps it, and the attacks aimed at it. Each shield is switched on in Settings, guards only what you choose in it, and keeps its findings on your machine — they are never shared.</p>
+  <div class="layers-wrap">
+    <svg id="layers" class="layers" viewBox="0 0 520 300" role="img" aria-label="Your agent inside Blackbox's built-in protection, with shields as an outer layer"></svg>
+    <div class="layers-text">
+      <h3>How a shield fits</h3>
+      <ol>
+        <li><b>Your agent</b> acts.</li>
+        <li><b>Blackbox</b> checks every action with its built-in protection.</li>
+        <li><b>Each shield you switch on</b> checks the same action for its own field's dangers — in the same pass, in microseconds.</li>
+      </ol>
+      <p>A shield's knowledge is data, not code: each thing it protects (for Trader Shield, a wallet) is a small file of facts, so adding one is adding a file — and adding a shield for another field is adding one folder.</p>
+    </div>
+  </div>
 </section>
 
-<section id="wallets" class="doc" data-keywords="wallets metamask phantom rabby coinbase trust okx keplr solflare exodus electrum solana">
-  <h2>Wallets protected</h2>
-  <p>Trader Shield keeps your agent out of your crypto wallets: their key stores in browser profiles, desktop wallets' folders and command-line key files. Blackbox only checks that those folders exist; it never opens or reads them. Each wallet below is listed from the product's own wallet packs.</p>
-  <div id="wallet-grid" class="wallet-grid"></div>
-</section>
-
-<section id="browsers" class="doc" data-keywords="browser support chrome brave edge opera vivaldi arc firefox safari store">
-  <h2>Browser support</h2>
-  <p>A browser wallet is protected wherever its <b>official</b> version can be installed. Chrome, Brave, Edge, Opera, Vivaldi and Arc all install extensions from the Chrome Web Store, so a wallet installed from there is protected in all of them. Firefox and Edge also have stores of their own, where a wallet may or may not be published.</p>
-  <div class="legend" aria-hidden="true"><span class="chip protected">protected</span><span class="chip not-covered">exists, not covered yet</span><span class="chip not-offered">publisher does not offer it</span><span class="chip not-found">no official listing found</span></div>
-  <div class="table-wrap"><table id="browser-matrix" class="matrix"><caption class="sr">Wallet support by store</caption></table></div>
-</section>
-
-<section id="not-supported" class="doc" data-keywords="not supported unsupported firefox safari edge gap">
-  <h2>Not supported</h2>
-  <p>Said plainly, so nobody assumes protection that is not there:</p>
-  <ul id="unsupported" class="plain-list"></ul>
-  <p class="note">A copycat or lookalike extension is never treated as the real wallet: Blackbox recognises each wallet by the exact store ids its publisher uses.</p>
-</section>
-
-<section id="tested" class="doc" data-keywords="tested attacks table evidence blocked flagged allowed">
-  <h2>What was tested</h2>
-  <p id="tested-with" class="note"></p>
-  <div id="evidence-legend" class="evidence-legend"></div>
-  <div id="attack-groups" class="attack-groups"></div>
-</section>
-
-<section id="field" class="doc" data-keywords="field test real machine linux mac bench">
-  <h2>Real-machine runs</h2>
-  <p>Tests on fresh machines, set up the way a real person would: real browsers, real wallets from the official stores, Blackbox from the one-line installer.</p>
-  <div id="field-runs" class="timeline"></div>
-</section>
-
-<section id="sources" class="doc" data-keywords="sources download store listing official">
-  <h2>Sources</h2>
-  <p>Where every claim on this page about a wallet comes from: the publisher's own download page or the store's own listing. Search results were not used as evidence; several led to copycat wallet sites.</p>
-  <ul id="source-list" class="source-list"></ul>
-</section>
+<div id="shield-sections"></div>
 
 <section id="privacy" class="doc" data-keywords="privacy sharing consent redaction logs report community">
   <h2>Privacy and sharing</h2>

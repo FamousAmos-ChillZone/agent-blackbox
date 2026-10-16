@@ -249,29 +249,56 @@
   function supportedPacks(shield) { return shield.packs.filter(function (pack) { return pack.status === "supported"; }); }
 
   function renderStats(payload) {
-    var wallets = 0, attacks = 0, browsers = 0;
+    var packs = 0, attacks = 0, browsers = 0;
     payload.shields.forEach(function (shield) {
-      wallets += supportedPacks(shield).length;
+      packs += supportedPacks(shield).length;
       attacks += (shield.attacks.rows || []).length;
       browsers += shield.browsers.length;
     });
-    countUp(document.getElementById("stat-wallets"), wallets);
+    countUp(document.getElementById("stat-shields"), payload.shields.length);
+    document.getElementById("stat-shields-label").textContent = payload.shields.length === 1 ? "shield" : "shields";
+    countUp(document.getElementById("stat-wallets"), packs);
     countUp(document.getElementById("stat-attacks"), attacks);
     countUp(document.getElementById("stat-browsers"), browsers);
     document.getElementById("version").textContent = "version " + payload.version;
   }
 
-  function renderShields(payload) {
-    var list = document.getElementById("shield-list");
-    list.textContent = "";
-    payload.shields.forEach(function (shield) {
-      var title = el("h3", { text: shield.name }, [shield.beta ? el("span", { "class": "tag", text: "beta" }) : null]);
-      list.appendChild(el("article", { "class": "card shield-card" }, [
-        title, el("p", { text: shield.tagline }),
-        el("ul", {}, shield.capabilities.map(function (cap) { return el("li", { text: cap.name + " — " + cap.note }); })),
-        el("p", {}, [el("a", { href: shield.page, text: "Open " + shield.name + " settings →" })])
-      ]));
+  // The layers diagram: your agent, Blackbox's built-in protection around it, and every
+  // registered shield as an arc of the outer ring (plus one dashed arc: room for the next).
+  function drawLayers(shields) {
+    var root = document.getElementById("layers");
+    if (!root) return;
+    root.textContent = "";
+    var cx = 150, cy = 150;
+    root.appendChild(svg("circle", { "class": "ring-outer", cx: cx, cy: cy, r: 128 }));
+    var arcs = shields.length + 1;
+    var span = 360 / arcs;
+    for (var index = 0; index < arcs; index += 1) {
+      var start = index * span - 90 + 4, end = (index + 1) * span - 90 - 4;
+      var placeholder = index === shields.length;
+      root.appendChild(svg("path", { "class": placeholder ? "arc arc-next" : "arc", d: arcPath(cx, cy, 128, start, end) }));
+    }
+    root.appendChild(svg("circle", { "class": "ring-core", cx: cx, cy: cy, r: 88 }));
+    root.appendChild(svg("circle", { "class": "ring-agent", cx: cx, cy: cy, r: 44 }));
+    root.appendChild(svg("text", { "class": "ring-label", x: cx, y: cy + 4, text: "Your agent" }));
+    root.appendChild(svg("text", { "class": "ring-label small", x: cx, y: cy - 58, text: "BLACKBOX" }));
+    root.appendChild(svg("text", { "class": "ring-label small", x: cx, y: cy - 44, text: "built-in protection" }));
+    var legendY = 70;
+    shields.forEach(function (shield) {
+      root.appendChild(svg("rect", { "class": "legend-swatch", x: 310, y: legendY - 10, width: 14, height: 14, rx: 2 }));
+      root.appendChild(svg("text", { "class": "legend-text", x: 332, y: legendY + 2, text: shield.name }));
+      legendY += 28;
     });
+    root.appendChild(svg("rect", { "class": "legend-swatch next", x: 310, y: legendY - 10, width: 14, height: 14, rx: 2 }));
+    root.appendChild(svg("text", { "class": "legend-text muted", x: 332, y: legendY + 2, text: "room for more shields" }));
+  }
+
+  function arcPath(cx, cy, radius, startDeg, endDeg) {
+    function point(deg) {
+      var rad = deg * Math.PI / 180;
+      return (cx + radius * Math.cos(rad)).toFixed(1) + " " + (cy + radius * Math.sin(rad)).toFixed(1);
+    }
+    return "M" + point(startDeg) + " A" + radius + " " + radius + " 0 " + (endDeg - startDeg > 180 ? 1 : 0) + " 1 " + point(endDeg);
   }
 
   function shieldIcon() {
@@ -281,9 +308,12 @@
     ]);
   }
 
-  function walletCard(pack) {
-    var logo = pack.logo ? el("img", { src: pack.logo, alt: "", width: "32", height: "32" })
-                         : el("span", { "class": "mono-logo", "aria-hidden": "true", text: pack.name.charAt(0) });
+  function packLogo(pack, size) {
+    return pack.logo ? el("img", { src: pack.logo, alt: "", width: String(size), height: String(size), loading: "lazy" })
+                     : el("span", { "class": "mono-logo", "aria-hidden": "true", text: pack.name.charAt(0) });
+  }
+
+  function packCard(pack) {
     var body = el("div", { "class": "wallet-body", hidden: "" });
     Object.keys(pack.stores).forEach(function (engine) {
       body.appendChild(el("div", {}, [engine === "firefox" ? "Firefox id: " : "Chromium store ids: "].concat(
@@ -297,7 +327,7 @@
       .filter(function (entry) { return entry.state === "protected"; })
       .map(function (entry) { return el("span", { "class": "chip protected", text: entry.store }); })) : null;
     var card = el("button", { "class": "wallet", type: "button", "aria-expanded": "false" }, [
-      el("div", { "class": "wallet-head" }, [logo, el("div", {}, [
+      el("div", { "class": "wallet-head" }, [packLogo(pack, 32), el("div", {}, [
         el("div", { "class": "wallet-name", text: pack.name }),
         el("div", { "class": "wallet-kind", text: pack.label || KIND_TEXT[pack.kind] || pack.kind })
       ]), shieldIcon()]),
@@ -311,35 +341,19 @@
     return card;
   }
 
-  function renderWallets(shields) {
-    var grid = document.getElementById("wallet-grid");
-    grid.textContent = "";
-    shields.forEach(function (shield) {
-      supportedPacks(shield).forEach(function (pack) { grid.appendChild(walletCard(pack)); });
-      var planned = shield.packs.filter(function (pack) { return pack.status !== "supported"; });
-      planned.forEach(function (pack) {
-        grid.appendChild(el("div", { "class": "wallet" }, [el("div", { "class": "wallet-name", text: pack.name }),
-          el("div", { "class": "wallet-kind", text: "Not protected yet (" + pack.status + ")" })]));
-      });
-    });
-  }
-
   function availabilityByStore(pack) {
     var byStore = {};
     pack.availability.forEach(function (entry) { byStore[entry.store] = entry; });
     return byStore;
   }
 
-  function renderMatrix(packs) {
-    var table = document.getElementById("browser-matrix");
-    Array.prototype.slice.call(table.querySelectorAll("thead, tbody")).forEach(function (part) { part.remove(); });
-    var withStores = packs.filter(function (pack) { return pack.availability.length; });
-    var head = el("thead", {}, [el("tr", {}, [el("th", { scope: "col", text: "Wallet" })].concat(STORE_ORDER.map(function (store) {
+  function matrixTable(packs) {
+    var head = el("thead", {}, [el("tr", {}, [el("th", { scope: "col", text: "Name" })].concat(STORE_ORDER.map(function (store) {
       return el("th", { scope: "col", text: store });
     })))]);
-    var body = el("tbody", {}, withStores.map(function (pack) {
+    var body = el("tbody", {}, packs.map(function (pack) {
       var byStore = availabilityByStore(pack);
-      return el("tr", {}, [el("th", { scope: "row", text: pack.name })].concat(STORE_ORDER.map(function (store) {
+      return el("tr", {}, [el("th", { scope: "row" }, [el("span", { "class": "row-name" }, [packLogo(pack, 20), pack.name])])].concat(STORE_ORDER.map(function (store) {
         var entry = byStore[store];
         if (!entry) return el("td", { text: "" });
         var label = STATE_TEXT[entry.state] || entry.state;
@@ -348,13 +362,11 @@
         return el("td", {}, [el("span", { "class": "cell " + entry.state, title: hint, "aria-label": hint, text: STATE_MARK[entry.state] || "?" })]);
       })));
     }));
-    table.appendChild(head);
-    table.appendChild(body);
+    return el("table", { "class": "matrix" }, [el("caption", { "class": "sr", text: "Support by store" }), head, body]);
   }
 
-  function renderUnsupported(packs) {
-    var list = document.getElementById("unsupported");
-    list.textContent = "";
+  function unsupportedItems(packs, shield) {
+    var items = [];
     STORE_ORDER.forEach(function (store) {
       var byState = {};
       packs.forEach(function (pack) {
@@ -364,7 +376,7 @@
       var states = Object.keys(byState);
       if (!states.length) return;
       var parts = states.map(function (state) { return listText(byState[state]) + ": " + STATE_TEXT[state]; });
-      list.appendChild(el("li", {}, [el("b", { text: store + " — " }), parts.join("; ") + "."]));
+      items.push(el("li", {}, [el("b", { text: store + " — " }), parts.join("; ") + "."]));
     });
     var notCovered = [];
     packs.forEach(function (pack) {
@@ -373,32 +385,34 @@
       });
     });
     if (notCovered.length) {
-      list.appendChild(el("li", {}, [el("b", { text: "Exists but not covered yet — " }),
+      items.push(el("li", {}, [el("b", { text: "Exists but not covered yet — " }),
         listText(notCovered) + ". Install it from the Chrome Web Store instead and it is protected."]));
     }
-    list.appendChild(el("li", {}, [el("b", { text: "Other wallets — " }),
-      "any wallet not listed under Wallets protected has no wallet-specific protection. Blackbox's other rules (protected paths, seed phrases, keys, the threat graph) still apply."]));
+    shield.content.cannot.forEach(function (pair) { items.push(el("li", {}, [el("b", { text: pair[0] + " — " }), pair[1] + "."])); });
+    items.push(el("li", {}, [el("b", { text: "Anything not listed — " }),
+      "has no " + shield.name + " protection of its own. Blackbox's built-in protection still applies."]));
+    return items;
   }
 
-  function renderSources(packs) {
-    var list = document.getElementById("source-list");
-    list.textContent = "";
-    packs.forEach(function (pack) {
+  function sourceItems(packs) {
+    return packs.map(function (pack) {
       var links = [];
+      var seen = {};
       pack.availability.forEach(function (entry) {
         if (entry.url) links.push(safeLink(entry.url, entry.store + " listing"));
         if (entry.source && entry.source.indexOf("https://") === 0) links.push(safeLink(entry.source, "publisher's download page"));
       });
-      var seen = {};
-      links = links.filter(function (link) { var key = link.textContent + (link.href || ""); if (seen[key]) return false; seen[key] = true; return true; });
       var item = el("li", {}, [el("b", { text: pack.name + ": " }), pack.source + (pack.verified ? " (checked " + pack.verified + ")" : "")]);
-      links.forEach(function (link) { item.appendChild(document.createTextNode(" · ")); item.appendChild(link); });
-      list.appendChild(item);
+      links.forEach(function (link) {
+        var key = link.textContent + (link.href || "");
+        if (seen[key]) return;
+        seen[key] = true;
+        item.appendChild(document.createTextNode(" · "));
+        item.appendChild(link);
+      });
+      return item;
     });
   }
-
-  // The tested attack table, grouped, filterable by evidence level.
-  var activeEvidence = null;
 
   function outcomeBar(rows) {
     var counts = { blocked: 0, flagged: 0, allowed: 0 };
@@ -409,11 +423,12 @@
     }));
   }
 
-  function renderAttacks(shield, packNames) {
+  // The tested attack table of one shield, grouped and filterable by evidence level.
+  function attackBlock(shield, packNames) {
     var table = shield.attacks;
-    document.getElementById("tested-with").textContent = table.tested_with ? "Tested with: " + table.tested_with + "." : "";
-    var legend = document.getElementById("evidence-legend");
-    legend.textContent = "";
+    var activeEvidence = null;
+    var groupsRoot = el("div", { "class": "attack-groups" });
+    var legend = el("div", { "class": "evidence-legend" });
     Object.keys(table.evidence_levels || {}).forEach(function (level) {
       var button = el("button", { type: "button", "aria-pressed": "false", title: table.evidence_levels[level], text: level });
       button.addEventListener("click", function () {
@@ -427,10 +442,9 @@
     });
 
     function drawGroups() {
-      var root = document.getElementById("attack-groups");
       var wasOpen = {};
-      Array.prototype.slice.call(root.querySelectorAll("details")).forEach(function (node) { wasOpen[node.getAttribute("data-group")] = node.open; });
-      root.textContent = "";
+      Array.prototype.slice.call(groupsRoot.querySelectorAll("details")).forEach(function (node) { wasOpen[node.getAttribute("data-group")] = node.open; });
+      groupsRoot.textContent = "";
       table.groups.forEach(function (group, index) {
         var rows = table.rows.filter(function (row) {
           return row.group === group.id && (!activeEvidence || (row.evidence || []).indexOf(activeEvidence) !== -1);
@@ -441,7 +455,7 @@
             el("span", { "class": "group-count", text: rows.length + (rows.length === 1 ? " attack" : " attacks") })]),
           group.intro ? el("p", { "class": "group-intro", text: group.intro }) : null,
           el("div", { "class": "table-wrap" }, [el("table", {}, [
-            el("thead", {}, [el("tr", {}, ["Attack", "Wallets", "Outcome", "Evidence"].map(function (name) { return el("th", { scope: "col", text: name }); }))]),
+            el("thead", {}, [el("tr", {}, ["Attack", "Targets", "Outcome", "Evidence"].map(function (name) { return el("th", { scope: "col", text: name }); }))]),
             el("tbody", {}, rows.map(function (row) {
               return el("tr", {}, [
                 el("td", {}, [el("strong", { text: row.title }), el("span", { "class": "row-how", text: row.how || "" })]),
@@ -453,41 +467,111 @@
           ])])
         ]);
         details.open = group.id in wasOpen ? wasOpen[group.id] : index === 0;
-        root.appendChild(details);
+        groupsRoot.appendChild(details);
       });
     }
     drawGroups();
+    return [table.tested_with ? el("p", { "class": "note", text: "Tested with: " + table.tested_with + "." }) : null, legend, groupsRoot];
   }
 
-  function renderFieldTests(runs) {
-    var root = document.getElementById("field-runs");
-    root.textContent = "";
-    runs.forEach(function (run) {
-      root.appendChild(el("article", { "class": "run" }, [
-        el("h3", { text: run.title || "" }),
+  function runCards(runs) {
+    return runs.map(function (run) {
+      return el("article", { "class": "run" }, [
+        el("h4", { "class": "run-title", text: run.title || "" }),
         el("div", { "class": "meta", text: [run.date, run.machine].filter(Boolean).join(" · ") }),
-        el("h4", { text: "Set up" }), el("ul", {}, (run.setup || []).map(function (line) { return el("li", { text: line }); })),
-        el("h4", { text: "Results" }), el("ul", { "class": "results" }, (run.results || []).map(function (line) { return el("li", { text: line }); })),
-        (run.open || []).length ? el("h4", { text: "Still open" }) : null,
+        el("h5", { text: "Set up" }), el("ul", {}, (run.setup || []).map(function (line) { return el("li", { text: line }); })),
+        el("h5", { text: "Results" }), el("ul", { "class": "results" }, (run.results || []).map(function (line) { return el("li", { text: line }); })),
+        (run.open || []).length ? el("h5", { text: "Still open" }) : null,
         (run.open || []).length ? el("ul", { "class": "open" }, run.open.map(function (line) { return el("li", { text: line }); })) : null
+      ]);
+    });
+  }
+
+  // One sub-part of a shield's section: an anchor the contents list links to, a heading, content.
+  function part(shieldId, slug, title, children) {
+    return el("div", { "class": "shield-part", id: shieldId + "-" + slug, "data-title": title },
+              [el("h3", { "class": "part-title", text: title })].concat(children));
+  }
+
+  function shieldSection(shield) {
+    var packs = supportedPacks(shield);
+    var packNames = {};
+    packs.forEach(function (pack) { packNames[pack.id] = pack.name; });
+    var withStores = packs.filter(function (pack) { return pack.availability.length; });
+    var logos = el("div", { "class": "logo-strip", "aria-hidden": "true" }, packs.map(function (pack) {
+      return el("span", { "class": "logo-chip", title: pack.name }, [packLogo(pack, 28)]);
+    }));
+    var parts = [
+      part(shield.id, "adds", "What it adds", [
+        el("div", { "class": "adds-grid" }, shield.content.can.map(function (pair) {
+          return el("article", { "class": "card" }, [el("h4", { text: pair[0] }), el("p", { text: pair[1] })]);
+        })),
+        shield.capabilities.length ? el("div", { "class": "chips caps" }, shield.capabilities.map(function (cap) {
+          return el("span", { "class": "chip", title: cap.note, text: cap.name });
+        })) : null
+      ]),
+      part(shield.id, "protects", "What it protects", [el("div", { "class": "wallet-grid" }, packs.map(packCard))])
+    ];
+    if (withStores.length) {
+      parts.push(part(shield.id, "where", "Where it works", [
+        el("p", { text: "A browser extension is protected wherever its official version can be installed. Chrome, Brave, Edge, Opera, Vivaldi and Arc all install from the Chrome Web Store, so an extension from there is protected in every one of them. Firefox and Edge also have stores of their own." }),
+        el("div", { "class": "legend", "aria-hidden": "true" }, Object.keys(STATE_TEXT).map(function (state) {
+          return el("span", { "class": "chip " + state, text: STATE_TEXT[state] });
+        })),
+        el("div", { "class": "table-wrap" }, [matrixTable(withStores)])
       ]));
+    }
+    parts.push(part(shield.id, "not-supported", "Not supported", [
+      el("p", { text: "Said plainly, so nobody assumes protection that is not there:" }),
+      el("ul", { "class": "plain-list" }, unsupportedItems(withStores, shield)),
+      shield.content.coming.length ? el("p", { "class": "note", text: "Coming next: " + listText(shield.content.coming) + "." }) : null
+    ]));
+    parts.push(part(shield.id, "tested", "What was tested", attackBlock(shield, packNames)));
+    if (shield.field_tests.length) {
+      parts.push(part(shield.id, "field", "Real-machine runs", [
+        el("p", { text: "Fresh machines set up the way a person would: real software from the official sources, Blackbox from the one-line installer." }),
+        el("div", { "class": "timeline" }, runCards(shield.field_tests))
+      ]));
+    }
+    parts.push(part(shield.id, "sources", "Sources", [
+      el("p", { text: "Where every claim in this section comes from: the publisher's own download page or the store's own listing. Search results were never used as evidence." }),
+      el("ul", { "class": "source-list" }, sourceItems(packs))
+    ]));
+    return el("section", { id: "shield-" + shield.id, "class": "doc shield-doc",
+                            "data-keywords": "shield " + shield.name + " " + packs.map(function (pack) { return pack.name; }).join(" ") }, [
+      el("h2", {}, [shield.name, shield.beta ? el("span", { "class": "tag", text: "beta" }) : null]),
+      el("p", { "class": "shield-tagline", text: shield.tagline }),
+      logos,
+      el("p", {}, [el("a", { "class": "shield-open", href: shield.page, text: "Open " + shield.name + " →" })])
+    ].concat(parts));
+  }
+
+  function tocEntries(shield, section) {
+    var items = [el("li", {}, [el("a", { href: "#shield-" + shield.id, text: shield.name })])];
+    Array.prototype.slice.call(section.querySelectorAll(".shield-part")).forEach(function (node) {
+      items.push(el("li", { "class": "sub" }, [el("a", { href: "#" + node.id, text: node.getAttribute("data-title") })]));
+    });
+    return items;
+  }
+
+  function renderShieldSections(payload) {
+    var root = document.getElementById("shield-sections");
+    var toc = document.getElementById("toc-shields");
+    root.textContent = "";
+    Array.prototype.slice.call(toc.querySelectorAll("li:not(:first-child)")).forEach(function (item) { item.remove(); });
+    payload.shields.forEach(function (shield) {
+      var section = shieldSection(shield);
+      root.appendChild(section);
+      tocEntries(shield, section).forEach(function (item) { toc.appendChild(item); });
     });
   }
 
   function render(payload) {
     renderStats(payload);
-    renderShields(payload);
-    renderWallets(payload.shields);
-    var packs = [];
-    var packNames = {};
-    payload.shields.forEach(function (shield) {
-      supportedPacks(shield).forEach(function (pack) { packs.push(pack); packNames[pack.id] = pack.name; });
-    });
-    renderMatrix(packs);
-    renderUnsupported(packs);
-    renderSources(packs);
-    if (payload.shields.length) renderAttacks(payload.shields[0], packNames);
-    renderFieldTests(payload.field_tests || []);
+    drawLayers(payload.shields);
+    renderShieldSections(payload);
+    numberSections();
+    observeSections();
   }
 
   // The dashboard's cache answers its very first request with an empty payload while it builds
@@ -514,27 +598,30 @@
     });
   }
 
-  function wireScrollSpy() {
+  // Scroll-spy: the contents link of whatever section (or shield part) is at the top is lit.
+  // Sections drawn later (each shield's) are observed when they are drawn.
+  var spy = null;
+  function observeSections() {
+    if (!("IntersectionObserver" in window)) return;
     var links = {};
     Array.prototype.slice.call(document.querySelectorAll(".toc a")).forEach(function (link) { links[link.getAttribute("href").slice(1)] = link; });
-    if (!("IntersectionObserver" in window)) return;
-    var observer = new IntersectionObserver(function (entries) {
+    if (spy) spy.disconnect();
+    spy = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
         if (!entry.isIntersecting || !links[entry.target.id]) return;
         Object.keys(links).forEach(function (id) { links[id].classList.toggle("active", id === entry.target.id); });
       });
     }, { rootMargin: "-80px 0px -65% 0px" });
-    Array.prototype.slice.call(document.querySelectorAll("section.doc")).forEach(function (section) { observer.observe(section); });
+    Array.prototype.slice.call(document.querySelectorAll("section.doc, .shield-part")).forEach(function (node) { spy.observe(node); });
   }
 
   function wireSearch() {
     var input = document.getElementById("search");
-    var sections = Array.prototype.slice.call(document.querySelectorAll("section.doc"));
     var none = document.getElementById("no-results");
     input.addEventListener("input", function () {
       var query = input.value.trim().toLowerCase();
       var shown = 0;
-      sections.forEach(function (section) {
+      Array.prototype.slice.call(document.querySelectorAll("section.doc")).forEach(function (section) {
         var haystack = (section.textContent + " " + (section.getAttribute("data-keywords") || "")).toLowerCase();
         var match = !query || haystack.indexOf(query) !== -1;
         section.hidden = !match;
@@ -559,7 +646,8 @@
   numberSections();
   drawPipeline();
   wireFlowTabs();
-  wireScrollSpy();
+  drawLayers([]);
+  observeSections();
   wireSearch();
   wirePhoneContents();
   load(0);

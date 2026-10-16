@@ -1,7 +1,8 @@
 {
- "about": "Real-machine test runs of Blackbox (past events, written by hand; everything else on the Docs page is read live from the product).",
+ "about": "Real-machine test runs of Blackbox (past events, written by hand; everything else on the Docs page is read live from the product). A run naming a shield is shown in that shield's section.",
  "runs": [
   {
+   "shield": "trader",
    "title": "Fresh Linux machine, real browsers and wallets",
    "date": "2026-10-16",
    "machine": "Ubuntu 24.04, 2 vCPU, 8 GB, a non-root desktop user",
@@ -23,6 +24,7 @@
    ]
   },
   {
+   "shield": "trader",
    "title": "Fresh Mac, real Chrome and wallets",
    "date": "2026-10-16",
    "machine": "GitHub-hosted Mac, macOS 15, Apple Silicon",

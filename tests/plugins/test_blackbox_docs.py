@@ -99,13 +99,40 @@ def test_the_attack_table_matches_the_shield_page_row_for_row(docs):
         assert [row["id"] for row in shield["attacks"]["rows"]] == [row["id"] for row in attacks_payload(shield["id"])["attacks"]]
 
 
-def test_field_tests_are_read_and_a_broken_file_is_an_empty_list(docs, tmp_path, monkeypatch, caplog):
-    assert docs["field_tests"] and all({"title", "date", "results"} <= set(run) for run in docs["field_tests"])
+def test_a_run_naming_a_shield_is_listed_under_that_shield(docs):
+    runs = [run for shield in docs["shields"] for run in shield["field_tests"]]
+    assert runs and all({"title", "date", "results"} <= set(run) for run in runs)
+    for shield in docs["shields"]:
+        assert all(run["shield"] == shield["id"] for run in shield["field_tests"])
+    assert all(run.get("shield") not in {shield["id"] for shield in docs["shields"]} for run in docs["field_tests"])
+
+
+def test_a_broken_field_tests_file_is_no_runs(tmp_path, monkeypatch, caplog):
     broken = tmp_path / "field_tests.json"
     broken.write_text("{not json", encoding="utf-8")
     monkeypatch.setattr(payload, "FIELD_TESTS_FILE", broken)
-    assert payload.build_payload()["field_tests"] == []
+    built = payload.build_payload()
+    assert built["field_tests"] == [] and all(shield["field_tests"] == [] for shield in built["shields"])
     assert "field tests could not be read" in caplog.text
+
+
+def test_each_shield_carries_its_page_prose(docs):
+    for shield in docs["shields"]:
+        content = shield["content"]
+        assert content["can"], shield["id"]
+        assert all(len(pair) == 2 and all(isinstance(part, str) for part in pair) for pair in content["can"] + content["cannot"])
+        assert all(isinstance(name, str) for name in content["coming"])
+
+
+def test_unreadable_page_prose_is_empty_not_an_error(monkeypatch, tmp_path, caplog):
+    from plugins.blackbox.dashboard import shields_routes
+
+    broken = tmp_path / "content.json"
+    broken.write_text("[not an object", encoding="utf-8")
+    monkeypatch.setattr(shields_routes, "shield_file", lambda shield_id, name: broken)
+    shield = payload.build_payload()["shields"][0]
+    assert shield["content"] == {"can": [], "cannot": [], "coming": []}
+    assert "page prose could not be read" in caplog.text
 
 
 @pytest.mark.parametrize("name", ["docs.html", *docs_routes.ASSETS])
