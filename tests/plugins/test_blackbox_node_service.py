@@ -76,7 +76,7 @@ def _unit(folder: Path, program: str) -> None:
 # ── finding the service by registration ──────────────────────────────────────
 
 def test_a_loaded_launch_agent_for_this_install_is_the_node_s_service(cfg, tmp_path, manager, monkeypatch):
-    monkeypatch.setattr(node_service.sys, "platform", "darwin")
+    monkeypatch.setattr(node_service.sys, "platform", "darwin")   # os-marker: ok — only picks the launchd strategy; launchctl is stubbed and the plist is in tmp_path
     _launch_agent(tmp_path, cfg.dkg_bin)
     service = node_service.registered(cfg, home=tmp_path)
     assert service is not None and service.name == LABEL
@@ -85,13 +85,13 @@ def test_a_loaded_launch_agent_for_this_install_is_the_node_s_service(cfg, tmp_p
 
 
 def test_a_launch_agent_for_another_install_is_not_ours(cfg, tmp_path, manager, monkeypatch):
-    monkeypatch.setattr(node_service.sys, "platform", "darwin")
+    monkeypatch.setattr(node_service.sys, "platform", "darwin")   # os-marker: ok — only picks the launchd strategy; launchctl is stubbed and the plist is in tmp_path
     _launch_agent(tmp_path, "/opt/other-install/node_modules/.bin/dkg")
     assert node_service.registered(cfg, home=tmp_path) is None
 
 
 def test_a_launch_agent_that_is_not_loaded_yet_is_not_routed_through(cfg, tmp_path, monkeypatch):
-    monkeypatch.setattr(node_service.sys, "platform", "darwin")
+    monkeypatch.setattr(node_service.sys, "platform", "darwin")   # os-marker: ok — only picks the launchd strategy; launchctl is stubbed and the plist is in tmp_path
     monkeypatch.setattr(node_service.subprocess, "run", FakeManager(loaded=False).run)
     _launch_agent(tmp_path, cfg.dkg_bin)
     assert node_service.registered(cfg, home=tmp_path) is None

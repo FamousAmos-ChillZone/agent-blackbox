@@ -108,7 +108,7 @@ def is_attached(kind: str, target: str | Path) -> bool:
         allow = (openclaw_discovery._load_openclaw_config(config_path).get("plugins") or {}).get("allow")
         return isinstance(allow, list) and "blackbox" in allow
     except Exception as exc:   # a broken config is the operator's to fix; never a reason to write it
-        logger.debug("blackbox.attach: could not read %s %s: %s", kind, path, exc)
+        logger.debug("blackbox.attach: could not read %s %s: %s", kind, path, exc, exc_info=True)
         return False
 
 

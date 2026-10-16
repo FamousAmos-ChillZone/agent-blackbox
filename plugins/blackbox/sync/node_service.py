@@ -114,6 +114,13 @@ def _same_file(a: str, b: str) -> bool:
         return False
 
 
+def _gui_domain() -> str:
+    """launchd's per-user domain, ``gui/<uid>``. Every system with launchd has ``os.getuid``; the
+    fallback only keeps this module importable (and its launchd branch testable) on Windows."""
+    getuid = getattr(os, "getuid", None)
+    return f"gui/{getuid() if getuid is not None else 0}"
+
+
 def _launch_agent(cfg: BlackboxConfig, home: Path) -> Optional[NodeService]:
     plist_path = home / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist"
     try:
@@ -122,7 +129,7 @@ def _launch_agent(cfg: BlackboxConfig, home: Path) -> Optional[NodeService]:
         return None
     if not program or not _same_file(str(program[0]), cfg.dkg_bin):
         return None
-    target = f"gui/{os.getuid()}/{LAUNCHD_LABEL}"
+    target = f"{_gui_domain()}/{LAUNCHD_LABEL}"
     try:
         loaded = subprocess.run(["launchctl", "print", target], stdin=subprocess.DEVNULL,
                                 capture_output=True, text=True, timeout=10, check=False).returncode == 0
@@ -136,7 +143,7 @@ def _launch_agent(cfg: BlackboxConfig, home: Path) -> Optional[NodeService]:
 def _systemd_unit(cfg: BlackboxConfig, home: Path) -> Optional[NodeService]:
     for scope, unit_dir in (((), SYSTEM_UNIT_DIR), (("--user",), home / ".config" / "systemd" / "user")):
         try:
-            text = (unit_dir / f"{SYSTEMD_UNIT}.service").read_text(encoding="utf-8")
+            text = (unit_dir / f"{SYSTEMD_UNIT}.service").read_text(encoding="utf-8-sig")
         except OSError:
             continue
         exec_start = next((line.split("=", 1)[1].split()[0] for line in text.splitlines()

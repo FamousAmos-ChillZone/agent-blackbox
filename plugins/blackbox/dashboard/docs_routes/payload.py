@@ -146,7 +146,7 @@ def _content_doc(shield_id: str) -> ContentDoc:
     data: Any = {}
     if path is not None:
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
         except (OSError, ValueError) as exc:
             logger.warning("blackbox docs: the %s page prose could not be read: %s", shield_id, exc)
     if not isinstance(data, dict):
@@ -168,7 +168,7 @@ def _shield_doc(shield: Any, runs: list[dict[str, Any]]) -> ShieldDoc:
 
 def _field_tests() -> list[dict[str, Any]]:
     try:
-        runs = json.loads(FIELD_TESTS_FILE.read_text(encoding="utf-8")).get("runs", [])
+        runs = json.loads(FIELD_TESTS_FILE.read_text(encoding="utf-8-sig")).get("runs", [])
     except (OSError, ValueError) as exc:
         logger.warning("blackbox docs: field tests could not be read: %s", exc)
         return []
