@@ -55,6 +55,11 @@ DKG_NETWORK="${BLACKBOX_DKG_NETWORK:-mainnet-base}"   # a valid dkg mainnet (mai
 BLACKBOX_HOME="${BLACKBOX_HOME:-$HERMES_HOME/blackbox}"
 BLACKBOX_SYSTEMD_DIR=/etc/systemd/system   # where system units go (node service units below)
 BLACKBOX_DKG_LAUNCHD_LABEL=ai.umanitek.blackbox-dkg   # the node's LaunchAgent on macOS (register_boot_service)
+# The system folders every service PATH carries after its own tools. /usr/sbin is not optional: the
+# DKG node runs `lsof` to see who holds its store's LOCK and refuses to start when it cannot, and
+# macOS (and RHEL-family Linux) keep lsof only in /usr/sbin — a LaunchAgent without it crash-looped
+# at every login (KI-427).
+BLACKBOX_SERVICE_SYSTEM_PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 BLACKBOX_PTRACE_SCOPE_FILE=/proc/sys/kernel/yama/ptrace_scope   # read by register_key_console
 BLACKBOX_DKG_PORT_EXPLICIT=false
 [ -n "${BLACKBOX_DKG_PORT+x}" ] && BLACKBOX_DKG_PORT_EXPLICIT=true
@@ -2448,7 +2453,7 @@ After=network-online.target
 
 [Service]
 Type=simple
-Environment=PATH=$node_bin_dir:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=$node_bin_dir:$BLACKBOX_SERVICE_SYSTEM_PATH
 Environment=DKG_HOME=$BLACKBOX_DKG_HOME
 # Connection-time sync stays ON: the meta sync on connect is what delivers
 # context-graph authority to subscribers — with it off, community-graph
@@ -2472,7 +2477,7 @@ Environment=DKG_STORE_QUEUE_LIMIT=$BLACKBOX_DKG_STORE_QUEUE_LIMIT
 # Clear any orphaned daemon before starting: DKG CLI commands auto-spawn a
 # detached daemon when none is running; that orphan holds daemon.pid and
 # would crash-loop this unit forever ("Daemon already running", KI-045).
-ExecStartPre=-/bin/sh -c 'PATH=$node_bin_dir:/usr/bin:/bin DKG_HOME=$BLACKBOX_DKG_HOME $BLACKBOX_DKG_BIN stop >/dev/null 2>&1; sleep 2'
+ExecStartPre=-/bin/sh -c 'PATH=$node_bin_dir:$BLACKBOX_SERVICE_SYSTEM_PATH DKG_HOME=$BLACKBOX_DKG_HOME $BLACKBOX_DKG_BIN stop >/dev/null 2>&1; sleep 2'
 ExecStart=$BLACKBOX_DKG_BIN start --foreground
 ExecStop=$BLACKBOX_DKG_BIN stop
 TimeoutStopSec=30
@@ -2504,7 +2509,7 @@ UNIT
     <string>$BLACKBOX_DKG_BIN</string><string>start</string><string>--foreground</string>
   </array>
   <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>$(xml_escape "$node_bin_dir:/usr/local/bin:/usr/bin:/bin")</string>
+    <key>PATH</key><string>$(xml_escape "$node_bin_dir:$BLACKBOX_SERVICE_SYSTEM_PATH")</string>
     <key>DKG_HOME</key><string>$(xml_escape "$BLACKBOX_DKG_HOME")</string>
     <key>DKG_SYNC_ON_CONNECT_ENABLED</key><string>1</string>
     <key>DKG_EXACT_BATCH_STREAM_ENABLED</key><string>$(xml_escape "$BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED")</string>
@@ -2567,7 +2572,7 @@ Wants=blackbox-dkg.service
 Type=simple
 Environment=HOME=$HOME
 Environment=HERMES_HOME=$HERMES_HOME
-Environment=PATH=$HOME/.local/bin:$node_bin_dir:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=$HOME/.local/bin:$node_bin_dir:$BLACKBOX_SERVICE_SYSTEM_PATH
 ExecStart=$HERMES_BIN blackbox dashboard
 Restart=on-failure
 RestartSec=10
@@ -2600,7 +2605,7 @@ DASHUNIT
     <string>$HERMES_BIN</string><string>blackbox</string><string>dashboard</string>
   </array>
   <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>$HOME/.local/bin:$node_bin_dir:/usr/local/bin:/usr/bin:/bin</string>
+    <key>PATH</key><string>$(xml_escape "$HOME/.local/bin:$node_bin_dir:$BLACKBOX_SERVICE_SYSTEM_PATH")</string>
     <key>HERMES_HOME</key><string>$HERMES_HOME</string>
   </dict>
   <key>RunAtLoad</key><true/>

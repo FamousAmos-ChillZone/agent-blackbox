@@ -150,6 +150,7 @@ def test_dashboard_service_is_written_and_enabled_on_a_systemd_machine(tmp_path)
         "id() { echo 1000; }",           # a non-root user: the unit goes under $HOME
         f"HOME={tmp_path}", f"HERMES_HOME={tmp_path}/.hermes", f"HERMES_BIN={stubs}/hermes",
         "BLACKBOX_AUTO_DASHBOARD=1",
+        _installer_constant("BLACKBOX_SERVICE_SYSTEM_PATH"),
         _dashboard_function(),
         "register_dashboard_service",
     ])
@@ -160,6 +161,8 @@ def test_dashboard_service_is_written_and_enabled_on_a_systemd_machine(tmp_path)
     unit = tmp_path / ".config" / "systemd" / "user" / "blackbox-dashboard.service"
     assert f"ExecStart={stubs}/hermes blackbox dashboard" in unit.read_text()
     assert "--user enable --now blackbox-dashboard" in calls.read_text()
+    # a node the dashboard's sync restarts inherits this PATH: it must reach lsof too (KI-427)
+    assert "/usr/sbin" in unit.read_text().split("Environment=PATH=", 1)[1].splitlines()[0].split(":")
 
 
 # ------------------------------------------- an update restarts the running dashboard (KI-300)
@@ -279,6 +282,7 @@ def _register_boot_service(tmp_path, os_name: str):
         *(f"{key}='{value}'" for key, value in _NODE_SETTINGS.items()),
         f"BLACKBOX_DKG_BIN='{_installed_dkg_bin(tmp_path)}'",
         _installer_constant("BLACKBOX_DKG_LAUNCHD_LABEL"),   # the script's own top-level value
+        _installer_constant("BLACKBOX_SERVICE_SYSTEM_PATH"),
         _top_level_function("xml_escape"),
         _top_level_function("blackbox_dkg_launchd_error_log"), _top_level_function("register_boot_service"),
         "register_boot_service",
@@ -311,6 +315,7 @@ def test_the_systemd_unit_starts_the_node_with_its_limits_and_switches(tmp_path)
     for key, value in _expected_node_environment().items():
         assert environment.get(key) == value, key
     assert "DKG_LIST_CONTEXT_GRAPHS_PROJECTION" not in environment   # install-time only
+    assert "/usr/sbin" in environment["PATH"].split(":")   # lsof (KI-427)
 
 
 def test_the_macos_login_item_starts_the_node_with_its_limits_and_switches(tmp_path):
@@ -328,6 +333,8 @@ def test_the_macos_login_item_starts_the_node_with_its_limits_and_switches(tmp_p
     # launchd has no journal: the node's errors under the LaunchAgent land next to its own log (KI-426)
     assert plist["StandardErrorPath"] == "/srv/bb/.dkg/launchd-errors.log"
     assert "StandardOutPath" not in plist   # errors only: the node writes its own log
+    # KI-427: the node runs lsof (macOS keeps it only in /usr/sbin) and refuses to start without it
+    assert "/usr/sbin" in environment["PATH"].split(":")
 
 
 def test_a_plist_value_is_escaped_as_xml_text(tmp_path):
@@ -345,6 +352,7 @@ def test_a_plist_value_is_escaped_as_xml_text(tmp_path):
         *(f"{key}='{value}'" for key, value in settings_with_markup.items()),
         f"BLACKBOX_DKG_BIN='{_installed_dkg_bin(tmp_path)}'",
         _installer_constant("BLACKBOX_DKG_LAUNCHD_LABEL"),   # the script's own top-level value
+        _installer_constant("BLACKBOX_SERVICE_SYSTEM_PATH"),
         _top_level_function("xml_escape"), _top_level_function("blackbox_dkg_launchd_error_log"), _top_level_function("register_boot_service"), "register_boot_service",
     ])
     subprocess.run(["bash", "-c", script], check=True, env={"PATH": f"{stubs}:/usr/bin:/bin"})
