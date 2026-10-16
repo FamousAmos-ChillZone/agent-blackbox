@@ -397,42 +397,78 @@
           "kind": "browser-extension",
           "name": "Rabby",
           "order": 110,
-          "status": "planned"
+          "status": "supported",
+          "stores": {
+            "chromium": [
+              "acmacodkjbdgmoleebolmdjonilkdbch"
+            ]
+          }
         },
         {
           "id": "coinbase-wallet",
           "kind": "browser-extension",
           "name": "Coinbase Wallet",
           "order": 120,
-          "status": "planned"
+          "status": "supported",
+          "stores": {
+            "chromium": [
+              "hnfanknocfeofbddgcijnmhnfnkdnaad"
+            ]
+          }
         },
         {
           "id": "trust-wallet",
           "kind": "browser-extension",
           "name": "Trust Wallet",
           "order": 130,
-          "status": "planned"
+          "status": "supported",
+          "stores": {
+            "chromium": [
+              "egjidjbpglichdcondbcbdnbeeppgdph"
+            ]
+          }
         },
         {
           "id": "okx-wallet",
           "kind": "browser-extension",
           "name": "OKX Wallet",
           "order": 140,
-          "status": "planned"
+          "status": "supported",
+          "stores": {
+            "chromium": [
+              "mcohilncbfahbmgdjkbpemcciiolgcge"
+            ]
+          }
         },
         {
           "id": "keplr",
           "kind": "browser-extension",
           "name": "Keplr",
           "order": 150,
-          "status": "planned"
+          "status": "supported",
+          "stores": {
+            "chromium": [
+              "dmkamcknogkgcdfhhbddcghachkejeap"
+            ],
+            "firefox": [
+              "keplr-extension@keplr.app"
+            ]
+          }
         },
         {
           "id": "solflare",
           "kind": "browser-extension",
           "name": "Solflare",
           "order": 160,
-          "status": "planned"
+          "status": "supported",
+          "stores": {
+            "chromium": [
+              "bhhhlbepdkbapadjdnnojkbgioiodbic"
+            ],
+            "firefox": [
+              "{6d72262a-b243-4dc6-8f4f-be96c74e0a86}"
+            ]
+          }
         }
       ]
     }

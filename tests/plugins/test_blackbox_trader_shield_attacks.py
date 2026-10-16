@@ -160,6 +160,10 @@ def _values(home: Path, stores: dict[str, Path], solana: bytes) -> dict[str, str
     # KI-378: the same 12 words spelled to slip past a word matcher.
     values.update({"@SEED12ZW@": "\u200b|".join(seed12.split()), "@SEED12CAMEL@": "".join(w.capitalize() for w in seed12.split())})
     values["@FILLER@"] = "lorem ipsum " * 5000   # KI-376: 60,000 characters of padding
+    # One @<PACK>FILE@ per extension store laid out (e.g. @RABBYFILE@), so a new wallet pack's
+    # vault row needs no new placeholder here.
+    values.update({"@" + re.sub(r"[^A-Z0-9]", "", pack.upper()) + "FILE@": str(store / "000003.log")
+                   for pack, store in stores.items() if pack not in ("metamask", "phantom") and store.is_dir()})
     values.update({f"@W{i + 1}@": word for i, word in enumerate(seed12.split())})   # KI-377: one word per item
     return values
 
@@ -242,7 +246,7 @@ def test_every_registered_shield_has_a_table_scenarios_and_a_setup():
 
 def test_trader_drives_seventy_rows():
     # The count moves only with a row added or removed: say so in the commit.
-    assert sum(1 for attack in ATTACKS if attack["proof"] == "test") == 70
+    assert sum(1 for attack in ATTACKS if attack["proof"] == "test") == 76   # +6 on 2026-10-16: one vault row per newly supported wallet
 
 
 # ------------------------------------------------------------------ the table itself

@@ -2,6 +2,13 @@
   "id": "rabby",
   "name": "Rabby",
   "kind": "browser-extension",
-  "status": "planned",
-  "order": 110
+  "status": "supported",
+  "order": 110,
+  "verified": "2026-10-16",
+  "source": "Chrome Web Store install on Ubuntu 24.04, Chrome 155 (2026-10-16): the real extension wrote its storage under this id",
+  "stores": {
+    "chromium": [
+      "acmacodkjbdgmoleebolmdjonilkdbch"
+    ]
+  }
 }

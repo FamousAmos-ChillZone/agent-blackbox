@@ -34,7 +34,7 @@ def test_settings_coming_soon_is_unchanged():
     fields = shields.settings_view()["trader"]["fields"]
     wallets = next(field for field in fields if field["kind"] == "multi-pick")
     planned = [option["name"] for option in wallets["options"] if option["status"] == "planned"]
-    assert planned == ["Rabby", "Coinbase Wallet", "Trust Wallet", "OKX Wallet", "Keplr", "Solflare"]
+    assert planned == []   # the last six were promoted to supported on 2026-10-16
 
 
 def test_page_coming_next_is_unchanged():
@@ -46,22 +46,22 @@ def test_page_coming_next_is_unchanged():
     routes.register_pages(app)
     content = TestClient(app).get("/shields/trader/content.json")   # the page's "Coming soon" chips, as served
     assert content.status_code == 200
-    assert content.json()["coming"] == ["Rabby", "Coinbase Wallet", "Solflare", "Bitcoin Core",
-                                        "More exchanges", "Safari wallets"]
+    assert content.json()["coming"] == ["Bitcoin Core", "More exchanges", "Safari wallets"]
 
 
 # ------------------------------------------------------------------ what loads
 
 
-def test_registry_loads_five_supported_six_planned_none_unavailable():
+def test_registry_loads_eleven_supported_none_planned_none_unavailable():
     by_status = {status: [pack.id for pack in PACKS if pack.status == status]
                  for status in ("supported", "planned", "unavailable")}
     assert by_status == {
-        "supported": ["metamask", "phantom", "exodus", "electrum", "solana-cli"],
-        "planned": ["rabby", "coinbase-wallet", "trust-wallet", "okx-wallet", "keplr", "solflare"],
+        "supported": ["metamask", "phantom", "exodus", "electrum", "solana-cli",
+                      "rabby", "coinbase-wallet", "trust-wallet", "okx-wallet", "keplr", "solflare"],
+        "planned": [],
         "unavailable": [],
     }
-    assert [pack.order for pack in PACKS if pack.status == "planned"] == [110, 120, 130, 140, 150, 160]
+    assert [pack.order for pack in PACKS][-6:] == [110, 120, 130, 140, 150, 160]
 
 
 @pytest.mark.parametrize("pack_id", ["solana-cli", "coinbase-wallet", "trust-wallet", "okx-wallet"])
@@ -82,7 +82,9 @@ def test_registry_loads_31_browser_roots_none_dropped():
 
 def test_mode_and_settings_read_the_packs():
     assert trader_mode.supported_wallets() == {"metamask": "MetaMask", "phantom": "Phantom", "exodus": "Exodus",
-                                               "electrum": "Electrum", "solana-cli": "Solana CLI"}
+                                               "electrum": "Electrum", "solana-cli": "Solana CLI", "rabby": "Rabby",
+                                               "coinbase-wallet": "Coinbase Wallet", "trust-wallet": "Trust Wallet",
+                                               "okx-wallet": "OKX Wallet", "keplr": "Keplr", "solflare": "Solflare"}
     assert trader_mode.wallets(trader_mode.build()) == tuple(SUPPORTED)
     wallets = next(field for field in TRADER.settings_fields() if field.kind == "multi-pick")
     assert [(option.id, option.status) for option in wallets.options] == [
@@ -105,6 +107,13 @@ RECORDED_EXTENSION_WALLETS = {
     "metamask": ("MetaMask", ("nkbihfbeogaeaoehlefnkodbefgpgknn", "ejbalbakoplchlghecdalmeeeajnimhm"),
                  ("webextension@metamask.io",)),
     "phantom": ("Phantom", ("bfnaelmomeimhlpmgjnjophhpkkoljpa",), ("{7c42eea1-b3e4-4be4-a56f-82a5852b12dc}",)),
+    # Promoted 2026-10-16, each proven on a real install (Chrome Web Store; Firefox where the publisher ships one).
+    "rabby": ("Rabby", ("acmacodkjbdgmoleebolmdjonilkdbch",), ()),
+    "coinbase-wallet": ("Coinbase Wallet", ("hnfanknocfeofbddgcijnmhnfnkdnaad",), ()),
+    "trust-wallet": ("Trust Wallet", ("egjidjbpglichdcondbcbdnbeeppgdph",), ()),
+    "okx-wallet": ("OKX Wallet", ("mcohilncbfahbmgdjkbpemcciiolgcge",), ()),
+    "keplr": ("Keplr", ("dmkamcknogkgcdfhhbddcghachkejeap",), ('keplr-extension@keplr.app',)),
+    "solflare": ("Solflare", ("bhhhlbepdkbapadjdnnojkbgioiodbic",), ('{6d72262a-b243-4dc6-8f4f-be96c74e0a86}',)),
 }
 #: ``detection.app_wallets.APP_WALLETS``: id -> (name, places, label).
 RECORDED_APP_WALLETS = {

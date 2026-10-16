@@ -2,6 +2,13 @@
   "id": "okx-wallet",
   "name": "OKX Wallet",
   "kind": "browser-extension",
-  "status": "planned",
-  "order": 140
+  "status": "supported",
+  "order": 140,
+  "verified": "2026-10-16",
+  "source": "Chrome Web Store install on Ubuntu 24.04, Chrome 155 (2026-10-16): the real extension wrote its storage under this id",
+  "stores": {
+    "chromium": [
+      "mcohilncbfahbmgdjkbpemcciiolgcge"
+    ]
+  }
 }

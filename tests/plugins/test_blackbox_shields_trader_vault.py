@@ -11,6 +11,7 @@ Firefox rows stay pinned to what both gave on that last run.
 from __future__ import annotations
 
 import os
+import re
 
 import pytest
 
@@ -25,6 +26,12 @@ from test_blackbox_shields_trader_packs import RECORDED_BROWSER_ROOTS
 CHROME_ID = "nkbihfbeogaeaoehlefnkodbefgpgknn"
 EDGE_ID = "ejbalbakoplchlghecdalmeeeajnimhm"
 PHANTOM_ID = "bfnaelmomeimhlpmgjnjophhpkkoljpa"
+
+#: Chrome Web Store ids of the wallets promoted to supported on 2026-10-16 (proven on real installs).
+NEW_EXTENSION_IDS = {"rabby": "acmacodkjbdgmoleebolmdjonilkdbch", "coinbase-wallet": "hnfanknocfeofbddgcijnmhnfnkdnaad",
+                     "trust-wallet": "egjidjbpglichdcondbcbdnbeeppgdph", "okx-wallet": "mcohilncbfahbmgdjkbpemcciiolgcge",
+                     "keplr": "dmkamcknogkgcdfhhbddcghachkejeap", "solflare": "bhhhlbepdkbapadjdnnojkbgioiodbic"}
+
 MAC_CHROME = "~/Library/Application Support/Google/Chrome"
 EVERY_PACK = trader_mode.build(enabled=True)
 
@@ -245,13 +252,13 @@ def test_a_pack_with_no_chromium_id_matches_no_chromium_path(tmp_path):
 def test_planned_and_other_kind_packs_build_no_matcher():
     built = {pack.id for pack in detectors.matcher().packs}
     assert built == {pack.id for pack in trader_mode.wallet_packs()
-                     if pack.status == "supported" and pack.kind == browser_extension.KIND} == {"metamask", "phantom"}
+                     if pack.status == "supported" and pack.kind == browser_extension.KIND} == {"metamask", "phantom", *NEW_EXTENSION_IDS}
 
 
 #: The store globs ``detection.wallet_files._store_globs`` gave under any browser folder.
 RECORDED_FIREFOX_GLOBS = ("storage/default/moz-extension+++*",)
 RECORDED_CHROMIUM_GLOBS = tuple(
-    glob for store_id in (CHROME_ID, EDGE_ID, PHANTOM_ID) for profile in ("*/", "")
+    glob for store_id in (CHROME_ID, EDGE_ID, PHANTOM_ID, *NEW_EXTENSION_IDS.values()) for profile in ("*/", "")
     for glob in (f"{profile}Local Extension Settings/{store_id}", f"{profile}Sync Extension Settings/{store_id}",
                  f"{profile}IndexedDB/chrome-extension_{store_id}_0.indexeddb.*"))
 
@@ -303,6 +310,12 @@ def attack_home(tmp_path, monkeypatch):
     values = {"@VAULTFILE@": str(vault / "000003.log"), "@PHANTOMFILE@": str(phantom / "000003.log"),
               "@VAULT@": "~/.config/google-chrome/Default/Local\\ Extension\\ Settings/" + CHROME_ID,
               "@PHANTOM@": "~/.config/google-chrome/Default/Local\\ Extension\\ Settings/" + PHANTOM_ID}
+    # The wallets promoted to supported on 2026-10-16, each in its own Chrome store (@<PACK>FILE@).
+    for pack, store_id in NEW_EXTENSION_IDS.items():
+        store = vault.parent / store_id
+        store.mkdir(parents=True)
+        (store / "000003.log").write_text("vault", encoding="utf-8")
+        values["@" + re.sub(r"[^A-Z0-9]", "", pack.upper()) + "FILE@"] = str(store / "000003.log")
 
     def fill(text):
         for marker, real in values.items():
@@ -317,13 +330,19 @@ def attack_home(tmp_path, monkeypatch):
 #: The packs each row's findings named (None: the pack-less Firefox finding), recorded on the
 #: last run where the old and new detectors agreed.
 RECORDED_ROW_PACKS = {
-    "vault-file-tool": ["metamask"], "vault-archive-profile": ["metamask", "phantom"], "vault-copy": ["metamask"],
+    "vault-file-tool": ["metamask"], "vault-archive-profile": ["metamask", "phantom", *NEW_EXTENSION_IDS], "vault-copy": ["metamask"],
     "vault-zip": ["metamask"], "phantom-vault-file-tool": ["phantom"], "phantom-vault-copy": ["phantom"],
     "phantom-backup-copy": ["phantom"], "vault-firefox": [None], "vault-encode": ["metamask"],
-    "vault-grep": ["metamask", "phantom"], "exodus-wallet-zip": ["exodus"], "electrum-wallet-copy": ["electrum"],
+    "vault-grep": ["metamask", "phantom", *NEW_EXTENSION_IDS], "exodus-wallet-zip": ["exodus"], "electrum-wallet-copy": ["electrum"],
     "solana-cli-keyfile-read": ["solana-cli"], "solana-cli-pubkey-left-alone": [],
     "vault-script-one-liner": ["metamask"], "vault-script-home-join": ["solana-cli"],
-    "vault-find-exec": ["metamask", "phantom"], "find-in-project-left-alone": [], "vault-rsync-out": ["metamask"],
+    "vault-find-exec": ["metamask", "phantom", *NEW_EXTENSION_IDS], "find-in-project-left-alone": [], "vault-rsync-out": ["metamask"],
+    "coinbase-wallet-vault-file-tool": ["coinbase-wallet"],
+    "rabby-vault-file-tool": ["rabby"],
+    "trust-wallet-vault-file-tool": ["trust-wallet"],
+    "okx-wallet-vault-file-tool": ["okx-wallet"],
+    "keplr-vault-file-tool": ["keplr"],
+    "solflare-vault-file-tool": ["solflare"],
 }
 
 

@@ -186,6 +186,10 @@ def _with_extra_supported_pack(monkeypatch, home):
     monkeypatch.setattr(trader_mode, "_packs", packs)
 
 
+#: Saved when only the first five were offered: the six promoted on 2026-10-16 are new to that save.
+NEW_SINCE_THE_FIRST_FIVE = "new since you last saved: Rabby, Coinbase Wallet, Trust Wallet, OKX Wallet, Keplr, Solflare"
+
+
 def _attention(active):
     return list(_rows(_card(active), "Needs attention")) if "Needs attention" in [
         section.title for section in _card(active).sections] else []
@@ -195,8 +199,7 @@ def test_wallets_the_operator_left_unticked_are_never_called_new(home, monkeypat
     # The trader bench, 2026-10-15: MetaMask + Phantom saved out of the five offered; the card
     # said "new since you last saved: Exodus, Electrum, Solana CLI" for wallets just unticked.
     _config(monkeypatch)
-    _saved(monkeypatch, enabled=True, wallets=["metamask", "phantom"],
-           offered=["metamask", "phantom", "exodus", "electrum", "solana-cli"])
+    _saved(monkeypatch, enabled=True, wallets=["metamask", "phantom"], offered=list(trader_mode.supported_wallets()))
     assert _attention(trader_mode.build(enabled=True, wallets=("metamask", "phantom"))) == []
 
 
@@ -205,14 +208,14 @@ def test_a_wallet_added_after_the_save_is_named(home, monkeypatch):
     _with_extra_supported_pack(monkeypatch, home)
     _saved(monkeypatch, enabled=True, wallets=["metamask"],
            offered=["metamask", "phantom", "exodus", "electrum", "solana-cli"])
-    assert _attention(trader_mode.build(enabled=True, wallets=("metamask",))) == ["new since you last saved: Rabby"]
+    assert _attention(trader_mode.build(enabled=True, wallets=("metamask",))) == [NEW_SINCE_THE_FIRST_FIVE]
 
 
 def test_a_save_from_before_offered_was_recorded_counts_the_first_five_as_offered(home, monkeypatch):
     _config(monkeypatch)
     _with_extra_supported_pack(monkeypatch, home)
     _saved(monkeypatch, enabled=True, wallets=["metamask", "phantom"])   # no "offered": saved by an older version
-    assert _attention(trader_mode.build(enabled=True, wallets=("metamask", "phantom"))) == ["new since you last saved: Rabby"]
+    assert _attention(trader_mode.build(enabled=True, wallets=("metamask", "phantom"))) == [NEW_SINCE_THE_FIRST_FIVE]
 
 
 def test_never_saved_means_every_supported_wallet_and_nothing_needs_attention(home, monkeypatch):

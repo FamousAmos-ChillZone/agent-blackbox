@@ -2,6 +2,16 @@
   "id": "solflare",
   "name": "Solflare",
   "kind": "browser-extension",
-  "status": "planned",
-  "order": 160
+  "status": "supported",
+  "order": 160,
+  "verified": "2026-10-16",
+  "source": "Chrome Web Store install on Ubuntu 24.04, Chrome 155 (2026-10-16): the real extension wrote its storage under this id; addons.mozilla.org listing by the publisher, installed in Firefox 158 (2026-10-16)",
+  "stores": {
+    "chromium": [
+      "bhhhlbepdkbapadjdnnojkbgioiodbic"
+    ],
+    "firefox": [
+      "{6d72262a-b243-4dc6-8f4f-be96c74e0a86}"
+    ]
+  }
 }
