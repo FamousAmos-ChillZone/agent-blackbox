@@ -60,6 +60,7 @@ BLACKBOX_DKG_LAUNCHD_LABEL=ai.umanitek.blackbox-dkg   # the node's LaunchAgent o
 # macOS (and RHEL-family Linux) keep lsof only in /usr/sbin — a LaunchAgent without it crash-looped
 # at every login (KI-427).
 BLACKBOX_SERVICE_SYSTEM_PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+BLACKBOX_LINGER_DIR=/var/lib/systemd/linger   # systemd-logind keeps one file per lingering user here
 BLACKBOX_PTRACE_SCOPE_FILE=/proc/sys/kernel/yama/ptrace_scope   # read by register_key_console
 BLACKBOX_DKG_PORT_EXPLICIT=false
 [ -n "${BLACKBOX_DKG_PORT+x}" ] && BLACKBOX_DKG_PORT_EXPLICIT=true
@@ -396,6 +397,23 @@ hand_dkg_node_to_service() {
         blackbox_dkg start >/dev/null 2>&1 || true
     fi
     warn "The node runs without its service until the next reboot or login; re-run the installer to retry."
+}
+
+# A per-user systemd service runs only while its user has a login session: without lingering,
+# logging out stops the node and a reboot does not start it until that user logs in again — on a
+# server nobody logs in to, it never runs (KI-428). Lingering is systemd's documented switch for
+# this; most systems let a user set it for themselves, otherwise it needs root once.
+ensure_user_lingering() {
+    command -v loginctl >/dev/null 2>&1 || return 0
+    local user
+    user="$(id -un)"
+    [ -e "$BLACKBOX_LINGER_DIR/$user" ] && return 0
+    if loginctl enable-linger "$user" >/dev/null 2>&1 || sudo -n loginctl enable-linger "$user" >/dev/null 2>&1; then
+        ok "Lingering on for $user: Blackbox's services keep running after logout and start at boot"
+    else
+        warn "Blackbox's services stop when $user logs out and start again only at the next login."
+        warn "To keep them running: sudo loginctl enable-linger $user"
+    fi
 }
 
 blackbox_has_dkg_state() {
@@ -2492,9 +2510,12 @@ UNIT
                     && ok "systemd service registered (blackbox-dkg) — the node survives reboots" \
                     || warn "could not enable blackbox-dkg service; enable manually: systemctl enable blackbox-dkg"
             else
-                systemctl --user daemon-reload && systemctl --user enable blackbox-dkg >/dev/null 2>&1 \
-                    && ok "systemd user service registered — the node survives reboots (of your session)" \
-                    || warn "could not enable the user service; enable manually: systemctl --user enable blackbox-dkg"
+                if systemctl --user daemon-reload && systemctl --user enable blackbox-dkg >/dev/null 2>&1; then
+                    ok "systemd user service registered (blackbox-dkg)"
+                    ensure_user_lingering
+                else
+                    warn "could not enable the user service; enable manually: systemctl --user enable blackbox-dkg"
+                fi
             fi
             ;;
         Darwin)
