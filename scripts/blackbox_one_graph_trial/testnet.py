@@ -40,6 +40,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+import psutil
+
 from plugins.blackbox.kernel.dkg_client import DkgError
 
 from .devnet import DevnetError, DevnetNode, _line_time, _WORTH_QUOTING
@@ -519,7 +521,8 @@ def _listener(port: int) -> int:
     """The pid listening on 127.0.0.1:*port* (0: none)."""
     try:
         done = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"], capture_output=True,
-                              text=True, timeout=20, check=False, stdin=subprocess.DEVNULL)
+                              text=True, encoding="utf-8", errors="replace", timeout=20, check=False,
+                              stdin=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired):
         return 0
     first = done.stdout.split()
@@ -528,8 +531,9 @@ def _listener(port: int) -> int:
 
 def _ppid(pid: int) -> int:
     try:
-        done = subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)], capture_output=True, text=True, timeout=20,
-                              check=False, stdin=subprocess.DEVNULL)
+        done = subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)], capture_output=True,
+                              text=True, encoding="utf-8", errors="replace", timeout=20, check=False,
+                              stdin=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired):
         return 0
     text = done.stdout.strip()
@@ -537,13 +541,7 @@ def _ppid(pid: int) -> int:
 
 
 def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return psutil.pid_exists(pid)
 
 
 def _signal(pid: int) -> None:
