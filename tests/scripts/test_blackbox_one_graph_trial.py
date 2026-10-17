@@ -4,6 +4,7 @@
   installer's own config writer and ``sync/node_profile.py``'s native profile —
   while the keys that make it a node of THAT network stay the devnet's.
 * The trial's report never carries a secret-named field, whatever an actor returned.
+* A node is ready once it lists the graph subscribed, synced and with its definition.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ sys.path.insert(0, str(REPO / "scripts"))   # the trial's package sits in script
 
 from blackbox_one_graph_trial import actor_actions
 from blackbox_one_graph_trial.report import PASS, StepResult, TrialReport
+from blackbox_one_graph_trial.steps import _ready
 
 from plugins.blackbox.sync import node_profile
 
@@ -67,3 +69,11 @@ def test_report_drops_secret_named_fields(tmp_path):
     written = "".join((tmp_path / name).read_text(encoding="utf-8-sig") for name in ("report.json", "report.md"))
     assert "t0ken" not in written and "secret-pem" not in written
     assert "ab" * 32 in written and "12D3" in written and "devnet" in written
+
+
+def test_a_node_is_ready_once_it_lists_the_graph_subscribed_synced_and_defined():
+    defined = {"subscribed": True, "accessPolicy": "public"}
+    assert _ready({**defined, "synced": True})
+    assert not _ready({**defined, "synced": False})                        # no catch-up has proven it yet
+    assert not _ready({"subscribed": True, "synced": True, "accessPolicy": ""})   # the definition is missing
+    assert not _ready({"subscribed": False, "synced": True, "accessPolicy": "public"})

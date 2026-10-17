@@ -39,7 +39,7 @@ READ_TIMEOUT_S = 300.0
 COMPILE_TIMEOUT_S = 420.0
 #: Seconds a node that joins later may take to catch up.
 LATE_JOIN_TIMEOUT_S = 600.0
-#: Seconds a subscribed node may take to list the graph with its definition.
+#: Seconds a subscribed node may take to list the graph as synced and defined.
 READY_TIMEOUT_S = 240.0
 #: How often a wait runs the beat a running Blackbox performs (a ruleset refresh:
 #: membership check, retry queue, keep-alive); its pulse runs every 20 s, a refresh hourly.
@@ -63,13 +63,6 @@ TESTNET_TITLES = {
     "devnet": "Curator node up on the testnet (relay-only)",
     "edges": "Two reporter Edges on the testnet with Blackbox's node settings (relay-only)",
     "keys": "Curator keys: test root for the testnet's network id, manifest published",
-}
-#: Why a node that holds a registered graph's definition can still list it synced=false
-#: (Blackbox reads the flag only to trust an empty community read).
-_SYNCED_FLAG_GAPS = {
-    "OriginTrail/dkg#3281": "OriginTrail/dkg#3281: the first catch-up can run before the graph's authority and "
-                            "is not repeated (fixed by #3287 on builds that carry it)",
-    "OriginTrail/dkg#3296": "OriginTrail/dkg#3296: a node that already holds the graph's data is never marked synced",
 }
 
 
@@ -319,8 +312,8 @@ class Trial:
 
     def step_subscribe(self) -> dict[str, Any]:
         """The reporters and curator 1's node subscribe the way Blackbox does
-        (``blackbox sync``); each then holds the graph's definition and acts on
-        the curators' manifest it read from Verified Memory."""
+        (``blackbox sync``); each then lists the graph synced with its definition
+        and acts on the curators' manifest it read from Verified Memory."""
         names = ("reporter-a", "reporter-b", "curator-1")
         answers = {name: self._sync(name) for name in names}
         ready = {name: self._graph_ready(name) for name in names}
@@ -332,15 +325,9 @@ class Trial:
         if not trusted:
             raise StepFailed("a subscribed node does not act on the curators' manifest", join=joined,
                              trust={name: self.cluster.actor(name).call("trust") for name in names})
-        unsynced = [name for name in names if not ready[name]["synced"]]
-        evidence: dict[str, Any] = {"ready": ready, "join": joined, "sync": answers}
-        note = ""
-        if unsynced:
-            evidence["known_dkg_gap"] = {"listing_synced_false": unsynced, "issues": list(_SYNCED_FLAG_GAPS)}
-            note = (f"; known DKG gap, not a pass condition: the listing says synced=false for "
-                    f"{', '.join(unsynced)} ({'; '.join(_SYNCED_FLAG_GAPS.values())})")
-        return {"summary": f"reporter-a, reporter-b and curator-1's node joined the graph (definition in) "
-                           f"and trust the manifest (after {waited:.0f} s more){note}", **evidence}
+        return {"summary": f"reporter-a, reporter-b and curator-1's node joined the graph (synced, definition in) "
+                           f"and trust the manifest (after {waited:.0f} s more)", "ready": ready, "join": joined,
+                "sync": answers}
 
     def _trusts_manifest(self, name: str) -> bool:
         return self._manifest_is_ours(self.cluster.actor(name).call("trust"))
@@ -552,12 +539,11 @@ class Trial:
     # -- helpers ------------------------------------------------------------------
 
     def _graph_ready(self, name: str, timeout: float = 0.0) -> dict[str, Any]:
-        """Wait until *name*'s node lists the graph as subscribed with its
-        definition (an access policy): what Blackbox's membership confirms, and
-        what the node's write check needs with the graph content it holds. The
-        listing's ``synced`` flag is recorded, not awaited: on a registered graph
-        the DKG can leave it false while the node takes writes (``_SYNCED_FLAG_GAPS``).
-        Blackbox's own beat runs meanwhile, as a running Blackbox's would."""
+        """Wait until *name*'s node lists the graph as subscribed, synced and with
+        its definition (an access policy): what the node needs before it accepts
+        writes. Since DKG 10.0.25 a catch-up that finds nothing missing proves the
+        graph synced too (OriginTrail/dkg#3304, fixing #3296). Blackbox's own beat
+        runs meanwhile, as a running Blackbox's would."""
         timeout = timeout or self.ready_timeout
         last: dict[str, Any] = {}
         beat = self._beater(name)
@@ -572,9 +558,9 @@ class Trial:
 
         row, waited = _wait(probe, timeout)
         if row is None:
-            raise StepFailed(f"{name}'s node does not list the graph as subscribed with its definition within "
+            raise StepFailed(f"{name}'s node does not list the graph as subscribed, synced and defined within "
                              f"{timeout:.0f} s", listing=last)
-        return {"seconds": round(waited), "listing": _row_state(row), "synced": bool(row.get("synced"))}
+        return {"seconds": round(waited), "listing": _row_state(row)}
 
     def _report_subject(self, name: str) -> str:
         """The subject of *name*'s report of the promoted threat."""
@@ -722,7 +708,7 @@ def _own_asset(graphs: Optional[list[str]], address: str) -> bool:
 
 
 def _ready(row: dict[str, Any]) -> bool:
-    return bool(row.get("subscribed") and str(row.get("accessPolicy") or "").strip())
+    return bool(row.get("subscribed") and row.get("synced") and str(row.get("accessPolicy") or "").strip())
 
 
 def _row_state(row: dict[str, Any]) -> str:
