@@ -546,7 +546,9 @@ own processes only. It changes no pin and refuses to run on a network that has o
 reports the network id of the network its config falls back to, today the testnet's.
 
 **Running it** needs a built checkout of OriginTrail/dkg (testnet-canary or the 10.0.25 candidate),
-[uv](https://docs.astral.sh/uv/), and a machine that is free to run a devnet. Run it from this checkout:
+[uv](https://docs.astral.sh/uv/), and a machine that is free to run a devnet. Every node runs from that
+built tree (`--dkg-repo`); nothing installs the DKG from npm, so the release Blackbox pins for its own
+installs (`DKG_PACKAGE`) plays no part. Run it from this checkout:
 
 ```bash
 uv run scripts/blackbox-one-graph-trial.py run --dkg-repo ~/dkg --start-devnet --stop-devnet
