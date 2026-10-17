@@ -96,6 +96,20 @@ class TestGitTrampolineSelfHeal:
         out = capsys.readouterr().out
         assert "ZIP path" in out
 
+    @pytest.mark.parametrize("env", ["ucrt64", "mingw64", "clangarm64", "mingw32"])
+    def test_locate_real_git_knows_every_git_for_windows_layout(self, monkeypatch, env):
+        """Git for Windows v2.56.0 moved x64 from ``mingw64`` to ``ucrt64``; a locator that only knew the
+        old folder found no real git on a current install (fork CI, windows-2025 image, git 2.56.0.2)."""
+        from pathlib import Path
+
+        from hermes_cli import update_cmd_git
+
+        monkeypatch.setattr(Path, "exists", lambda self: env in self.parts and self.name == "git.exe")
+        monkeypatch.setattr(update_cmd_git, "_probe_fork_bomb", lambda argv: False)
+        monkeypatch.setattr(update_cmd_git, "_portable_git_candidates", list)
+        real = update_cmd_git._locate_real_git()
+        assert real is not None and real.parts[-4:] == (env, "libexec", "git-core", "git.exe")
+
     @pytest.mark.platforms("not windows")
     def test_off_windows_noop(self):
         from hermes_cli import update_cmd

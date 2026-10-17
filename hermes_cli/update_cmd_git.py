@@ -582,13 +582,15 @@ def _locate_real_git() -> Optional[Path]:
     fetch-failure ZIP fallback handle it. A failed probe (None) disqualifies a candidate like a guard hit.
 
     The trampoline symptom is PATH-level: ``bin\\git.exe`` / ``cmd\\git.exe`` (both ~46KB shims) fail to
-    re-exec git-core, while the real binary at ``mingw64\\libexec\\git-core\\git.exe`` (≈4.4MB) works when
-    invoked directly (#87876).
+    re-exec git-core, while the real binary at ``<env>\\libexec\\git-core\\git.exe`` (≈4.4MB) works when
+    invoked directly (#87876). The MSYS2 environment folder depends on the Git for Windows build:
+    ``ucrt64`` for x64 since v2.56.0 (the MINGW64 -> UCRT64 migration), ``mingw64`` before it,
+    ``mingw32`` for 32-bit and ``clangarm64`` for ARM64.
     """
     candidates = [
-        Path(base) / "Git" / arch / "libexec" / "git-core" / "git.exe"
+        Path(base) / "Git" / env / "libexec" / "git-core" / "git.exe"
         for base in (r"C:\Program Files", r"C:\Program Files (x86)")
-        for arch in ("clangarm64", "mingw64", "mingw32")
+        for env in ("ucrt64", "clangarm64", "mingw64", "mingw32")
     ] + _portable_git_candidates()
     return next((c for c in candidates if c.exists() and _probe_fork_bomb([str(c)]) is False), None)
 
