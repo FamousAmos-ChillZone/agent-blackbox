@@ -159,12 +159,13 @@ class NodeReportWriter:
     stay on it, this node's wallet pays.
 
     Every keep-alive copy carries the same signed report, so any shared copy
-    will do; the newest asset is chosen (an old one may be about to expire).
+    whose author's seal this node keeps will do; the newest is chosen (an old
+    one may be about to expire).
 
     Usage::
 
         writer = NodeReportWriter(ctx.client, ctx.verified_graph)
-        asset = writer.locate(ref)             # None: no copy with the signed digest here
+        asset = writer.locate(ref)             # None: no copy with the signed digest and its seal here
         reply = writer.submit(asset)           # SUBMITTED → MINTED / BOUND
         writer.readable(ref)                   # True / False / None (could not tell)
     """
@@ -176,22 +177,28 @@ class NodeReportWriter:
     def locate(self, ref: statement.ReportRef) -> Optional[ReportAsset]:
         """Where this node holds the report *ref* names (its digest, signed by
         its reporter key): a copy in Verified Memory first, else the newest
-        shared asset, named by the node. Whether Verified Memory holds it is
-        read from the store, never from the node's lifecycle record (that still
-        names a shared-memory pointer after the publish). None when no such
-        copy is held here; raises :class:`DkgError` when the store or the node
-        could not tell."""
+        shared copy whose author's seal this node keeps, by the asset name the
+        seal's record carries (``promotion.sealed_names``: the node's asset
+        descriptor does not answer for another author's asset before it is
+        published). Whether Verified Memory holds it is read from the store,
+        never from the node's lifecycle record (that still names a
+        shared-memory pointer after the publish). None when no such copy is
+        held here — a copy shared without its seal (from a node older than DKG
+        10.0.25, or one this node only pulled) does not count; raises
+        :class:`DkgError` when the store could not tell."""
         copies = self._copies(ref)
         if copies is None:
             raise DkgError("this node's store could not be read")
         verified = next((copy for copy in copies if copy.verified), None)
         if verified is not None:
             return ReportAsset("", verified.author, verified.sub_graph, verified=True)
+        names = promotion.sealed_names(self._client, self._graph, copies)
+        if names is None:
+            raise DkgError("this node's store could not be read")
         for copy in sorted(copies, key=lambda copy: int(copy.number), reverse=True):
-            descriptor = node_routes.shared_asset(self._client, self._graph, copy.asset_id, author=copy.author,
-                                                  sub_graph=copy.sub_graph)
-            if descriptor and _text(descriptor, "name"):
-                return ReportAsset(_text(descriptor, "name"), copy.author, copy.sub_graph)
+            name = names.get((copy.sub_graph, copy.asset_id))
+            if name:
+                return ReportAsset(name, copy.author, copy.sub_graph)
         return None
 
     def submit(self, asset: ReportAsset) -> SubmitReply:

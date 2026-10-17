@@ -3,8 +3,9 @@
 Every promotion names ONE report by subject, digest and reporter key; the
 member-asset pointer's payload is a closed schema; on the graph it is a
 curator statement the verified reader never compiles into a rule and the
-curator view never reads as a verdict; and a node's copies of a report are
-read back with the asset that holds each.
+curator view never reads as a verdict; a node's copies of a report are
+read back with the asset that holds each; and a shared copy's asset name is
+read from the node's record of its author's seal.
 """
 
 from __future__ import annotations
@@ -158,3 +159,33 @@ def test_the_copies_query_binds_only_report_subjects_in_their_reporters_assets_u
     assert '"/_verifiable_memory/"' in statement.report_copies_sparql(VM_GRAPH, [report.subject], 8, verified_only=True)
     assert statement.report_copies_sparql(VM_GRAPH, ["urn:x"], 8) == ""
     assert statement.report_copies_sparql('0xabc/vm"> bad', [report.subject], 8) == ""
+
+
+def _copy(report, number="7", sub_graph=SUB_GRAPH):
+    graph_iri = asset_graph(EDGE.address, int(number), layer=SHARED, sub_graph=sub_graph)
+    return statement.report_copy(VM_GRAPH, {"g": graph_iri, "r": report.subject, "signedStatement": json.dumps(report.text)})
+
+
+def test_a_shared_copys_name_comes_from_the_record_of_its_authors_seal(report):
+    """DKG 10.0.25 keeps a member's seal on the curator node in a lifecycle record that spells the author
+    checksummed: ``urn:dkg:assertion:<graph>:<sub-graph>:<author>:<name>``, with the asset number."""
+    copy = _copy(report)
+    checksummed = "0x" + EDGE.address[2:].upper()
+    record = f"urn:dkg:assertion:{VM_GRAPH}:{SUB_GRAPH}:{checksummed}:report-ab12-e5"
+    row = {"lifecycle": record, "ka": '"7"^^<http://www.w3.org/2001/XMLSchema#integer>', "name": '"report-ab12-e5"'}
+    assert statement.sealed_name(VM_GRAPH, copy, row) == "report-ab12-e5"
+    for changed in ({"ka": '"8"'},                                                     # another asset of the author
+                    {"lifecycle": record.replace(EDGE.address[2:].upper(), "2" * 40)},   # another author
+                    {"lifecycle": record.replace(f":{SUB_GRAPH}:", ":drafts:")},         # another sub-graph
+                    {"name": '"report-other"'}):                                       # the record names another asset
+        assert statement.sealed_name(VM_GRAPH, copy, {**row, **changed}) == ""
+
+
+def test_the_sealed_names_query_asks_for_kept_seals_of_the_copies_assets_only(report):
+    sparql = statement.sealed_names_sparql(VM_GRAPH, [_copy(report), _copy(report, "9")], 16)
+    assert sparql.count(json.dumps(f"urn:dkg:assertion:{VM_GRAPH.lower()}:{SUB_GRAPH}:{EDGE.address}:")) == 1
+    assert f"GRAPH <did:dkg:context-graph:{VM_GRAPH}/_meta>" in sparql and "swmShareComplete" in sparql
+    assert sparql.endswith("LIMIT 16")
+    assert statement.sealed_names_sparql(VM_GRAPH, [], 16) == ""
+    assert statement.sealed_names_sparql('0xabc/vm"> bad', [_copy(report)], 16) == ""
+

@@ -17,7 +17,9 @@ accepted trade-off.
   acting on a promotion (KI-195): the report re-read on THIS node, its digest,
   reporter key and scope checked;
 * :func:`report_copies` — where this node holds a report (asset, layer), read
-  from the node's own store.
+  from the node's own store;
+* :func:`sealed_names` — the asset name of each shared copy whose author's
+  seal this node keeps (what the curator publishes a member's asset by).
 
 Scope: dependency (kind ``malware`` only — R6: a vulnerability never
 blocks), IOC, skill and file-access reports, exactly as reported — a
@@ -34,7 +36,7 @@ Usage::
 
 from __future__ import annotations
 
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional, Sequence
 
 from .. import community
 from ..kernel import constants, signing
@@ -133,6 +135,31 @@ def report_copies(client: DkgClient, graph: str, subjects: Iterable[str]) -> Opt
     sparql = statement.report_copies_sparql(graph, wanted, _COPIES_PER_REPORT * max(1, len(wanted)))
     if not sparql:
         return []
+    rows = _store_rows(client, sparql)
+    return None if rows is None else [copy for row in rows if (copy := statement.report_copy(graph, row)) is not None]
+
+
+def sealed_names(client: DkgClient, graph: str,
+                 copies: Sequence[statement.ReportCopy]) -> Optional[dict[tuple[str, str], str]]:
+    """``{(sub-graph, asset id): asset name}`` for each shared copy in *copies*
+    whose author's seal this node keeps — on the graph's curator node DKG
+    10.0.25 keeps a member's seal from the share, with the asset's name — read
+    from the node's own store; None when the store could not be asked or
+    could not tell."""
+    shared = [copy for copy in copies if not copy.verified]
+    sparql = statement.sealed_names_sparql(graph, shared, _COPIES_PER_REPORT * max(1, len(shared)))
+    if not sparql:
+        return {}
+    rows = _store_rows(client, sparql)
+    if rows is None:
+        return None
+    return {(copy.sub_graph, copy.asset_id): name for copy in shared for row in rows
+            if (name := statement.sealed_name(graph, copy, row))}
+
+
+def _store_rows(client: DkgClient, sparql: str) -> Optional[list[Any]]:
+    """The rows of one SELECT on the node's own store; None when the store
+    could not be asked or could not tell."""
     try:
         url = loopback_store_url(client.status(timeout=5.0))
     except DkgError:
@@ -140,4 +167,4 @@ def report_copies(client: DkgClient, graph: str, subjects: Iterable[str]) -> Opt
     answer = StoreClient(url).select(sparql) if url else None
     if answer is None or not answer.known:
         return None
-    return [copy for row in answer.rows or [] if (copy := statement.report_copy(graph, row)) is not None]
+    return list(answer.rows or [])

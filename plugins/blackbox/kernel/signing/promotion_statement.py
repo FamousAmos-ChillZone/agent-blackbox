@@ -41,7 +41,9 @@ Where a node holds a report — shared or verified, in which asset — is read
 from the node's own store by subject (:func:`report_copies_sparql`,
 :func:`report_copy`): every curator key re-reads the report it signs for, the
 curator publishes the asset that holds it, and a reader serves only a copy in
-Verified Memory.
+Verified Memory. The curator publishes a shared copy by its asset name, which
+the node's record of the author's seal carries (:func:`sealed_names_sparql`,
+:func:`sealed_name`).
 
 Pattern: Value Objects (:class:`ReportRef`, :class:`Promotion`,
 :class:`ReportCopy`) with paired build / parse functions.
@@ -56,6 +58,8 @@ Usage::
     found = statement.parse(envelope)               # None unless a well-formed member-asset promotion
     rows = store.select(statement.report_copies_sparql(graph, [ref.report], 64)).rows
     copies = [copy for row in rows if (copy := statement.report_copy(graph, row))]
+    rows = store.select(statement.sealed_names_sparql(graph, copies, 64)).rows
+    names = {copy.asset_id: name for copy in copies for row in rows if (name := statement.sealed_name(graph, copy, row))}
 """
 
 from __future__ import annotations
@@ -299,6 +303,50 @@ def is_the_report(ref: ReportRef, text: str) -> bool:
         return False
     signer = verify(envelope, statement_type=REPORT_STATEMENT, environment=envelope.environment, graph=envelope.graph)
     return signer == ref.reporter_key
+
+
+#: The DKG's lifecycle record of an asset, in its context graph's ``_meta``:
+#: ``urn:dkg:assertion:<graph>:[<sub-graph>:]<author>:<name>`` with ``dkg:kaId`` (the author's asset
+#: number) and ``dkg:assertionName``. DKG 10.0.25 writes one on the graph's curator node for another
+#: author's asset, with ``dkg:swmShareComplete``, when it keeps that author's seal from the share
+#: (OriginTrail/dkg#3307); the node's asset descriptor does not answer for such an asset before it is
+#: published, and ``vm/publish`` selects it by that name.
+_LIFECYCLE = "urn:dkg:assertion:"
+_DKG_ONTOLOGY = "http://dkg.io/ontology/"
+
+
+def sealed_names_sparql(graph: str, copies: Iterable[ReportCopy], limit: int) -> str:
+    """The lifecycle records this node keeps with their author's seal (``dkg:swmShareComplete``)
+    for the assets holding *copies*: ``?lifecycle``, ``?ka`` (the asset number), ``?name``. "" when
+    nothing is safe to embed."""
+    prefix = _data_prefix(graph)
+    starts = sorted({_lifecycle_start(graph, copy) for copy in copies})
+    if not prefix or not starts:
+        return ""
+    values = " ".join(sparql_text.sparql_string_literal(start) for start in starts)
+    return (f"SELECT ?lifecycle ?ka ?name WHERE {{ VALUES ?start {{ {values} }} "
+            f"GRAPH <{prefix}_meta> {{ ?lifecycle <{_DKG_ONTOLOGY}kaId> ?ka ; <{_DKG_ONTOLOGY}assertionName> ?name ; "
+            f"<{_DKG_ONTOLOGY}swmShareComplete> ?complete }} FILTER(STRSTARTS(LCASE(STR(?lifecycle)), ?start)) "
+            f"FILTER(STR(?complete) = \"true\") }} LIMIT {int(limit)}")
+
+
+def sealed_name(graph: str, copy: ReportCopy, row: Mapping[str, object]) -> str:
+    """The asset name one :func:`sealed_names_sparql` row records for *copy*: the record names
+    *copy*'s sub-graph, author and asset number and ends with the name it carries; "" otherwise."""
+    lifecycle = sparql_text.extract_binding(row.get("lifecycle"))
+    name = sparql_text.extract_binding(row.get("name"))
+    start = _lifecycle_start(graph, copy)
+    if (not name or lifecycle[:len(start)].lower() != start or lifecycle[len(start):] != name
+            or sparql_text.extract_binding(row.get("ka")) != copy.number):
+        return ""
+    return name
+
+
+def _lifecycle_start(graph: str, copy: ReportCopy) -> str:
+    """How the lifecycle record of *copy*'s asset begins, lower-cased (the record spells the
+    author address checksummed)."""
+    sub_graph = f"{copy.sub_graph}:" if copy.sub_graph else ""
+    return f"{_LIFECYCLE}{graph}:{sub_graph}{copy.author}:".lower()
 
 
 def _data_prefix(graph: str) -> str:

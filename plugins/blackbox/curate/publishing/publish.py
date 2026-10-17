@@ -257,7 +257,9 @@ def _publish_report(ctx: CurateContext, ref: statement.ReportRef) -> NodeReportW
     writer = NodeReportWriter(ctx.client, ctx.verified_graph)
     asset = writer.locate(ref)
     if asset is None:
-        raise VerbError("this node holds no copy of the report the promotion points at; nothing was published")
+        raise VerbError("this node holds no copy of the report the promotion points at with its author's seal "
+                        "(a copy shared from a node older than DKG 10.0.25, or one this node only pulled, has "
+                        "none); nothing was published")
     if not asset.verified:
         try:
             writer.submit(asset)

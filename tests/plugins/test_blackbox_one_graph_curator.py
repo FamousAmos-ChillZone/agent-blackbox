@@ -67,11 +67,15 @@ class CuratorNode:
         self.messages: list = []
         self.version = "10.0.25"                   # the DKG release its status reports
 
-    def share(self, report, *, number=5, name=""):
-        """The edge's share, as this node received it: the report's asset in the reports sub-graph."""
+    def share(self, report, *, number=5, name="", sealed=True):
+        """The edge's share, as this node received it: the report's asset in the reports sub-graph, with its
+        author's seal kept and the asset's name recorded (DKG 10.0.25's curator node, OriginTrail/dkg#3307) unless
+        *sealed* is False (a share from an older node, or one this node only pulled)."""
         author = report.reporter.address.lower()
         name = name or f"report-{threat_ids.stable_hash(report.identifier + report.reporter.address, 16)}-e{number}"
         self.store.hold(report, layer=SHARED, number=number)
+        if sealed:
+            self.store.seal(author, number, name)
         self.assets[f"{author}:{number}"] = {"name": name, "report": report, "number": number, "author": author}
         return name
 
@@ -118,9 +122,10 @@ class CuratorNode:
         raise AssertionError(path)
 
     def _descriptor(self, identifier, query):
+        """Like DKG 10.0.25 on a curator node: another author's asset has no descriptor until it is published."""
         asset = self.assets.get(identifier) or next(
             (a for a in self.assets.values() if a["name"] == identifier and a["author"] == query["agentAddress"][0].lower()), None)
-        if asset is None:
+        if asset is None or not asset.get("ual"):
             raise DkgError(f"GET {identifier} -> 404", status_code=404)
         published = {"vmCurrentAssertion": "cd" * 32, "publishedUal": asset["ual"]} if asset.get("ual") else {}
         return {"name": asset["name"], "agentAddress": asset["author"], "swmCurrentAssertion": "ab" * 32, **published}
@@ -307,6 +312,31 @@ def test_the_nodes_lifecycle_record_never_decides_that_a_report_was_promoted(mon
     _, outcome = verbs.approve(_ctx(node, curators["manifest"]), store_b, proposal.id, evidence="advisory:MAL-1",
                                typed_code=None, yes=True)
     assert outcome.startswith("published") and [name for name, _body in node.member_publishes] == [asset]
+
+
+def test_a_report_held_without_its_authors_seal_is_not_published_as_itself(monkeypatch, tmp_path, node, curators):
+    """A copy shared from a node older than DKG 10.0.25, or one the curator node only pulled, carries no seal:
+    the node cannot publish the member's asset, so nothing is paid and the approval says why."""
+    report = shared_report(EVIL, EDGE)
+    node.share(report, sealed=False)
+    proposal = _proposed(monkeypatch, tmp_path, node, curators, report)
+    store_b = _on_b(monkeypatch, tmp_path, node, curators, proposal)
+    with pytest.raises(verbs.VerbError, match="author's seal"):
+        verbs.approve(_ctx(node, curators["manifest"]), store_b, proposal.id, evidence="advisory:MAL-1",
+                      typed_code=None, yes=True)
+    assert node.member_publishes == [] and node.statements == []
+
+
+def test_the_newest_copy_whose_seal_the_node_keeps_is_published(monkeypatch, tmp_path, node, curators):
+    """Keep-alive copies carry the same report: a newer copy that came without its seal is passed over."""
+    report = shared_report(EVIL, EDGE)
+    sealed = node.share(report, number=5)
+    node.share(report, number=9, sealed=False)
+    proposal = _proposed(monkeypatch, tmp_path, node, curators, report)
+    store_b = _on_b(monkeypatch, tmp_path, node, curators, proposal)
+    _, outcome = verbs.approve(_ctx(node, curators["manifest"]), store_b, proposal.id, evidence="advisory:MAL-1",
+                               typed_code=None, yes=True)
+    assert outcome.startswith("published") and [name for name, _body in node.member_publishes] == [sealed]
 
 
 def test_a_refused_report_publish_pays_for_no_statement_and_can_be_published_again(monkeypatch, tmp_path, node, curators):

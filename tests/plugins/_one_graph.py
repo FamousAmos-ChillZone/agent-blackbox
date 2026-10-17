@@ -5,7 +5,9 @@
   verified record the community reader would hand the curators.
 * :class:`NodeStore` — the node's own triple store as the report-copies query
   sees it (``kernel.signing.promotion_statement``): per-asset graphs holding
-  report subjects with their signed text. Patch it in with :func:`use_store`.
+  report subjects with their signed text, and the lifecycle records of the
+  shared assets whose author's seal the node keeps (with the asset's name).
+  Patch it in with :func:`use_store`.
 * :func:`promotion_envelope` — the curators' promotion statement for a report.
 
 Usage::
@@ -87,6 +89,8 @@ class NodeStore:
 
     def __init__(self) -> None:
         self.graphs: dict[str, dict[str, str]] = {}
+        #: lifecycle record IRI -> (asset number, asset name), kept with the author's seal
+        self.seals: dict[str, tuple[str, str]] = {}
         self.fail = False
         self.selects: list[str] = []
 
@@ -97,6 +101,13 @@ class NodeStore:
         self.graphs.setdefault(asset, {})[report.subject] = text or report.text
         return asset
 
+    def seal(self, author: str, number: int, name: str, *, sub_graph: str = SUB_GRAPH, graph: str = VM_GRAPH) -> str:
+        """Record that this node keeps the seal of *author*'s asset *number*, named *name* (as DKG 10.0.25's
+        curator node does for a member's share: OriginTrail/dkg#3307); the record spells the author checksummed."""
+        lifecycle = f"urn:dkg:assertion:{graph}:" + (f"{sub_graph}:" if sub_graph else "") + f"0x{author[2:].upper()}:{name}"
+        self.seals[lifecycle] = (str(number), name)
+        return lifecycle
+
     def drop(self, asset: str) -> None:
         self.graphs.pop(asset, None)
 
@@ -104,6 +115,12 @@ class NodeStore:
         self.selects.append(sparql)
         if self.fail:
             return StoreAnswer(None, "timeout")
+        if "swmShareComplete" in sparql:   # the sealed-names query: lifecycle records by how they begin
+            starts = re.findall(r'"([^"]*)"', re.search(r"VALUES \?start \{(.*?)\}", sparql).group(1))
+            return StoreAnswer([{"lifecycle": lifecycle, "ka": f'"{number}"^^<http://www.w3.org/2001/XMLSchema#integer>',
+                                 "name": json.dumps(name)}
+                                for lifecycle, (number, name) in sorted(self.seals.items())
+                                if any(lifecycle.lower().startswith(start) for start in starts)])
         values = re.search(r"VALUES \(\?r \?author\) \{(.*?)\} GRAPH", sparql)
         prefix = re.search(r'STRSTARTS\(STR\(\?g\), "([^"]*)"\)', sparql)
         subjects = set(re.findall(r"<([^>]+)>", values.group(1))) if values else set()

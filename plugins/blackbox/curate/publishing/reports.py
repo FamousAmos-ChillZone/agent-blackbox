@@ -140,7 +140,7 @@ class ReportPublisher:
         except (promotion.PromotionError, DkgError) as exc:
             return None, str(exc)
         if asset is None:
-            return None, "this node holds no shared copy of the report"
+            return None, "this node holds no shared copy of the report with its author's seal"
         return (None, "") if asset.verified else (asset, "")
 
     def _submit(self, record: BatchRecord, writer: NodeReportWriter, pending: PendingReport,
