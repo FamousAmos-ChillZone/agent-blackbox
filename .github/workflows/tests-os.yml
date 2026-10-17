@@ -73,7 +73,7 @@ jobs:
   os-tests:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: ${{ matrix.timeout || 60 }}
     strategy:
       fail-fast: false
       matrix:
@@ -97,10 +97,12 @@ jobs:
             runner: windows-latest
             marker: windows
             slice: 1/2
+            timeout: 90
           - name: Windows-only tests (2/2)
             runner: windows-latest
             marker: windows
             slice: 2/2
+            timeout: 90
     steps:
       - name: Checkout code
         uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
@@ -199,8 +201,11 @@ jobs:
           # (run 38993760723). One worker per slice keeps the box quiet.
           HERMES_TEST_WORKERS: ${{ matrix.marker == 'windows' && '1' || '' }}
           # The 300 s per-file cap is sized for the 32-core runner (tests.yml says the same
-          # for Linux); on 4 vCPUs the desktop-update files run 200-300 s on their own.
-          HERMES_TEST_FILE_TIMEOUT: ${{ matrix.marker == 'windows' && '900' || '300' }}
+          # for Linux). On this runner test_desktop_update_windows_marker.py alone has run
+          # 64 s, 302 s (killed) and 875 s across three runs with no test failing
+          # (KI-433): the cap covers the observed maximum twice over, and the row's
+          # 90-minute job budget covers a slice that holds it.
+          HERMES_TEST_FILE_TIMEOUT: ${{ matrix.marker == 'windows' && '1800' || '300' }}
           HERMES_TEST_SLICE: ${{ matrix.slice || '' }}
           # Belt-and-suspenders with tests/conftest.py's env blanking: no
           # test may reach a real provider API.
