@@ -25,19 +25,23 @@ def home(monkeypatch, tmp_path):
     monkeypatch.setattr(refresh_cycle, "_memory", refresh_cycle._new_memory())
     monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda client, cfg: None)
     yield
-    _beat_finished()                                       # a beat still running would refuse the next test's pulse()
+    # Isolation, not a check: a beat still running (or a test's stub that never clears the
+    # flag, as the wedged-beat test's does) would refuse the next test's first pulse().
+    _beat_finished(strict=False)
+    with pulse_beat._pulsing_lock:
+        pulse_beat._pulsing = False
     community.PULSE.reset()
 
 
-def _beat_finished(timeout: float = 5.0) -> None:
+def _beat_finished(timeout: float = 5.0, *, strict: bool = True) -> None:
     """Wait until no background beat is running. pulse() refuses to start while one is
     (`_pulsing`), and the beat clears that flag only AFTER the tier it applied is visible —
     so a test that waits for the tier alone and beats again races the flag (CI flake,
-    run 39003401988)."""
+    run 39003401988). ``strict`` asserts the beat finished; the fixture passes False."""
     deadline = time.monotonic() + timeout
     while pulse_beat._pulsing and time.monotonic() < deadline:
         time.sleep(0.01)
-    assert not pulse_beat._pulsing, "the community beat did not finish"
+    assert not (strict and pulse_beat._pulsing), "the community beat did not finish"
 
 
 class _Clock:
