@@ -25,7 +25,19 @@ def home(monkeypatch, tmp_path):
     monkeypatch.setattr(refresh_cycle, "_memory", refresh_cycle._new_memory())
     monkeypatch.setattr(community_tier.community, "ensure_community_subscription", lambda client, cfg: None)
     yield
+    _beat_finished()                                       # a beat still running would refuse the next test's pulse()
     community.PULSE.reset()
+
+
+def _beat_finished(timeout: float = 5.0) -> None:
+    """Wait until no background beat is running. pulse() refuses to start while one is
+    (`_pulsing`), and the beat clears that flag only AFTER the tier it applied is visible —
+    so a test that waits for the tier alone and beats again races the flag (CI flake,
+    run 39003401988)."""
+    deadline = time.monotonic() + timeout
+    while pulse_beat._pulsing and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert not pulse_beat._pulsing, "the community beat did not finish"
 
 
 class _Clock:
@@ -169,6 +181,7 @@ def test_a_process_that_starts_with_an_empty_tier_applies_the_reports_already_th
     assert refresh_cycle.peek(cfg).community_fingerprint == pulse_module.fingerprint(graph, cfg)   # KI-208: travels with the tier
     # KI-208: a NEW process (no probe yet) whose cached tier was applied at a different
     # fingerprint applies the change on its first beat instead of baselining blind …
+    _beat_finished()
     community.PULSE.reset()
     graph.reports.append(signed_row("ioc:domain:other.example", Reporter("0xb")))
     community.PULSE._last_probe = 0.0
