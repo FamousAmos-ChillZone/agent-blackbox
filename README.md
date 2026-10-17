@@ -560,7 +560,11 @@ uv run scripts/blackbox-one-graph-trial.py run --dkg-repo ~/dkg --start-devnet -
   otherwise) as `report.md` and `report.json`. Each step is PASS, FAIL (with the evidence: what was
   asked, what the nodes answered, and the node log lines of that step's time window), ERROR (the trial
   itself could not run it) or SKIP. The trial forces no catch-up and dials no peer for the DKG: what
-  Blackbox and the DKG do not do by themselves fails. The exit code is 0 only when every step passed.
+  Blackbox and the DKG do not do by themselves fails. One DKG work-around remains, marked in
+  `steps.py` until a DKG fix in progress ships: right after the curator node's restart, the owner's
+  first write can be refused (`CONTEXT_GRAPH_NOT_WRITABLE`) for some seconds, so the trial waits for
+  the node to list the graph synced and runs that command once more. The exit code is 0 only when
+  every step passed.
 - `--resume <run folder>` continues a run on the same devnet from its first step that did not pass.
   `--until <step>` stops after that step.
 - Each role's Blackbox home, and the output of every call it made, are kept under `actors/` in the run

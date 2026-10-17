@@ -49,7 +49,8 @@ POLL_S = 10.0
 STATE_FILE = "trial-state.json"
 #: Seconds the proposal from curator 1 may take to reach the graph owner's node.
 PROPOSAL_TIMEOUT_S = 180.0
-#: The node's refusal of a write into a graph it lists but has not proven synced.
+#: The node's refusal of a write into a graph it lists but has not proven synced. The trial's
+#: one remaining DKG work-around retries it (:meth:`Trial._owner_write`).
 NOT_WRITABLE = "CONTEXT_GRAPH_NOT_WRITABLE"
 #: A node's log line when its shared-memory pull fetched triples and its verifier threw them away
 #: (a graph-scoped share whose metadata names no root entity), and the fetch line before it.
@@ -293,7 +294,12 @@ class Trial:
         owner's own node refuses it as not synced for writes (a registered graph whose
         catch-up after a restart ran before the node had the graph's authority), wait for
         the node's listing to say synced and run the command once more. Returns the last
-        answer and what happened ({} when the first attempt was not refused that way)."""
+        answer and what happened ({} when the first attempt was not refused that way).
+
+        THE ONE REMAINING DKG WORK-AROUND, kept until a DKG fix in progress ships: right
+        after the curator node restarts (the trial restarts it to apply Blackbox's curator
+        settings), the owner's first write can be refused for 13 to 23 s. Remove this
+        retry once the pinned DKG release lets that write wait instead of refusing it."""
         owner = self.cluster.actor("curator-2")
         answer = _cli(owner, argv, timeout=600.0)
         if NOT_WRITABLE not in answer["stdout"]:
