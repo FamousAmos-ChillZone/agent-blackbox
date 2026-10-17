@@ -270,7 +270,7 @@ def test_managed_sync_repairs_native_reconciliation_before_sync(
     assert persisted["durableSyncEnabled"] is True
     assert persisted["syncSharedMemoryOnConnect"] is True   # one graph: missed reports come back on connect
     assert persisted["syncGlobalMaxInflight"] == 1
-    assert persisted["syncGlobalQueueLimit"] == 4
+    assert persisted["syncGlobalQueueLimit"] == 0
 
 
 def test_managed_sync_keeps_existing_steady_node_running(monkeypatch, tmp_path):
@@ -285,7 +285,7 @@ def test_managed_sync_keeps_existing_steady_node_running(monkeypatch, tmp_path):
                 "syncReconcilerEnabled": True,
                 "durableSyncEnabled": True,
                 "syncGlobalMaxInflight": 1,
-                "syncGlobalQueueLimit": 4,
+                "syncGlobalQueueLimit": 0,
                 "syncSharedMemoryOnConnect": True,
             }
         ),
@@ -410,7 +410,7 @@ def test_managed_sync_repairs_interrupted_upgrade_and_preserves_checkpoint(
 
     args = argparse.Namespace(wait=True, timeout=30, require_rules=True)
     assert sync_command.cmd_sync(args) == 2
-    assert restart_modes == [(True, True, 4)]
+    assert restart_modes == [(True, True, 0)]
     assert checkpoint.read_bytes() == b"existing-partial-sync"
     assert current["safe_current_triples"] == 51_642
     assert current["expected_triples"] == 6_117_721

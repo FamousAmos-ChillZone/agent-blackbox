@@ -16,16 +16,15 @@ from typing import Dict
 
 from ..kernel.config import BlackboxConfig
 
-#: One sync transfer at a time; up to four more wait for the slot instead of being
-#: refused and probed again. The verified graph's shared memory, the always-on
-#: "agents" and "ontology" graphs and refreshes all ask for that slot (one graph,
-#: 2026-10-16), and a queue adds no concurrent transfer.
+#: One sync transfer at a time, no queue: a refresh of a graph's metadata that meets
+#: a busy slot takes the node's reserved control-plane slot (DKG 10.0.25,
+#: OriginTrail/dkg#3302), so it is not refused behind a transfer.
 _DKG_STEADY_SYNC_SETTINGS = {
     "DKG_SYNC_ON_CONNECT_ENABLED": "1",
     "DKG_SYNC_RECONCILER_ENABLED": "1",
     "DKG_DURABLE_SYNC_ENABLED": "1",
     "DKG_SYNC_GLOBAL_MAX_INFLIGHT": "1",
-    "DKG_SYNC_GLOBAL_QUEUE_LIMIT": "4",
+    "DKG_SYNC_GLOBAL_QUEUE_LIMIT": "0",
 }
 
 #: The native profile for Umanitek's default graph on DKG 10.0.21+ (KI-282):

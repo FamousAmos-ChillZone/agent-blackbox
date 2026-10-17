@@ -756,7 +756,7 @@ def test_dkg_config_writer_leaves_subscriptions_to_the_dkg_api(tmp_path: Path) -
     assert migrated["syncReconcilerEnabled"] is True
     assert migrated["durableSyncEnabled"] is True
     assert migrated["syncGlobalMaxInflight"] == 1
-    assert migrated["syncGlobalQueueLimit"] == 4
+    assert migrated["syncGlobalQueueLimit"] == 0
     assert "restrictAutoSubscribeContextGraphs" not in migrated
     assert migrated["store"] == {
         "backend": "blazegraph",
@@ -1525,7 +1525,7 @@ def test_installers_use_native_dkg_membership_without_sync_overrides() -> None:
         assert "DKG_VM_RECOVERY_PREFETCH_ENABLED" in text
         assert 'data["durableSyncEnabled"] = True' in text
         assert 'data["syncGlobalMaxInflight"] = 1' in text
-        assert 'data["syncGlobalQueueLimit"] = 4' in text
+        assert 'data["syncGlobalQueueLimit"] = 0' in text
         assert 'data.pop("restrictAutoSubscribeContextGraphs", None)' in text
         assert 'data["syncSharedMemoryOnConnect"] = True' in text
         assert 'data["syncContextGraphPriorities"] = priorities' in text
