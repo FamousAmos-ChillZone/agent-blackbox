@@ -296,7 +296,7 @@ class Trial:
         the node's listing to say synced and run the command once more. Returns the last
         answer and what happened ({} when the first attempt was not refused that way).
 
-        THE ONE REMAINING DKG WORK-AROUND, kept until a DKG fix in progress ships: right
+        THE ONE REMAINING DKG WORK-AROUND, kept until OriginTrail/dkg#3320 ships: right
         after the curator node restarts (the trial restarts it to apply Blackbox's curator
         settings), the owner's first write can be refused for 13 to 23 s. Remove this
         retry once the pinned DKG release lets that write wait instead of refusing it."""

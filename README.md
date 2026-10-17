@@ -535,7 +535,7 @@ machines would run it:
 | `keys` | test curator keys for the devnet's network only (below); a manifest with two curator keys of two operators is published and trusted |
 | `subscribe` | the reporters subscribe with `blackbox sync`; each node then lists the graph as synced, with its definition |
 | `share`, `read` | reporter A opts in to community sharing (`blackbox report --enable-sharing`) and files a report with `blackbox report`; reporter B's community reader returns it |
-| `promote` | curator 1 proposes, curator 2 co-signs and publishes. Verified Memory then holds a promotion statement both curator keys signed that names the report (subject and digest), with the curators' own asset built from the report, or the report itself |
+| `promote` | curator 1 proposes, curator 2 co-signs and publishes. Verified Memory then holds a promotion statement both curator keys signed that names the report (subject and digest), beside the report itself, published as reporter A's own asset (curator nodes on DKG 10.0.25), or with the curators' own asset built from the report (an older curator node) |
 | `compile` | both reporters' rulesets serve the report as a verified rule, and their guards in block mode refuse to install the package; reporter B's unpromoted report does not become one |
 | `late-join`, `restart` | a reporter added later gets the reports and the rule; after a node restart they are still there |
 
@@ -563,7 +563,7 @@ uv run scripts/blackbox-one-graph-trial.py run --dkg-repo ~/dkg --start-devnet -
   asked, what the nodes answered, and the node log lines of that step's time window), ERROR (the trial
   itself could not run it) or SKIP. The trial forces no catch-up and dials no peer for the DKG: what
   Blackbox and the DKG do not do by themselves fails. One DKG work-around remains, marked in
-  `steps.py` until a DKG fix in progress ships: right after the curator node's restart, the owner's
+  `steps.py` until OriginTrail/dkg#3320 ships: right after the curator node's restart, the owner's
   first write can be refused (`CONTEXT_GRAPH_NOT_WRITABLE`) for some seconds, so the trial waits for
   the node to list the graph synced and runs that command once more. The exit code is 0 only when
   every step passed.

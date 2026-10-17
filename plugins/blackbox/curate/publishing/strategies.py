@@ -56,7 +56,7 @@ from . import row_builders
 
 CURATOR_ASSET = "curator-asset"
 MEMBER_ASSET = "member-asset"
-#: The first DKG release whose curator node publishes a member's own asset: since it a
+#: The first DKG release whose curator node publishes a member's own asset: from it on, a
 #: share carries its author's seal (OriginTrail/dkg#3307). An older node takes the copy.
 NATIVE_PROMOTION_DKG = (10, 0, 25)
 #: The verified rule's kind per promoted category: a dependency report signs its
