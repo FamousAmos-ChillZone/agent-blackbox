@@ -29,7 +29,7 @@ from plugins.blackbox.kernel.dkg_client import DkgError
 from .actors import Actor, ActorError
 from .cluster import Cluster
 from .devnet import NodeApi
-from .report import ASSISTED, ERROR, FAIL, PASS, SKIP, StepFailed, StepResult, TrialReport
+from .report import ERROR, FAIL, PASS, SKIP, StepFailed, StepResult, TrialReport
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +49,6 @@ POLL_S = 10.0
 STATE_FILE = "trial-state.json"
 #: Seconds the proposal from curator 1 may take to reach the graph owner's node.
 PROPOSAL_TIMEOUT_S = 180.0
-#: What Blackbox's membership logs when it applies its own DKG #3264 work-around (dial the
-#: owner, subscribe again with forceCatchup), and when its dial of the owner failed.
-WORKAROUND_MARK = "lacks the graph's definition"
-OWNER_DIAL_FAILED_MARK = "could not reach the graph owner"
-#: The node's log line for a subscribe; ``forceCatchup=true`` = a forced catch-up reached it.
-SUBSCRIBE_LOG_MARK = "[subscribe] contextGraph="
 #: The node's refusal of a write into a graph it lists but has not proven synced.
 NOT_WRITABLE = "CONTEXT_GRAPH_NOT_WRITABLE"
 #: A node's log line when its shared-memory pull fetched triples and its verifier threw them away
@@ -148,16 +142,14 @@ class Trial:
     """The trial run over one :class:`.cluster.Cluster` (the devnet and its actors)."""
 
     def __init__(self, cluster: Cluster, report: TrialReport, state: TrialState, until: Optional[str] = None,
-                 assist: bool = True, timeout_scale: float = 1.0, keep_going: bool = False) -> None:
+                 timeout_scale: float = 1.0, keep_going: bool = False) -> None:
         self.cluster = cluster
         self.report = report
         self.state = state
         self.until = until
-        self.assist = assist
         #: Run a step even when a step it needs did not pass (what it finds is still evidence;
         #: a step whose inputs are missing then ERRORs instead of being SKIPped).
         self.keep_going = keep_going
-        self._assists: list[str] = []
         #: Every wait of the trial, scaled (the testnet's chain and relays are slower than a devnet)
         self.read_timeout = READ_TIMEOUT_S * timeout_scale
         self.compile_timeout = COMPILE_TIMEOUT_S * timeout_scale
@@ -210,30 +202,19 @@ class Trial:
         method: Callable[[], dict[str, Any]] = getattr(self, "step_" + key.replace("-", "_"))
         result = StepResult(key, title, started_at=time.time())
         self._step_started = result.started_at
-        self._assists = []
-        offsets = self._call_log_offsets()
         logger.info("step %s: %s", key, title)
         try:
             evidence = method() or {}
             result.status, result.summary = PASS, str(evidence.pop("summary", "") or "")
             result.evidence = evidence
-            if self._assists:
-                result.status = ASSISTED
-                result.summary += " — only after the trial's DKG work-around: " + "; ".join(self._assists)
-                result.evidence["assists"] = list(self._assists)
         except StepFailed as failed:
             result.status, result.summary, result.evidence = FAIL, failed.summary, failed.evidence
-            if self._assists:   # the work-around was tried and did not help: part of the evidence
-                result.evidence["assists"] = list(self._assists)
         except ActorError as exc:
             result.status, result.summary, result.error = ERROR, "an actor gave no answer", str(exc)
         except Exception as exc:   # the trial's own failure: recorded, the run goes on
             logger.exception("step %s errored", key)
             result.status, result.summary, result.error = ERROR, f"{type(exc).__name__}: {exc}", repr(exc)
         result.seconds = time.time() - result.started_at
-        dkg_3264 = self._workaround_seen(offsets, since=result.started_at)
-        if dkg_3264:
-            result.evidence["dkg_3264_workaround"] = dkg_3264
         if self.cluster.links is not None:
             result.evidence["links"] = self.cluster.links.summary(since=result.started_at)
         if result.status != PASS:
@@ -318,8 +299,7 @@ class Trial:
         """``blackbox <argv>`` on curator 2, a command that writes into the graph. When the
         owner's own node refuses it as not synced for writes (a registered graph whose
         catch-up after a restart ran before the node had the graph's authority), wait for
-        the node's listing to say synced — first on its own, then after the documented
-        forced catch-up (an assist) — and run the command once more. Returns the last
+        the node's listing to say synced and run the command once more. Returns the last
         answer and what happened ({} when the first attempt was not refused that way)."""
         owner = self.cluster.actor("curator-2")
         answer = _cli(owner, argv, timeout=600.0)
@@ -332,12 +312,10 @@ class Trial:
             last = self.cluster.graph_row("curator-2") or {}
             return last if last.get("synced") else None
 
-        row, waited = self._assisted_wait("curator-2", synced, self.ready_timeout,
-                                          lambda: f"its own listing was {_row_state(last)} (writes refused)")
+        row, waited = _wait(synced, self.ready_timeout)
         retry = _cli(owner, argv, timeout=600.0)
         return retry, {"first_refusal": answer["stdout"][-500:], "listing": _row_state(last),
-                       "owner_synced_after_s": round(waited) if row else None, "assisted": bool(self._assists),
-                       "retry_rc": retry["rc"]}
+                       "owner_synced_after_s": round(waited) if row else None, "retry_rc": retry["rc"]}
 
     def step_subscribe(self) -> dict[str, Any]:
         """The reporters and curator 1's node subscribe the way Blackbox does
@@ -431,7 +409,7 @@ class Trial:
                 beat()
             return found
 
-        seen, waited = self._assisted_wait("reporter-b", probe, self.read_timeout, lambda: "A's report not read yet")
+        seen, waited = _wait(probe, self.read_timeout)
         read_at = time.time()
         arrivals = self.arrivals.result() if self.arrivals else {}
         if seen is None:
@@ -573,52 +551,6 @@ class Trial:
 
     # -- helpers ------------------------------------------------------------------
 
-    def _call_log_offsets(self) -> dict[str, int]:
-        """Where each actor's call log ends now (a step reads only what it added)."""
-        offsets = {}
-        for name, actor in self.cluster.actors.items():
-            log = actor.home / "calls.log"
-            offsets[name] = log.stat().st_size if log.is_file() else 0
-        return offsets
-
-    def _workaround_seen(self, offsets: dict[str, int], *, since: float) -> dict[str, Any]:
-        """Whether Blackbox's own DKG #3264 work-around ran during the step: its membership's
-        log line in each actor's calls, and the forced catch-ups each node logged. Empty when
-        neither happened."""
-        blackbox: dict[str, int] = {}
-        dial_failures: dict[str, int] = {}
-        for name, actor in self.cluster.actors.items():
-            log = actor.home / "calls.log"
-            if not log.is_file():
-                continue
-            with log.open("rb") as handle:
-                handle.seek(offsets.get(name, 0))
-                added = handle.read().decode("utf-8", errors="replace")
-            if added.count(WORKAROUND_MARK):
-                blackbox[name] = added.count(WORKAROUND_MARK)
-            if added.count(OWNER_DIAL_FAILED_MARK):
-                dial_failures[name] = added.count(OWNER_DIAL_FAILED_MARK)
-        forced: dict[str, int] = {}
-        window = getattr(self.cluster.devnet, "log_window", None)
-        if window is not None and self.state.graph_id:
-            labels = {actor.node.label for actor in self.cluster.actors.values()}
-            for label in sorted(labels):
-                lines = window(int(label[len("node"):]), since)
-                count = sum(1 for line in lines if SUBSCRIBE_LOG_MARK + self.state.graph_id in line
-                            and "forceCatchup=true" in line)
-                if count:
-                    forced[label] = count
-        found: dict[str, Any] = {}
-        if blackbox:
-            found["blackbox_fired"] = blackbox
-        if dial_failures:
-            found["owner_dial_failed"] = dial_failures
-        if forced:
-            found["node_forced_catchups"] = forced
-        if found:
-            found["trial_assists"] = len(self._assists)
-        return found
-
     def _graph_ready(self, name: str, timeout: float = 0.0) -> dict[str, Any]:
         """Wait until *name*'s node lists the graph as subscribed with its
         definition (an access policy): what Blackbox's membership confirms, and
@@ -635,32 +567,14 @@ class Trial:
             last = self.cluster.graph_row(name) or {}
             if _ready(last):
                 return last
-            beat()   # Blackbox's own membership check repairs what it can before any assist
+            beat()   # Blackbox's own membership check, as a running Blackbox's would
             return None
 
-        row, waited = self._assisted_wait(name, probe, timeout, lambda: f"its listing was {_row_state(last)}")
+        row, waited = _wait(probe, timeout)
         if row is None:
             raise StepFailed(f"{name}'s node does not list the graph as subscribed with its definition within "
                              f"{timeout:.0f} s", listing=last)
         return {"seconds": round(waited), "listing": _row_state(row), "synced": bool(row.get("synced"))}
-
-    def _assisted_wait(self, name: str, probe: Callable[[], Any], timeout: float,
-                       state: Callable[[], str]) -> tuple[Any, float]:
-        """:func:`_wait` for *probe*. When it is not there halfway, the trial applies
-        the documented DKG work-around for a registered graph whose catch-up is
-        not re-run, a subscribe with forceCatchup on *name*'s node, and records it
-        as an assist (*state* says what was missing); ``--no-assist`` waits the
-        whole time without it."""
-        if not self.assist:
-            return _wait(probe, timeout)
-        found, waited = _wait(probe, timeout / 2)
-        if found is None:
-            self.cluster.force_catchup(name)
-            self._assists.append(f"forced a catch-up on {self.cluster.actors[name].node.label} ({name}) after "
-                                 f"{waited:.0f} s: {state()}")
-            found, more = _wait(probe, timeout / 2)
-            waited += more
-        return found, waited
 
     def _report_subject(self, name: str) -> str:
         """The subject of *name*'s report of the promoted threat."""
@@ -717,8 +631,7 @@ class Trial:
             beat()
             return None
 
-        seen, waited = self._assisted_wait(name, probe, timeout,
-                                           lambda: f"it read {len(last.get('reports', []))} of the 2 reports")
+        seen, waited = _wait(probe, timeout)
         if seen is None:
             raise StepFailed(f"{name} does not read both reports within {timeout:.0f} s", last_read=last)
         return {"seconds": round(waited), "state": seen.get("state"), "reports": len(seen.get("reports", []))}
@@ -737,7 +650,7 @@ class Trial:
             last = self.cluster.actor(name).call("ruleset", params, timeout=600.0)
             return last if _is_verified(last, promoted) else None
 
-        seen, waited = self._assisted_wait(name, probe, timeout, lambda: "no verified rule for it yet")
+        seen, waited = _wait(probe, timeout)
         if seen is None:
             raise StepFailed(f"{name}'s ruleset does not hold {promoted.identifier} as a verified rule within "
                              f"{timeout:.0f} s", last_ruleset=last)

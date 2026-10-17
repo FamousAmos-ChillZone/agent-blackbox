@@ -267,8 +267,6 @@ def test_attach_openclaw_writes_blackbox_block(fake_env):
     assert "daemonUrl" not in entry["config"]
     assert entry["config"]["dkgHome"] == str(constants.blackbox_dkg_home())
     assert entry["config"]["contextGraphId"]
-    # The graph's owner travels with it: the bridge dials it before its first share (DKG #3264).
-    assert entry["config"]["graphPeerId"] == constants.DEFAULT_GRAPH_PEER_ID
     # blackboxHome points OpenClaw's local findings log at the Hermes blackbox
     # home so the one dashboard surfaces OpenClaw detections too.
     assert entry["config"]["blackboxHome"] == str(constants.blackbox_home())

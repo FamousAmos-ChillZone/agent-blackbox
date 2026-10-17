@@ -171,9 +171,6 @@ def _desired_entry(cfg: dict[str, Any]) -> dict[str, Any]:
             "dkgUrl": cfg["dkg_url"],
             "dkgHome": cfg["dkg_home"],
             "contextGraphId": cfg["context_graph_id"],
-            # The graph's owner, dialled before the first share: an edge that reaches the
-            # graph only through relays gets the graph's definition from it (DKG #3264).
-            "graphPeerId": cfg.get("graph_peer_id", ""),
             "mode": cfg["mode"],
             # Point OpenClaw's local findings log at THIS Hermes blackbox home so
             # the one dashboard surfaces OpenClaw detections too. OpenClaw writes
@@ -319,7 +316,6 @@ def load_blackbox_config_snapshot() -> dict[str, Any]:
             "dkg_url": cfg.dkg_url,
             "dkg_home": cfg.dkg_home,
             "context_graph_id": cfg.context_graph_id,
-            "graph_peer_id": cfg.graph_peer_id,
             "mode": cfg.mode,
             "blackbox_home": str(constants.blackbox_home()),
             "report": cfg.report,
@@ -331,7 +327,6 @@ def load_blackbox_config_snapshot() -> dict[str, Any]:
             "dkg_url": constants.DEFAULT_DKG_URL,
             "dkg_home": str(constants.blackbox_dkg_home()),
             "context_graph_id": constants.DEFAULT_CONTEXT_GRAPH_ID,
-            "graph_peer_id": constants.DEFAULT_GRAPH_PEER_ID,
             "mode": "audit",
             "blackbox_home": str(constants.blackbox_home()),
             "report": False,   # the config could not be read: send nothing rather than guess

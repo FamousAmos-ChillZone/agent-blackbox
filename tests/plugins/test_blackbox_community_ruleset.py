@@ -256,11 +256,8 @@ class FakeClient:
     def context_graphs(self):
         return self.graphs
 
-    def subscribe_context_graph(self, cg_id, include_shared_memory=False, force_catchup=False):
+    def subscribe_context_graph(self, cg_id, include_shared_memory=False):
         self.subscribed.append((cg_id, include_shared_memory))
-        return {}
-
-    def connect_peer(self, peer_id):   # membership dials the graph's owner first
         return {}
 
     def query(self, sparql, cg_id, view=None, on_error=None, **kw):

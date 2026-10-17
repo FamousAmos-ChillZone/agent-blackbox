@@ -174,9 +174,6 @@ class _FrozenClient:
     def context_graphs(self):
         return []
 
-    def connect_peer(self, peer_id):
-        raise DkgError("node unavailable")
-
     def subscribe_context_graph(self, cg_id, **_kw):
         raise DkgError("node unavailable")
 

@@ -3,29 +3,23 @@
 Since 2026-10-16 there is one graph: the community's reports live in the
 verified graph's shared memory (sub-graph ``constants.COMMUNITY_SUB_GRAPH``),
 so belonging to the community is the verified graph's subscription with its
-shared memory included. The graph is public: there is no join step (D-040).
-Before Refine R0 (KI-064/114) the ruleset subscribed on EVERY refresh; one
-object now owns that state:
+shared memory included. The graph is registered on chain, so a fresh node
+finds it without first dialling an owner peer (the separate community graph
+was unregistered and needed that, KI-216), and the node gets its definition
+by itself, also when it reaches only Cores (DKG 10.0.25: OriginTrail/dkg#3303,
+#3311). It is public: there is no join step (D-040). Before Refine R0
+(KI-064/114) the ruleset subscribed on EVERY refresh; one object now owns that
+state:
 
-* connect to the graph's owner (``graph_peer_id``, the curator) before the
-  first subscribe, and keep that link: re-dial it every ``OWNER_LINK_SECONDS``,
-  never this node itself. Reports reach a node over that link; a node that
-  lost it stayed "subscribed" while receiving nothing for hours (KI-297);
 * subscribe with shared memory once per process — a node subscribed VM-only
   by an older release gets its shared memory added by that request. The node
   answers whether the catch-up it started (or found) includes shared memory;
-* confirm only once the node holds the graph's definition: its listing names
-  an access policy (``synced`` can say true before that). Without it every
-  write is refused with CONTEXT_GRAPH_NOT_FOUND (KI-295). Registered on chain
-  or not, an edge that reaches the graph only through relays never gets the
-  definition from the cores (DKG #3264): dial the owner and subscribe again
-  with ``forceCatchup``, which brings it in seconds;
-* a subscribe the node refused, one answered by a VM-only catch-up still
-  running (shared memory can be added once it ends) and a definition still
-  missing are retried after ``FAILED_SUBSCRIBE_RETRY_SECONDS``;
 * after that, re-read the node's own listing at most once per
   ``RETRY_SECONDS`` and subscribe again only when it no longer lists the graph
   as subscribed;
+* a subscribe the node refused, or one answered by a VM-only catch-up still
+  running (shared memory can be added once it ends), is retried after
+  ``FAILED_SUBSCRIBE_RETRY_SECONDS``;
 * register the report sub-graph on this node before its first write there.
 
 Pattern: a single owner of mutable state with one lock, exposed as the
@@ -57,13 +51,9 @@ class CommunityMembership:
     #: How long a confirmed subscription is trusted before the node's listing is
     #: read again, and how long a subscribe the node did not take waits.
     RETRY_SECONDS = 600.0
-    #: A subscribe the node REFUSED (owner not reachable yet, chain hiccup), one
-    #: answered without shared memory, and a missing definition: retried this soon.
+    #: A subscribe the node REFUSED (authority not reachable yet, chain hiccup),
+    #: or answered without shared memory, is retried this soon.
     FAILED_SUBSCRIBE_RETRY_SECONDS = 60.0
-    #: How often the live link to the graph owner is re-dialled (KI-297). A dial
-    #: of a connected peer is a cheap no-op on the node; a dropped link costs at
-    #: most this long plus the node's catch-up (169 s measured on the bench).
-    OWNER_LINK_SECONDS = 120.0
 
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
@@ -74,8 +64,6 @@ class CommunityMembership:
         self._confirmed: dict[str, float] = {}
         #: graphs this process saw the node subscribe WITH shared memory
         self._with_shared_memory: set[str] = set()
-        self._last_owner_dial: dict[str, float] = {}
-        self._own_peer = ""   # this node's peer id, once known (never dial ourselves)
         #: graphs whose ``constants.COMMUNITY_SUB_GRAPH`` is registered on this node
         self._lane_ready: set[str] = set()
 
@@ -101,37 +89,25 @@ class CommunityMembership:
         return True
 
     def ensure(self, client: DkgClient, cfg: object) -> tuple[bool, str]:
-        """Make sure this node is subscribed to the verified graph with its shared
-        memory and holds the graph's definition. Fail-open: returns ``(ok, detail-for-logs)``."""
+        """Make sure this node is subscribed to the verified graph with its
+        shared memory. Fail-open: returns ``(ok, detail-for-logs)``."""
         graph = str(getattr(cfg, "context_graph_id", "") or "")
         if not graph:
             return False, "no graph configured"
-        owner = str(getattr(cfg, "graph_peer_id", "") or "")
-        dialled = self._keep_owner_link(client, owner)
         if self._recently_confirmed(graph):
             return True, "subscribed"
-        entry = _graph_entry(client, graph)
-        subscribed = bool(entry and entry.get("subscribed"))
-        defined = not owner or bool(entry and _has_definition(entry))   # the owner holds it
-        if subscribed and defined and graph in self._with_shared_memory:
-            self._confirm(graph)
-            return True, "subscribed"
-        if not self._due(self._last_subscribe, graph):
-            return subscribed, "subscribe attempted recently; waiting for the node"
-        if owner and not dialled:
-            self._dial_owner(client, owner)
-        return self._subscribe(client, graph, owner, force_catchup=subscribed and not defined)
+        if graph in self._with_shared_memory:
+            entry = _graph_entry(client, graph)
+            if entry and entry.get("subscribed"):
+                self._confirm(graph)
+                return True, "subscribed"
+        return self._subscribe(client, graph)
 
-    def _subscribe(self, client: DkgClient, graph: str, owner: str, *,
-                   force_catchup: bool) -> tuple[bool, str]:
-        """Subscribe with shared memory; *force_catchup* when the node is subscribed but
-        lacks the graph's definition (DKG #3264). Confirmed only with the definition in."""
-        if force_catchup:
-            logger.info("blackbox: this node lacks the graph's definition (its writes would be "
-                        "refused); fetching it again from the owner")
+    def _subscribe(self, client: DkgClient, graph: str) -> tuple[bool, str]:
+        if not self._due(self._last_subscribe, graph):
+            return False, "subscribe attempted recently; waiting for the node"
         try:
-            reply = client.subscribe_context_graph(graph, include_shared_memory=True,
-                                                   force_catchup=force_catchup)
+            reply = client.subscribe_context_graph(graph, include_shared_memory=True)
         except DkgError as exc:
             logger.info("blackbox: subscribe with shared memory failed (retry in %ds): %s",
                         int(self.FAILED_SUBSCRIBE_RETRY_SECONDS), exc)
@@ -142,47 +118,8 @@ class CommunityMembership:
             return True, "subscribed; shared memory follows once the running catch-up ends"
         with self._lock:
             self._with_shared_memory.add(graph)
-        entry = _graph_entry(client, graph)
-        if owner and not (entry and _has_definition(entry)):
-            self._retry_sooner(self._last_subscribe, graph)   # look for the definition in a minute
-            return True, "subscribed; fetching the graph definition from its owner"
         self._confirm(graph)
         return True, "subscribed"
-
-    def _keep_owner_link(self, client: DkgClient, owner: str) -> bool:
-        """Re-dial the graph owner every ``OWNER_LINK_SECONDS`` (KI-297). Returns
-        True when it dialled (or found the owner is this node) on this call."""
-        if not owner or not self._due_after(self._last_owner_dial, owner, self.OWNER_LINK_SECONDS):
-            return False
-        self._dial_owner(client, owner)
-        return True
-
-    def _dial_owner(self, client: DkgClient, owner: str) -> None:
-        """Dial the graph owner by peer id (DHT-resolved, or through a relay); never
-        this node itself. Fail-open: a failed dial is logged, the subscribe still runs."""
-        if owner == self._own_peer_id(client):
-            return
-        try:
-            client.connect_peer(owner)
-        except DkgError as exc:
-            logger.info("blackbox: could not reach the graph owner %s: %s", owner, exc)
-
-    def _own_peer_id(self, client: DkgClient) -> str:
-        if not self._own_peer:
-            try:
-                self._own_peer = str((client.status() or {}).get("peerId") or "")
-            except DkgError:   # cannot tell yet: dial anyway (the node refuses a self-dial)
-                return ""
-        return self._own_peer
-
-    def _due_after(self, last: dict[str, float], key: str, window: float) -> bool:
-        """Claim the next attempt for *key* if *window* seconds have passed."""
-        now = self._clock()
-        with self._lock:
-            if key in last and now - last[key] < window:
-                return False
-            last[key] = now
-            return True
 
     def _confirm(self, graph: str) -> None:
         with self._lock:
@@ -200,7 +137,12 @@ class CommunityMembership:
 
     def _due(self, last: dict[str, float], graph: str) -> bool:
         """Claim the next attempt for *graph* if the retry window has passed."""
-        return self._due_after(last, graph, self.RETRY_SECONDS)
+        now = self._clock()
+        with self._lock:
+            if graph in last and now - last[graph] < self.RETRY_SECONDS:
+                return False
+            last[graph] = now
+            return True
 
 
 def _includes_shared_memory(reply: Any) -> bool:

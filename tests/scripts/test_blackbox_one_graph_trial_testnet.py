@@ -7,7 +7,6 @@
 * The curator's wallets are copied encrypted, never the source node's own agent wallet,
   never a plaintext key.
 * Links between the trial's nodes are classified relayed or direct; a direct one is named.
-* Blackbox's own DKG #3264 work-around is seen in the actors' call logs.
 """
 
 from __future__ import annotations
@@ -24,9 +23,9 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts"))   # the trial's package sits in scripts/
 
 from blackbox_one_graph_trial import actor_actions, testnet
-from blackbox_one_graph_trial.actors import Actor, NodeEndpoint
+from blackbox_one_graph_trial.actors import NodeEndpoint
 from blackbox_one_graph_trial.report import TrialReport
-from blackbox_one_graph_trial.steps import WORKAROUND_MARK, ArrivalWatcher, Trial, TrialState
+from blackbox_one_graph_trial.steps import ArrivalWatcher, Trial, TrialState
 
 from plugins.blackbox.kernel.dkg_client import DkgError
 from tests.waiting import wait_until
@@ -140,22 +139,6 @@ def test_links_between_the_trials_nodes_are_relayed_or_named(tmp_path):
     assert (tmp_path / "links.jsonl").read_text(encoding="utf-8").count("\n") == 1
 
 
-def test_blackbox_workaround_is_read_from_the_call_logs(tmp_path):
-    actor = Actor("reporter-a", tmp_path, NodeEndpoint("node2", "http://127.0.0.1:1", ""))
-    actor.prepare()
-    (actor.home / "calls.log").write_text("=== 10:00:00 cli earlier\nINFO ... " + WORKAROUND_MARK + "\n",
-                                          encoding="utf-8")
-    cluster = SimpleNamespace(actors={"reporter-a": actor}, devnet=SimpleNamespace(), links=None, testnet=False)
-    trial = Trial(cluster, TrialReport(tmp_path), TrialState(stamp="s"))
-    offsets = trial._call_log_offsets()   # what came before the step does not count
-    with (actor.home / "calls.log").open("a", encoding="utf-8") as handle:
-        handle.write(f"=== 10:01:00 cli sync\nINFO plugins.blackbox.community.membership: {WORKAROUND_MARK} (x)\n")
-
-    seen = trial._workaround_seen(offsets, since=time.time())
-
-    assert seen["blackbox_fired"] == {"reporter-a": 1}
-
-
 def test_arrivals_are_timed_per_node():
     later = _FakeApi([{"result": {"bindings": []}}, {"result": {"bindings": []}},
                       {"result": {"bindings": [{"o": {"type": "literal", "value": "x"}}]}}])
@@ -192,14 +175,13 @@ def test_owner_write_refused_until_synced_is_run_again(tmp_path):
     actor = _CliActor(tmp_path, [refused, {"rc": 0, "stdout": "manifest: published"}])
     cluster = SimpleNamespace(actors={"curator-2": actor}, devnet=SimpleNamespace(), links=None, testnet=True,
                               actor=lambda name: actor,
-                              graph_row=lambda name: {"subscribed": True, "synced": True, "accessPolicy": "public"},
-                              force_catchup=lambda name: pytest.fail("synced without the work-around"))
+                              graph_row=lambda name: {"subscribed": True, "synced": True, "accessPolicy": "public"})
     trial = Trial(cluster, TrialReport(tmp_path), TrialState(stamp="s"))
 
     answer, owner_write = trial._owner_write(["curate", "publish", "x", "--yes"])
 
     assert answer["rc"] == 0 and len(actor.calls) == 2
-    assert owner_write["owner_synced_after_s"] == 0 and owner_write["assisted"] is False
+    assert owner_write["owner_synced_after_s"] == 0
     assert "CONTEXT_GRAPH_NOT_WRITABLE" in owner_write["first_refusal"]
 
 

@@ -54,7 +54,7 @@ def run_trial(args: argparse.Namespace, repo_root: Path) -> int:
         logger.info("resuming %s after: %s", run_dir, ", ".join(step.key for step in report.steps) or "nothing")
     logger.info("run folder: %s", run_dir)
     try:
-        Trial(cluster, report, state, until=args.until or None, assist=not args.no_assist, timeout_scale=scale,
+        Trial(cluster, report, state, until=args.until or None, timeout_scale=scale,
               keep_going=getattr(args, "keep_going", False)).run()
     finally:
         if args.stop_devnet:

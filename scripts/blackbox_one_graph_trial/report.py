@@ -2,10 +2,7 @@
 
 A step either PASSes, FAILs (the product did not do what the step checks),
 ERRORs (the trial itself could not run the step: the devnet, a timeout in
-setup) or is SKIPped (an earlier step it needs did not pass). A step is
-ASSISTED when it reached its goal only after the trial applied a documented DKG
-work-around (a forced catch-up) that Blackbox does not do itself: the flow
-works, but not with Blackbox alone, and later steps still run. Each result
+setup) or is SKIPped (an earlier step it needs did not pass). Each result
 carries its evidence: what was asked, what the nodes answered, how long it
 took, and the node log lines of the step's time window when it did not pass.
 
@@ -22,7 +19,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-PASS, ASSISTED, FAIL, ERROR, SKIP = "PASS", "ASSISTED", "FAIL", "ERROR", "SKIP"
+PASS, FAIL, ERROR, SKIP = "PASS", "FAIL", "ERROR", "SKIP"
 _SECRET_WORDS = ("token", "private", "secret", "password", "pem")
 
 
@@ -42,8 +39,7 @@ class StepResult:
 
     @property
     def passed(self) -> bool:
-        """The step reached its goal (with Blackbox alone, or ASSISTED)."""
-        return self.status in (PASS, ASSISTED)
+        return self.status == PASS
 
 
 class StepFailed(Exception):

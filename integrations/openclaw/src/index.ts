@@ -394,7 +394,7 @@ async function reportSighting(rt: BlackboxRuntime, finding: Finding, event: stri
     const signer = await resolveSigner(rt);
     if (!signer) return; // a node that cannot sign does not share (R0b)
     const log = (msg: string) => rt.log("debug", msg);
-    await ensureCommunitySubscription(rt.client, rt.cfg.contextGraphId, rt.cfg.graphPeerId, rt.membership, log);
+    await ensureCommunitySubscription(rt.client, rt.cfg.contextGraphId, rt.membership, log);
     await ensureReportLane(rt.client, rt.cfg.contextGraphId, rt.membership, log);
     const quads = buildReportQuads({
       identifier: finding.identifier,

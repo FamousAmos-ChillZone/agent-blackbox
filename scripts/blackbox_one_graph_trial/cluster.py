@@ -289,14 +289,6 @@ class Cluster:
         """The trial graph's row in the listing of *name*'s node (None: not listed)."""
         return self.api(self._node_of(name)).graph_entry(self.graph_id)
 
-    def force_catchup(self, name: str) -> dict[str, Any]:
-        """The documented DKG work-around for a registered graph whose catch-up
-        is not re-run: subscribe again with ``forceCatchup``."""
-        return self.api(self._node_of(name)).call(
-            "POST", "/api/context-graph/subscribe",
-            {"contextGraphId": self.graph_id, "includeSharedMemory": True, "forceCatchup": True},
-            timeout=180.0 * self._slow)
-
     def _node_of(self, name: str) -> DevnetNode:
         return self.devnet.node(int(self.actors[name].node.label[len("node"):]))
 

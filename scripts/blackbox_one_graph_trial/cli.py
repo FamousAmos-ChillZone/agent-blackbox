@@ -42,9 +42,6 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--plain-curator", action="store_true",
                      help="leave the curator node's settings as devnet.sh made them "
                           "(default: Blackbox's curator settings, scripts/blackbox-curator-config.py)")
-    run.add_argument("--no-assist", action="store_true",
-                     help="never apply the documented DKG work-around (a forced catch-up) when Blackbox's own flow "
-                          "stalls; the step then fails instead of being marked ASSISTED")
     run.add_argument("--network", choices=("devnet", "testnet"), default="devnet",
                      help="devnet (default): a scripts/devnet.sh devnet; testnet: the trial's own nodes on the "
                           "public testnet, built from --dkg-repo, reaching each other only through its relays")

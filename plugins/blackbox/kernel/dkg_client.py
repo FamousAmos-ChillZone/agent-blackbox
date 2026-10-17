@@ -257,20 +257,20 @@ class DkgClient:
             "POST", "/api/connect", {"multiaddr": multiaddr}, timeout=15.0
         )
 
-    def subscribe_context_graph(self, cg_id: str, *, include_shared_memory: bool = True,
-                                force_catchup: bool = False) -> dict[str, Any]:
+    def subscribe_context_graph(self, cg_id: str, *, include_shared_memory: bool = True) -> dict[str, Any]:
         """Subscribe the node to a context graph and catch up its VM and shared memory.
 
         A fresh install that only set ``context_graph_id`` never subscribes the
         daemon, so its store stays empty. Shared memory is included because the
         community's reports live there (one graph, 2026-10-16); a node subscribed
-        without it gets a catch-up job that adds it, an already-ready one a no-op
-        unless *force_catchup* (which also fetches a graph definition that never came).
+        without it gets a catch-up job that adds it, an already-ready one a no-op.
         """
-        body = {"contextGraphId": cg_id, "includeSharedMemory": include_shared_memory}
-        if force_catchup:
-            body["forceCatchup"] = True
-        return self.request("POST", "/api/context-graph/subscribe", body, timeout=_STORE_TIMEOUT)
+        return self.request(
+            "POST",
+            "/api/context-graph/subscribe",
+            {"contextGraphId": cg_id, "includeSharedMemory": include_shared_memory},
+            timeout=_STORE_TIMEOUT,
+        )
 
     def unsubscribe_context_graph(self, cg_id: str) -> dict[str, Any]:
         """Drop live gossip/sync scope without deleting local VM/SWM data."""
