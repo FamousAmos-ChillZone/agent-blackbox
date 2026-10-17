@@ -7,36 +7,42 @@ names that report — subject, digest, reporter key
 own node before signing (``promotion.checked_report``). The ways differ in what
 is signed and what is published:
 
-* :data:`CURATOR_ASSET` — the default. The curators sign the verified rule
-  made from the report (``row_builders``: identifier, severity, kind, package
-  fields, and the report as its provenance) and publish it as their OWN asset
-  in the graph's Verified Memory: the asset readers' envelope tier already
-  serves (``ruleset/live/envelope_tier.py``), so readers need no change and
-  earlier verified rules stay as they are.
-* :data:`MEMBER_ASSET` — the curators sign a pointer
+* :data:`MEMBER_ASSET` — the default. The curators sign a pointer
   (``promotion_statement.promotion_payload``) and publish the reporter's own
-  asset from shared memory as it is (``node_writers.NodeReportWriter``;
+  asset from shared memory as it is, natively (``node_writers.NodeReportWriter``;
   in a batch, ``reports.ReportPublisher``), then the pointer beside it;
-  readers already serve it (``ruleset/live/promoted.py``). Not active: on this
-  graph type the node refuses a curator's publish of a member's asset (409 —
-  the curator node never holds the member's seal or its full-share marker).
+  readers serve it (``ruleset/live/promoted.py``). A curator node publishes a
+  member's asset from DKG 10.0.25 on: the share carries its author's seal, which
+  the graph's curator node keeps (OriginTrail/dkg#3307, fixing #3294). A report
+  shared from an older node carries none: its publish is refused, nothing is
+  paid, and the promotion waits for a keep-alive copy from an updated node.
+* :data:`CURATOR_ASSET` — the copy, for a curator node older than DKG 10.0.25,
+  which refuses to publish a member's asset (409: it never holds the member's
+  seal). The curators sign the verified rule made from the report
+  (``row_builders``: identifier, severity, kind, package fields, and the report
+  as its provenance) and publish it as their OWN asset in the graph's Verified
+  Memory, which the readers' envelope tier serves
+  (``ruleset/live/envelope_tier.py``).
 
-:data:`ACTIVE` is the one place that picks the way NEW promotions take; a
-signed promotion is published the way its own payload says
-(:func:`strategy_for`), whichever way is active.
+:func:`active` is the one place that picks the way NEW promotions take, by the
+DKG version of the node the proposing curator works through
+(:data:`NATIVE_PROMOTION_DKG`); a signed promotion is published the way its
+own payload says (:func:`strategy_for`), whichever way that node would pick.
 
 Pattern: Strategy — two classes behind :class:`PromotionStrategy`, chosen by
 payload shape.
 
 Usage::
 
-    payload = strategies.active().payload(report, severity="critical", advisory="MAL-2026-1", display_name="")
+    payload = strategies.active(ctx.dkg_version).payload(report, severity="critical", advisory="MAL-2026-1",
+                                                         display_name="")
     strategy = strategies.strategy_for(envelope)       # None: not a promotion of a report
     name, quads = strategy.asset(envelope, evidence)   # the curators' own asset
 """
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import Mapping, Optional, Protocol
@@ -50,8 +56,9 @@ from . import row_builders
 
 CURATOR_ASSET = "curator-asset"
 MEMBER_ASSET = "member-asset"
-#: The way NEW promotions take (see the module doc for why it is not MEMBER_ASSET).
-ACTIVE = CURATOR_ASSET
+#: The first DKG release whose curator node publishes a member's own asset: since it a
+#: share carries its author's seal (OriginTrail/dkg#3307). An older node takes the copy.
+NATIVE_PROMOTION_DKG = (10, 0, 25)
 #: The verified rule's kind per promoted category: a dependency report signs its
 #: own (malware, the only one promoted); the others carry none.
 _RULE_KINDS = MappingProxyType({"ioc": constants.KIND_MALWARE, "skill": constants.KIND_MALWARE,
@@ -144,9 +151,17 @@ STRATEGIES: Mapping[str, PromotionStrategy] = MappingProxyType({
 })
 
 
-def active() -> PromotionStrategy:
-    """The way new promotions take (:data:`ACTIVE`)."""
-    return STRATEGIES[ACTIVE]
+def active(dkg_version: str) -> PromotionStrategy:
+    """The way new promotions take on a node that runs DKG *dkg_version* (its status's
+    ``version``): MEMBER_ASSET from :data:`NATIVE_PROMOTION_DKG` on, CURATOR_ASSET on an
+    older node and when the version does not parse (the copy publishes on every release)."""
+    return STRATEGIES[MEMBER_ASSET if _release(dkg_version) >= NATIVE_PROMOTION_DKG else CURATOR_ASSET]
+
+
+def _release(version: str) -> tuple[int, ...]:
+    """``10.0.25`` (also ``10.0.25-…``) as ``(10, 0, 25)``; ``(0, 0, 0)`` for anything else."""
+    found = re.match(r"(\d+)\.(\d+)\.(\d+)", str(version or "").strip())
+    return tuple(int(part) for part in found.groups()) if found else (0, 0, 0)
 
 
 def strategy_for(envelope: Optional[signing.SignedEnvelope]) -> Optional[PromotionStrategy]:

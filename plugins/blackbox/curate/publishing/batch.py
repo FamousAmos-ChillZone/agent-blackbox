@@ -3,11 +3,13 @@
 Quorum-signed promotions wait as APPROVED proposals; :class:`BatchPublisher`
 turns them into ONE verified-graph knowledge asset per batch (≤ 50 entries,
 each written the way its payload says — :mod:`.strategies`: by default the
-verified rule made from the report at ``threat_uri(identifier)``, carrying its
-own 2-of-N envelope) and walks it through the :class:`PublishLedger`. A
-member-asset promotion's report is its reporter's own asset, published first
-on its own ledger record (:mod:`.reports`): such an entry joins a batch once
-its report reads back from Verified Memory. Pattern: Builder.
+curators' statement pointing at the report; on a curator node older than DKG
+10.0.25 the verified rule made from the report at ``threat_uri(identifier)``,
+carrying its own 2-of-N envelope) and walks it through the
+:class:`PublishLedger`. A member-asset promotion's report is its reporter's
+own asset, published first on its own ledger record (:mod:`.reports`): such an
+entry joins a batch once its report reads back from Verified Memory.
+Pattern: Builder.
 
 When a batch goes (D15, F-017), whichever comes first: :data:`BATCH_ENTRIES`
 entries wait; the oldest has waited :data:`BATCH_SECONDS` (6 h); a block-tier

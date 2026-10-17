@@ -1,12 +1,12 @@
 """How a promotion reaches Verified Memory (``curate.publishing.strategies``, the one-graph flow).
 
-New promotions take the curator-asset way: the curators' own verified-rule
-asset made from the report, the report as its provenance. The member-asset
-way (the report published as itself, ``test_blackbox_one_graph_curator.py``)
-waits for the DKG. A signed promotion is published the way its own payload
-says, whichever way is active; a payload of neither way — the shape
-promotions had before the report was their provenance included — is refused
-with its reason.
+New promotions take the member-asset way on a node that runs DKG 10.0.25 or
+later: the report published as itself (``test_blackbox_one_graph_curator.py``).
+An older node takes the curator-asset way, the curators' own verified-rule
+asset made from the report, the report as its provenance. A signed promotion
+is published the way its own payload says, whichever way the node would
+pick; a payload of neither way — the shape promotions had before the report
+was their provenance included — is refused with its reason.
 """
 
 from __future__ import annotations
@@ -32,6 +32,8 @@ publish_module = importlib.import_module("plugins.blackbox.curate.publishing.pub
 
 EDGE = Reporter("edge-1")
 KEYS = (Ed25519PrivateKey.generate(), Ed25519PrivateKey.generate())
+#: The copy, the curator-asset way an older curator node takes.
+COPY = strategies.STRATEGIES[strategies.CURATOR_ASSET]
 EVIL = "dep:npm:evil-pkg@1.0.0"
 IOC = threat_ids.ioc_identifier("domain", "drainer.example")
 FILEACCESS = threat_ids.fileaccess_identifier("read_file", "ssh-private-key")
@@ -61,16 +63,22 @@ def _report(identifier):
 
 
 def _curator_asset_payload(identifier=EVIL, **change):
-    payload = strategies.active().payload(_report(identifier).verified, severity="high", advisory="MAL-2026-1",
-                                          display_name="")
+    payload = COPY.payload(_report(identifier).verified, severity="high", advisory="MAL-2026-1", display_name="")
     return {**payload, **change}
 
 
-def test_new_promotions_take_the_curator_asset_way():
-    assert strategies.ACTIVE == strategies.CURATOR_ASSET
-    assert strategies.active() is strategies.STRATEGIES[strategies.CURATOR_ASSET]
+@pytest.mark.parametrize("dkg_version, way", [
+    ("10.0.25", strategies.MEMBER_ASSET), ("10.0.26", strategies.MEMBER_ASSET), ("10.1.0", strategies.MEMBER_ASSET),
+    ("11.0.0", strategies.MEMBER_ASSET), (" 10.0.25-canary.3", strategies.MEMBER_ASSET),
+    ("10.0.24", strategies.CURATOR_ASSET), ("9.9.99", strategies.CURATOR_ASSET), ("0.0.0", strategies.CURATOR_ASSET),
+    ("", strategies.CURATOR_ASSET), ("canary", strategies.CURATOR_ASSET),
+])
+def test_new_promotions_publish_the_report_itself_from_dkg_10_0_25_and_a_copy_before(dkg_version, way):
+    """A curator node older than DKG 10.0.25 refuses to publish a member's asset (OriginTrail/dkg#3294); a
+    version that does not parse is taken as older: the copy publishes on every release."""
+    assert strategies.active(dkg_version) is strategies.STRATEGIES[way]
     assert set(strategies.STRATEGIES) == {strategies.CURATOR_ASSET, strategies.MEMBER_ASSET}
-    assert not strategies.active().publishes_report and strategies.STRATEGIES[strategies.MEMBER_ASSET].publishes_report
+    assert strategies.STRATEGIES[strategies.MEMBER_ASSET].publishes_report and not COPY.publishes_report
 
 
 @pytest.mark.parametrize("identifier, kind, name", [
@@ -80,14 +88,14 @@ def test_new_promotions_take_the_curator_asset_way():
 ])
 def test_the_curator_asset_payload_is_the_rule_made_from_the_report(identifier, kind, name):
     report = _report(identifier)
-    payload = strategies.active().payload(report.verified, severity=" High", advisory="MAL-2026-1", display_name="")
+    payload = COPY.payload(report.verified, severity=" High", advisory="MAL-2026-1", display_name="")
     assert set(payload) == rb.PAYLOAD_KEYS and "provenance" not in payload
     assert (payload["identifier"], payload["severity"], payload["kind"], payload["name"], payload["advisoryId"]) == (
         identifier, "high", kind, name, "MAL-2026-1")
     assert (payload["report"], payload["reportDigest"], payload["reporterKey"]) == (
         report.subject, report.digest, report.verified.author)   # the report, by subject, digest and reporter key
-    assert strategies.active().payload(report.verified, severity="high", advisory="",
-                                       display_name="Drainer kit")["name"] == "Drainer kit"
+    named = COPY.payload(report.verified, severity="high", advisory="", display_name="Drainer kit")
+    assert named["name"] == "Drainer kit"
 
 
 def test_the_member_asset_payload_is_the_pointer():
@@ -135,7 +143,7 @@ def test_another_statement_type_is_no_promotion():
 def test_the_curator_asset_is_the_signed_rule_row_at_the_threat_with_the_keys_evidence():
     envelope = _signed(_curator_asset_payload(), sequence=7)
     proposal = Proposal.new(statement.PROMOTION_STATEMENT, EVIL, envelope, VM_GRAPH, checks={"b": "osv:MAL-2", "a": "advisory:MAL-1"})
-    name, quads = strategies.active().asset(envelope, strategies.evidence_of(proposal))
+    name, quads = COPY.asset(envelope, strategies.evidence_of(proposal))
     assert name == f"threat-{threat_ids.stable_hash(EVIL, 16)}-7"
     assert {q["subject"] for q in quads} == {threat_ids.threat_uri(EVIL)}
     shown = {q["predicate"]: q["object"] for q in quads}
@@ -151,10 +159,10 @@ def test_a_curator_asset_promotion_verified_memory_holds_already_is_not_paid_aga
     envelope = signing.cosign(signing.sign(curators["a"], statement_type=statement.PROMOTION_STATEMENT, environment=NETWORK,
                                            graph=VM_GRAPH, payload=_curator_asset_payload(), root_epoch=1, sequence=2),
                               curators["b"])
-    _name, quads = strategies.active().asset(envelope, "")
+    _name, quads = COPY.asset(envelope, "")
     node.vm_published.append((VM_GRAPH, "/earlier", quads))                     # an earlier attempt got it there
     monkeypatch.setattr(publish_module, "checked_promotion",
-                        lambda ctx, env: (strategies.active(), report.verified))   # the re-read is tested elsewhere
+                        lambda ctx, env: (COPY, report.verified))   # the re-read is tested elsewhere
     proposal = (Proposal.new(statement.PROMOTION_STATEMENT, EVIL, envelope, VM_GRAPH, checks={})
                 .transition(ProposalState.PROPOSED).transition(ProposalState.APPROVED))
     _machine(monkeypatch, tmp_path, "B", curators["b"])

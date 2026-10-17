@@ -22,11 +22,11 @@ withdraws the rule instead of waiting for a full refresh. A correction publishes
 under an EFFECTIVE manifest (:func:`require_effective_manifest`).
 
 A promotion is published the way its payload says (:mod:`.strategies`,
-:func:`_write_promotion`): by default the curators' own verified-rule asset
-made from the report; a member-asset promotion first publishes the reporter's
-own asset from shared memory, then the statement beside it. Every key and the
-publisher first re-check the report on their own node
-(:func:`checked_promotion`); published means everything reads back.
+:func:`_write_promotion`): by default (DKG 10.0.25) the reporter's own asset
+from shared memory first, then the curators' statement beside it; the copy an
+older curator node takes is the curators' own verified-rule asset made from
+the report. Every key and the publisher first re-check the report on their
+own node (:func:`checked_promotion`); published means everything reads back.
 
 Usage::
 

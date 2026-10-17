@@ -7,8 +7,9 @@ signatures, take consent, write it where it lives.
 * :data:`ROW_BUILDERS` (+ :class:`RowBuilder`, :class:`ConfirmedEntry`, :func:`promotion_payload`,
   :class:`RowBuildError`) — a Strategy per promotable category: a promotion made from a community report
   as signed verified-graph quads, the report as its provenance; also the signed correction rows.
-* ``strategies`` — how a promotion reaches Verified Memory: the curators' own asset made from the report
-  (the default) or the reporter's own asset with the curators' pointer beside it (``reports``).
+* ``strategies`` — how a promotion reaches Verified Memory: the reporter's own asset with the curators'
+  pointer beside it (``reports``; the default, DKG 10.0.25) or, on an older curator node, the curators'
+  own asset made from the report.
 * :class:`BatchPublisher` (+ :class:`BatchRunReport`, :class:`BatchMetrics`) — beat step 8: quorum-signed
   promotions as ONE verified asset per batch (50 entries or 6 h; block-tier with ≥ 3 reporters within the
   hour), driven through the :class:`PublishLedger`; a 207 is reconciled, never re-minted.

@@ -7,7 +7,8 @@ reporter's own asset, published on its own
 only once its report reads back from Verified Memory: no statement is paid
 for while its report cannot be published, and a report that cannot be keeps
 only its own promotion waiting, never a batch. (A curator-asset promotion —
-the default — publishes nothing of the reporter's and never comes here.)
+the copy a curator node older than DKG 10.0.25 takes — publishes nothing of
+the reporter's and never comes here.)
 
 Each report publish is paid, so it walks the publish ledger like a batch,
 under its own record — ``report:<sub-graph>:<author>:<asset name>`` (the

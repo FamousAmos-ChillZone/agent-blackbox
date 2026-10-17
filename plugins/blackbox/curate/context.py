@@ -144,7 +144,9 @@ CORRECTION_STATEMENT = "blackbox.correction"
 @dataclass(frozen=True)
 class CurateContext:
     """*signing_log* — where :meth:`sign` / :meth:`cosign` record; None = the
-    node's own ``<curate home>/signing_log.jsonl``, resolved at signing time."""
+    node's own ``<curate home>/signing_log.jsonl``, resolved at signing time.
+    *dkg_version* — the DKG release the node reports ("" = not read): it picks
+    the way new promotions take (``publishing.strategies.active``)."""
 
     cfg: BlackboxConfig
     client: DkgClient
@@ -154,6 +156,7 @@ class CurateContext:
     compiled: Optional[Any]
     authority: Authority = Authority.VERIFIED
     signing_log: Optional[SigningLog] = field(default=None, compare=False)
+    dkg_version: str = ""
 
     @property
     def manifest(self) -> Optional[KeyManifest]:
@@ -277,12 +280,14 @@ def build_context(compiled_ruleset: Optional[CompiledRuleset], *, authority: Opt
     *interest* — identifiers the verb is about (their statements are looked up)."""
     cfg = load_blackbox_config()
     client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-    environment = community.network_environment(client.status())
+    status = client.status()
+    environment = community.network_environment(status)
     view = community.read_curator_view(client, cfg, environment, interest=interest)
     acting = acting_authority(cfg, environment, view, authority)
     compiled = compiled_ruleset(cfg) if compiled_ruleset is not None else None
     return CurateContext(cfg=cfg, client=client, environment=environment, view=view,
-                         sandbox=is_sandbox(acting, cfg, environment), compiled=compiled, authority=acting)
+                         sandbox=is_sandbox(acting, cfg, environment), compiled=compiled, authority=acting,
+                         dkg_version=str((status or {}).get("version") or ""))
 
 
 def verified_identifiers(compiled: Any, among: Iterable[str]) -> set:

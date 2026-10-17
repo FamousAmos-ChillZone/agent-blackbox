@@ -4,7 +4,8 @@ The two-key flow end to end with a fake node: machine A proposes (checklist,
 first key, private message), machine B receives, co-signs, consents and
 publishes — a malware dependency's community report ends up as a BLOCKING
 verified rule that names that report as its provenance (the curator-asset
-way, ``publishing.strategies``). Plus the plan's tests: a blockable kind needs
+way, ``publishing.strategies``, which a node that does not report DKG 10.0.25
+takes, as these fake nodes do). Plus the plan's tests: a blockable kind needs
 evidence; the second key re-checks what it co-signs; proposal expiry; consent
 refused on any byte change; no browser endpoint can publish; an
 already-verified threat never reaches a lane. (The member-asset way — the
@@ -326,8 +327,9 @@ def test_a_flood_of_unlisted_singletons_reaches_no_lane_and_no_webhook(tmp_path)
 
 
 def _payload(report=REPORT, **change):
-    """What the curators sign to promote *report* the default way, with *change* applied."""
-    payload = strategies.active().payload(report.verified, severity="critical", advisory="MAL-1", display_name="")
+    """What the curators sign to promote *report* the curator-asset way, with *change* applied."""
+    payload = strategies.STRATEGIES[strategies.CURATOR_ASSET].payload(report.verified, severity="critical",
+                                                                       advisory="MAL-1", display_name="")
     return {**payload, **change}
 
 

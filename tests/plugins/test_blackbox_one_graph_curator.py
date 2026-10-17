@@ -1,10 +1,10 @@
 """The member-asset way of the one-graph flow: a community report is promoted AS ITSELF.
 
-Not the active way (``publishing.strategies``: it waits for the DKG to let a
-curator publish a member's shared asset on this graph type), so every test here
-selects it. Two curator keys sign a promotion statement that points at one
-report in the verified graph's shared memory (sub-graph ``reports``); the
-publisher publishes the reporter's own asset to Verified Memory (the node
+The way new promotions take on a curator node running DKG 10.0.25 (the
+curator node holds the member's seal: OriginTrail/dkg#3307), which every
+context here reports. Two curator keys sign a promotion statement that points
+at one report in the verified graph's shared memory (sub-graph ``reports``);
+the publisher publishes the reporter's own asset to Verified Memory (the node
 resolves its author, this node pays) and the statement beside it; the verified
 reader then serves it as a blocking rule. Every key and the publisher re-check
 the report on their own node first; a report is paid for once; the batch
@@ -65,6 +65,7 @@ class CuratorNode:
         self.member_errors: list = []              # raised by the next member publishes
         self.bind = True                           # False: a 207 — minted, the report not readable
         self.messages: list = []
+        self.version = "10.0.25"                   # the DKG release its status reports
 
     def share(self, report, *, number=5, name=""):
         """The edge's share, as this node received it: the report's asset in the reports sub-graph."""
@@ -75,7 +76,7 @@ class CuratorNode:
         return name
 
     def status(self, timeout=None):
-        return {"networkId": NETWORK, "storeUrl": STORE_URL}
+        return {"networkId": NETWORK, "storeUrl": STORE_URL, "version": self.version}
 
     def _signed(self):
         return [(q["subject"], q["object"], next((p["object"] for p in quads if p["subject"] == q["subject"]
@@ -137,12 +138,6 @@ class CuratorNode:
         return {"ual": ual, "txHash": "0xtx", "status": "confirmed" if self.bind else "partial"}
 
 
-@pytest.fixture(autouse=True)
-def member_asset(monkeypatch):
-    """New promotions take the member-asset way here."""
-    monkeypatch.setattr(strategies, "ACTIVE", strategies.MEMBER_ASSET)
-
-
 @pytest.fixture
 def curators():
     """Three curator keys and their 2-of-3 manifest for the verified graph."""
@@ -161,9 +156,9 @@ def node(monkeypatch):
     return CuratorNode(store)
 
 
-def _ctx(node, manifest):
+def _ctx(node, manifest, dkg_version="10.0.25"):
     return CurateContext(cfg=CFG, client=node, environment=NETWORK, view=CuratorView(manifest=manifest), sandbox=True,
-                         compiled=None)
+                         compiled=None, dkg_version=dkg_version)
 
 
 def _proposed(monkeypatch, tmp_path, node, curators, report, *, severity="critical"):
@@ -214,6 +209,42 @@ def test_a_report_is_promoted_by_two_keys_and_published_as_itself(monkeypatch, t
     rule = rs.dependency[threat_ids.dependency_key("npm", "evil-pkg", "1.0.0")]
     assert (rule["source"], rule["kind"], rule["severity"], rule[promoted.PROMOTED_REPORT]) == (
         "public", "malware", "critical", report.subject)
+
+
+def test_a_curator_node_older_than_dkg_10_0_25_proposes_and_publishes_the_curators_copy(monkeypatch, tmp_path, node,
+                                                                                         curators):
+    """Such a node refuses to publish a member's asset (OriginTrail/dkg#3294): the keys sign the verified rule made
+    from the report, and the publish pays for the curators' own asset only."""
+    report = shared_report(EVIL, EDGE)
+    node.share(report)
+    _machine(monkeypatch, tmp_path, "A", curators["a"])
+    older = _ctx(node, curators["manifest"], dkg_version="10.0.24")
+    proposal = verbs.propose_promotion(older, ProposalStore(), report=report.verified, severity="critical",
+                                       evidence="advisory:MAL-2026-0001", reason="")
+    assert strategies.strategy_for(proposal.parsed()).name == strategies.CURATOR_ASSET
+    store_b = _on_b(monkeypatch, tmp_path, node, curators, proposal)
+    _, outcome = verbs.approve(older, store_b, proposal.id, evidence="advisory:MAL-2026-0001", typed_code=None,
+                               yes=True)
+    assert outcome.startswith(f"published to {VM_GRAPH} as threat-") and node.member_publishes == []
+
+
+def test_the_way_a_promotion_takes_follows_the_version_the_curators_node_reports(monkeypatch, tmp_path, node,
+                                                                                curators):
+    """The context is built from the live node: the version its status reports picks the way."""
+    context_module = importlib.import_module("plugins.blackbox.curate.context")
+    report = shared_report(EVIL, EDGE)
+    node.share(report)
+    _machine(monkeypatch, tmp_path, "A", curators["a"])
+    monkeypatch.setattr(context_module, "load_blackbox_config", lambda: CFG)
+    monkeypatch.setattr(context_module, "DkgClient", lambda **_kw: node)
+    monkeypatch.setattr(community, "read_curator_view",
+                        lambda client, cfg, environment, interest=(): CuratorView(manifest=curators["manifest"]))
+    for version, way in (("10.0.25", strategies.MEMBER_ASSET), ("10.0.24", strategies.CURATOR_ASSET)):
+        node.version = version
+        ctx = context_module.build_context(None)
+        proposal = verbs.propose_promotion(ctx, ProposalStore(), report=report.verified, severity="critical",
+                                           evidence="advisory:MAL-2026-0001", reason="")
+        assert ctx.dkg_version == version and strategies.strategy_for(proposal.parsed()).name == way
 
 
 def test_the_proposer_sees_its_promotion_published_by_the_other_curator(monkeypatch, tmp_path, node, curators):
@@ -399,8 +430,8 @@ def test_a_promotion_whose_report_is_not_held_here_waits_outside_every_batch(bat
 
 
 def test_a_curator_asset_promotion_never_waits_for_a_member_asset_report(batch):
-    """Both ways in one store: the curator-asset entry (the default way) is batched at once as its rule row; the
-    member-asset one waits outside every batch until its report reads back."""
+    """Both ways in one store: the curator-asset entry (an older curator node's copy) is batched at once as its rule
+    row; the member-asset one waits outside every batch until its report reads back."""
     held_nowhere, other = shared_report("dep:npm:later@1.0.0", EDGE), shared_report(EVIL, Reporter("edge-2"))
     waiting = batch.approve(held_nowhere)
     payload = strategies.STRATEGIES[strategies.CURATOR_ASSET].payload(other.verified, severity="high", advisory="",

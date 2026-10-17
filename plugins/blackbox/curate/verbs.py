@@ -42,9 +42,10 @@ logger = logging.getLogger(__name__)
 def propose_promotion(ctx: CurateContext, store: ProposalStore, *, report: community.VerifiedReport, severity: str,
                       evidence: str, reason: str, name: str = "") -> Proposal:
     """A promotion proposal: ONE community report into the verified tier
-    (:mod:`.promotion`), signed the way new promotions take
-    (``publishing.strategies``) — checklist, first signature, stored. *name* —
-    the rule's display name ("" for the default)."""
+    (:mod:`.promotion`), signed the way new promotions take on this curator's
+    node (``publishing.strategies.active``) — checklist, first signature,
+    stored. *name* — the rule's display name ("" for the default; only the
+    curators' own copy carries one)."""
     _require_manifest(ctx)
     _require_verified_authority(ctx, "promote into the verified graph")
     items = dossier.checklist(report.identifier, kind="malware", evidence=evidence, reason=reason)
@@ -52,7 +53,8 @@ def propose_promotion(ctx: CurateContext, store: ProposalStore, *, report: commu
         raise VerbError("checklist failed: " + "; ".join(f"{i.item}. {i.note}" for i in items if not i.ok))
     advisory = evidence[len("advisory:"):] if evidence.startswith("advisory:") else ""
     try:
-        payload = strategies.active().payload(report, severity=severity, advisory=advisory, display_name=name)
+        payload = strategies.active(ctx.dkg_version).payload(report, severity=severity, advisory=advisory,
+                                                             display_name=name)
     except promotion.PromotionError as exc:
         raise VerbError(str(exc)) from exc
     key = keys.curator_key_store().load_or_create()

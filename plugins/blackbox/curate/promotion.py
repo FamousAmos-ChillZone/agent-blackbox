@@ -5,9 +5,9 @@ sub-graph ``reports``. The curators review ONE report and promote it: two
 curator keys sign a promotion whose payload names that report — its subject,
 digest and reporter key (``kernel.signing.promotion_statement``) — and the
 publish step writes it to Verified Memory the way the payload says
-(``publishing.strategies``; by default as the curators' own verified-rule
-asset made from the report). Nothing stays curator-private: the report is
-the provenance. Once promoted, the promotion is permanent in Verified Memory
+(``publishing.strategies``; by default, on DKG 10.0.25, the reporter's own
+asset published as it is, the curators' statement beside it). Nothing stays
+curator-private: the report is the provenance. Once promoted, the promotion is permanent in Verified Memory
 and names its reporter (agent address and reporter key) — the project's
 accepted trade-off.
 
