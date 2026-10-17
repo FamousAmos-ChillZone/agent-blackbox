@@ -106,6 +106,8 @@ class TrialState:
     proposal_id: str = ""
     promoted: Optional[Threat] = None
     control: Optional[Threat] = None
+    #: The promotion published reporter A's own asset (it then lives in Verified Memory, not shared memory).
+    promoted_as_itself: bool = False
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
@@ -452,7 +454,8 @@ class Trial:
             raise StepFailed("Verified Memory does not hold the promotion: a statement signed by both curator keys "
                              "that names reporter-a's report (subject and digest), with the report itself or the "
                              "curators' own asset built from it", promotion=promoted, verified_memory=last)
-        form = "the report itself" if last.get("form") == "report-itself" else "the curators' own asset built from it"
+        self.state.promoted_as_itself = last.get("form") == "report-itself"
+        form = "the report itself" if self.state.promoted_as_itself else "the curators' own asset built from it"
         return {"summary": f"Verified Memory holds {form}, with the two-key statement naming reporter-a's report "
                            f"(read back after {waited:.0f} s)", "promotion": promoted, "verified_memory": last}
 
@@ -500,10 +503,11 @@ class Trial:
         # the verified rule first: what the community reports check finds is already known when step 7 failed
         rule = checks.run("reporter-c's verified rule",
                           lambda: self._verified_rule("reporter-c", self.late_join_timeout))
-        reports = checks.run("reporter-c reads both community reports",
+        reports = checks.run("reporter-c reads the community reports",
                              lambda: self._reports_present("reporter-c", self._report_wait(self.late_join_timeout)))
         checks.done(pull_drops=self._pull_drops("reporter-c", since=self._step_started) if checks.failed else None)
-        return {"summary": "reporter-c (added after the promotion) reads both reports and holds the verified rule",
+        return {"summary": "reporter-c (added after the promotion) reads the community reports and holds the verified "
+                           "rule",
                 "node": node, "sync": sync, "ready": ready, "reports": reports, "ruleset": rule}
 
     def step_restart(self) -> dict[str, Any]:
@@ -515,13 +519,13 @@ class Trial:
         checks = _Checks(self.keep_going)
         after = {name: {"ruleset": checks.run(f"{name}'s verified rule after the restart", lambda name=name:
                                               self._verified_rule(name, self.compile_timeout, fresh=True)),
-                        "reports": checks.run(f"{name} reads both community reports after the restart",
+                        "reports": checks.run(f"{name} reads the community reports after the restart",
                                               lambda name=name: self._reports_present(
                                                   name, self._report_wait(self.read_timeout)))}
                  for name in restarted}
         checks.done(restart=restarted)
-        return {"summary": "after restarting reporter-b's and reporter-c's nodes both still read the reports and "
-                           "hold the verified rule", "restart": restarted, "after": after}
+        return {"summary": "after restarting reporter-b's and reporter-c's nodes both still read the community "
+                           "reports and hold the verified rule", "restart": restarted, "after": after}
 
     def _report_wait(self, timeout: float) -> float:
         """How long a community-reports check waits: the step's wait, or a short one once
@@ -609,8 +613,10 @@ class Trial:
         return beat
 
     def _reports_present(self, name: str, timeout: float) -> dict[str, Any]:
-        wanted = {(self.state.promoted.identifier, self.state.reporter_keys["reporter-a"]),
-                  (self.state.control.identifier, self.state.reporter_keys["reporter-b"])}
+        """Poll *name*'s community read until it returns the community reports: both of them, or
+        only the unpromoted control once the promotion published reporter A's own asset (that report
+        then lives in Verified Memory, which the verified-rule check reads)."""
+        wanted = _community_reports(self.state)
         last: dict[str, Any] = {}
         beat = self._beater(name)
 
@@ -625,7 +631,8 @@ class Trial:
 
         seen, waited = _wait(probe, timeout)
         if seen is None:
-            raise StepFailed(f"{name} does not read both reports within {timeout:.0f} s", last_read=last)
+            raise StepFailed(f"{name} does not read the {len(wanted)} community report(s) within {timeout:.0f} s",
+                             last_read=last)
         return {"seconds": round(waited), "state": seen.get("state"), "reports": len(seen.get("reports", []))}
 
     def _verified_rule(self, name: str, timeout: float, *, fresh: bool = False) -> dict[str, Any]:
@@ -720,6 +727,15 @@ def _ready(row: dict[str, Any]) -> bool:
 def _row_state(row: dict[str, Any]) -> str:
     return (f"subscribed={bool(row.get('subscribed'))} synced={bool(row.get('synced'))} "
             f"definition={'yes' if str(row.get('accessPolicy') or '').strip() else 'no'}") if row else "absent"
+
+
+def _community_reports(state: TrialState) -> set[tuple[str, str]]:
+    """``(identifier, reporter key)`` of the reports the community tier must still hold after the
+    promotion: B's unpromoted control, and A's report unless it was published as itself."""
+    wanted = {(state.control.identifier, state.reporter_keys["reporter-b"])}
+    if not state.promoted_as_itself:
+        wanted.add((state.promoted.identifier, state.reporter_keys["reporter-a"]))
+    return wanted
 
 
 def _rule_for(answer: dict[str, Any], threat: Threat) -> Optional[dict[str, Any]]:

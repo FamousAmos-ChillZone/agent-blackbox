@@ -5,6 +5,7 @@
   while the keys that make it a node of THAT network stay the devnet's.
 * The trial's report never carries a secret-named field, whatever an actor returned.
 * A node is ready once it lists the graph subscribed, synced and with its definition.
+* After a promotion of the report itself, the community tier holds only the unpromoted report.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ sys.path.insert(0, str(REPO / "scripts"))   # the trial's package sits in script
 
 from blackbox_one_graph_trial import actor_actions
 from blackbox_one_graph_trial.report import PASS, StepResult, TrialReport
-from blackbox_one_graph_trial.steps import _ready
+from blackbox_one_graph_trial.steps import Threat, TrialState, _community_reports, _ready
 
 from plugins.blackbox.sync import node_profile
 
@@ -77,3 +78,13 @@ def test_a_node_is_ready_once_it_lists_the_graph_subscribed_synced_and_defined()
     assert not _ready({**defined, "synced": False})                        # no catch-up has proven it yet
     assert not _ready({"subscribed": True, "synced": True, "accessPolicy": ""})   # the definition is missing
     assert not _ready({"subscribed": False, "synced": True, "accessPolicy": "public"})
+
+
+def test_a_report_promoted_as_itself_leaves_the_community_tier_and_the_control_stays():
+    state = TrialState(stamp="s", promoted=Threat("npm", "evil", "1.0.0"), control=Threat("npm", "kept", "2.0.0"),
+                       reporter_keys={"reporter-a": "a" * 64, "reporter-b": "b" * 64})
+    control = ("dep:npm:kept@2.0.0", "b" * 64)
+    assert _community_reports(state) == {("dep:npm:evil@1.0.0", "a" * 64), control}   # the curators' own copy
+    state.promoted_as_itself = True
+    assert _community_reports(state) == {control}                                      # A's report is verified now
+

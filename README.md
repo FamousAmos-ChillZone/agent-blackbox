@@ -537,7 +537,7 @@ machines would run it:
 | `share`, `read` | reporter A opts in to community sharing (`blackbox report --enable-sharing`) and files a report with `blackbox report`; reporter B's community reader returns it |
 | `promote` | curator 1 proposes, curator 2 co-signs and publishes. Verified Memory then holds a promotion statement both curator keys signed that names the report (subject and digest), beside the report itself, published as reporter A's own asset (curator nodes on DKG 10.0.25), or with the curators' own asset built from the report (an older curator node) |
 | `compile` | both reporters' rulesets serve the report as a verified rule, and their guards in block mode refuse to install the package; reporter B's unpromoted report does not become one |
-| `late-join`, `restart` | a reporter added later gets the reports and the rule; after a node restart they are still there |
+| `late-join`, `restart` | a reporter added later gets the community reports and the rule; after a node restart they are still there. A report the curators published as itself lives in Verified Memory from then on, so only the unpromoted one is expected among the community reports |
 
 **Keys.** Blackbox trusts curator roots pinned per network (`kernel/signing/trust_anchors.py`, `CURATOR_ROOT_KEYS`).
 Only a network with no pin takes roots from `BLACKBOX_CURATOR_ROOT_KEYS`; a pinned network ignores the
