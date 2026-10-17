@@ -88,9 +88,19 @@ jobs:
             runner: macos-latest
             marker: macos
             slice: 2/2
-          - name: Windows-only tests
+          # Two slices of ONE worker each on the fork's free windows-latest (4 vCPUs): these files
+          # spawn PowerShell trees with 60 s CIM polls inside, and any neighbour on the same
+          # 4 vCPUs starves them (16 workers: 10 failures; 2 workers: three desktop-update
+          # files killed at the 300 s cap, run 38993760723). Serial on one box is ~45-55 min
+          # of subprocess wall, so the lane is halved the way the macOS rows are.
+          - name: Windows-only tests (1/2)
             runner: windows-latest
             marker: windows
+            slice: 1/2
+          - name: Windows-only tests (2/2)
+            runner: windows-latest
+            marker: windows
+            slice: 2/2
     steps:
       - name: Checkout code
         uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
@@ -183,10 +193,14 @@ jobs:
         env:
           # These files spawn nested PowerShell trees. CPU-count parallelism
           # starves cold child startup before the fixture's idle deadline.
-          # Upstream runs 16 workers on a 32-core runner (half the cores); this fork's
-          # windows-latest has 4 vCPUs, where 16 workers timed out every PowerShell
-          # child (60-120 s, run 38927008162) — keep the same half-the-cores ratio.
-          HERMES_TEST_WORKERS: ${{ matrix.marker == 'windows' && '2' || '' }}
+          # Upstream runs 16 workers on a 32-core runner; this fork's windows-latest has
+          # 4 vCPUs, where 16 workers timed out every PowerShell child (run 38927008162)
+          # and 2 still pushed the slowest desktop-update files past the per-file cap
+          # (run 38993760723). One worker per slice keeps the box quiet.
+          HERMES_TEST_WORKERS: ${{ matrix.marker == 'windows' && '1' || '' }}
+          # The 300 s per-file cap is sized for the 32-core runner (tests.yml says the same
+          # for Linux); on 4 vCPUs the desktop-update files run 200-300 s on their own.
+          HERMES_TEST_FILE_TIMEOUT: ${{ matrix.marker == 'windows' && '900' || '300' }}
           HERMES_TEST_SLICE: ${{ matrix.slice || '' }}
           # Belt-and-suspenders with tests/conftest.py's env blanking: no
           # test may reach a real provider API.
