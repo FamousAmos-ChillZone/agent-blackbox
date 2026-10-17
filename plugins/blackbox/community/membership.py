@@ -20,7 +20,10 @@ state:
 * a subscribe the node refused, or one answered by a VM-only catch-up still
   running (shared memory can be added once it ends), is retried after
   ``FAILED_SUBSCRIBE_RETRY_SECONDS``;
-* register the report sub-graph on this node before its first write there.
+* on the graph owner's node only, register the report sub-graph before the
+  first write there: every other node writes into the owner's sub-graph as it
+  is (DKG 10.0.25 looks the owner's registration up at a member's first write,
+  OriginTrail/dkg#3306).
 
 Pattern: a single owner of mutable state with one lock, exposed as the
 module-level :data:`MEMBERSHIP` (Global Object — the state is per process by
@@ -39,7 +42,7 @@ import time
 from enum import Enum
 from typing import Any, Callable, Optional
 
-from ..kernel import constants
+from ..kernel import constants, identity
 from ..kernel.dkg_client import DkgClient, DkgError
 
 logger = logging.getLogger(__name__)
@@ -64,19 +67,30 @@ class CommunityMembership:
         self._confirmed: dict[str, float] = {}
         #: graphs this process saw the node subscribe WITH shared memory
         self._with_shared_memory: set[str] = set()
-        #: graphs whose ``constants.COMMUNITY_SUB_GRAPH`` is registered on this node
+        #: graphs whose ``constants.COMMUNITY_SUB_GRAPH`` this node may write into: registered
+        #: here when this node owns the graph, the owner's registration otherwise
         self._lane_ready: set[str] = set()
 
     def ensure_report_lane(self, client: DkgClient, graph: str) -> bool:
-        """Register the community subgraph on this node before its first write
-        (a node writes into a named subgraph only once that subgraph is
-        registered locally; receiving nodes register it from the first share).
+        """Before this node's first write into the community sub-graph: when this
+        node OWNS the graph (its agent address is the graph id's namespace),
+        register the sub-graph; that registration is what every other node's
+        write resolves, so a member registers nothing (DKG 10.0.25 looks the
+        owner's registration up at a member's first write, OriginTrail/dkg#3306).
         Once per process per graph; "already exists" counts as ready. Returns
-        whether the lane is ready; a failure is logged and the write proceeds,
-        so the node's own error names what went wrong (fail-open)."""
+        whether the lane is ready (False also while this node's own address is
+        unknown); a failure is logged and the write proceeds, so the node's own
+        error names what went wrong (fail-open)."""
         with self._lock:
             if graph in self._lane_ready:
                 return True
+        address = identity.reporter_address(client)
+        if not address:
+            return False
+        if not _owns(address, graph):   # a member: nothing to register
+            with self._lock:
+                self._lane_ready.add(graph)
+            return True
         try:
             client.request("POST", "/api/sub-graph/create",
                            {"contextGraphId": graph, "subGraphName": constants.COMMUNITY_SUB_GRAPH})
@@ -169,6 +183,12 @@ def _graph_entry(client: DkgClient, graph: str) -> Optional[dict[str, object]]:
     return None
 
 
+def _owns(address: str, graph: str) -> bool:
+    """*address* owns *graph*: a registered graph's id is its owner's address, "/", its name."""
+    owner, slash, _name = graph.partition("/")
+    return bool(slash) and owner.lower() == address.lower()
+
+
 def _has_definition(entry: dict[str, object]) -> bool:
     """True when the node holds the graph's definition: its listing names an
     access policy. A node without it lists the graph with no policy (KI-295)."""
@@ -180,8 +200,8 @@ MEMBERSHIP = CommunityMembership()
 
 
 def ensure_report_lane(client: DkgClient, graph: str) -> bool:
-    """Before writing a community statement: register the community subgraph
-    on this node (:meth:`CommunityMembership.ensure_report_lane`)."""
+    """Before writing a community statement: on the graph owner's node, register
+    the community sub-graph (:meth:`CommunityMembership.ensure_report_lane`)."""
     return MEMBERSHIP.ensure_report_lane(client, graph)
 
 

@@ -16,7 +16,7 @@
  * Fail-open: any handler error is swallowed and the agent loop proceeds.
  */
 import { sharingConsentInForce } from "./consent.js";
-import { ensureCommunitySubscription, ensureReportLane, type MembershipState } from "./membership.js";
+import { ensureCommunitySubscription, type MembershipState } from "./membership.js";
 import { evidenceFor } from "./reportEvidence.js";
 import { validateReport } from "./reportSchema.js";
 import { loadOrCreateReporterKey } from "./reporterKey.js";
@@ -395,7 +395,6 @@ async function reportSighting(rt: BlackboxRuntime, finding: Finding, event: stri
     if (!signer) return; // a node that cannot sign does not share (R0b)
     const log = (msg: string) => rt.log("debug", msg);
     await ensureCommunitySubscription(rt.client, rt.cfg.contextGraphId, rt.membership, log);
-    await ensureReportLane(rt.client, rt.cfg.contextGraphId, rt.membership, log);
     const quads = buildReportQuads({
       identifier: finding.identifier,
       category: finding.category,

@@ -187,7 +187,6 @@ def test_the_openclaw_bridge_share_path_is_the_r1_signed_community_path():
     quads = (src / "quads.ts").read_text(encoding="utf-8")
     assert "effectiveDailyReportLimit(" in config and "dailyReportLimit: 0" not in config   # 0 is never "no cap"
     assert "rt.client.shareReport(rt.cfg.contextGraphId, name, quads)" in index         # the community's shared memory
-    assert "ensureReportLane(rt.client, rt.cfg.contextGraphId" in index                 # its sub-graph, never the root
     assert "sharingConsentInForce(rt.cfg.blackboxHome)" in index                          # R13 gate
     assert "if (!signer) return;" in index                                               # a node that cannot sign does not share
     assert "validateReport(" in quads and "BLACKBOX_SIGNED_STATEMENT_PRED" in quads       # R1 schema + R0b envelope

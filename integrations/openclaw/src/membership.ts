@@ -7,11 +7,12 @@
  * itself, also through Cores only (DKG 10.0.25: OriginTrail/dkg#3303, #3311). It is public: no
  * join step (D-040). Subscribe with shared memory once per process — a node subscribed VM-only
  * gets its shared memory added — and believe it when the node's answer covers shared memory;
- * otherwise (a refusal, or a VM-only catch-up still running) retry after FAILED_RETRY_MS. Before
- * the first write the "reports" sub-graph is registered on this node. Fail-open: errors are
- * logged, never thrown.
+ * otherwise (a refusal, or a VM-only catch-up still running) retry after FAILED_RETRY_MS. The
+ * bridge registers no sub-graph: it writes into the "reports" sub-graph the graph's owner
+ * registered (DKG 10.0.25 looks that up at a member's first write, OriginTrail/dkg#3306).
+ * Fail-open: errors are logged, never thrown.
  */
-import { COMMUNITY_SUB_GRAPH, type DkgClient } from "./dkgClient.js";
+import type { DkgClient } from "./dkgClient.js";
 
 export const RETRY_MS = 600_000;
 export const FAILED_RETRY_MS = 60_000;
@@ -21,8 +22,6 @@ export interface MembershipState {
   lastAttemptAt?: number;
   /** The node took the subscription WITH shared memory (this process). */
   withSharedMemory?: boolean;
-  /** The "reports" sub-graph is registered on this node. */
-  laneReady?: boolean;
 }
 
 /** Whether a subscribe answer covers shared memory: an already-running catch-up keeps its own setting. */
@@ -60,24 +59,4 @@ export async function ensureCommunitySubscription(
     log(`blackbox: subscribe with shared memory failed (retry in ${FAILED_RETRY_MS / 1000}s): ${(err as Error).message}`);
     return false;
   }
-}
-
-/** Register the community sub-graph on this node before its first write there ("already exists" counts as ready). */
-export async function ensureReportLane(
-  client: DkgClient,
-  graph: string,
-  state: MembershipState,
-  log: (msg: string) => void,
-): Promise<boolean> {
-  if (state.laneReady) return true;
-  try {
-    await client.createSubGraph(graph, COMMUNITY_SUB_GRAPH);
-  } catch (err) {
-    if (!String((err as Error).message).includes("already exists")) {
-      log(`blackbox: could not register the community sub-graph on this node: ${(err as Error).message}`);
-      return false;
-    }
-  }
-  state.laneReady = true;
-  return true;
 }

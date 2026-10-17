@@ -165,11 +165,6 @@ export class DkgClient {
     return this.request("/api/context-graph/subscribe", { contextGraphId, includeSharedMemory });
   }
 
-  /** Register a named sub-graph of a context graph on this node (a node writes into one only once it is). */
-  async createSubGraph(contextGraphId: string, subGraphName: string): Promise<unknown> {
-    return this.request("/api/sub-graph/create", { contextGraphId, subGraphName });
-  }
-
   /**
    * The explicit v10 share lifecycle Python `share_knowledge_asset` uses: write/seal the
    * asset in WM (`alsoShareSwm:false`), then queue `/swm/share-async` and poll the job — both

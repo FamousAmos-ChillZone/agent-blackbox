@@ -169,7 +169,7 @@ def send_report(client: DkgClient, graph: str, name: str, quads: list[dict[str, 
     if audit.previously_accepted(name):
         return ShareOutcome.REJECTED_SAME_VERSION, "already shared earlier; a same-version re-share is refused by peers"
     try:
-        membership.ensure_report_lane(client, graph)   # the community subgraph, registered once per process
+        membership.ensure_report_lane(client, graph)   # registers the sub-graph on the graph owner's node only
         result = client.share_knowledge_asset(graph, name, quads)
     except Exception as exc:  # the outermost send boundary: any failure is FAILED, never raised
         if isinstance(exc, DkgError) and ALREADY_SEALED_REPLY in str(exc).lower():
