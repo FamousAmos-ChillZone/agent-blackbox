@@ -50,12 +50,36 @@ def _function(name: str) -> str:
     raise AssertionError(f"{name}() has no end")
 
 
+# The ONLY folder on the sandbox's PATH (LES-064). The rollback under test really runs
+# `launchctl bootout`, `systemctl disable --now`, `docker rm`: with /bin on PATH after the
+# stubs, one unstubbed call reached the real launchd and unloaded a real Blackbox node on
+# the Mac that ran this suite (2026-10-17). Ordinary tools are linked in one by one; every
+# tool that can touch the machine's services is a stub that only records its call.
+_ORDINARY_TOOLS = ("awk", "cat", "chmod", "cksum", "cp", "cut", "dirname", "grep", "head", "ls", "mkdir",
+                   "mktemp", "ps", "rm", "sed", "sleep", "sort", "tail", "touch", "tr", "id", "wc", "date")
+_SERVICE_TOOLS = ("launchctl", "systemctl", "loginctl", "osascript", "docker", "pgrep", "open")
+
+
+def _isolated_bin(bin_dir: Path, calls: Path) -> None:
+    import shutil
+    for tool in _ORDINARY_TOOLS:
+        real = shutil.which(tool, path="/usr/bin:/bin:/usr/sbin:/sbin")
+        if real and not (bin_dir / tool).exists():
+            (bin_dir / tool).symlink_to(real)
+    for tool in _SERVICE_TOOLS:
+        if not (bin_dir / tool).exists():
+            (bin_dir / tool).write_text(f'#!/bin/sh\necho "{tool} $*" >>{shlex.quote(str(calls))}\nexit 1\n',
+                                        encoding="utf-8")
+            (bin_dir / tool).chmod(0o755)
+
+
 def _sandbox(tmp_path: Path) -> dict[str, Path]:
     home = tmp_path / "home"
     home.mkdir()
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    return {"home": home, "bin": bin_dir, "root": home / "agent-blackbox", "hermes": home / ".hermes"}
+    return {"home": home, "bin": bin_dir, "root": home / "agent-blackbox", "hermes": home / ".hermes",
+            "service_calls": tmp_path / "service-calls"}
 
 
 def _script(paths: dict[str, Path], body: str) -> str:
@@ -65,7 +89,7 @@ def _script(paths: dict[str, Path], body: str) -> str:
 set -euo pipefail
 HOME={q["home"]}
 USER=tester
-PATH={q["bin"]}:/usr/bin:/bin
+PATH={q["bin"]}
 BLACKBOX_INSTALL_ROOT={q["root"]}
 HERMES_HOME={q["hermes"]}
 BLACKBOX_HOME="$HERMES_HOME/blackbox"
@@ -89,6 +113,7 @@ blackbox_dkg() {{ echo "dkg $*" >>"$HOME/calls"; }}
 
 
 def _run(paths: dict[str, Path], body: str, **kwargs) -> subprocess.CompletedProcess[str]:
+    _isolated_bin(paths["bin"], paths["service_calls"])
     return subprocess.run(["bash", "-c", _script(paths, body)], capture_output=True, text=True,
                           check=False, timeout=60, **kwargs)
 
@@ -170,6 +195,7 @@ install_record_commit
 def test_ctrl_c_rolls_the_install_back(tmp_path: Path) -> None:
     paths = _sandbox(tmp_path)
     ready = tmp_path / "ready"
+    _isolated_bin(paths["bin"], paths["service_calls"])
     process = subprocess.Popen(["bash", "-c", _script(paths, f"""
 install_record_begin
 mkdir -p "$BLACKBOX_INSTALL_ROOT"
@@ -509,6 +535,7 @@ def _docker_start(tmp_path: Path, *, already_open: bool) -> list[str]:
     }.items():
         (bin_dir / name).write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
         (bin_dir / name).chmod(0o755)
+    _isolated_bin(bin_dir, tmp_path / "service-calls")
     apps = tmp_path / "Applications" / "Docker.app"
     apps.mkdir(parents=True)
     script = f"""
@@ -521,7 +548,7 @@ docker_setup_hint() {{ :; }}
 {_function("require_docker_for_blazegraph")}
 OS=macos
 HOME={shlex.quote(str(tmp_path))}
-PATH={shlex.quote(str(bin_dir))}:/usr/bin:/bin
+PATH={shlex.quote(str(bin_dir))}
 require_docker_for_blazegraph
 echo "opened=${{BLACKBOX_OPENED_DOCKER_DESKTOP:-false}}" >>{shlex.quote(str(calls))}
 """
@@ -539,3 +566,16 @@ def test_a_docker_desktop_the_user_had_open_is_left_running(tmp_path: Path) -> N
     calls = _docker_start(tmp_path, already_open=True)
 
     assert calls == ["open -gja Docker", "opened=false"]
+
+
+def test_the_sandbox_reaches_no_real_service_manager(tmp_path: Path) -> None:
+    """LES-064 guard: every tool that can change the machine resolves to a recording stub."""
+    paths = _sandbox(tmp_path)
+
+    result = _run(paths, 'for tool in launchctl systemctl loginctl osascript docker; do command -v "$tool"; done')
+
+    resolved = result.stdout.split()
+    assert len(resolved) == 5
+    assert all(path.startswith(str(paths["bin"])) for path in resolved), resolved
+    for path in resolved:
+        assert not Path(path).is_symlink()
