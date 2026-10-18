@@ -493,3 +493,49 @@ def test_rollback_closes_docker_desktop_only_when_this_run_opened_it(tmp_path: P
 
     _run(paths, "install_record_begin\nBLACKBOX_OPENED_DOCKER_DESKTOP=true\nfalse\n")
     assert calls.read_text(encoding="utf-8").strip() == '-e quit app "Docker"'
+
+
+def _docker_start(tmp_path: Path, *, already_open: bool) -> list[str]:
+    """require_docker_for_blazegraph on a Mac whose Docker engine never comes up."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "calls"
+    for name, body in {
+        "docker": "exit 1",
+        "open": f'echo "open $*" >>{shlex.quote(str(calls))}',
+        "osascript": f'echo "osascript $*" >>{shlex.quote(str(calls))}',
+        "pgrep": "exit 0" if already_open else "exit 1",
+        "sleep": "exit 0",
+    }.items():
+        (bin_dir / name).write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+        (bin_dir / name).chmod(0o755)
+    apps = tmp_path / "Applications" / "Docker.app"
+    apps.mkdir(parents=True)
+    script = f"""
+step() {{ :; }}
+ok() {{ :; }}
+warn() {{ :; }}
+err() {{ :; }}
+heading() {{ :; }}
+docker_setup_hint() {{ :; }}
+{_function("require_docker_for_blazegraph")}
+OS=macos
+HOME={shlex.quote(str(tmp_path))}
+PATH={shlex.quote(str(bin_dir))}:/usr/bin:/bin
+require_docker_for_blazegraph
+echo "opened=${{BLACKBOX_OPENED_DOCKER_DESKTOP:-false}}" >>{shlex.quote(str(calls))}
+"""
+    subprocess.run(["bash", "-c", script], check=False, timeout=60)
+    return calls.read_text(encoding="utf-8").splitlines()
+
+
+def test_a_docker_desktop_this_run_opened_is_closed_when_its_engine_never_comes_up(tmp_path: Path) -> None:
+    calls = _docker_start(tmp_path, already_open=False)
+
+    assert calls == ["open -gja Docker", 'osascript -e quit app "Docker"', "opened=false"]
+
+
+def test_a_docker_desktop_the_user_had_open_is_left_running(tmp_path: Path) -> None:
+    calls = _docker_start(tmp_path, already_open=True)
+
+    assert calls == ["open -gja Docker", "opened=false"]

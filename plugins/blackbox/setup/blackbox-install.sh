@@ -657,9 +657,13 @@ require_docker_for_blazegraph() {
     fi
     if [ "$OS" = "macos" ] && command -v docker >/dev/null 2>&1 &&
         [ -d "/Applications/Docker.app" -o -d "$HOME/Applications/Docker.app" ]; then
-        step "Docker Desktop is installed but stopped; starting it now ..."
+        # Only a Docker Desktop this run opens is this run's to close again; one the user
+        # already had open (even with its engine stuck) is left as it is.
+        if ! pgrep -f 'Docker.app/Contents/MacOS/' >/dev/null 2>&1; then
+            BLACKBOX_OPENED_DOCKER_DESKTOP=true
+        fi
+        step "Docker Desktop's engine is not running; starting it now ..."
         open -gja Docker >/dev/null 2>&1 || true
-        BLACKBOX_OPENED_DOCKER_DESKTOP=true
         local waited=0
         while [ "$waited" -lt 120 ]; do
             if docker info >/dev/null 2>&1; then
@@ -675,7 +679,10 @@ require_docker_for_blazegraph() {
         warn "Docker Desktop did not become ready within 120 seconds."
         # This run opened it, so this run closes it again: a failed start must not leave
         # a half-started Docker Desktop behind on the machine.
-        osascript -e 'quit app "Docker"' >/dev/null 2>&1 || true
+        if [ "${BLACKBOX_OPENED_DOCKER_DESKTOP:-false}" = true ]; then
+            osascript -e 'quit app "Docker"' >/dev/null 2>&1 || true
+            BLACKBOX_OPENED_DOCKER_DESKTOP=false
+        fi
     fi
     if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
         BLACKBOX_DOCKER_REQUIRED=true
@@ -2820,7 +2827,7 @@ rollback_docker_store() {
 
 # Docker Desktop that this run opened is closed again (its store containers are already gone).
 rollback_docker_desktop() {
-    [ "$BLACKBOX_OPENED_DOCKER_DESKTOP" = true ] || return 0
+    [ "${BLACKBOX_OPENED_DOCKER_DESKTOP:-false}" = true ] || return 0
     osascript -e 'quit app "Docker"' >/dev/null 2>&1
     return 0
 }
