@@ -2006,9 +2006,9 @@ install_dkg() {
 # The first verified threat-graph sync is NOT part of the install (Amos, 2026-10-17): it
 # takes about half an hour and depends on the network, so waiting for it would turn a slow
 # connection into a failed install — and, all or nothing, roll back a working one. The
-# dashboard's own sync worker starts it about ten seconds after the dashboard starts, runs
-# the same controlled `blackbox sync --wait --require-rules` the installer used to, keeps
-# the graph current afterwards, and shows the progress.
+# dashboard's own sync worker (the dashboard is started next, by main) starts it about ten
+# seconds after the dashboard starts, runs the same controlled `blackbox sync --wait
+# --require-rules` the installer used to, keeps the graph current, and shows the progress.
 sync_ruleset() {
     [ "${DKG_READY:-false}" = true ] || return 0
     heading "Threat graph"
@@ -2019,7 +2019,6 @@ sync_ruleset() {
             return 0
             ;;
     esac
-    start_dashboard
     ok "The first threat-graph sync runs in the background (about 30 minutes)"
     step "Follow it on the dashboard: http://127.0.0.1:${BLACKBOX_DASHBOARD_PORT:-9700}"
     ok "DKG native reconciliation enabled; one in-flight slot; zero queue"

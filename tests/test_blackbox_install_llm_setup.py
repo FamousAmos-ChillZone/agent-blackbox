@@ -330,7 +330,7 @@ def test_unix_installer_hands_the_first_sync_to_the_dashboard() -> None:
     dashboard's own sync worker runs the same controlled sync."""
     sync_body = _extract_function_body("sync_ruleset")
 
-    assert "start_dashboard" in sync_body
+    assert "start_dashboard" not in sync_body   # main starts it right after, once (a second launch replaced the first)
     assert "blackbox sync --wait" not in sync_body.replace('echo "    blackbox sync --wait --require-rules"', "")
     assert "BLACKBOX_INSTALL_INCOMPLETE=true" not in sync_body
     assert "run_detached" not in sync_body
@@ -363,10 +363,10 @@ echo "incomplete=$BLACKBOX_INSTALL_INCOMPLETE"
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash is unavailable")
-def test_unix_installer_starts_the_dashboard_and_does_not_wait_for_the_sync(tmp_path: Path) -> None:
+def test_unix_installer_does_not_wait_for_the_sync(tmp_path: Path) -> None:
     events, stdout = _run_sync_ruleset(tmp_path, "1")
 
-    assert events == ["dashboard"]
+    assert events == []   # no sync run here; the dashboard main starts next runs it
     assert "incomplete=false" in stdout
 
 
