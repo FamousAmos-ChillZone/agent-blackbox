@@ -262,14 +262,14 @@ def test_llm_setup_is_optional_not_install_blocking() -> None:
     assert not re.search(r"<\s*/dev/tty", body), "installer must not prompt for optional LLM setup"
 
 
-def test_next_steps_only_blocks_on_threat_graph_sync() -> None:
+def test_next_steps_describes_the_kept_install_and_the_background_sync() -> None:
     body = _extract_function_body("next_steps")
 
     assert "BLACKBOX_THREAT_GRAPH_INCOMPLETE" in body
     assert "BLACKBOX_LLM_INCOMPLETE" not in body
     assert "The LLM reviewer is not configured yet." not in body
-    assert "A partial verified ruleset is active" in body
-    assert "BLACKBOX_PARTIAL_RULESET_READY" in body
+    assert "the first sync runs in the background" in body
+    assert "BLACKBOX_INSTALL_INCOMPLETE" not in body   # an incomplete install is rolled back, never summarised
 
 
 def test_unix_installer_is_directly_executable_and_detaches_background_processes(
@@ -324,77 +324,59 @@ def test_unix_installer_uses_a_real_session_boundary_for_dashboard() -> None:
     assert "close_fds=True" in body
 
 
-def test_unix_installer_starts_dashboard_before_one_controlled_sync() -> None:
-    run_body = _extract_function_body("run_detached")
-    health_body = _extract_function_body("detached_process_survived_startup")
+def test_unix_installer_hands_the_first_sync_to_the_dashboard() -> None:
+    """The install does not wait for the ~30-minute first sync (Amos, 2026-10-17): a slow
+    network must not fail — and, all or nothing, roll back — a working install. The
+    dashboard's own sync worker runs the same controlled sync."""
     sync_body = _extract_function_body("sync_ruleset")
 
-    assert 'BLACKBOX_DETACHED_PID=$!' in run_body
-    assert 'kill -0 "$pid"' in health_body
-    assert "run_detached" not in sync_body
-    assert "restart_blackbox_dkg_for_sync_mode" not in sync_body
-    assert 'BLACKBOX_INSTALL_INCOMPLETE=true' in sync_body
-    assert 'BLACKBOX_THREAT_GRAPH_INCOMPLETE=true' in sync_body
-    assert "one controlled verified graph catch-up" in sync_body
     assert "start_dashboard" in sync_body
-    assert ': >"$BLACKBOX_SYNC_LOG"' in sync_body
-    assert 'tee -a "$BLACKBOX_SYNC_LOG"' in sync_body
-    assert sync_body.index("start_dashboard") < sync_body.index("blackbox sync --wait")
+    assert "blackbox sync --wait" not in sync_body.replace('echo "    blackbox sync --wait --require-rules"', "")
+    assert "BLACKBOX_INSTALL_INCOMPLETE=true" not in sync_body
+    assert "run_detached" not in sync_body
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is unavailable")
-def test_unix_installer_opens_dashboard_before_fresh_sync_starts(
-    tmp_path: Path,
-) -> None:
-    sync_body = _extract_function_body("sync_ruleset")
-    hermes_home = tmp_path / "hermes"
-    log_dir = hermes_home / "logs"
-    log_dir.mkdir(parents=True)
-    sync_log = log_dir / "blackbox-sync-install.log"
-    # A previous successful install log is cleared before the new sync.
-    sync_log.write_text("999 verified threats ready\n", encoding="utf-8")
+def _run_sync_ruleset(tmp_path: Path, auto_dashboard: str) -> tuple[list[str], str]:
     events = tmp_path / "events"
+    events.write_text("", encoding="utf-8")
     fake_hermes = tmp_path / "fake-hermes"
-    fake_hermes.write_text(
-        "#!/usr/bin/env bash\n"
-        f"echo sync-started >> {shlex.quote(str(events))}\n"
-        "echo 'starting fresh sync'\n"
-        "sleep 0.2\n"
-        "echo '  10 verified threats ready'\n"
-        "sleep 1.4\n"
-        f"echo sync-finished >> {shlex.quote(str(events))}\n",
-        encoding="utf-8",
-    )
+    fake_hermes.write_text(f"#!/usr/bin/env bash\necho sync-started >> {shlex.quote(str(events))}\n", encoding="utf-8")
     fake_hermes.chmod(0o755)
     command = f"""
 set -euo pipefail
 heading() {{ :; }}
-step() {{ :; }}
+step() {{ echo "$1"; }}
 ok() {{ :; }}
-err() {{ :; }}
-restart_blackbox_dkg_for_sync_mode() {{ return 0; }}
 start_dashboard() {{ echo dashboard >> {shlex.quote(str(events))}; }}
 sync_ruleset() {{
-{sync_body}
+{_extract_function_body("sync_ruleset")}
 }}
 DKG_READY=true
-HERMES_HOME={shlex.quote(str(hermes_home))}
 HERMES_BIN={shlex.quote(str(fake_hermes))}
-BLACKBOX_DKG_CATCHUP_TIMEOUT=30
-BLACKBOX_DKG_STEADY_DURABLE_SYNC_ENABLED=0
-BLACKBOX_AUTO_DASHBOARD=1
+BLACKBOX_AUTO_DASHBOARD={auto_dashboard}
 BLACKBOX_INSTALL_INCOMPLETE=false
-BLACKBOX_THREAT_GRAPH_INCOMPLETE=false
-BLACKBOX_SYNC_LOG=''
 sync_ruleset
+echo "incomplete=$BLACKBOX_INSTALL_INCOMPLETE"
 """
+    completed = subprocess.run(["bash", "-c", command], check=True, timeout=10, capture_output=True, text=True)
+    return events.read_text(encoding="utf-8").splitlines(), completed.stdout
 
-    subprocess.run(["bash", "-c", command], check=True, timeout=10)
-    assert events.read_text(encoding="utf-8").splitlines() == [
-        "dashboard",
-        "sync-started",
-        "sync-finished",
-    ]
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is unavailable")
+def test_unix_installer_starts_the_dashboard_and_does_not_wait_for_the_sync(tmp_path: Path) -> None:
+    events, stdout = _run_sync_ruleset(tmp_path, "1")
+
+    assert events == ["dashboard"]
+    assert "incomplete=false" in stdout
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is unavailable")
+def test_unix_installer_without_dashboard_names_the_sync_command(tmp_path: Path) -> None:
+    events, stdout = _run_sync_ruleset(tmp_path, "0")
+
+    assert events == []
+    assert "blackbox sync --wait --require-rules" in stdout
+    assert "incomplete=false" in stdout
 
 
 def test_installers_enable_blackbox_noninteractively() -> None:
@@ -469,7 +451,7 @@ def test_unix_installer_uses_isolated_blackbox_dkg_node() -> None:
     assert '"options": {"url": store_url, "managedByDkg": store_managed, "timeout": 900000}' in text
     assert "blackbox-blazegraph.mjs" in text
     assert 'blackbox_dkg subscribe "$blackbox_cg" --save' not in text
-    assert '"$HERMES_BIN" blackbox sync --wait' in text
+    assert '"$HERMES_BIN" blackbox sync --wait' not in text   # the dashboard runs the first sync
     assert "uses_unpaired_shared_dkg_home" in text
     assert "uses_legacy_blackbox_dkg_home" in text
     assert "migrate_legacy_blackbox_dkg_home" in text
@@ -1235,8 +1217,8 @@ def test_installers_offer_both_store_backends_and_actionable_docker_setup() -> N
     assert "brew install --cask docker && open -a Docker" in unix
     assert "Docker.DockerDesktop" in windows
     assert "docker info" in unix and "docker info" in windows
-    assert "Continue with Oxigraph instead? [y/N]" in unix
-    assert "Continue with Oxigraph instead? [y/N]" in windows
+    assert "Continue with Oxigraph? [Y/n]" in unix   # yes by default (Amos, 2026-10-17)
+    assert "Continue with Oxigraph instead? [y/N]" in windows   # Windows parity: next installer change
     assert "confirm_oxigraph_fallback" in unix
     assert "Confirm-OxigraphFallback" in windows
     assert "Installation stopped before changing the DKG store" in unix
@@ -1261,8 +1243,9 @@ confirm_oxigraph_fallback "Docker unavailable"
         check=False,
     )
 
-    assert completed.returncode == 1
-    assert "No interactive terminal is available" in completed.stdout
+    # No terminal (an agent, a script): Oxigraph is chosen, never a dead end (Amos, 2026-10-17).
+    assert completed.returncode == 0
+    assert "No terminal to ask" in completed.stdout
     assert "Device not configured" not in completed.stderr
 
 
@@ -1550,7 +1533,6 @@ def test_installers_use_native_dkg_membership_without_sync_overrides() -> None:
     assert 'BLACKBOX_DKG_SYNC_GLOBAL_QUEUE_LIMIT="1"' in unix
     assert 'BLACKBOX_DKG_DURABLE_SYNC_ENABLED="${BLACKBOX_DKG_DURABLE_SYNC_ENABLED:-1}"' in unix
     assert 'BLACKBOX_DKG_CATCHUP_MAX_CONCURRENT_PEERS="1"' in unix
-    assert "PYTHONUNBUFFERED=1" in unix
     assert 'BLACKBOX_DKG_STORE_QUEUE_WAIT_TIMEOUT_MS="300000"' in unix
     assert '$DkgSyncGlobalMaxInflight = "1"' in windows
     assert '$DkgSyncGlobalQueueLimit = "1"' in windows
