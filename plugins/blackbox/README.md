@@ -558,6 +558,18 @@ you report the problem:
 blackbox sync --wait --timeout 180
 ```
 
+## Direct local graph queries (opt-in)
+
+See [Direct graph reads](docs/DIRECT_GRAPH_READS.md) for the paired DKG capability,
+configuration, compatibility limits and validation gates. The default remains
+`legacy-cache` until that migration is explicitly selected.
+
+### Core snapshot sync
+
+The [core snapshot sync guide](CORE_SNAPSHOT_SYNC.md) describes the optional
+new DKG capability, configured-core trust (default within that path), independent
+RPC mode, and full-coverage validation without a rule export.
+
 ## About
 
 ![Umanitek](../../docs/umanitek-logo-footer.png)

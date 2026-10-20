@@ -2045,6 +2045,7 @@ if os.path.exists(cfg_path):
 plugins = data.setdefault("plugins", {})
 entries = plugins.setdefault("entries", {})
 blackbox = entries.setdefault("blackbox", {})
+fresh_sync_profile = not any(k in blackbox for k in ("context_graph_id", "detection_backend", "snapshot_sync", "dkg_home"))
 # Idempotent for custom user edits, but migrate deprecated defaults that point
 # at the user's shared DKG install or a retired community graph.
 legacy_dkg_urls = {"http://127.0.0.1:9200", "http://localhost:9200"}
@@ -2124,6 +2125,12 @@ defaults = {
     # Optional LLM reviewer — off until `blackbox setup-llm` fills it in.
     "llm": {"enabled": False, "provider": "", "model": "", "api_key": ""},
 }
+# A fresh Base profile can use any authenticated registered Core. Explicit
+# profiles survive re-runs. The daemon capability gate refuses older versions.
+if (fresh_sync_profile and os.environ.get("BLACKBOX_DKG_NETWORK", "mainnet-base") == "mainnet-base"
+        and context_graph_id == "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"):
+    defaults.update(detection_backend="dkg", snapshot_sync={"on_chain_id": "14",
+        "trusted_core_peers": [], "mode": "core-cache", "source_policy": "base-mainnet-registered-cores"})
 for k, v in defaults.items():
     if k not in blackbox:
         blackbox[k] = v
