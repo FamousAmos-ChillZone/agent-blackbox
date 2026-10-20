@@ -90,3 +90,14 @@ def test_registered_policy_cannot_mix_in_explicit_peers_or_guess_custom_graph_id
     with pytest.raises(ValueError, match="snapshot-graph-id"):
         profile.configure(argparse.Namespace(registered_cores=True))
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("contents", ["plugins: [", "- one\n- two\n", "an invalid scalar\n"])
+def test_setup_keeps_unparseable_or_non_mapping_config_unchanged(tmp_path, monkeypatch, contents):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    path = tmp_path / "config.yaml"
+    path.write_text(contents, encoding="utf-8")
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="could not be read"):
+        profile.configure(args())
+    assert path.read_bytes() == before

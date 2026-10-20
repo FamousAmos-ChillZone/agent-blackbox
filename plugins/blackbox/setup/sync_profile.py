@@ -1,5 +1,6 @@
 """Fresh Base profiles use registered cores; existing trust settings are retained."""
 import os
+from hermes_cli.config import require_readable_config_before_write
 from ..kernel import constants, yaml_files
 from ..kernel.snapshot_config import DKG_CORE_CHAIN_CACHE, REGISTERED_BASE_CORES, snapshot_config
 
@@ -16,13 +17,9 @@ def configure(args):
     if path.is_symlink():
         raise ValueError("Configure the snapshot profile in the linked config file explicitly")
     try:
-        data = yaml_files.yaml.safe_load(path.read_text(encoding="utf-8-sig")) if path.exists() else {}
+        data = require_readable_config_before_write(path)
     except Exception as exc:
         raise ValueError("Existing config.yaml could not be read; it was not changed") from exc
-    if data is None:
-        data = {}
-    if not isinstance(data, dict):
-        raise ValueError("Existing config.yaml must be a mapping")
     target = data
     for key in ("plugins", "entries", "blackbox"):
         target = target.setdefault(key, {})
