@@ -60,7 +60,7 @@ def test_fresh_base_profile_uses_registered_cores_and_existing_profiles_stay_exp
     monkeypatch.delenv("BLACKBOX_CONTEXT_GRAPH_ID", raising=False)
     profile.configure(argparse.Namespace())
     cfg = config.load_blackbox_config()
-    assert cfg.snapshot_sync.source_policy == "base-mainnet-registered-cores"
+    assert cfg.snapshot_sync.source_policy == "DKG_Core_chain_cache"
     assert cfg.snapshot_sync.trusted_core_peers == () and cfg.snapshot_sync.on_chain_id == "14"
     assert cfg.detection_backend == "dkg"
     path = tmp_path / "config.yaml"

@@ -1,14 +1,15 @@
 """Fresh Base profiles use registered cores; existing trust settings are retained."""
 import os
 from ..kernel import constants, yaml_files
-from ..kernel.snapshot_config import REGISTERED_BASE_CORES, snapshot_config
+from ..kernel.snapshot_config import DKG_CORE_CHAIN_CACHE, REGISTERED_BASE_CORES, snapshot_config
 
 
 def configure(args):
     graph_id = getattr(args, "snapshot_graph_id", None)
     peers = getattr(args, "trusted_core_peer", None)
     registered = getattr(args, "registered_cores", False)
-    explicit = graph_id is not None or bool(peers) or registered
+    cache = getattr(args, "dkg_core_chain_cache", False)
+    explicit = graph_id is not None or bool(peers) or registered or cache
     path = constants.hermes_home() / "config.yaml"
     if yaml_files.yaml is None:
         raise ValueError("YAML support is required to configure snapshot sync")
@@ -35,21 +36,22 @@ def configure(args):
                 or os.environ.get("BLACKBOX_CONTEXT_GRAPH_ID", constants.DEFAULT_CONTEXT_GRAPH_ID)
                 != constants.DEFAULT_CONTEXT_GRAPH_ID):
             return
-        registered, graph_id = True, "14"
-    if registered and peers:
+        cache, graph_id = True, "14"
+    if (registered or cache) and peers or (registered and cache):
         raise ValueError("Choose registered cores or explicit peers, not both")
-    if registered and graph_id is None:
-        if target.get("context_graph_id", constants.DEFAULT_CONTEXT_GRAPH_ID) != constants.DEFAULT_CONTEXT_GRAPH_ID:
+    if (registered or cache) and graph_id is None:
+        if (target.get("context_graph_id", constants.DEFAULT_CONTEXT_GRAPH_ID) != constants.DEFAULT_CONTEXT_GRAPH_ID
+                or os.environ.get("BLACKBOX_DKG_NETWORK", "mainnet-base") != "mainnet-base"):
             raise ValueError("A custom graph requires --snapshot-graph-id")
         graph_id = "14"
     requested = {"detection_backend": "dkg", "snapshot_sync": {
         "on_chain_id": graph_id or "", "trusted_core_peers": peers or [], "mode": "core-cache",
-        **({"source_policy": REGISTERED_BASE_CORES} if registered else {})}}
+        **({DKG_CORE_CHAIN_CACHE: True} if cache else {"source_policy": REGISTERED_BASE_CORES} if registered else {})}}
     snapshot_config(requested)
     existing = target.get("snapshot_sync")
     if existing is not None and existing != requested["snapshot_sync"]:
         raise ValueError("Existing snapshot trust differs; use a fresh profile for a different trust scope")
     target.update(requested)
     yaml_files.dump_yaml(path, data)
-    print("Snapshot sync configured: chain statements come from the selected cores; "
+    print("Lower RPC usage by using the DKG Core chain cache: chain statements come from registered cores; "
           "asset identity and content roots are still verified. No automatic trust fallback.")

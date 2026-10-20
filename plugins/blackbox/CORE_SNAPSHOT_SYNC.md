@@ -13,22 +13,62 @@ DKG patch and update `setup.DKG_PACKAGE` / `DKG_INTEGRITY` to that verified
 release. An older daemon returns `DKG_UPGRADE_REQUIRED` before an automatic
 transfer; Blackbox never silently changes the trust policy.
 
-Fresh default Base mainnet installations select from all eligible registered
-cores. No particular serving peer is hardcoded. The daemon checks a signed,
-graph-specific challenge against the peer's registered operational key and
-active ShardingTable membership on Base. It probes a bounded candidate set,
-pins at most four cores for the job, and retains the existing verification
-and deadlines. A core must be upgraded and host the graph to qualify.
+The user-facing option is **Lower RPC usage by using the DKG Core chain cache**.
+Enable `DKG_Core_chain_cache: true` in the local DKG node's `config.json`.
+Upgraded official cores serve the cache by default; a core operator can disable
+it with `false`. Edges opt in. Mainnet accepts registrations from the locally
+shipped official mainnet deployments; testnet uses the identical implementation
+with its own official registries. Private deployments and the other environment
+never establish trust. A peer cannot provide an RPC URL or registry contract.
 
-An existing default-graph profile can explicitly select this behavior with:
+For Blackbox, use:
 
 ```sh
-blackbox setup --registered-cores
+blackbox setup --dkg-core-chain-cache --snapshot-graph-id REGISTERED_GRAPH_NUMERIC_ID
 ```
 
-Existing explicit snapshot scopes are retained; changing their trust policy
-requires a fresh profile. Custom graphs require their own registration ID.
-The default graph's registration is `14` on Base mainnet.
+Or configure `plugins.entries.blackbox.snapshot_sync` in `config.yaml`:
+
+```yaml
+on_chain_id: "REGISTERED_GRAPH_NUMERIC_ID"
+DKG_Core_chain_cache: true
+mode: core-cache
+```
+
+Set `detection_backend: dkg` on the Blackbox entry. Setting the cache option to
+`false` disables this automatic snapshot profile and keeps ordinary sync;
+conflicting explicit trust settings are refused. Existing explicit peer scopes
+and the legacy `--registered-cores` Base-only policy remain supported without
+an automatic trust-scope migration.
+
+Fresh default Base profiles use graph registration `14`. A custom graph or
+another data network needs its own registration ID; the option never maps
+Base graph 14 onto another chain. Existing profiles are retained.
+
+The selected core signs a fresh, peer- and graph-bound challenge. The Edge
+checks its operational key and active ShardingTable registration on that core's
+registration deployment. The proof separately binds the requested data chain
+and deployment. At most 16 candidates are probed, four at a time, and up to four
+proven cache suppliers are pinned. Eligibility is not a promise that every core
+is reachable or upgraded; configured official relays and discovered peers are
+bounded discovery hints, not trust evidence.
+
+The cache supplies **DKG graph registration, asset inventory, versions and
+content roots recorded on-chain**. It does not supply arbitrary blockchain
+history or replace transaction RPC. A cache core can read these public records
+for another official chain without storing the graph's RDF. DKG content comes
+from peers admitted to the Edge's data network, and its identity and content
+roots are checked against the pinned inventory. Cross-chain cache admission
+allows only the two public cache protocols, never private graphs, publishing,
+or ordinary network traffic. Content transfer deadlines and verification stay
+unchanged. Initial and final inventories must agree before current coverage
+is reported.
+
+`chainCacheRpcUsage` in the completed job records physical registry requests
+by chain and RPC method. It excludes the node's unrelated/background RPC,
+which must be measured separately. Registration checks remain per candidate;
+per-asset chain reads are delegated to the cache core. Provider billing depends
+on method weights and plan, so request counts are not a monetary estimate.
 
 Existing profiles retain their current sync behavior. Setup can now write the
 explicit peer scope and install the pinned daemon in one command:

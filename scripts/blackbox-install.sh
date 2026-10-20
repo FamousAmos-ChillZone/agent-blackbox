@@ -934,6 +934,7 @@ data.setdefault("name", "agent-blackbox")
 data["apiPort"] = api_port
 data.setdefault("listenPort", 0)
 data["nodeRole"] = "edge"
+data.setdefault("DKG_Core_chain_cache", True)
 data["networkConfig"] = "mainnet-base"
 # Relay reachability: an edge node behind NAT must hold circuit-relay
 # reservations so other members can dial it (and so it can dial them). DKG
@@ -2130,7 +2131,7 @@ defaults = {
 if (fresh_sync_profile and os.environ.get("BLACKBOX_DKG_NETWORK", "mainnet-base") == "mainnet-base"
         and context_graph_id == "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"):
     defaults.update(detection_backend="dkg", snapshot_sync={"on_chain_id": "14",
-        "trusted_core_peers": [], "mode": "core-cache", "source_policy": "base-mainnet-registered-cores"})
+        "trusted_core_peers": [], "mode": "core-cache", "DKG_Core_chain_cache": True})
 for k, v in defaults.items():
     if k not in blackbox:
         blackbox[k] = v

@@ -38,4 +38,4 @@ def test_installer_selects_registered_cores_only_for_fresh_default_profile(tmp_p
     else:
         assert entry["detection_backend"] == "dkg"
         assert entry["snapshot_sync"] == {"on_chain_id": "14", "trusted_core_peers": [],
-                                         "mode": "core-cache", "source_policy": "base-mainnet-registered-cores"}
+                                         "mode": "core-cache", "DKG_Core_chain_cache": True}

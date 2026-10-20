@@ -12,15 +12,16 @@ core = load_blackbox("sync.core_snapshot")
 POLICY = settings.REGISTERED_BASE_CORES
 
 
-def configuration(tmp_path):
+def configuration(tmp_path, policy=POLICY):
     parsed = settings.snapshot_config({"detection_backend": "dkg", "snapshot_sync": {
-        "on_chain_id": "14", "trusted_core_peers": [], "source_policy": POLICY}})
+        "on_chain_id": "14", "trusted_core_peers": [], "source_policy": policy}})
     return config.BlackboxConfig(detection_backend="dkg", dkg_home=str(tmp_path), snapshot_sync=parsed)
 
 
+@pytest.mark.parametrize("policy", [POLICY, "DKG_Core_chain_cache"])
 @pytest.mark.parametrize("capabilities", [None, {}, {"sourcePolicies": []}, {"sourcePolicies": POLICY}])
-def test_older_or_malformed_daemon_never_starts_an_automatic_job(tmp_path, capabilities):
-    cfg = configuration(tmp_path)
+def test_older_or_malformed_daemon_never_starts_an_automatic_job(tmp_path, capabilities, policy):
+    cfg = configuration(tmp_path, policy)
     with replies([{"state": "idle", "capabilities": capabilities}]) as (url, calls):
         assert core.run(core.SnapshotSyncClient(replace(cfg, dkg_url=url)), cfg,
                         argparse.Namespace(wait=False, timeout=5)) == 2

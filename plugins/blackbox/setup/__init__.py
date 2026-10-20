@@ -113,6 +113,8 @@ def add_setup_parser(sub: argparse._SubParsersAction) -> None:
                         help="the node's store: auto (default), blazegraph (Docker) or oxigraph (no Docker)")
     parser.add_argument("--snapshot-graph-id", help="Registered numeric graph ID for core-cache sync (requires trusted cores)")
     parser.add_argument("--trusted-core-peer", action="append", help="Explicit trusted core peer; repeat for up to four cores")
+    parser.add_argument("--dkg-core-chain-cache", action="store_true",
+                        help="Lower RPC usage by using the DKG Core chain cache (official chains in the selected mainnet or testnet)")
     parser.add_argument("--registered-cores", action="store_true",
-                        help="Use authenticated registered Base mainnet cores (default for fresh Base profiles)")
+                        help="Legacy Base-only registered-core policy; use --dkg-core-chain-cache for all official chains")
     parser.set_defaults(func=cmd_setup)
