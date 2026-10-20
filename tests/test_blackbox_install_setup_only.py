@@ -55,7 +55,7 @@ main
 def test_curl_install_runs_every_step_in_the_same_order_as_before():
     steps = _main_steps(setup_only=False)
 
-    assert steps[:10] == ["banner", "detect_os", "check_git", "check_python", "ensure_node", "resolve_repo",
+    assert steps[:12] == ["banner", "detect_os", "install_record_begin", "preflight_install", "check_git", "check_python", "ensure_node", "resolve_repo",
                           "release_old_hermes_link", "install_python_env", "link_hermes", "refresh_blackbox_plugin_copy"]
     assert steps.index("run_hermes_setup") < steps.index("install_dkg")
 
@@ -65,9 +65,10 @@ def test_setup_only_skips_the_hermes_steps_and_keeps_everything_after():
     setup = _main_steps(setup_only=True)
 
     assert not set(HERMES_STEPS) & set(setup)
-    assert setup[:4] == ["banner", "detect_os", "ensure_node", "use_running_hermes"]
+    assert setup[:6] == ["banner", "detect_os", "install_record_begin", "preflight_install", "ensure_node",
+                         "use_running_hermes"]
     after_hermes = curl[curl.index("run_hermes_setup") + 1:]
-    assert setup[4:] == after_hermes
+    assert setup[6:] == after_hermes
 
 
 def _use_running_hermes(tmp_path: Path, *, hermes_on_path: bool, inner_bin: Path | None = None) -> tuple[subprocess.CompletedProcess, Path]:
