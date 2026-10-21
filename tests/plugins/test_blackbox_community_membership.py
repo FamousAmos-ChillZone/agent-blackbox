@@ -97,18 +97,19 @@ def test_a_running_vm_only_catchup_is_asked_again_a_minute_later():
 
 
 def test_once_confirmed_only_the_listing_is_read_and_only_after_the_window():
-    """The pulse calls ensure() every ~20 s: after the shared-memory subscribe the
-    node's listing is re-read once per RETRY_SECONDS, and nothing is re-subscribed."""
+    """The pulse calls ensure() every ~20 s: ONE listing read decides the join at once
+    (this open graph needs none, 2026-10-21), after the shared-memory subscribe the
+    listing is re-read once per RETRY_SECONDS, and nothing is re-subscribed."""
     clock = _Clock()
     node = _Node()
     membership = CommunityMembership(clock=clock)
     for _ in range(5):
         membership.ensure(node, _cfg())
-    assert node.listings == 0 and len(node.subscribes) == 1
+    assert node.listings == 1 and len(node.subscribes) == 1
     clock.now += CommunityMembership.RETRY_SECONDS + 1
     membership.ensure(node, _cfg())
     membership.ensure(node, _cfg())
-    assert node.listings == 1 and len(node.subscribes) == 1
+    assert node.listings == 2 and len(node.subscribes) == 1
 
 
 def test_a_node_that_lost_the_subscription_is_subscribed_again():

@@ -29,10 +29,11 @@ state:
   and ``sandbox``) before the first write there: every other node writes into
   the owner's sub-graphs as they are (DKG 10.0.25 looks the owner's
   registration up at a member's first write, OriginTrail/dkg#3306);
-* a member sends ONE join request per process when the node's own listing says
-  the owner decides who writes (private access, or a curated publish policy) —
-  positive evidence only (LES-028) — and never to itself; whether or not
-  sharing is on, so switching sharing on later needs nothing more;
+* a member sends ONE join request per process, within seconds of starting, when
+  the node's own listing says the owner decides who writes (private access, or
+  a curated publish policy) — positive evidence only (LES-028) — and never to
+  itself; whether or not sharing is on. Until that answer is known the listing
+  is read at most once a minute, and never again once it is;
 * an owner with ``community_auto_approve`` approves pending join requests at
   most once per ``APPROVE_SECONDS``.
 
@@ -88,7 +89,8 @@ class CommunityMembership:
         #: here when this node owns the graph, the owner's registration otherwise
         self._lane_ready: set[str] = set()
         self._joined: set[str] = set()          # graphs this process asked to join (or owns)
-        self._last_join: dict[str, float] = {}
+        self._open: set[str] = set()            # graphs known to need no join (open, unregistered)
+        self._last_join_probe: dict[str, float] = {}
         self._last_approve: dict[str, float] = {}
 
     def ensure_report_lane(self, client: DkgClient, graph: str) -> bool:
@@ -130,35 +132,45 @@ class CommunityMembership:
             return False, "no graph configured"
         if getattr(cfg, "community_auto_approve", False):
             self._approve_pending(client, graph)
+        self._join_check(client, cfg, graph)
         if self._recently_confirmed(graph):
             return True, "subscribed"
         if graph in self._with_shared_memory:
             entry = _graph_entry(client, graph)
             if entry and entry.get("subscribed"):
-                self._maybe_join(client, cfg, graph, entry)   # rides on this read: no extra listing call
                 self._confirm(graph)
                 return True, "subscribed"
         return self._subscribe(client, graph)
 
-    def _maybe_join(self, client: DkgClient, cfg: object, graph: str, entry: dict[str, object]) -> None:
-        """A member asks once to join a graph whose owner decides who writes. Uses the
-        listing row *entry* the caller just read — the listing is never read for this
-        alone (it is the expensive call, see ``RETRY_SECONDS``). Fail-open."""
+    def _join_check(self, client: DkgClient, cfg: object, graph: str) -> None:
+        """Decide at once whether this node must ask to join, and ask. Reads the node's
+        listing at most once per ``FAILED_SUBSCRIBE_RETRY_SECONDS`` and ONLY until the
+        answer is known — joined, or a graph that needs no join — then never again for
+        this; a fresh install asks within seconds of subscribing (Amos, 2026-10-21: no
+        wait). Positive evidence only (LES-028): an undecided listing is asked again."""
         with self._lock:
-            if graph in self._joined:
+            if graph in self._joined or graph in self._open:
                 return
-        if not self._due(self._last_join, graph):
+        if not self._due_after(self._last_join_probe, graph, self.FAILED_SUBSCRIBE_RETRY_SECONDS):
             return
-        if not needs_join(entry):
-            return   # an open graph, or the node cannot tell yet: no join (positive evidence only)
+        entry = _graph_entry(client, graph)
+        verdict = join_verdict(entry)
+        if verdict == "open":
+            with self._lock:
+                self._open.add(graph)
+        elif verdict == "join":
+            self._request_join(client, cfg, graph)
+
+    def _request_join(self, client: DkgClient, cfg: object, graph: str) -> None:
+        """Send this node's one join request for *graph* (never from the owner itself)."""
         address = identity.reporter_address(client)
         owner_peer = str(getattr(cfg, "graph_peer_id", "") or "")
         if not address or not owner_peer:
-            return
+            return   # asked again at the next probe
         if not _owns(address, graph):
             try:
                 client.request_join(graph, owner_peer)
-            except DkgError as exc:   # retried after RETRY_SECONDS
+            except DkgError as exc:   # asked again at the next probe
                 logger.info("blackbox: join request for %s failed: %s", graph, exc)
                 return
         with self._lock:
@@ -262,6 +274,22 @@ def pending_join_agents(reply: object) -> list[str]:
         if agent.startswith("0x") and len(agent) == 42:
             out.append(agent)
     return out
+
+
+def join_verdict(entry: Optional[dict[str, object]]) -> str:
+    """Pure: ``join`` (the owner decides who writes), ``open`` (definitely no join step:
+    an unregistered graph whose definition is in, or a registered one whose publish
+    policy is not curated) or ``undecided`` (not listed, or the definition or chain
+    record has not arrived yet — ask again later, never guess)."""
+    if not entry:
+        return "undecided"
+    if needs_join(entry):
+        return "join"
+    registered = bool(entry.get("onChainId")) or isinstance(entry.get("onChain"), dict)
+    if registered:
+        on_chain = entry.get("onChain") if isinstance(entry.get("onChain"), dict) else {}
+        return "open" if on_chain.get("publishPolicy") else "undecided"
+    return "open" if _has_definition(entry) else "undecided"
 
 
 def needs_join(entry: dict[str, object]) -> bool:

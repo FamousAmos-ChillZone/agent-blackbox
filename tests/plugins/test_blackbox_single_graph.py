@@ -127,15 +127,17 @@ class _MemberNode:
     """A member's node listing the verified graph as public + curated (what 10.0.25 reports)."""
 
     def __init__(self, address=MEMBER):
-        self.address, self.joins, self.listings = address, [], 0
+        self.address, self.joins, self.listings, self.chain_known = address, [], 0, True
 
     def agent_identity(self):
         return {"agentAddress": self.address}
 
     def context_graphs(self):
         self.listings += 1
-        return [{"id": TEST_GRAPH, "subscribed": True, "accessPolicy": "public",
-                 "onChain": {"publishPolicy": "curated"}}]
+        row = {"id": TEST_GRAPH, "subscribed": True, "accessPolicy": "public", "onChainId": "14"}
+        if self.chain_known:
+            row["onChain"] = {"publishPolicy": "curated"}
+        return [row]
 
     def subscribe_context_graph(self, graph, include_shared_memory=False):
         return {"subscribed": graph}
@@ -157,23 +159,51 @@ def _member_cfg(**extra):
     return SimpleNamespace(context_graph_id=TEST_GRAPH, graph_peer_id=OWNER_PEER, report=False, **extra)
 
 
-def test_a_member_asks_to_join_the_curated_graph_once_even_with_sharing_off():
+def test_a_member_asks_to_join_the_curated_graph_at_once_even_with_sharing_off():
+    """No wait (Amos, 2026-10-21): the first ensure() — seconds after install — sends the
+    join request; later calls never read the listing for it again."""
     clock, node = _Clock(), _MemberNode()
     member = CommunityMembership(clock=clock)
     member.ensure(node, _member_cfg())
-    assert node.joins == [] and node.listings == 0   # the join rides on the listing re-read, never adds one
-    for _ in range(3):
-        clock.now += CommunityMembership.RETRY_SECONDS + 1
+    assert node.joins == [(TEST_GRAPH, OWNER_PEER)] and node.listings == 1
+    for _ in range(5):
+        clock.now += 30
         member.ensure(node, _member_cfg())
-    assert node.joins == [(TEST_GRAPH, OWNER_PEER)]
+    assert node.joins == [(TEST_GRAPH, OWNER_PEER)] and node.listings == 1
+
+
+def test_an_undecided_listing_is_asked_again_after_a_minute_then_joins():
+    clock, node = _Clock(), _MemberNode()
+    node.chain_known = False          # the chain record has not reached the listing yet
+    member = CommunityMembership(clock=clock)
+    member.ensure(node, _member_cfg())
+    member.ensure(node, _member_cfg())   # inside the minute: not read again
+    assert node.joins == [] and node.listings == 1
+    node.chain_known = True
+    clock.now += CommunityMembership.FAILED_SUBSCRIBE_RETRY_SECONDS + 1
+    member.ensure(node, _member_cfg())
+    assert node.joins == [(TEST_GRAPH, OWNER_PEER)] and node.listings == 2
+
+
+@pytest.mark.parametrize(("entry", "verdict"), [
+    (None, "undecided"),
+    ({"accessPolicy": "public", "onChainId": "14", "onChain": {"publishPolicy": "curated"}}, "join"),
+    ({"accessPolicy": "private"}, "join"),
+    ({"accessPolicy": "public", "onChainId": "9", "onChain": {"publishPolicy": "open"}}, "open"),
+    ({"accessPolicy": "public", "onChainId": "14"}, "undecided"),   # registered, chain record not in yet
+    ({"accessPolicy": "public"}, "open"),                            # unregistered P2P graph
+    ({"subscribed": True}, "undecided"),                             # definition not in yet (KI-295)
+])
+def test_join_verdict(entry, verdict):
+    assert membership.join_verdict(entry) == verdict
 
 
 def test_the_owner_never_asks_itself_to_join():
     clock, node = _Clock(), _MemberNode(address="0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70")
     member = CommunityMembership(clock=clock)
-    member.ensure(node, _member_cfg())
-    clock.now += CommunityMembership.RETRY_SECONDS + 1
-    member.ensure(node, _member_cfg())
+    for _ in range(3):
+        member.ensure(node, _member_cfg())
+        clock.now += CommunityMembership.RETRY_SECONDS + 1
     assert node.joins == []
 
 
