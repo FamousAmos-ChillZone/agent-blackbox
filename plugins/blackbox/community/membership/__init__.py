@@ -147,7 +147,9 @@ class CommunityMembership:
         listing at most once per ``FAILED_SUBSCRIBE_RETRY_SECONDS`` and ONLY until the
         answer is known — joined, or a graph that needs no join — then never again for
         this; a fresh install asks within seconds of subscribing (Amos, 2026-10-21: no
-        wait). Positive evidence only (LES-028): an undecided listing is asked again."""
+        wait). Positive evidence only (LES-028): an undecided listing is asked again.
+        A node the listing already names as a member (``callerInvolved``) sends nothing,
+        so a restart never re-asks a graph this node was admitted to (bench 2026-10-21)."""
         with self._lock:
             if graph in self._joined or graph in self._open:
                 return
@@ -158,6 +160,9 @@ class CommunityMembership:
         if verdict == "open":
             with self._lock:
                 self._open.add(graph)
+        elif verdict == "member":
+            with self._lock:
+                self._joined.add(graph)
         elif verdict == "join":
             self._request_join(client, cfg, graph)
 
@@ -277,14 +282,26 @@ def pending_join_agents(reply: object) -> list[str]:
 
 
 def join_verdict(entry: Optional[dict[str, object]]) -> str:
-    """Pure: ``join`` (the owner decides who writes), ``open`` (definitely no join step:
-    an unregistered graph whose definition is in, or a registered one whose publish
-    policy is not curated) or ``undecided`` (not listed, or the definition or chain
-    record has not arrived yet — ask again later, never guess)."""
+    """Pure: what this node must do about joining the listed graph.
+
+    * ``member`` — the owner decides who writes AND the node says this node is already
+      admitted (``callerInvolved`` true: its wallet is the curator or on the allowlist);
+    * ``join`` — the owner decides who writes and the node says this node is NOT admitted;
+    * ``open`` — definitely no join step: an unregistered graph whose definition is in,
+      or a registered one whose publish policy is not curated;
+    * ``undecided`` — not listed, the definition or chain record has not arrived, or the
+      node could not tell whether this node is admitted (it leaves ``callerInvolved``
+      out when its allowlist lookup fails) — ask again later, never guess (LES-011).
+
+    ``callerInvolved`` is DKG 10.0.25's own answer for the calling agent: the curator
+    match OR ``callerIsAllowlistedAgentParticipant`` (dkg-agent-cg-resolve.js)."""
     if not entry:
         return "undecided"
     if needs_join(entry):
-        return "join"
+        involved = entry.get("callerInvolved")
+        if involved is True:
+            return "member"
+        return "join" if involved is False else "undecided"
     registered = bool(entry.get("onChainId")) or isinstance(entry.get("onChain"), dict)
     if registered:
         on_chain = entry.get("onChain") if isinstance(entry.get("onChain"), dict) else {}

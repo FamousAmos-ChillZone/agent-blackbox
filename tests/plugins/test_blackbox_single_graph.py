@@ -126,8 +126,9 @@ def test_a_private_graph_needs_a_join():
 class _MemberNode:
     """A member's node listing the verified graph as public + curated (what 10.0.25 reports)."""
 
-    def __init__(self, address=MEMBER):
+    def __init__(self, address=MEMBER, involved=False):
         self.address, self.joins, self.listings, self.chain_known = address, [], 0, True
+        self.involved = involved   # the node's callerInvolved: True admitted, False not, None could not tell
 
     def agent_identity(self):
         return {"agentAddress": self.address}
@@ -137,6 +138,8 @@ class _MemberNode:
         row = {"id": TEST_GRAPH, "subscribed": True, "accessPolicy": "public", "onChainId": "14"}
         if self.chain_known:
             row["onChain"] = {"publishPolicy": "curated"}
+        if self.involved is not None:
+            row["callerInvolved"] = self.involved
         return [row]
 
     def subscribe_context_graph(self, graph, include_shared_memory=False):
@@ -185,10 +188,16 @@ def test_an_undecided_listing_is_asked_again_after_a_minute_then_joins():
     assert node.joins == [(TEST_GRAPH, OWNER_PEER)] and node.listings == 2
 
 
+CURATED = {"accessPolicy": "public", "onChainId": "14", "onChain": {"publishPolicy": "curated"}}
+
+
 @pytest.mark.parametrize(("entry", "verdict"), [
     (None, "undecided"),
-    ({"accessPolicy": "public", "onChainId": "14", "onChain": {"publishPolicy": "curated"}}, "join"),
-    ({"accessPolicy": "private"}, "join"),
+    ({**CURATED, "callerInvolved": False}, "join"),
+    ({**CURATED, "callerInvolved": True}, "member"),                 # already admitted: nothing to send
+    (CURATED, "undecided"),                                          # the node could not tell (LES-011)
+    ({"accessPolicy": "private", "callerInvolved": False}, "join"),
+    ({"accessPolicy": "private"}, "undecided"),
     ({"accessPolicy": "public", "onChainId": "9", "onChain": {"publishPolicy": "open"}}, "open"),
     ({"accessPolicy": "public", "onChainId": "14"}, "undecided"),   # registered, chain record not in yet
     ({"accessPolicy": "public"}, "open"),                            # unregistered P2P graph
@@ -196,6 +205,30 @@ def test_an_undecided_listing_is_asked_again_after_a_minute_then_joins():
 ])
 def test_join_verdict(entry, verdict):
     assert membership.join_verdict(entry) == verdict
+
+
+def test_an_admitted_member_never_asks_again_after_a_restart():
+    """Bench 2026-10-21: restarting member 1's dashboard sent a fresh join request although
+    the owner had approved it hours before — the process forgot, and a curated listing alone
+    read as "join". The node's own callerInvolved answer now decides."""
+    clock, node = _Clock(), _MemberNode(involved=True)
+    for _restart in range(3):
+        member = CommunityMembership(clock=clock)   # a fresh process, as after a restart
+        for _ in range(3):
+            member.ensure(node, _member_cfg())
+            clock.now += CommunityMembership.FAILED_SUBSCRIBE_RETRY_SECONDS + 1
+    assert node.joins == [] and node.listings == 3   # one deciding read per process, then none
+
+
+def test_a_node_that_cannot_tell_asks_again_and_joins_only_on_a_definite_no():
+    clock, node = _Clock(), _MemberNode(involved=None)
+    member = CommunityMembership(clock=clock)
+    member.ensure(node, _member_cfg())
+    assert node.joins == []
+    node.involved = False
+    clock.now += CommunityMembership.FAILED_SUBSCRIBE_RETRY_SECONDS + 1
+    member.ensure(node, _member_cfg())
+    assert node.joins == [(TEST_GRAPH, OWNER_PEER)]
 
 
 def test_the_owner_never_asks_itself_to_join():
