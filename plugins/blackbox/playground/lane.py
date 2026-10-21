@@ -88,15 +88,30 @@ def read_lane(cfg: BlackboxConfig, client: Optional[DkgClient] = None) -> LaneVi
     return LaneView(graph, True, entries_from_rows(rows, own))
 
 
+def _field_key(predicate: str) -> tuple[str, str]:
+    """Pure: ``(local name, field key)`` for a predicate IRI.
+
+    Blackbox's own ontology keeps the bare local name (``identifier``, ``reporter``);
+    any other vocabulary is prefixed with its host (``schema:identifier``). Why: a
+    package report carries BOTH ``guardian:identifier`` (the threat, ``dep:npm:…``)
+    and ``schema:identifier`` (the advisory, ``MAL-…``); folding by local name let
+    whichever row came first name the threat (bench, 2026-10-21)."""
+    local = predicate.rstrip("/").rsplit("/", 1)[-1].rsplit("#", 1)[-1]
+    if predicate.startswith(constants.BLACKBOX_ONTOLOGY) or not local:
+        return local, local
+    host = predicate.split("//", 1)[-1].split("/", 1)[0].removeprefix("www.").split(".")[0]
+    return local, f"{host}:{local}"
+
+
 def entries_from_rows(rows: list[dict[str, Any]], own: str) -> tuple[LaneEntry, ...]:
     """Pure: fold ``?r ?p ?o`` rows into one :class:`LaneEntry` per report, newest first.
     A report without an identifier or reporter is skipped (not a usable statement)."""
     reports: dict[str, dict[str, str]] = {}
     for row in rows:
         subject = extract_binding(row.get("r"))
-        key = extract_binding(row.get("p")).rstrip("/").rsplit("/", 1)[-1].rsplit("#", 1)[-1]
+        local, key = _field_key(extract_binding(row.get("p")))
         value = extract_binding(row.get("o"))
-        if subject and key and key not in _HIDDEN_FIELDS and len(value) <= _FIELD_MAX_CHARS:
+        if subject and key and local not in _HIDDEN_FIELDS and len(value) <= _FIELD_MAX_CHARS:
             reports.setdefault(subject, {}).setdefault(key, value)
     entries = []
     for fields in reports.values():
@@ -104,7 +119,7 @@ def entries_from_rows(rows: list[dict[str, Any]], own: str) -> tuple[LaneEntry, 
         if not identifier or not reporter:
             continue
         severity = fields.pop("severity", "")
-        fields.pop("type", None)
+        fields.pop("w3:type", None)
         entries.append(LaneEntry(identifier=identifier, reporter=reporter, severity=severity,
                                  mine=bool(own) and reporter.lower() == own, fields=tuple(sorted(fields.items()))))
     return tuple(entries)

@@ -96,3 +96,61 @@ def test_the_routes_serve_the_sandbox_lane_in_sandbox_mode(monkeypatch):
     assert page["total"] == 2
     detail = client.get("/api/playground/threat", params={"tier": "community", "identifier": "dep:npm:evil-pkg@1.0.0"}).json()
     assert detail["found"] and detail["packageName"] == "evil-pkg"
+
+
+# --- This node's tests beside the real findings (2026-10-21) -----------------
+# In sandbox mode the findings table and the Local tab also list the node's own
+# Playground tests, tagged SANDBOX. /api/playground/local serves them from the
+# sandbox folder only: the real logs, counts and alerts never see a test.
+
+def _record_one_real_and_one_test(monkeypatch, tmp_path):
+    from plugins.blackbox import audit
+    from plugins.blackbox.kernel import constants
+
+    monkeypatch.setattr(constants, "blackbox_home", lambda: tmp_path)
+    detail = {"session_id": "s-real", "tool_name": "web_fetch", "tool_call_id": "c1"}
+    audit.record(event="pre_tool_call", findings=[{"identifier": "ioc:domain:real.example", "severity": "high"}], detail=detail)
+    with audit.sandbox_run():
+        detail = {"session_id": playground.SESSION_ID, "tool_name": "web_fetch", "tool_call_id": "c2"}
+        audit.record(event="pre_tool_call", findings=[{"identifier": "ioc:domain:test.example", "severity": "high"}],
+                     detail=detail)
+    return audit
+
+
+def test_the_local_route_serves_only_the_sandbox_tests_in_sandbox_mode(monkeypatch, tmp_path):
+    audit = _record_one_real_and_one_test(monkeypatch, tmp_path)
+    monkeypatch.setattr(bb_config, "load_blackbox_config",
+                        lambda: dataclasses.replace(bb_config.BlackboxConfig(), community_sandbox=True))
+    payload = playground_routes.local_payload()
+    assert payload["sandbox"] is True
+    assert [row.get("identifier") for row in payload["findings"]] == ["ioc:domain:test.example"]
+    local_ids = [threat["identifier"] for session in payload["local"]["sessions"]
+                 for event in session.get("events", []) for threat in event.get("threats", [])]
+    assert local_ids == ["ioc:domain:test.example"]
+    # The real log, which feeds every count and alert, still holds only the real finding.
+    assert [row.get("identifier") for row in audit.read_findings()] == ["ioc:domain:real.example"]
+    assert audit.count_findings() == 1
+
+
+def test_the_local_route_is_empty_outside_sandbox_mode(monkeypatch, tmp_path):
+    _record_one_real_and_one_test(monkeypatch, tmp_path)
+    monkeypatch.setattr(bb_config, "load_blackbox_config",
+                        lambda: dataclasses.replace(bb_config.BlackboxConfig(), community_sandbox=False))
+    payload = playground_routes.local_payload()
+    assert payload["sandbox"] is False and payload["findings"] == [] and payload["local"]["sessions"] == []
+
+
+def test_the_advisory_number_never_names_the_threat():
+    """Bench 2026-10-21: a package report carries guardian:identifier (the threat) AND
+    schema:identifier (the advisory). Folding by local name let the advisory row, when it
+    came first, name the bubble ``MAL-…`` under "other"."""
+    subject = "urn:guardian:report:a:3"
+    rows = [{"r": subject, "p": "http://schema.org/identifier", "o": "MAL-2025-47041"},
+            *_rows(subject, identifier="dep:npm:@navancorp/ta-fe-components@1.0.7", reporter=A,
+                   severity="critical", packageEcosystem="npm")]
+    view = playground.LaneView("0xabc/graph", True, entries_from_rows(rows, own=""))
+    (entry,) = view.entries
+    assert entry.identifier == "dep:npm:@navancorp/ta-fe-components@1.0.7"
+    assert dict(entry.fields)["schema:identifier"] == "MAL-2025-47041"
+    (bubble,) = graph.graph_page(view)["threats"]
+    assert bubble["category"] == "dependency"

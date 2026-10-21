@@ -7,6 +7,9 @@
 * ``GET /api/playground/graph`` and ``GET /api/playground/threat`` — the sandbox lane in
   the Community graph's own response shapes; in sandbox mode the dashboard's Community
   tab reads these instead of ``/api/graph`` / ``/api/threat`` (display only);
+* ``GET /api/playground/local`` — this node's sandbox tests as findings rows and as
+  local activity; in sandbox mode the dashboard lists them beside the real findings
+  and in the Local tab, tagged SANDBOX, and never counts them or alerts on them;
 * ``POST /api/playground/run`` ``{"kind": "domain"}`` — run one sandbox test
   (:func:`playground.run_test`); 409 with a plain reason when it cannot run.
 
@@ -68,6 +71,16 @@ def threat_payload(identifier: str) -> dict[str, Any]:
     return playground.graph.threat_detail(_sandbox_view(), identifier)
 
 
+def local_payload() -> dict[str, Any]:
+    """This node's sandbox tests for the findings table and the Local tab (empty outside sandbox mode)."""
+    from ... import playground
+    from ...kernel.config import load_blackbox_config
+
+    if not load_blackbox_config().community_sandbox:
+        return {"sandbox": False, "findings": [], "local": {"sessions": [], "sessionCount": 0, "threatCount": 0}}
+    return {"sandbox": True, "findings": playground.recent_tests(limit=100), "local": playground.sandbox_activity()}
+
+
 def run_payload(body: Any) -> tuple[int, dict[str, Any]]:
     """(status, body) for one POST: 200 with the result, 409 with the reason it cannot run."""
     from ... import playground
@@ -96,6 +109,10 @@ def register(app: Any, swr: Cache) -> None:
     def playground_graph(q: str = Query(""), category: str = Query(""), ecosystem: str = Query(""),
                          offset: int = Query(0), limit: int = Query(200)) -> Any:
         return JSONResponse(graph_payload(q, category, ecosystem, offset, limit), headers=NO_CACHE)
+
+    @app.get("/api/playground/local")
+    def playground_local() -> Any:
+        return JSONResponse(local_payload(), headers=NO_CACHE)
 
     @app.get("/api/playground/threat")
     def playground_threat(identifier: str = Query(..., min_length=1)) -> Any:

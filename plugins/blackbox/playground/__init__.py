@@ -14,6 +14,7 @@ Public surface (use only these):
 * :func:`run_test` — run one test, returns a :class:`TestResult`;
   raises :class:`PlaygroundRefused` with a plain reason when it cannot run;
 * :func:`recent_tests` — this node's own sandbox findings, newest first;
+* :func:`sandbox_activity` — the same tests as sessions → events → threats;
 * :func:`read_lane` — what every member has shared to the sandbox lane;
 * :mod:`graph` — that lane in the Community graph's own response shapes
   (``graph.graph_page``, ``graph.threat_detail``), for the dashboard in sandbox mode.
@@ -29,7 +30,8 @@ from __future__ import annotations
 
 from . import graph
 from .lane import LaneEntry, LaneView, read_lane
-from .runner import KINDS, SESSION_ID, PlaygroundRefused, TestResult, recent_tests, require_sandbox, run_test
+from .runner import (KINDS, SESSION_ID, PlaygroundRefused, TestResult, recent_tests, require_sandbox, run_test,
+                     sandbox_activity)
 
 __all__ = [
     "KINDS",
@@ -43,4 +45,5 @@ __all__ = [
     "recent_tests",
     "require_sandbox",
     "run_test",
+    "sandbox_activity",
 ]

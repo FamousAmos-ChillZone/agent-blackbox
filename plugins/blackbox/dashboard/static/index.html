@@ -844,6 +844,10 @@
     background: repeating-linear-gradient(135deg, var(--sandbox, #8B5CF6) 0 14px, color-mix(in srgb, var(--sandbox, #8B5CF6) 82%, #000) 14px 28px);
     box-shadow: 0 6px 24px color-mix(in srgb, var(--sandbox, #8B5CF6) 40%, transparent); }
   .pg-ribbon[hidden] { display: none; }
+  /* Sandbox tests listed beside real findings: tagged, never counted (2026-10-21). */
+  .sb-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--sandbox, #8B5CF6);
+    color: #fff; font: 700 10px/1.5 var(--mono, ui-monospace, monospace); letter-spacing: 0.12em; vertical-align: middle; }
+  tr.is-sandbox { box-shadow: inset 3px 0 0 var(--sandbox, #8B5CF6); }
   .pg-ribbon .pg-ribbon-mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: #fff;
     color: var(--sandbox, #8B5CF6); font: 800 15px/1 var(--mono, ui-monospace, monospace); }
   .pg-ribbon b { display: block; font: 700 12px/1.2 var(--mono, ui-monospace, monospace); letter-spacing: 0.14em; }
@@ -3380,6 +3384,11 @@
   var FINDINGS_PAGE = 10, FINDINGS_MAX = 500, findingsLoaded = FINDINGS_PAGE;
   var findingsRequestGeneration = 0;
   var findingsCache = null;
+  // Sandbox mode: this node's Playground tests (/api/playground/local). They are listed
+  // beside the real findings and in the Local tab with a SANDBOX tag, and never reach a
+  // count, the onboarding check or an alert: those read the real payloads only.
+  var sandboxLocal = null;
+  var SANDBOX_RING = "#8B5CF6";
   var findingsSort = "newest";   // "newest" | "severity"
 
   // Threat notifications are intentionally in-app. The first successful fetch
@@ -3694,6 +3703,7 @@
     graphGeneration.community += 1;
     graphRevision.community += 1;
     Object.keys(THREAT_CACHE).forEach(function (key) { if (key.indexOf("community|") === 0) delete THREAT_CACHE[key]; });
+    loadFindings().then(function () { if (activeTier === "local") renderGraphTab(); }, function () {});   // sandbox rows join or leave
     return loadGraphTier("community").then(function () { if (activeTier === "community") renderGraphTab(); }, function () {});
   };
 
@@ -4649,7 +4659,8 @@
       source: t.source, confirmed: !!t.confirmed,
       tool_name: t.tool || "", framework: (s && s.agent) || "hermes",
       ts: t.ts || 0, profile: t.profile || {}, decision: t.decision || "",
-      evidence: t.evidence || "", context: t.context || null, found_in: t.found_in || ""
+      evidence: t.evidence || "", context: t.context || null, found_in: t.found_in || "",
+      sandbox: !!t.sandbox
     };
   }
 
@@ -4675,7 +4686,8 @@
         (ev.threats || []).forEach(function (t) {
           // The rule id AND its title: one wallet-vault rule serves every wallet and names it
           // only in the title, so two wallets must not fold into one bubble.
-          var key = t.identifier ? t.identifier + "|" + (t.title || "") : ((t.title || "threat") + ":" + (t.ts || 0));
+          var key = (t.sandbox ? "sandbox|" : "") +   // a test never folds into the real bubble of the same threat
+            (t.identifier ? t.identifier + "|" + (t.title || "") : ((t.title || "threat") + ":" + (t.ts || 0)));
           var item = byId[key];
           if (!item) { item = byId[key] = { t: t, s: s, ev: ev, count: 0, first: t.ts || 0, all: [] }; order.push(key); }
           item.count += 1;
@@ -4687,7 +4699,8 @@
     });
     nodes.push({
       id: centerId, kind: "center", label: "Local", color: MINT, val: 26,
-      sessionCount: sessions.length, threatTotal: order.length,   // different threats, not sightings
+      sessionCount: sessions.length,
+      threatTotal: order.filter(function (key) { return !byId[key].t.sandbox; }).length,   // different REAL threats, not sightings
       sightingTotal: (data && data.threatCount) || 0,
       start: spanStart, end: spanEnd
     });
@@ -4719,8 +4732,8 @@
         finding.firstSeen = it.first;
         nodes.push({
           id: hubId + ":" + i, kind: "lthreat", cat: ck,
-          label: clip(t.title || t.identifier || "Threat", 22) + (it.count > 1 ? " ×" + it.count : ""),
-          color: meta.color, ring: SEV_COLOR[tsev] || SEV_COLOR.info,
+          label: (t.sandbox ? "S · " : "") + clip(t.title || t.identifier || "Threat", 22) + (it.count > 1 ? " ×" + it.count : ""),
+          color: meta.color, ring: t.sandbox ? SANDBOX_RING : (SEV_COLOR[tsev] || SEV_COLOR.info),
           severity: tsev, identifier: t.identifier || "", name: t.title || "",
           tool: t.tool || it.ev.tool || "", ts: t.ts || it.ev.ts || 0,
           sightings: it.count, profile: t.profile || {}, finding: finding, val: 5
@@ -4744,7 +4757,7 @@
       finding.sightings = 1;
       nodes.push({
         id: threatId + ":s" + j, kind: "lsight", cat: ck, color: meta.color,
-        ring: SEV_COLOR[sevClass(one.t.severity)] || SEV_COLOR.info,
+        ring: one.t.sandbox ? SANDBOX_RING : (SEV_COLOR[sevClass(one.t.severity)] || SEV_COLOR.info),
         name: one.t.title || one.t.identifier || "Threat", ts: one.t.ts || one.ev.ts || 0,
         outcome: one.t.decision === "block" ? "blocked" : "flagged",
         session: (one.s && (one.s.shortId || one.s.id)) || "", finding: finding, val: 2.6
@@ -5707,7 +5720,8 @@
     var sm = SRC_META[sk];
     return '<span class="pill ' + sev + '">' + esc(sev) + '</span>' +
       '<span class="m-tag" style="color:' + meta.color + '">' + esc(meta.name) + '</span>' +
-      '<span class="src-badge ' + sk + '" title="' + esc(sm.tip) + '">' + esc(sm.label) + '</span>';
+      '<span class="src-badge ' + sk + '" title="' + esc(sm.tip) + '">' + esc(sm.label) + '</span>' +
+      (f.sandbox ? '<span class="sb-tag">SANDBOX TEST</span>' : '');
   }
 
   // What Blackbox itself recorded for this row — painted instantly, no fetch.
@@ -6279,7 +6293,7 @@
 
     // Every tier — including local — renders through the one force-graph stage.
     var isLocal = activeTier === "local";
-    var data = isLocal ? localCache : graphViewData(activeTier);
+    var data = isLocal ? localViewData() : graphViewData(activeTier);
 
     // still loading this tier
     if (data == null) {
@@ -6696,12 +6710,12 @@
   // data-idx maps the row back to its object in findingsRendered/auditRendered.
   function findingRowHTML(f, i) {
     var sev = sevClass(f.severity);
-    return '<tr class="row-link" data-idx="' + i + '" tabindex="0" role="button" ' +
+    return '<tr class="row-link' + (f.sandbox ? ' is-sandbox' : '') + '" data-idx="' + i + '" tabindex="0" role="button" ' +
       'aria-label="' + esc("View details: " + (f.title || f.evidence || "finding")) + '">' +
       '<td class="col-time">' + fmtTime(f.time || f.ts || f.timestamp) + '</td>' +
       '<td>' + agentTag(f.framework) + '</td>' +
       '<td><span class="pill ' + sev + '">' + esc(sev) + '</span></td>' +
-      '<td>' + shieldsUI.findingMark(f) + typeTag(f.category || f.type) + '</td>' +
+      '<td>' + shieldsUI.findingMark(f) + typeTag(f.category || f.type) + (f.sandbox ? ' <span class="sb-tag">SANDBOX</span>' : '') + '</td>' +
       '<td>' + reasonCell(f) + '</td>' +
     '</tr>';
   }
@@ -7112,30 +7126,70 @@
     var findingsPanel = $("findings-panel");
     var findingsSortControl = $("findings-sort-control");
     var findingsFoot = $("findings-foot");
-    var showOnboarding = openCount === 0;
+    var sandboxRows = sandboxFindingRows();
+    var showOnboarding = openCount === 0 && !sandboxRows.length;
     if (onboarding) onboarding.hidden = !showOnboarding;
     if (findingsPanel) findingsPanel.hidden = showOnboarding;
     if (findingsSortControl) findingsSortControl.hidden = showOnboarding;
     if (findingsFoot) findingsFoot.hidden = showOnboarding;
     if (showOnboarding) checkFirstDetectionReadiness();
 
-    if (!list.length) {
+    if (!list.length && !sandboxRows.length) {
       findingsRendered = [];
       if (!showOnboarding) body.innerHTML = emptyRow("No findings available", "Blackbox is watching.", 5);
       return;
     }
 
-    findingsRendered = sortedFindings(list);
+    // The real list arrives newest-first; the sandbox tests are woven in by time so "Newest" stays true.
+    var display = sandboxRows.length
+      ? list.concat(sandboxRows).map(function (f, i) { return { f: f, i: i }; })
+          .sort(function (a, b) { return (findingTime(b.f) - findingTime(a.f)) || (a.i - b.i); })
+          .map(function (o) { return o.f; })
+      : list;
+    findingsRendered = sortedFindings(display);
     body.innerHTML = findingsRendered.map(findingRowHTML).join("");
     var shown = $("findings-shown");
-    if (shown) shown.textContent = "Showing " + list.length + " of " + openCount;
+    if (shown) shown.textContent = "Showing " + list.length + " of " + openCount +
+      (sandboxRows.length ? " · plus " + sandboxRows.length + " sandbox test" + (sandboxRows.length === 1 ? "" : "s") : "");
     var more = $("findings-more");
     if (more) more.hidden = !(list.length < openCount && findingsLoaded < FINDINGS_MAX);
+  }
+
+  function loadSandboxLocal() {
+    if (window.__bbSandbox !== true) { sandboxLocal = null; return Promise.resolve(null); }
+    return getJSON("/api/playground/local").then(function (data) {
+      sandboxLocal = data && data.sandbox ? data : null;
+      return sandboxLocal;
+    }, function () { return null; });   // fail-open: the real rows still render
+  }
+
+  function sandboxFindingRows() {
+    if (window.__bbSandbox !== true || !sandboxLocal) return [];
+    return asList(sandboxLocal.findings).map(function (f) { return Object.assign({}, f, { sandbox: true }); });
+  }
+
+  // The Local tab's data: the real activity, plus (in sandbox mode) the sandbox sessions with
+  // every threat marked. threatCount stays the real one, so the tab count never moves.
+  function localViewData() {
+    var tests = window.__bbSandbox === true && sandboxLocal && sandboxLocal.local;
+    if (!tests || !(tests.sessions || []).length) return localCache;
+    var real = localCache || { sessions: [], sessionCount: 0, threatCount: 0 };
+    var marked = tests.sessions.map(function (session) {
+      return Object.assign({}, session, {
+        id: "sandbox:" + (session.id || ""), agent: session.agent || "sandbox",
+        events: (session.events || []).map(function (ev) {
+          return Object.assign({}, ev, { threats: (ev.threats || []).map(function (t) { return Object.assign({}, t, { sandbox: true }); }) });
+        })
+      });
+    });
+    return Object.assign({}, real, { sessions: (real.sessions || []).concat(marked) });
   }
 
   function loadFindings() {
     var requestGeneration = ++findingsRequestGeneration;
     return getJSON("/api/findings?limit=" + findingsLoaded + "&offset=0").then(function (data) {
+      return loadSandboxLocal().then(function () { return data; });
+    }).then(function (data) {
       if (requestGeneration !== findingsRequestGeneration) return null;
       processThreatNotifications(data);
       renderFindings(data);

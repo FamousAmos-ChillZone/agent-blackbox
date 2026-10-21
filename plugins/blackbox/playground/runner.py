@@ -115,6 +115,14 @@ def recent_tests(limit: int = 20) -> list[dict[str, Any]]:
         return audit.read_findings(limit=limit)
 
 
+def sandbox_activity(max_sessions: int = 60) -> dict[str, Any]:
+    """The sandbox's own activity in ``/api/local-activity``'s shape (sessions → events
+    → threats), read from the sandbox folder. The dashboard shows it beside the real
+    activity in sandbox mode, tagged, and never adds it to a real count."""
+    with audit.sandbox_run():
+        return audit.read_local_activity(max_sessions=max_sessions)
+
+
 def _pick(rules: Any, kind: str) -> Attempt:
     if kind == "package":
         return _pick_package(rules)
