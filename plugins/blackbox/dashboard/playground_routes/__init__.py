@@ -4,6 +4,9 @@
   page's sandbox colour);
 * ``GET /api/playground`` — sandbox mode on/off, sharing on/off, this node's own
   sandbox tests and the graph's sandbox lane (what every member shared there);
+* ``GET /api/playground/graph`` and ``GET /api/playground/threat`` — the sandbox lane in
+  the Community graph's own response shapes; in sandbox mode the dashboard's Community
+  tab reads these instead of ``/api/graph`` / ``/api/threat`` (display only);
 * ``POST /api/playground/run`` ``{"kind": "domain"}`` — run one sandbox test
   (:func:`playground.run_test`); 409 with a plain reason when it cannot run.
 
@@ -41,6 +44,30 @@ def state_payload() -> dict[str, Any]:
     }
 
 
+def _sandbox_view() -> Any:
+    """The sandbox lane when sandbox mode is on, else an empty unreadable view."""
+    from ... import playground
+    from ...kernel.config import load_blackbox_config
+
+    cfg = load_blackbox_config()
+    return playground.read_lane(cfg) if cfg.community_sandbox else playground.LaneView(cfg.context_graph_id, False, ())
+
+
+def graph_payload(q: str, category: str, ecosystem: str, offset: int, limit: int) -> dict[str, Any]:
+    """The sandbox lane as a Community graph page."""
+    from ... import playground
+
+    return playground.graph.graph_page(_sandbox_view(), q=q, category=category, ecosystem=ecosystem,
+                                       offset=offset, limit=limit)
+
+
+def threat_payload(identifier: str) -> dict[str, Any]:
+    """One sandbox threat as a Community threat detail."""
+    from ... import playground
+
+    return playground.graph.threat_detail(_sandbox_view(), identifier)
+
+
 def run_payload(body: Any) -> tuple[int, dict[str, Any]]:
     """(status, body) for one POST: 200 with the result, 409 with the reason it cannot run."""
     from ... import playground
@@ -54,7 +81,7 @@ def run_payload(body: Any) -> tuple[int, dict[str, Any]]:
 
 def register(app: Any, swr: Cache) -> None:
     """Add the panel script and the two Playground routes to *app* (*swr* is unused: never cached)."""
-    from fastapi import Body
+    from fastapi import Body, Query
     from fastapi.responses import FileResponse, JSONResponse
 
     @app.get("/playground.js")
@@ -64,6 +91,15 @@ def register(app: Any, swr: Cache) -> None:
     @app.get("/api/playground")
     def playground_state() -> Any:
         return JSONResponse(state_payload(), headers=NO_CACHE)
+
+    @app.get("/api/playground/graph")
+    def playground_graph(q: str = Query(""), category: str = Query(""), ecosystem: str = Query(""),
+                         offset: int = Query(0), limit: int = Query(200)) -> Any:
+        return JSONResponse(graph_payload(q, category, ecosystem, offset, limit), headers=NO_CACHE)
+
+    @app.get("/api/playground/threat")
+    def playground_threat(identifier: str = Query(..., min_length=1)) -> Any:
+        return JSONResponse(threat_payload(identifier), headers=NO_CACHE)
 
     # A plain (sync) handler: FastAPI runs it in its thread pool, so a test that waits
     # up to ~90 s for its share never blocks the dashboard. The body is a plain dict

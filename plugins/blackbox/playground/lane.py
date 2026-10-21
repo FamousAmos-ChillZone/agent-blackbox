@@ -21,16 +21,19 @@ from ..kernel.dkg_client import DkgClient, DkgError, extract_binding
 
 logger = logging.getLogger(__name__)
 
-LANE_LIMIT = 200   # newest statements shown; the lane expires on its own after the 30-day shared-memory TTL
+LANE_ROW_LIMIT = 4000   # property rows read per refresh (a report is ~20); the lane expires after the 30-day TTL
+#: Fields a statement carries that are proof material, not something to show (long, opaque).
+_HIDDEN_FIELDS = frozenset({"signedStatement", "signature", "signatureScheme", "signerKey", "signedBy"})
+_FIELD_MAX_CHARS = 300
 
+# Every property of every report in the lane, so the sandbox view shows exactly what a
+# member submitted. Bounded by construction (LES-013): one record kind, a LIMIT, small fields.
 _LANE_SPARQL = f"""
 PREFIX g: <{constants.BLACKBOX_ONTOLOGY}>
-SELECT ?r ?identifier ?reporter ?severity WHERE {{
+SELECT ?r ?p ?o WHERE {{
   ?r a g:ThreatReport ;
-     g:identifier ?identifier ;
-     g:reporter ?reporter ;
-     g:severity ?severity .
-}} ORDER BY DESC(?r) LIMIT {LANE_LIMIT}
+     ?p ?o .
+}} ORDER BY DESC(?r) LIMIT {LANE_ROW_LIMIT}
 """
 
 
@@ -46,6 +49,8 @@ class LaneEntry:
     reporter: str
     severity: str
     mine: bool
+    #: every other field the statement carries (category, kind, package, tool, outcome…), as text
+    fields: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -80,10 +85,26 @@ def read_lane(cfg: BlackboxConfig, client: Optional[DkgClient] = None) -> LaneVi
     except (DkgError, OSError, ValueError) as exc:   # the node is down or busy: say so, never guess
         logger.debug("blackbox: sandbox lane unreadable: %s", exc)
         return LaneView(graph, False, ())
-    return LaneView(graph, True, tuple(_entry(row, own) for row in rows))
+    return LaneView(graph, True, entries_from_rows(rows, own))
 
 
-def _entry(row: dict[str, Any], own: str) -> LaneEntry:
-    reporter = extract_binding(row.get("reporter"))
-    return LaneEntry(identifier=extract_binding(row.get("identifier")), reporter=reporter,
-                     severity=extract_binding(row.get("severity")), mine=bool(own) and reporter.lower() == own)
+def entries_from_rows(rows: list[dict[str, Any]], own: str) -> tuple[LaneEntry, ...]:
+    """Pure: fold ``?r ?p ?o`` rows into one :class:`LaneEntry` per report, newest first.
+    A report without an identifier or reporter is skipped (not a usable statement)."""
+    reports: dict[str, dict[str, str]] = {}
+    for row in rows:
+        subject = extract_binding(row.get("r"))
+        key = extract_binding(row.get("p")).rstrip("/").rsplit("/", 1)[-1].rsplit("#", 1)[-1]
+        value = extract_binding(row.get("o"))
+        if subject and key and key not in _HIDDEN_FIELDS and len(value) <= _FIELD_MAX_CHARS:
+            reports.setdefault(subject, {}).setdefault(key, value)
+    entries = []
+    for fields in reports.values():
+        identifier, reporter = fields.pop("identifier", ""), fields.pop("reporter", "")
+        if not identifier or not reporter:
+            continue
+        severity = fields.pop("severity", "")
+        fields.pop("type", None)
+        entries.append(LaneEntry(identifier=identifier, reporter=reporter, severity=severity,
+                                 mine=bool(own) and reporter.lower() == own, fields=tuple(sorted(fields.items()))))
+    return tuple(entries)

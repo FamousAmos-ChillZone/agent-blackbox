@@ -6,6 +6,12 @@
  * check), this node's own tests, and the graph's sandbox lane (what every member shared).
  * Out of sandbox mode it removes all of that, so the page is the ordinary one again.
  *
+ * In sandbox mode the Community tab of the threat graph also draws the verified graph's
+ * SANDBOX lane (window.__bbSandbox switches index.html's graph and detail requests to
+ * /api/playground/graph and /api/playground/threat) under a striped SANDBOX ribbon, and is
+ * redrawn when the mode flips or a new sandbox entry arrives. Display only: protection keeps
+ * reading the real reports lane.
+ *
  * Every POST carries the dashboard's session token (X-Blackbox-Token from /api/session),
  * like index.html's own postJSON. Text from the node is written with textContent only.
  */
@@ -13,7 +19,8 @@
   "use strict";
   var POLL_MS = 5000;
   var KIND_LABELS = { "package": "Malware package", "domain": "Malicious domain", "ip": "C2 server address", "url": "Payload link" };
-  var root = null, badge = null, timer = null, busy = "", firstSeen = {}, lastResult = null, lastError = "";
+  var root = null, badge = null, ribbon = null, timer = null, busy = "", firstSeen = {}, lastResult = null, lastError = "";
+  var lastMode = null, lastLaneSignature = "";
 
   function el(tag, cls, text) {
     var node = document.createElement(tag);
@@ -27,6 +34,43 @@
       if (!r.ok) throw new Error("This dashboard is opened read-only here; open it on the machine itself to run tests.");
       return r.json();
     }).then(function (j) { return (j && j.token) || ""; });
+  }
+
+  function communityTabActive() {
+    var tab = document.getElementById("tab-community");
+    return !!tab && tab.getAttribute("aria-selected") === "true";
+  }
+
+  function showRibbon() {
+    var stage = document.getElementById("graph-stage");
+    if (!stage) return;
+    if (!ribbon) {
+      ribbon = el("div", "pg-ribbon");
+      ribbon.setAttribute("role", "note");
+      ribbon.appendChild(el("div", "pg-ribbon-mark", "S"));
+      var text = el("div");
+      text.appendChild(el("b", "", "SANDBOX COMMUNITY"));
+      text.appendChild(el("span", "", "The verified graph's sandbox lane: tests only, never a flag or a rule."));
+      ribbon.appendChild(text);
+      stage.appendChild(ribbon);
+    }
+    ribbon.hidden = !(window.__bbSandbox === true && communityTabActive());
+  }
+
+  // Redraw the Community tab from the right lane when the mode flips or the sandbox lane changes.
+  function syncCommunityGraph(state) {
+    var mode = !!state.sandbox;
+    var signature = mode ? ((state.lane && state.lane.entries) || []).map(function (e) { return e.identifier + "|" + e.reporter; }).sort().join(",") : "";
+    window.__bbSandbox = mode;
+    var flipped = lastMode !== null && lastMode !== mode;
+    var startedInSandbox = lastMode === null && mode;
+    var arrived = mode && lastMode === mode && signature !== lastLaneSignature;
+    lastMode = mode;
+    lastLaneSignature = signature;
+    if ((flipped || startedInSandbox || arrived) && typeof window.blackboxCommunityReset === "function") {
+      window.blackboxCommunityReset();
+    }
+    showRibbon();
   }
 
   function setSandboxLook(on) {
@@ -114,6 +158,7 @@
     if (!root) return Promise.resolve();
     return fetch("/api/playground", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (state) {
       setSandboxLook(!!state.sandbox);
+      syncCommunityGraph(state);
       root.hidden = !state.sandbox;
       if (state.sandbox) draw(state); else root.innerHTML = "";
     }).catch(function () { /* the dashboard's own banner reports a down service */ });
@@ -137,6 +182,10 @@
   function start() {
     root = document.getElementById("playground-root");
     if (!root) return;
+    ["tab-community", "tab-public", "tab-local"].forEach(function (id) {
+      var tab = document.getElementById(id);
+      if (tab) tab.addEventListener("click", function () { window.setTimeout(showRibbon, 0); });
+    });
     refresh();
     timer = window.setInterval(function () { if (!document.hidden && !busy) refresh(); }, POLL_MS);
   }

@@ -105,7 +105,9 @@ def test_the_lane_reader_asks_for_the_sandbox_lane_only():
     class _Client:
         def query(self, sparql, graph, view=None, on_error=None, sub_graph="reports"):
             asked.update(graph=graph, view=view, sub_graph=sub_graph, limited="LIMIT" in sparql)
-            return [{"identifier": IDENTIFIER, "reporter": "0xAA", "severity": "high"}]
+            guardian = "http://umanitek.ai/ontology/guardian/"
+            return [{"r": "urn:guardian:report:a:1", "p": guardian + key, "o": value}
+                    for key, value in (("identifier", IDENTIFIER), ("reporter", "0xAA"), ("severity", "high"))]
 
         def request(self, *args, **kwargs):
             return {}

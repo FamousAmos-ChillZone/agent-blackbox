@@ -837,6 +837,17 @@
   .pg-list .pg-meta { color: var(--muted); }
   .pg-mine { color: var(--sandbox, #8B5CF6); font-weight: 600; }
   .pg-error { color: var(--signal); margin: 6px 0; }
+  :root[data-sandbox="on"] #tab-community::after { content: "SANDBOX"; margin-left: 8px; padding: 1px 7px; border-radius: 999px;
+    background: var(--sandbox, #8B5CF6); color: #fff; font: 700 10px/1.6 var(--mono, ui-monospace, monospace); letter-spacing: 0.12em; }
+  .pg-ribbon { position: absolute; top: 12px; left: 12px; z-index: 5; display: flex; align-items: center; gap: 10px; max-width: calc(100% - 24px);
+    padding: 8px 14px 8px 10px; border-radius: 10px; color: #fff; pointer-events: none;
+    background: repeating-linear-gradient(135deg, var(--sandbox, #8B5CF6) 0 14px, color-mix(in srgb, var(--sandbox, #8B5CF6) 82%, #000) 14px 28px);
+    box-shadow: 0 6px 24px color-mix(in srgb, var(--sandbox, #8B5CF6) 40%, transparent); }
+  .pg-ribbon[hidden] { display: none; }
+  .pg-ribbon .pg-ribbon-mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: #fff;
+    color: var(--sandbox, #8B5CF6); font: 800 15px/1 var(--mono, ui-monospace, monospace); }
+  .pg-ribbon b { display: block; font: 700 12px/1.2 var(--mono, ui-monospace, monospace); letter-spacing: 0.14em; }
+  .pg-ribbon span { display: block; font-size: 11px; opacity: 0.9; }
 
   /* ---------- Shields: the "New" banner (static/shields.js) ---------- */
   .ts-banner { position: relative; overflow: hidden; margin-top: 28px; border: 1px solid color-mix(in srgb, var(--signal) 55%, transparent);
@@ -3637,8 +3648,17 @@
     graphRevision[tier] += 1;
   }
 
+  // Sandbox mode (playground.js sets window.__bbSandbox): the Community tab draws the verified
+  // graph's sandbox lane instead of its reports lane. Display only; protection is unchanged.
+  function sandboxCommunity(tier) { return tier === "community" && window.__bbSandbox === true; }
+
+  function threatUrl(tier, id) {
+    return (sandboxCommunity(tier) ? "/api/playground/threat?tier=community" : "/api/threat?tier=" + encodeURIComponent(tier)) +
+      "&identifier=" + encodeURIComponent(id || "");
+  }
+
   function graphPageUrl(tier, offset, query, limit) {
-    return "/api/graph?tier=" + encodeURIComponent(tier) +
+    return (sandboxCommunity(tier) ? "/api/playground/graph?tier=community" : "/api/graph?tier=" + encodeURIComponent(tier)) +
       "&limit=" + (limit || GRAPH_PAGE_SIZE) + "&offset=" + (offset || 0) +
       (query ? "&q=" + encodeURIComponent(query) : "");
   }
@@ -3652,6 +3672,17 @@
   function graphLoaded(tier) {
     return graphCache[tier] ? asList(graphCache[tier]).length : 0;
   }
+
+  // Drop the Community tab's cached page and draw it again from whichever lane is current
+  // (playground.js calls this when sandbox mode flips and when the sandbox lane changes).
+  window.blackboxCommunityReset = function () {
+    graphCache.community = null;
+    graphLoadInFlight.community = false;
+    graphGeneration.community += 1;
+    graphRevision.community += 1;
+    Object.keys(THREAT_CACHE).forEach(function (key) { if (key.indexOf("community|") === 0) delete THREAT_CACHE[key]; });
+    return loadGraphTier("community").then(function () { if (activeTier === "community") renderGraphTab(); }, function () {});
+  };
 
   function resetEmptyGraphOnFirstVerifiedThreats(tier, previousTotal) {
     var cached = graphCache[tier];
@@ -5625,8 +5656,7 @@
     $("tm-body").innerHTML =
       '<div class="m-sk" style="width:92%"></div><div class="m-sk" style="width:78%"></div>' +
       '<div class="m-sk" style="width:64%;margin-top:20px"></div><div class="m-sk" style="width:72%"></div>';
-    var url = "/api/threat?tier=" + encodeURIComponent(activeTier) +
-      "&identifier=" + encodeURIComponent(node.identifier || "");
+    var url = threatUrl(activeTier, node.identifier);
     getJSON(url).then(function (d) {
       THREAT_CACHE[ckey] = d || {};
       if (!TM.node || TM.node.identifier !== node.identifier) return; // user moved on
@@ -5825,7 +5855,7 @@
         lookup(i + 1);
       };
       if (THREAT_CACHE[ckey]) { handle(THREAT_CACHE[ckey]); return; }
-      getJSON("/api/threat?tier=" + encodeURIComponent(tier) + "&identifier=" + encodeURIComponent(id))
+      getJSON(threatUrl(tier, id))
         .then(function (d) { THREAT_CACHE[ckey] = d || {}; handle(d); })
         .catch(function () { lookup(i + 1); });   // base facts are already on screen
       };
