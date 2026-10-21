@@ -91,7 +91,7 @@ def community_stats_payload(verified_reports: VerifiedReportsRead) -> Any:
     community_rules = getattr(rs, "community", {}) or {}
     now = time.time()
     graph = str(getattr(cfg, "context_graph_id", "") or "")   # the community lives in the verified graph's shared memory
-    join = community.read_join_state(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home), graph) if graph else None
+    status = community.read_membership_status(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home), graph) if graph else None
     corroborated = sum(1 for r in community_rules.values() if int(r.get("reporterCount") or 0) >= 2)
     # Reports-today from OUR ingest observations (KI-012), not
     # reporter-supplied timestamps.
@@ -116,8 +116,12 @@ def community_stats_payload(verified_reports: VerifiedReportsRead) -> Any:
         # install saw "some community graph" and a "not authorized" log line with no explanation)
         "graph": safe_text(graph.rsplit("/", 1)[-1], 80) if graph else None,
         "graph_id": safe_text(graph, 200) if graph else None,
-        "join_state": join.value if join else None,
-        "join_text": community.JOIN_STATE_TEXT[join] if join else None,
+        "join_state": status.join.value if status else None,
+        "join_text": community.JOIN_STATE_TEXT[status.join] if status else None,
+        # has the graph's owner admitted this node (2026-10-21: the founder asked for a
+        # check mark — a member waiting for approval has its warnings silently dropped)
+        "admission": status.admission.value if status else None,
+        "admission_text": community.ADMISSION_TEXT[status.admission] if status else None,
     }
 
     return stats

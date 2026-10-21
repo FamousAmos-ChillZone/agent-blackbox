@@ -56,7 +56,8 @@ from typing import Any, Callable, Optional
 
 from ...kernel import constants, identity
 from ...kernel.dkg_client import DkgClient, DkgError
-from .join_status import JOIN_STATE_TEXT, JoinState, has_definition, join_state_of, needs_join, owns, read_join_state
+from .join_status import (ADMISSION_TEXT, JOIN_STATE_TEXT, Admission, JoinState, MembershipStatus, has_definition,
+                          join_state_of, needs_join, owns, read_join_state, read_membership_status)
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ class CommunityMembership:
         for lane in COMMUNITY_LANES:
             try:
                 client.request("POST", "/api/sub-graph/create", {"contextGraphId": graph, "subGraphName": lane})
-            except Exception as exc:
+            except DkgError as exc:   # the client wraps HTTP and transport failures in DkgError
                 if "already exists" not in str(exc):
                     logger.warning("blackbox: could not register the community subgraph %r on this node: %s", lane, exc)
                     return False
@@ -339,11 +340,14 @@ def ensure_community_subscription(client: DkgClient, cfg: object) -> tuple[bool,
 
 
 __all__ = [
+    "ADMISSION_TEXT",
     "COMMUNITY_LANES",
     "JOIN_STATE_TEXT",          # re-exported from join_status (the read side)
     "MEMBERSHIP",
+    "Admission",
     "CommunityMembership",
     "JoinState",
+    "MembershipStatus",
     "ensure_community_subscription",
     "ensure_report_lane",
     "join_state_of",
@@ -351,4 +355,5 @@ __all__ = [
     "needs_join",
     "pending_join_agents",
     "read_join_state",
+    "read_membership_status",
 ]

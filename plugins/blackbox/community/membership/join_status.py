@@ -5,17 +5,21 @@ this is the read side the dashboard shows (connected or not); the membership
 module keeps the state machine that subscribes and joins.
 
 Public surface: :class:`JoinState`, :data:`JOIN_STATE_TEXT`, :func:`join_state_of`
-(pure), :func:`read_join_state` (one listing read), and the pure listing reads
+(pure), :func:`read_join_state` (one listing read), :class:`Admission` / :data:`ADMISSION_TEXT` / :func:`admission_of` (pure: has the
+owner approved this node), :func:`read_membership_status` (both from one listing read),
+and the pure listing reads
 :func:`has_definition`, :func:`needs_join` and :func:`owns`.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
-from ...kernel.dkg_client import DkgClient
+from ...kernel import identity
+from ...kernel.dkg_client import DkgClient, DkgError
 
 logger = logging.getLogger(__name__)
 
@@ -85,3 +89,72 @@ def read_join_state(client: DkgClient, graph: str) -> JoinState:
         return JoinState.UNKNOWN
     entry = next((row for row in entries if str(row.get("id") or "") == graph), None)
     return join_state_of(entry, listing_read=True)
+
+
+class Admission(Enum):
+    """Whether the graph's owner lets this node write into its shared memory, as the
+    node's own listing says (``callerInvolved``: DKG 10.0.25's answer for the calling
+    agent — the curator, or an agent on the graph's allowlist).
+
+    OWNER — this node's agent owns the graph (it approves the others);
+    APPROVED — the owner decides who writes and has admitted this node;
+    WAITING — the owner decides who writes and has not admitted this node yet;
+    OPEN — the graph admits every writer, nothing to approve;
+    UNKNOWN — the node could not tell (never read as "not approved", LES-011).
+    """
+
+    OWNER = "owner"
+    APPROVED = "approved"
+    WAITING = "waiting"
+    OPEN = "open"
+    UNKNOWN = "unknown"
+
+
+#: One plain line per state, for the dashboard.
+ADMISSION_TEXT: dict[Admission, str] = {
+    Admission.OWNER: "this node owns the graph and approves its members",
+    Admission.APPROVED: "approved by the graph's owner: this node's warnings reach the other members",
+    Admission.WAITING: "waiting for the graph owner's approval: until then the owner drops this node's warnings",
+    Admission.OPEN: "open graph: no approval needed",
+    Admission.UNKNOWN: "could not check the approval (local node not answering)",
+}
+
+
+def admission_of(entry: Optional[dict[str, object]], address: str, graph: str) -> Admission:
+    """Pure: the :class:`Admission` of this node (agent *address*) for *graph*, from the
+    node's listing row *entry* (None when it could not be read or does not list it)."""
+    if entry is None:
+        return Admission.UNKNOWN
+    if address and owns(address, graph):
+        return Admission.OWNER
+    if not needs_join(entry):
+        on_chain = entry.get("onChain") if isinstance(entry.get("onChain"), dict) else {}
+        registered = bool(entry.get("onChainId")) or bool(on_chain)
+        decided = on_chain.get("publishPolicy") if registered else has_definition(entry)
+        return Admission.OPEN if decided else Admission.UNKNOWN
+    involved = entry.get("callerInvolved")
+    if involved is True:
+        return Admission.APPROVED
+    return Admission.WAITING if involved is False else Admission.UNKNOWN
+
+
+@dataclass(frozen=True)
+class MembershipStatus:
+    """Where this node stands with the graph: connected (``join``) and admitted
+    (``admission``), both from ONE read of the node's listing."""
+
+    join: JoinState
+    admission: Admission
+
+
+def read_membership_status(client: DkgClient, graph: str) -> MembershipStatus:
+    """Ask the node once (its context-graph listing) where it stands with *graph*:
+    connected or not, approved or not. Fail-open: an unreadable listing is UNKNOWN."""
+    try:
+        entries = client.context_graphs()
+    except (DkgError, OSError, ValueError) as exc:   # could not tell (LES-011)
+        logger.debug("blackbox: community membership status unreadable: %s", exc)
+        return MembershipStatus(JoinState.UNKNOWN, Admission.UNKNOWN)
+    entry = next((row for row in entries if str(row.get("id") or "") == graph), None)
+    address = identity.reporter_address(client) or ""
+    return MembershipStatus(join_state_of(entry, listing_read=True), admission_of(entry, address, graph))

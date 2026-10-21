@@ -844,6 +844,13 @@
     background: repeating-linear-gradient(135deg, var(--sandbox, #8B5CF6) 0 14px, color-mix(in srgb, var(--sandbox, #8B5CF6) 82%, #000) 14px 28px);
     box-shadow: 0 6px 24px color-mix(in srgb, var(--sandbox, #8B5CF6) 40%, transparent); }
   .pg-ribbon[hidden] { display: none; }
+  /* Community card: is this node connected to the graph, and has its owner approved it (2026-10-21). */
+  .member-line { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 8px; font: 600 11px/1.4 var(--mono, ui-monospace, monospace); letter-spacing: 0.04em; }
+  .member-line[hidden] { display: none; }
+  .member-line .ml { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .member-line .ml.ok { color: var(--secure); }
+  .member-line .ml.wait { color: var(--caution); }
+  .member-line .ml.unk { color: var(--muted); }
   /* Sandbox tests listed beside real findings: tagged, never counted (2026-10-21). */
   .sb-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--sandbox, #8B5CF6);
     color: #fff; font: 700 10px/1.5 var(--mono, ui-monospace, monospace); letter-spacing: 0.12em; vertical-align: middle; }
@@ -3194,6 +3201,7 @@
         </div>
         <div class="value" id="stat-community-count">&mdash;</div>
         <div class="meta" id="stat-community-meta">community-reported threats</div>
+        <div class="member-line" id="stat-community-member" hidden></div>
       </div>
       <div class="stat roadmap">
         <div class="label">
@@ -4127,6 +4135,25 @@
     return getJSON("/api/verified-sync").then(renderSyncMeter, function () {});
   }
 
+  // Connected? Approved? One mark each (check / waiting / unknown), the full sentence on hover.
+  // Both fields are optional: an older daemon omits them and the line stays hidden (LES-018).
+  var JOIN_MARKS = { joined: ["ok", "\u2713 connected"], "awaiting-definition": ["wait", "\u25F7 connecting"],
+                     joining: ["wait", "\u25F7 connecting"], unknown: ["unk", "? connection"] };
+  var ADMISSION_MARKS = { owner: ["ok", "\u2713 graph owner"], approved: ["ok", "\u2713 approved"],
+                          open: ["ok", "\u2713 open graph"], waiting: ["wait", "\u25F7 awaiting approval"],
+                          unknown: ["unk", "? approval"] };
+  function renderMemberLine(s) {
+    var line = $("stat-community-member");
+    if (!line) return;
+    var join = JOIN_MARKS[s.join_state], admission = ADMISSION_MARKS[s.admission];
+    line.hidden = !join && !admission;
+    if (line.hidden) return;
+    function mark(entry, text) {
+      return entry ? '<span class="ml ' + entry[0] + '" title="' + esc(text || "") + '">' + esc(entry[1]) + '</span>' : "";
+    }
+    line.innerHTML = mark(join, s.join_text) + mark(admission, s.admission_text);
+  }
+
   // The two summary tiles, from /api/community-stats.
   function renderCommunityStats(s) {
     if (!s || !s.configured) {
@@ -4134,6 +4161,7 @@
       $("stat-community-meta").textContent = "no community graph configured";
       $("stat-sharing-state").textContent = "off";
       $("stat-sharing-meta").textContent = "outbound threat sharing";
+      renderMemberLine({});
       return;
     }
     var sharing = s.paused ? "paused" : (s.sharing_enabled ? "on" : "off");
@@ -4148,6 +4176,7 @@
     tile.title = (s.graph_id ? "Community graph " + s.graph_id + ". " : "") +
       "Threats other Blackbox agents reported. They flag for you and never block.";
     $("stat-community-count").textContent = num(s.community_threats || 0);
+    renderMemberLine(s);
     $("stat-sharing-state").textContent = sharing;
     var last = s.last_share;
     $("stat-sharing-meta").textContent = last

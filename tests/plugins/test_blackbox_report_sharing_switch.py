@@ -122,6 +122,7 @@ def test_the_threat_sharing_tile_reads_off_over_a_withdrawn_consent(real_consent
     assert cfg.community_enabled                             # the switch alone says "on"
     monkeypatch.setattr(kernel_config, "load_blackbox_config", lambda: cfg)
     monkeypatch.setattr(community, "read_join_state", lambda client, graph: None)   # no node in tests
+    monkeypatch.setattr(community, "read_membership_status", lambda client, graph: None)
     monkeypatch.setattr(community, "contributing_agent_count", lambda reports: 0)
     real_consent.withdraw()
 
