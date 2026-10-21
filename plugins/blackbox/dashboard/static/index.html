@@ -812,6 +812,32 @@
     overflow: hidden;
   }
 
+  /* ---------- Sandbox mode (static playground.js sets data-sandbox="on") ----------
+     A different signal colour across the whole page, a striped top edge and a fixed
+     badge, so a sandbox session can never be mistaken for the real one. */
+  :root[data-sandbox="on"] { --signal: #8B5CF6; --signal-soft: rgba(139,92,246,0.14); --sandbox: #8B5CF6; }
+  :root[data-sandbox="on"][data-theme="light"] { --signal: #6D28D9; --signal-soft: rgba(109,40,217,0.10); --sandbox: #6D28D9; }
+  :root[data-sandbox="on"] body { box-shadow: inset 0 4px 0 var(--sandbox); }
+  .pg-badge { position: fixed; right: 16px; bottom: 16px; z-index: 60; padding: 6px 12px; border-radius: 999px;
+    background: var(--sandbox, #8B5CF6); color: #fff; font: 600 12px/1.2 var(--mono, ui-monospace, monospace); letter-spacing: 0.08em; }
+  .pg-panel { margin-top: 28px; border: 1px solid var(--sandbox, #8B5CF6); border-radius: var(--radius); background: var(--panel); padding: 18px 20px; }
+  .pg-panel h2 { margin: 0 0 4px; font-size: 18px; color: var(--sandbox, #8B5CF6); }
+  .pg-panel p { margin: 0 0 12px; color: var(--muted); max-width: 72ch; }
+  .pg-kinds { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 14px; }
+  .pg-kinds button { border: 1px solid var(--sandbox, #8B5CF6); background: transparent; color: var(--text); border-radius: 8px;
+    padding: 8px 12px; font: inherit; cursor: pointer; }
+  .pg-kinds button:hover:not(:disabled) { background: var(--signal-soft); }
+  .pg-kinds button:disabled { opacity: 0.55; cursor: progress; }
+  .pg-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .pg-cols h3 { margin: 0 0 6px; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-strong); }
+  .pg-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; max-height: 320px; overflow: auto; }
+  .pg-list li { padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 12px; overflow-wrap: anywhere; }
+  .pg-list li:last-child { border-bottom: 0; }
+  .pg-list .pg-id { font-family: var(--mono, ui-monospace, monospace); color: var(--text); }
+  .pg-list .pg-meta { color: var(--muted); }
+  .pg-mine { color: var(--sandbox, #8B5CF6); font-weight: 600; }
+  .pg-error { color: var(--signal); margin: 6px 0; }
+
   /* ---------- Shields: the "New" banner (static/shields.js) ---------- */
   .ts-banner { position: relative; overflow: hidden; margin-top: 28px; border: 1px solid color-mix(in srgb, var(--signal) 55%, transparent);
     border-radius: var(--radius); background: var(--panel); padding: 20px 56px 20px 22px; display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; }
@@ -2967,6 +2993,9 @@
     <!-- Each shield's "New" banner, drawn by static/shields.js from /api/shields -->
     <div id="shield-banners"></div>
 
+    <!-- Sandbox mode's Playground, drawn by playground.js from /api/playground (shown only in sandbox mode) -->
+    <div id="playground-root" hidden></div>
+
     <!-- Connected agents -->
     <section class="section" aria-label="Connected agents">
       <div class="section-head agents-head">
@@ -3276,6 +3305,7 @@
 <!-- Vendored (same-origin) force-graph UMD bundle — defines window.ForceGraph. -->
 <script src="./vendor/force-graph.min.js"></script>
 <script src="./shields.js"></script>
+<script src="./playground.js"></script>
 <script>
 (function () {
   "use strict";
@@ -7487,7 +7517,7 @@
     SET_CATS.forEach(function (c) { cats[c.key] = { enabled: true, min_severity: "info" }; });
     return {
       mode: "audit", block_severity: "critical",
-      report: false, report_min_severity: "high",
+      report: false, report_min_severity: "high", community_sandbox: false,
       discover: true, osv_lookup: true,
       categories: cats, protected_paths: [],
       category_labels: {}
@@ -7502,6 +7532,7 @@
     out.block_severity = sevOk(data.block_severity || "critical");
     out.report_min_severity = sevOk(data.report_min_severity || "high");
     out.report = data.report === true;
+    out.community_sandbox = data.community_sandbox === true;
     out.discover = data.discover !== false;
     out.osv_lookup = data.osv_lookup !== false;
     var cats = (data.categories && typeof data.categories === "object") ? data.categories : {};
@@ -7623,6 +7654,7 @@
     $("set-discover").checked = !!setState.discover;
     $("set-osv").checked = !!setState.osv_lookup;
     if ($("set-report")) $("set-report").checked = !!setState.report;
+    if ($("set-sandbox")) $("set-sandbox").checked = !!setState.community_sandbox;
   }
 
   function renderAllSettings() {
@@ -7662,6 +7694,7 @@
       discover: !!setState.discover,
       osv_lookup: !!setState.osv_lookup,
       report: !!setState.report,
+      community_sandbox: !!setState.community_sandbox,
       categories: cats,
       protected_paths: setState.protected_paths.slice(0, 100),
       shields: shieldsUI.settings.payload()   // only the shields the settings view carried
@@ -7724,6 +7757,7 @@
         // refresh in-memory settings from the server's authoritative view
         if (result.settings) { setState = normalizeSettings(result.settings); shieldsUI.settings.load(result.settings.shields); }
         renderAllSettings();
+        if (window.blackboxPlayground) window.blackboxPlayground.refresh();   // sandbox theme + panel follow the save
         setStatus("");
         closeSettings();
         showToast("Changes saved successfully.", "ok");
@@ -7870,6 +7904,9 @@
     });
     if ($("set-report")) $("set-report").addEventListener("change", function () {
       if (!setState) return; setState.report = this.checked; markDirty();
+    });
+    if ($("set-sandbox")) $("set-sandbox").addEventListener("change", function () {
+      if (!setState) return; setState.community_sandbox = this.checked; markDirty();
     });
 
     // protected-paths add (button + Enter)
@@ -8315,6 +8352,15 @@
           </div>
           <div class="set-rc">
             <label class="set-toggle"><input type="checkbox" id="set-report" /><span class="set-track"></span></label>
+          </div>
+        </div>
+        <div class="set-row">
+          <div class="set-rl">
+            <div class="set-rt">Sandbox mode</div>
+            <div class="set-rh">Test community sharing without consequences. While on, every share goes to the graph's sandbox lane, which no rule or flag on any machine ever reads, and the Playground on the main page lets you send listed threats through the real check and watch other members receive them. The dashboard turns violet while it is on. Switch it off and the very next finding is real again. Needs Community sharing on.</div>
+          </div>
+          <div class="set-rc">
+            <label class="set-toggle"><input type="checkbox" id="set-sandbox" /><span class="set-track"></span></label>
           </div>
         </div>
         <div class="set-row">

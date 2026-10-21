@@ -145,11 +145,8 @@ SCHEMA_CONTRIBUTOR_PRED = "http://schema.org/contributor"
 #: Default public Verifiable Memory graph (config key ``context_graph_id``).
 DEFAULT_CONTEXT_GRAPH_ID = "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"
 
-#: Legacy graph ids from earlier defaults. A node still pointed at one of these
-#: is transparently switched to ``DEFAULT_CONTEXT_GRAPH_ID`` at config-load
-#: time, so an existing install moves to the current graph with zero manual
-#: steps. A genuinely custom ``context_graph_id`` (anything not in this set)
-#: is always left untouched.
+#: Legacy graph ids from earlier defaults: an install still pointed at one is switched
+#: to ``DEFAULT_CONTEXT_GRAPH_ID`` at config load; a custom id is never touched.
 LEGACY_CONTEXT_GRAPH_IDS = frozenset({
     "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox",
     "umanitek/blackbox-threats-staging",
@@ -269,14 +266,11 @@ VIEW_VERIFIABLE_MEMORY = "verifiable-memory"
 # this constant only records that the capability ships in this build.
 COMMUNITY_GRAPH_ENABLED = True
 
-#: Default community context graph id: the PRODUCTION community graph, created
-#: 2026-10-12 on Umanitek's node and owned by its wallet (an open, unregistered
-#: shared-memory graph; creating it cost nothing). Every install joins it unless
-#: the BLACKBOX_COMMUNITY_GRAPH_ID env override or the config entry names
-#: another graph. Reading community flags needs only this address; SENDING
-#: reports still needs the operator's consent (``report``, the single gate
-#: ``BlackboxConfig.community_enabled``). Never a development or test graph here.
-DEFAULT_COMMUNITY_GRAPH_ID = "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-community"
+#: ONE graph per node (2026-10-21): community statements live in the VERIFIED graph's
+#: shared working memory, in the named sub-graphs below; its verifiable memory stays the
+#: curator's. The separate graph made 2026-10-12 is legacy: an install naming it moves here.
+DEFAULT_COMMUNITY_GRAPH_ID = DEFAULT_CONTEXT_GRAPH_ID
+LEGACY_COMMUNITY_GRAPH_IDS = frozenset({"0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-community"})
 
 #: The named subgraph every community statement is written to and read from
 #: (2026-10-12). DKG 10.0.23 reserves a catalog-mode graph's ROOT for its RFC-64
@@ -284,6 +278,9 @@ DEFAULT_COMMUNITY_GRAPH_ID = "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-b
 #: not authoritative for root scope"); a named subgraph keeps the member lane,
 #: so a share reaches every subscribed member at once (measured: same second).
 COMMUNITY_SUB_GRAPH = "reports"
+#: The sandbox lane (2026-10-21): shares made while sandbox mode is on. Nothing that builds
+#: rules or community flags reads it — every shared-memory query names ``reports``.
+SANDBOX_SUB_GRAPH = "sandbox"
 
 #: Peer id of the node that OWNS the community graph (its read authority). An
 #: unregistered public graph has no on-chain pointer, so a fresh node cannot

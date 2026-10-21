@@ -1,9 +1,9 @@
-"""Community statements are written into the community subgraph (2026-10-12).
+"""Community statements are written into the community subgraphs (2026-10-12; sandbox lane 2026-10-21).
 
 DKG 10.0.23 refuses members' direct shares into a catalog-mode graph's root;
 a named subgraph keeps the member lane, and a node writes into a subgraph only
-once it is registered locally. ``community.ensure_report_lane`` registers it
-once per process per graph before the first write.
+once it is registered locally. ``community.ensure_report_lane`` registers both
+lanes (``reports`` and ``sandbox``) once per process per graph before the first write.
 """
 
 from __future__ import annotations
@@ -30,9 +30,10 @@ class _Node:
 def test_the_lane_is_registered_once_per_graph():
     node, membership = _Node(), CommunityMembership()
     assert membership.ensure_report_lane(node, "g") and membership.ensure_report_lane(node, "g")
-    assert node.calls == [("POST", "/api/sub-graph/create", {"contextGraphId": "g", "subGraphName": constants.COMMUNITY_SUB_GRAPH})]
+    assert node.calls == [("POST", "/api/sub-graph/create", {"contextGraphId": "g", "subGraphName": lane})
+                          for lane in (constants.COMMUNITY_SUB_GRAPH, constants.SANDBOX_SUB_GRAPH)]
     membership.ensure_report_lane(node, "other")
-    assert len(node.calls) == 2                                                     # a second graph registers its own
+    assert len(node.calls) == 4                                                     # a second graph registers its own
 
 
 def test_an_already_registered_lane_counts_as_ready():
@@ -40,7 +41,7 @@ def test_an_already_registered_lane_counts_as_ready():
     assert membership.ensure_report_lane(node, "g") is True
     node.fail_with = ""
     membership.ensure_report_lane(node, "g")
-    assert len(node.calls) == 1                                                     # remembered as ready
+    assert len(node.calls) == 2                                                     # both lanes, then remembered as ready
 
 
 def test_a_failed_registration_is_logged_and_tried_again(caplog):
@@ -48,7 +49,7 @@ def test_a_failed_registration_is_logged_and_tried_again(caplog):
     assert membership.ensure_report_lane(node, "g") is False
     assert "could not register the community subgraph" in caplog.text
     node.fail_with = ""
-    assert membership.ensure_report_lane(node, "g") is True and len(node.calls) == 2
+    assert membership.ensure_report_lane(node, "g") is True and len(node.calls) == 3   # 1 refused + 2 lanes
 
 
 @pytest.mark.parametrize("module_path", ["plugins/blackbox/community/sharing.py",

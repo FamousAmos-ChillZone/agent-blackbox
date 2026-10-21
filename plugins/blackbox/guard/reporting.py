@@ -15,7 +15,7 @@ from .. import audit, detection, shields
 from .. import community
 from ..kernel import identity
 from ..kernel.config import BlackboxConfig
-from ..kernel.dkg_client import DkgClient
+from ..kernel.dkg_client import DkgClient, DkgError
 
 logger = logging.getLogger(__name__)
 
@@ -65,19 +65,34 @@ def _report_and_audit(cfg: BlackboxConfig, event: str, findings: list[detection.
     The community share itself runs on a background daemon thread (KI-033) —
     a slow or down node must never stall the agent's tool call. Only the
     policy decision (microseconds, no I/O) happens inline.
+
+    Sandbox mode (2026-10-21): the local finding is still recorded as real, but
+    the share fan-out runs inside :func:`audit.sandbox_run` — its cooldowns and
+    share ledger live in the sandbox folder, so a test never silences the real
+    report of the same threat — and adds no verified sighting or private KA.
     """
     finding_dicts = [f.to_dict() for f in findings]
     _attach_sightings(finding_dicts, detail)   # before recording, so the local record carries the profile too
     audit.record(event=event, findings=finding_dicts or None, detail=detail)
     if not findings:
         return
+    if cfg.community_sandbox:
+        with audit.sandbox_run():
+            _share_findings(cfg, event, finding_dicts)
+    else:
+        _share_findings(cfg, event, finding_dicts)
+
+
+def _share_findings(cfg: BlackboxConfig, event: str, finding_dicts: list[dict[str, Any]]) -> None:
+    """Per finding: cooldown, private audit KA, share-policy decision, background share."""
     client: Optional[DkgClient] = None
     try:
         client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-    except Exception:
+    except (DkgError, OSError, ValueError):   # no node or no token here: record locally, share nothing
         client = None
     policy = community.CommunitySharePolicy(cfg)
     reporter = identity.reporter_address(client) if client is not None else None
+    real = not cfg.community_sandbox
     for finding in finding_dicts:
         # Custom rules, LLM opinions, and secret findings stay local — no private
         # KA, no sighting. Secret values must never risk reaching the shared graph.
@@ -86,7 +101,7 @@ def _report_and_audit(cfg: BlackboxConfig, event: str, findings: list[detection.
         identifier = str(finding.get("identifier") or "")
         # R2b: a VERIFIED-tier match counts in the weekly sighting tally — repeats
         # too, which the report cooldown below refuses. Community-only matches never do.
-        if finding.get("source") == "public":
+        if real and finding.get("source") == "public":
             community.record_verified_sighting(identifier)
         # Per-threat cooldown: a re-fire within the window adds no signal.
         # Stamped BEFORE the share attempt, so a failed share waits out the
@@ -94,11 +109,9 @@ def _report_and_audit(cfg: BlackboxConfig, event: str, findings: list[detection.
         # failure so it is never invisible).
         if audit.recently_reported(identifier):
             continue
-        # Private WM audit KA (observed evidence stays local). Stamp the cooldown
-        # here so it bounds the KA independently of whether a sighting is sent.
         if client is not None:
             audit.mark_reported(identifier)
-            local_graph = audit.local_audit_graph(client)   # this node's own graph — the verified one refuses writes
+            local_graph = audit.local_audit_graph(client) if real else ""   # this node's own graph
             if local_graph:
                 audit.write_private_audit_ka(client, local_graph, event, finding)
         allowed, why = policy.decide(finding, reporter)

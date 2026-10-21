@@ -8,8 +8,14 @@ object owns that state:
 * subscribe only when the node itself does not list the graph as subscribed,
   and at most once per ``RETRY_SECONDS`` while it keeps saying no;
 * send the join request at most once per process (a failed attempt may be
-  retried after ``RETRY_SECONDS``), never to this node's own peer id, and never
-  for a PUBLIC graph (D-040: public graphs have no membership step);
+  retried after ``RETRY_SECONDS``), never to this node's own peer id, and only
+  where the owner decides who may write: a private graph, or a registered graph
+  with a CURATED publish policy — the verified graph, whose owner silently drops
+  a non-member's share (KI-439). An open public graph has no join step (D-040).
+  The join is sent whether or not sharing is on, so switching sharing on later
+  needs nothing more (2026-10-21);
+* on the OWNER node with ``community_auto_approve``: approve pending join
+  requests every ``APPROVE_SECONDS`` (open membership, trust stays read-side);
 * connect to the graph OWNER (``community_graph_peer_id``, DHT-resolved) before
   the first subscribe — an unregistered public graph has no on-chain pointer,
   so a fresh node that is not connected to the owner gets "read authority
@@ -41,11 +47,15 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import urllib.parse
 from enum import Enum
 from typing import Callable, Dict, Optional, Set, Tuple
 
 from ..kernel import constants
-from ..kernel.dkg_client import DkgClient
+from ..kernel.dkg_client import DkgClient, DkgError
+
+#: The shared-memory lanes every member registers before its first write (2026-10-21).
+COMMUNITY_LANES = (constants.COMMUNITY_SUB_GRAPH, constants.SANDBOX_SUB_GRAPH)
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +73,8 @@ class CommunityMembership:
     #: of a connected peer is a cheap no-op on the node; a dropped link costs at
     #: most this long plus the node's catch-up (169 s measured on the bench).
     OWNER_LINK_SECONDS = 120.0
+    #: Owner node: how often the auto-approver reads the pending join requests.
+    APPROVE_SECONDS = 60.0
 
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
@@ -75,8 +87,9 @@ class CommunityMembership:
         self._confirmed: dict[str, float] = {}
         self._last_owner_dial: dict[str, float] = {}
         self._own_peer = ""   # this node's peer id, once known (never dial ourselves)
-        #: graphs whose ``constants.COMMUNITY_SUB_GRAPH`` is registered on this node
+        #: graphs whose community lanes (``reports`` and ``sandbox``) are registered on this node
         self._lane_ready: set[str] = set()
+        self._last_approve: dict[str, float] = {}
 
     def ensure_report_lane(self, client: DkgClient, graph: str) -> bool:
         """Register the community subgraph on this node before its first write
@@ -88,13 +101,13 @@ class CommunityMembership:
         with self._lock:
             if graph in self._lane_ready:
                 return True
-        try:
-            client.request("POST", "/api/sub-graph/create",
-                           {"contextGraphId": graph, "subGraphName": constants.COMMUNITY_SUB_GRAPH})
-        except Exception as exc:
-            if "already exists" not in str(exc):
-                logger.warning("blackbox: could not register the community subgraph on this node: %s", exc)
-                return False
+        for lane in COMMUNITY_LANES:
+            try:
+                client.request("POST", "/api/sub-graph/create", {"contextGraphId": graph, "subGraphName": lane})
+            except Exception as exc:
+                if "already exists" not in str(exc):
+                    logger.warning("blackbox: could not register the community subgraph %r on this node: %s", lane, exc)
+                    return False
         with self._lock:
             self._lane_ready.add(graph)
         return True
@@ -106,6 +119,8 @@ class CommunityMembership:
         if not graph:
             return False, "no community graph configured"
         owner_peer = str(getattr(cfg, "community_graph_peer_id", "") or "")
+        if getattr(cfg, "community_auto_approve", False):
+            self._approve_pending(client, graph)
         dialled = self._keep_owner_link(client, owner_peer)
         if self._recently_confirmed(graph):
             return True, "subscribed"
@@ -134,8 +149,8 @@ class CommunityMembership:
                 self._confirmed[graph] = self._clock()
         else:
             self._retry_sooner(self._last_subscribe, graph)   # fetch the definition in a minute
-        if not entry or str(entry.get("accessPolicy") or "") != "private":
-            return True, "subscribed"   # D-040: a public (or unknown) graph has no join step
+        if not entry or not needs_join(entry):
+            return True, "subscribed"   # D-040: an open public (or unknown) graph has no join step
         self._join_once(client, graph, owner_peer)
         return True, "subscribed"
 
@@ -223,6 +238,53 @@ class CommunityMembership:
             return
         with self._lock:
             self._joined.add(graph)
+
+    def _approve_pending(self, client: DkgClient, graph: str) -> int:
+        """Owner node with ``community_auto_approve``: admit every pending join request
+        for *graph*, at most once per ``APPROVE_SECONDS``. Open membership is safe
+        because trust is decided at READ time (the signed report, its verified author,
+        the curators' lists) — membership only lets a node's shares be kept. Returns
+        how many were approved. Fail-open: a refusal is logged, never raised."""
+        if not self._due_after(self._last_approve, graph, self.APPROVE_SECONDS):
+            return 0
+        encoded = urllib.parse.quote(graph, safe="")
+        try:
+            reply = client.request("GET", f"/api/context-graph/{encoded}/join-requests")
+        except DkgError as exc:   # not the owner, or the node is busy: nothing to do
+            logger.debug("blackbox: join requests unreadable for %s: %s", graph, exc)
+            return 0
+        approved = 0
+        for agent in pending_join_agents(reply):
+            try:
+                client.request("POST", f"/api/context-graph/{encoded}/approve-join", {"agentAddress": agent})
+                approved += 1
+            except DkgError as exc:
+                logger.warning("blackbox: could not approve the join request of %s: %s", agent, exc)
+        if approved:
+            logger.info("blackbox: approved %d join request(s) for %s", approved, graph)
+        return approved
+
+
+def pending_join_agents(reply: object) -> list[str]:
+    """Pure: the agent addresses of the PENDING requests in a ``join-requests`` reply."""
+    rows = reply.get("requests") if isinstance(reply, dict) else None
+    out: list[str] = []
+    for row in rows or []:
+        if not isinstance(row, dict) or str(row.get("status") or "pending").lower() != "pending":
+            continue
+        agent = str(row.get("agentAddress") or row.get("agent") or "")
+        if agent.startswith("0x") and len(agent) == 42:
+            out.append(agent)
+    return out
+
+
+def needs_join(entry: dict[str, object]) -> bool:
+    """Pure: whether writing to the listed graph needs the owner's approval — a private
+    graph, or one registered with a CURATED publish policy (the verified graph: its
+    owner keeps only allowlisted writers' shares, KI-439). Positive evidence only (LES-028)."""
+    on_chain = entry.get("onChain") if isinstance(entry.get("onChain"), dict) else {}
+    return (str(entry.get("accessPolicy") or "") == "private"
+            or str(on_chain.get("publishPolicy") or "").lower() == "curated")
 
 
 def _graph_entry(client: DkgClient, graph: str) -> Optional[dict[str, object]]:

@@ -6,12 +6,42 @@ size; file discovery for findings/audit logs across protected agents.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import json
 import os
 import threading
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterator, List
 from ..kernel import constants
+
+#: Set inside :func:`sandbox_run`: every log, ledger and cooldown this module's
+#: callers write goes to ``$BLACKBOX_HOME/sandbox/`` instead (2026-10-21). A
+#: ContextVar, so a share thread started with ``contextvars.copy_context()``
+#: inherits it and two concurrent runs never see each other's setting.
+_SANDBOX_RUN: contextvars.ContextVar[bool] = contextvars.ContextVar("blackbox_sandbox_run", default=False)
+SANDBOX_DIR = "sandbox"
+
+
+@contextlib.contextmanager
+def sandbox_run() -> Iterator[None]:
+    """Run a block whose local records must stay out of the real logs (Pattern: Context Object).
+
+    Usage::
+
+        with audit.sandbox_run():
+            hooks.on_pre_tool_call(...)   # findings, activity, share ledger -> sandbox/
+    """
+    token = _SANDBOX_RUN.set(True)
+    try:
+        yield
+    finally:
+        _SANDBOX_RUN.reset(token)
+
+
+def in_sandbox_run() -> bool:
+    """True inside :func:`sandbox_run`."""
+    return _SANDBOX_RUN.get()
 
 # ---------------------------------------------------------------------------
 # Bounded JSONL logs
@@ -23,7 +53,7 @@ _lock = threading.Lock()
 
 
 def _home() -> Path:
-    home = constants.blackbox_home()
+    home = constants.blackbox_home() / SANDBOX_DIR if _SANDBOX_RUN.get() else constants.blackbox_home()
     try:
         home.mkdir(parents=True, exist_ok=True)
     except Exception:  # pragma: no cover - defensive

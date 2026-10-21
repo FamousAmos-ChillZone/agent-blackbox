@@ -120,14 +120,15 @@ class BlackboxConfig:
     report: bool = False   # community sharing is opt-in (2026-10-16); a consent record is also needed
     daily_report_limit: int = constants.DEFAULT_DAILY_REPORT_LIMIT
     report_min_severity: str = "high"
-    #: Community context graph address (env BLACKBOX_COMMUNITY_GRAPH_ID →
-    #: config entry ``community_graph_id`` → shipped default). Empty means the
-    #: community feature is dormant regardless of ``report``.
+    #: The graph community statements go to: the verified graph itself unless a test graph is
+    #: named (env BLACKBOX_COMMUNITY_GRAPH_ID / key ``community_graph_id``; legacy ids move here).
     community_graph_id: str = constants.DEFAULT_COMMUNITY_GRAPH_ID
-    #: Curator peer id for a JOIN request — empty by default and meant to stay so:
-    #: the community graph is PUBLIC, trust is enforced at READ time (decision 9
-    #: as amended 2026-10-02). Set only for a deliberately gated sandbox graph.
+    #: Its owner's peer id: dialled for reads and sent this node's join request (curated graphs).
     community_graph_peer_id: str = constants.DEFAULT_COMMUNITY_GRAPH_PEER_ID
+    #: Sandbox mode: shares go to the ``sandbox`` sub-graph, never ``reports`` (2026-10-21).
+    community_sandbox: bool = False
+    #: Owner node only: approve every pending join request on the pulse (open membership).
+    community_auto_approve: bool = False
     #: Seconds between community-pulse probes (R16); 0 disables the pulse.
     community_poll_interval: int = 20
     #: Days per keep-alive epoch (R5): this node re-publishes a copy of each of
@@ -183,6 +184,11 @@ class BlackboxConfig:
             and self.report
             and self.community_graph_id.strip()
         )
+
+    @property
+    def community_lane(self) -> str:
+        """The sub-graph this node's shares go to: ``sandbox`` in sandbox mode, else ``reports``."""
+        return constants.SANDBOX_SUB_GRAPH if self.community_sandbox else constants.COMMUNITY_SUB_GRAPH
 
     @property
     def llm_ready(self) -> bool:
@@ -284,23 +290,13 @@ def load_blackbox_config() -> BlackboxConfig:
     referenced_key = read_host_secret(str(llm_entry.get("api_key_env") or "").strip())   # KI-371: a variable's name
     llm_api_key = (read_host_secret("BLACKBOX_LLM_API_KEY") or str(llm_entry.get("api_key") or "").strip() or referenced_key)
     llm_enabled = _as_bool(_env_or(llm_entry, env="BLACKBOX_LLM_ENABLED", key="enabled", default=False), False)
-    context_graph_id = str(
-        _env_or(
-            entry,
-            env="BLACKBOX_CONTEXT_GRAPH_ID",
-            key="context_graph_id",
-            default=constants.DEFAULT_CONTEXT_GRAPH_ID,
-        )
-    )
+    context_graph_id = str(_env_or(entry, env="BLACKBOX_CONTEXT_GRAPH_ID", key="context_graph_id",
+                                   default=constants.DEFAULT_CONTEXT_GRAPH_ID))
     # Auto-switch an install still pointed at a legacy (pre-Blackbox) graph to the
     # current default, so an existing DKG user syncs the correct CG with no manual
     # step. A genuinely custom graph id is not in the legacy set and is untouched.
     if context_graph_id in constants.LEGACY_CONTEXT_GRAPH_IDS:
-        logger.info(
-            "blackbox: switching legacy context_graph_id %s -> %s",
-            context_graph_id,
-            constants.DEFAULT_CONTEXT_GRAPH_ID,
-        )
+        logger.info("blackbox: switching legacy context_graph_id %s -> %s", context_graph_id, constants.DEFAULT_CONTEXT_GRAPH_ID)
         context_graph_id = constants.DEFAULT_CONTEXT_GRAPH_ID
     default_dkg_home = str(constants.blackbox_dkg_home())
     dkg_home_env = _first_env("BLACKBOX_DKG_HOME")
@@ -350,6 +346,9 @@ def load_blackbox_config() -> BlackboxConfig:
             constants.DEFAULT_GRAPH_PEER_ID,
         )
         graph_peer_id = constants.DEFAULT_GRAPH_PEER_ID
+    community_graph_id = str(_env_or(entry, env="BLACKBOX_COMMUNITY_GRAPH_ID", key="community_graph_id", default=constants.DEFAULT_COMMUNITY_GRAPH_ID)).strip()
+    if community_graph_id in constants.LEGACY_COMMUNITY_GRAPH_IDS | {constants.DEFAULT_CONTEXT_GRAPH_ID}:
+        community_graph_id = context_graph_id   # one graph (2026-10-21): statements go to its shared memory
     return BlackboxConfig(
         mode=mode,
         context_graph_id=context_graph_id,
@@ -364,10 +363,11 @@ def load_blackbox_config() -> BlackboxConfig:
         daily_report_limit=constants.effective_daily_report_limit(_as_int(_env_or(entry, env="BLACKBOX_DAILY_REPORT_LIMIT", key="daily_report_limit", default=constants.DEFAULT_DAILY_REPORT_LIMIT), constants.DEFAULT_DAILY_REPORT_LIMIT)),
         community_shadow=_as_bool(_env_or(entry, env="BLACKBOX_COMMUNITY_SHADOW", key="community_shadow", default=False), False),
         verified_lookup_fallback=_fallback_mode(_env_or(entry, env="BLACKBOX_VERIFIED_LOOKUP_FALLBACK", key="verified_lookup_fallback", default="off")),
-        community_graph_id=str(_env_or(entry, env="BLACKBOX_COMMUNITY_GRAPH_ID", key="community_graph_id",
-                                        default=constants.DEFAULT_COMMUNITY_GRAPH_ID)).strip(),
+        community_graph_id=community_graph_id,
         community_graph_peer_id=str(_env_or(entry, env="BLACKBOX_COMMUNITY_GRAPH_PEER_ID", key="community_graph_peer_id",
                                              default=constants.DEFAULT_COMMUNITY_GRAPH_PEER_ID)).strip(),
+        community_sandbox=_as_bool(_env_or(entry, env="BLACKBOX_COMMUNITY_SANDBOX", key="community_sandbox", default=False), False),
+        community_auto_approve=_as_bool(_env_or(entry, env="BLACKBOX_COMMUNITY_AUTO_APPROVE", key="community_auto_approve", default=False), False),
         community_poll_interval=_as_int(_env_or(entry, env="BLACKBOX_COMMUNITY_POLL_INTERVAL", key="community_poll_interval", default=20), 20),
         community_keepalive_epoch_days=_as_float(_env_or(entry, env="BLACKBOX_COMMUNITY_KEEPALIVE_EPOCH_DAYS", key="community_keepalive_epoch_days", default=10.0), 10.0),
         report_min_severity=report_min_severity,

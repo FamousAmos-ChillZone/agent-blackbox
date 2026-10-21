@@ -59,10 +59,11 @@ def test_default_is_shipped_constant(clean_env):
 
 def test_the_shipped_default_is_the_production_community_graph(clean_env):
     """KI-035 launch-safety rule: a release never points the fleet at a dev or
-    test graph. The shipped default is the production graph, owned by the
-    Umanitek wallet, and its owner peer ships with it (KI-216: both or neither)."""
+    test graph. Since 2026-10-21 the shipped default is ONE graph: the verified
+    graph itself (statements in its shared memory), owned by the Umanitek wallet,
+    and its owner peer ships with it (KI-216: both or neither)."""
     graph = constants.DEFAULT_COMMUNITY_GRAPH_ID
-    assert graph == "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-community"
+    assert graph == constants.DEFAULT_CONTEXT_GRAPH_ID == "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"
     assert not any(word in graph.lower() for word in ("test", "dev", "sim", "bench", "demo"))
     assert constants.DEFAULT_COMMUNITY_GRAPH_PEER_ID.startswith("12D3KooW")
     assert bool(constants.DEFAULT_COMMUNITY_GRAPH_PEER_ID) == bool(constants.DEFAULT_COMMUNITY_GRAPH_ID)
