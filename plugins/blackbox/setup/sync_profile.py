@@ -1,7 +1,8 @@
-"""Fresh Base profiles use registered cores; existing trust settings are retained."""
+"""Admit compatible fresh defaults and preserve existing trust and protection settings."""
 import os
 from hermes_cli.config import require_readable_config_before_write
 from ..kernel import constants, yaml_files
+from ..sync import snapshot_defaults, validate_snapshot_profile
 from ..kernel.snapshot_config import DKG_CORE_CHAIN_CACHE, REGISTERED_BASE_CORES, snapshot_config
 
 
@@ -11,20 +12,7 @@ def configure(args):
     registered = getattr(args, "registered_cores", False)
     cache = getattr(args, "dkg_core_chain_cache", False)
     explicit = graph_id is not None or bool(peers) or registered or cache
-    path = constants.hermes_home() / "config.yaml"
-    if yaml_files.yaml is None:
-        raise ValueError("YAML support is required to configure snapshot sync")
-    if path.is_symlink():
-        raise ValueError("Configure the snapshot profile in the linked config file explicitly")
-    try:
-        data = require_readable_config_before_write(path)
-    except Exception as exc:
-        raise ValueError("Existing config.yaml could not be read; it was not changed") from exc
-    target = data
-    for key in ("plugins", "entries", "blackbox"):
-        target = target.setdefault(key, {})
-        if not isinstance(target, dict):
-            raise ValueError("Existing Blackbox configuration must be a mapping")
+    path, data, target = _entry()
     if not explicit:
         # Re-running setup must not migrate an existing graph or trust mode.
         if any(key in target for key in ("context_graph_id", "detection_backend", "snapshot_sync", "dkg_home")):
@@ -33,7 +21,11 @@ def configure(args):
                 or os.environ.get("BLACKBOX_CONTEXT_GRAPH_ID", constants.DEFAULT_CONTEXT_GRAPH_ID)
                 != constants.DEFAULT_CONTEXT_GRAPH_ID):
             return
-        cache, graph_id = True, "14"
+        requested = snapshot_defaults(target, os.environ.get("BLACKBOX_DKG_NETWORK", "mainnet-base"))
+        if requested:
+            target.update(requested)
+            yaml_files.dump_yaml(path, data)
+        return
     if (registered or cache) and peers or (registered and cache):
         raise ValueError("Choose registered cores or explicit peers, not both")
     if (registered or cache) and graph_id is None:
@@ -48,7 +40,26 @@ def configure(args):
     existing = target.get("snapshot_sync")
     if existing is not None and existing != requested["snapshot_sync"]:
         raise ValueError("Existing snapshot trust differs; use a fresh profile for a different trust scope")
+    validate_snapshot_profile(target, requested)
     target.update(requested)
     yaml_files.dump_yaml(path, data)
     print("Lower RPC usage by using the DKG Core chain cache: chain statements come from registered cores; "
           "asset identity and content roots are still verified. No automatic trust fallback.")
+
+
+def _entry():
+    path = constants.hermes_home() / "config.yaml"
+    if yaml_files.yaml is None:
+        raise ValueError("YAML support is required to configure snapshot sync")
+    if path.is_symlink():
+        raise ValueError("Configure the snapshot profile in the linked config file explicitly")
+    try:
+        data = require_readable_config_before_write(path)
+    except Exception as exc:
+        raise ValueError("Existing config.yaml could not be read; it was not changed") from exc
+    target = data
+    for key in ("plugins", "entries", "blackbox"):
+        target = target.setdefault(key, {})
+        if not isinstance(target, dict):
+            raise ValueError("Existing Blackbox configuration must be a mapping")
+    return path, data, target

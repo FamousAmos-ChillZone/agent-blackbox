@@ -1,49 +1,15 @@
 """Resolved transports are additive at admission, immutable during observation."""
 import argparse
-from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import replace
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import json
-import threading
 
 import pytest
 from _blackbox_loader import load_blackbox
+from tests.plugins.blackbox_sync_fixtures import replies
 
 config = load_blackbox("kernel.config")
 settings = load_blackbox("kernel.snapshot_config")
 core = load_blackbox("sync.core_snapshot")
-
-
-@contextmanager
-def replies(sequence):
-    calls = []
-
-    class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *_):
-            pass
-
-        def answer(self):
-            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"{}")
-            calls.append((self.command, self.path, body))
-            data = json.dumps(sequence.pop(0) if sequence else {"state": "unexpected"}).encode()
-            self.send_response(200)
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
-        do_GET = answer
-        do_POST = answer
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_port}", calls
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join()
 
 
 def configuration(tmp_path):

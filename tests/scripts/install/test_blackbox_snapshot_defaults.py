@@ -16,7 +16,7 @@ GRAPH = "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"
 
 @pytest.mark.parametrize("platform", ["unix", "windows"])
 @pytest.mark.parametrize("existing", [False, True])
-def test_installer_selects_registered_cores_only_for_fresh_default_profile(tmp_path, platform, existing):
+def test_installer_keeps_ordinary_sync_without_verified_compatibility(tmp_path, platform, existing):
     path = tmp_path / "config.yaml"
     before = {"context_graph_id": GRAPH, "detection_backend": "legacy-cache"} if existing else {}
     path.write_text(yaml.safe_dump({"model": "kept", "plugins": {"entries": {"blackbox": before}}}))
@@ -36,6 +36,5 @@ def test_installer_selects_registered_cores_only_for_fresh_default_profile(tmp_p
     if existing:
         assert entry["detection_backend"] == "legacy-cache" and "snapshot_sync" not in entry
     else:
-        assert entry["detection_backend"] == "dkg"
-        assert entry["snapshot_sync"] == {"on_chain_id": "14", "trusted_core_peers": [],
-                                         "mode": "core-cache", "DKG_Core_chain_cache": True}
+        assert entry.get("detection_backend", "legacy-cache") == "legacy-cache"
+        assert "snapshot_sync" not in entry

@@ -18,7 +18,7 @@ def args(**overrides):
 def test_setup_writes_explicit_snapshot_scope_before_install_without_losing_settings(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     path = tmp_path / "config.yaml"
-    yaml_files.dump_yaml(path, {"model": "kept", "plugins": {"entries": {"blackbox": {"mode": "audit", "report": False}}}})
+    yaml_files.dump_yaml(path, {"model": "kept", "plugins": {"entries": {"blackbox": {"mode": "audit", "report": False, "community_graph_id": ""}}}})
     monkeypatch.setattr(setup, "_hermes_bin", lambda: "hermes")
     def install(command, **kwargs):
         cfg = config.load_blackbox_config()
@@ -46,23 +46,23 @@ def test_incomplete_or_invalid_scope_does_not_touch_profile(tmp_path, monkeypatc
 
 def test_setup_refuses_silent_trust_replacement(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    profile.configure(args())
     path = tmp_path / "config.yaml"
+    yaml_files.dump_yaml(path, {"plugins": {"entries": {"blackbox": {"community_graph_id": ""}}}})
+    profile.configure(args())
     before = path.read_bytes()
     with pytest.raises(ValueError, match="fresh profile"):
         profile.configure(argparse.Namespace(snapshot_graph_id="14", trusted_core_peer=["another-core"]))
     assert path.read_bytes() == before
 
 
-def test_fresh_base_profile_uses_registered_cores_and_existing_profiles_stay_explicit(tmp_path, monkeypatch):
+def test_fresh_community_profile_keeps_ordinary_sync_and_existing_profiles_stay_explicit(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.delenv("BLACKBOX_DKG_NETWORK", raising=False)
     monkeypatch.delenv("BLACKBOX_CONTEXT_GRAPH_ID", raising=False)
     profile.configure(argparse.Namespace())
     cfg = config.load_blackbox_config()
-    assert cfg.snapshot_sync.source_policy == "DKG_Core_chain_cache"
-    assert cfg.snapshot_sync.trusted_core_peers == () and cfg.snapshot_sync.on_chain_id == "14"
-    assert cfg.detection_backend == "dkg"
+    assert cfg.snapshot_sync is None and cfg.community_graph_id
+    assert cfg.detection_backend == "legacy-cache"
     path = tmp_path / "config.yaml"
     yaml_files.dump_yaml(path, {"plugins": {"entries": {"blackbox": {
         "detection_backend": "legacy-cache", "context_graph_id": "custom/graph"}}}})

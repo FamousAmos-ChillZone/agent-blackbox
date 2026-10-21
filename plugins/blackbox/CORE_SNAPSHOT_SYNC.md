@@ -6,12 +6,39 @@ selected core nodes and the local node, with exact-batch streaming enabled.
 The new persistent-core defaults and automatic source selection require the
 companion DKG update.
 
-**Release dependency:** the plugin installer currently pins DKG 10.0.25.
-That release supports explicit-core snapshot jobs, but not automatic registered
-source selection. Before releasing this Blackbox change, publish the companion
-DKG patch and update `setup.DKG_PACKAGE` / `DKG_INTEGRITY` to that verified
-release. An older daemon returns `DKG_UPGRADE_REQUIRED` before an automatic
-transfer; Blackbox never silently changes the trust policy.
+**Compatibility and rollout:** the installer still pins DKG 10.0.25. Ordinary
+fresh installs retain community protection and `legacy-cache` sync. Upgrades
+preserve the saved graph, reader and trust settings. Installing this Blackbox
+change before the companion DKG release is therefore supported for those
+ordinary profiles; it does not enable the new snapshot path on an older daemon.
+
+The direct reader does not yet preserve community retention, first-seen reader
+budgets and curator semantics. Setup refuses to select it while community reads
+are enabled, including when report sharing is off. It never empties
+`community_graph_id` to make a faster path pass. A DKG/core rollout alone is not
+enough to change the default for community-enabled installations.
+
+For a new profile whose owner has already explicitly chosen public-only reads,
+automatic selection is limited to the shipped Base mainnet graph. It requires
+all of the following read-only evidence from the configured loopback daemon:
+
+- `DKG_Core_chain_cache` snapshot-source support;
+- a matching completed job, finished within the last 60 seconds, with positive,
+  fully committed current coverage and authenticated selected cache sources;
+- bounded-query version 1 with explicit `core-cache` support.
+
+Setup never starts a job to obtain that evidence. An idle, old, unreachable or
+unproven daemon keeps ordinary sync, as does stale or mismatched evidence.
+Existing profiles are not automatically migrated when those capabilities
+later appear. Snapshot sync revalidates the configured source policy and full
+coverage at runtime; installation-time evidence is not a permanent availability
+promise. There is no silent downgrade of an explicitly selected trust mode.
+
+To use automatic registered sources explicitly, the local daemon and eligible
+cores need the companion DKG update. Publish that update and verify its package
+integrity before changing `setup.DKG_PACKAGE` / `DKG_INTEGRITY`. An older daemon
+returns `DKG_UPGRADE_REQUIRED` before an automatic transfer. These compatibility
+checks do not establish a particular sync time or a fleet-wide warm cache.
 
 The user-facing option is **Lower RPC usage by using the DKG Core chain cache**.
 Enable `DKG_Core_chain_cache: true` in the local DKG node's `config.json`.
@@ -21,7 +48,7 @@ shipped official mainnet deployments; testnet uses the identical implementation
 with its own official registries. Private deployments and the other environment
 never establish trust. A peer cannot provide an RPC URL or registry contract.
 
-For Blackbox, use:
+For an explicitly public-only Blackbox profile with compatible DKG and cores, use:
 
 ```sh
 blackbox setup --dkg-core-chain-cache --snapshot-graph-id REGISTERED_GRAPH_NUMERIC_ID
@@ -41,7 +68,7 @@ conflicting explicit trust settings are refused. Existing explicit peer scopes
 and the legacy `--registered-cores` Base-only policy remain supported without
 an automatic trust-scope migration.
 
-Fresh default Base profiles use graph registration `14`. A custom graph or
+Eligible new public-only Base profiles use graph registration `14`. A custom graph or
 another data network needs its own registration ID; the option never maps
 Base graph 14 onto another chain. Existing profiles are retained.
 
@@ -83,7 +110,8 @@ trust scope. The serving cores must host this graph and support public snapshot
 recovery; discovery advertisements never become trust configuration. The
 registered default mainnet graph has numeric ID `14`, but custom graphs and
 networks require their own registration IDs. A production core rollout remains
-necessary before enabling this profile for all new installations.
+necessary to use this path. Preserving the community read model is a separate
+prerequisite for any rollout to ordinary new installations.
 
 Alternatively, after upgrading an isolated local node, configure that profile's
 `config.yaml`:

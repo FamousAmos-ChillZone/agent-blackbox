@@ -199,9 +199,9 @@ def _blackbox_entry() -> dict[str, Any]:
     return entry if isinstance(entry, dict) else {}
 
 
-def load_blackbox_config() -> BlackboxConfig:
-    """Build a :class:`BlackboxConfig` from config file + environment overrides."""
-    entry = _blackbox_entry()
+def load_blackbox_config(*, entry: dict[str, Any] | None = None) -> BlackboxConfig:
+    """Resolve the saved or proposed entry with the same environment precedence."""
+    entry = _blackbox_entry() if entry is None else entry
     mode = str(_env_or(entry, env="BLACKBOX_MODE", key="mode", default="audit")).lower()
     mode = mode if mode in {"audit", "block"} else "audit"
     block_severity = str(

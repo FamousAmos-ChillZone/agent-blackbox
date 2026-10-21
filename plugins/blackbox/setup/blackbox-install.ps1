@@ -1409,6 +1409,7 @@ function Enable-AndConfigure {
     $configWriter = @'
 import sys, os
 cfg_path, dkg_url, dkg_home, dkg_bin, context_graph_id, graph_peer_id = sys.argv[1:7]
+repo_dir = sys.argv[7] if len(sys.argv) > 7 else ""
 try:
     try:
         import hermes_yaml as yaml  # Hermes 0.21.7+: YAML through ruamel (PyYAML left the host)
@@ -1495,12 +1496,18 @@ defaults = {
     # Optional LLM reviewer — off until `blackbox setup-llm` fills it in.
     "llm": {"enabled": False, "provider": "", "model": "", "api_key": ""},
 }
-# A fresh Base profile can use any authenticated registered Core. Explicit
-# profiles survive re-runs. The daemon capability gate refuses older versions.
-if (fresh_sync_profile and os.environ.get("BLACKBOX_DKG_NETWORK", "mainnet-base") == "mainnet-base"
-        and context_graph_id == "0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"):
-    defaults.update(detection_backend="dkg", snapshot_sync={"on_chain_id": "14",
-        "trusted_core_peers": [], "mode": "core-cache", "DKG_Core_chain_cache": True})
+# Keep community protection and ordinary sync unless the installed plugin can
+# prove this fresh profile and its current DKG/core combination are compatible.
+if fresh_sync_profile:
+    try:
+        import runpy
+        from pathlib import Path
+        checkout = Path(repo_dir)
+        plugin = checkout if (checkout / "plugin.yaml").is_file() else checkout / "plugins" / "blackbox"
+        defaults.update(runpy.run_path(str(plugin / "setup" / "sync_defaults.py"))["defaults"](
+            {**defaults, **blackbox}, os.environ.get("BLACKBOX_DKG_NETWORK", "mainnet-base")))
+    except Exception:
+        print("  Keeping ordinary sync: the compatible Core-cache default is not available.")
 for k, v in defaults.items():
     if k not in blackbox:
         blackbox[k] = v
@@ -1509,7 +1516,6 @@ for k, v in defaults.items():
 # re-run and upgrade; only a pre-release opt-in (no consent record in force) is
 # migrated off. The product's own consent code decides; if it cannot be
 # imported the answer is "no consent" (fail closed = sharing off).
-repo_dir = sys.argv[7] if len(sys.argv) > 7 else ""
 def _consent_in_force(checkout):
     try:
         if checkout and os.path.isfile(os.path.join(checkout, "plugin.yaml")):

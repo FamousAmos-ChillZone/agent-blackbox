@@ -41,6 +41,10 @@ def test_conflicting_trust_scopes_are_refused(override):
 def test_other_networks_require_their_own_graph_id(tmp_path, monkeypatch, network):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setenv("BLACKBOX_DKG_NETWORK", network)
+    # This test selects an explicit public-only profile; community protection
+    # is validated separately and must never be removed by setup.
+    profile.yaml_files.dump_yaml(tmp_path / "config.yaml",
+        {"plugins": {"entries": {"blackbox": {"community_graph_id": ""}}}})
     with pytest.raises(ValueError, match="snapshot-graph-id"):
         profile.configure(argparse.Namespace(dkg_core_chain_cache=True))
     profile.configure(argparse.Namespace(dkg_core_chain_cache=True, snapshot_graph_id="25"))
