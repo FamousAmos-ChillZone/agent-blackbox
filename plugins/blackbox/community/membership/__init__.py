@@ -52,11 +52,11 @@ import logging
 import threading
 import time
 import urllib.parse
-from enum import Enum
 from typing import Any, Callable, Optional
 
-from ..kernel import constants, identity
-from ..kernel.dkg_client import DkgClient, DkgError
+from ...kernel import constants, identity
+from ...kernel.dkg_client import DkgClient, DkgError
+from .join_status import JOIN_STATE_TEXT, JoinState, has_definition, join_state_of, read_join_state
 
 logger = logging.getLogger(__name__)
 
@@ -289,7 +289,7 @@ def join_verdict(entry: Optional[dict[str, object]]) -> str:
     if registered:
         on_chain = entry.get("onChain") if isinstance(entry.get("onChain"), dict) else {}
         return "open" if on_chain.get("publishPolicy") else "undecided"
-    return "open" if _has_definition(entry) else "undecided"
+    return "open" if has_definition(entry) else "undecided"
 
 
 def needs_join(entry: dict[str, object]) -> bool:
@@ -319,12 +319,6 @@ def _owns(address: str, graph: str) -> bool:
     return bool(slash) and owner.lower() == address.lower()
 
 
-def _has_definition(entry: dict[str, object]) -> bool:
-    """True when the node holds the graph's definition: its listing names an
-    access policy. A node without it lists the graph with no policy (KI-295)."""
-    return str(entry.get("accessPolicy") or "").strip().lower() in {"public", "private"}
-
-
 #: The process's membership state (see module docstring).
 MEMBERSHIP = CommunityMembership()
 
@@ -341,48 +335,17 @@ def ensure_community_subscription(client: DkgClient, cfg: object) -> tuple[bool,
     return MEMBERSHIP.ensure(client, cfg)
 
 
-class JoinState(Enum):
-    """Where this node stands with the graph the community lives in, as its own listing says.
-
-    JOINED — subscribed with the graph's definition in (it can read and post);
-    AWAITING_DEFINITION — subscribed, the definition still on its way (the node
-    logs "not authorized" meanwhile, KI-295);
-    JOINING — not subscribed yet;
-    UNKNOWN — the node could not be asked (never read as "not joined", LES-011).
-    """
-
-    JOINED = "joined"
-    AWAITING_DEFINITION = "awaiting-definition"
-    JOINING = "joining"
-    UNKNOWN = "unknown"
-
-
-#: One plain line per state, for the dashboard (no jargon, no ids).
-JOIN_STATE_TEXT: dict[JoinState, str] = {
-    JoinState.JOINED: "connected",
-    JoinState.AWAITING_DEFINITION: "connecting — fetching the graph's definition",
-    JoinState.JOINING: "connecting — subscribing to the graph",
-    JoinState.UNKNOWN: "could not check the connection (local node not answering)",
-}
-
-
-def join_state_of(entry: Optional[dict[str, object]], *, listing_read: bool) -> JoinState:
-    """Pure: the :class:`JoinState` of the node's listing row *entry* for the
-    graph (None when the graph is not listed). *listing_read* False means the
-    listing itself could not be read."""
-    if not listing_read:
-        return JoinState.UNKNOWN
-    if entry is None or not entry.get("subscribed"):
-        return JoinState.JOINING
-    return JoinState.JOINED if _has_definition(entry) else JoinState.AWAITING_DEFINITION
-
-
-def read_join_state(client: DkgClient, graph: str) -> JoinState:
-    """Ask the node once (its context-graph listing) where it stands with *graph*."""
-    try:
-        entries = client.context_graphs()
-    except Exception as exc:   # could not tell (LES-011)
-        logger.debug("blackbox: community join state unreadable: %s", exc)
-        return JoinState.UNKNOWN
-    entry = next((row for row in entries if str(row.get("id") or "") == graph), None)
-    return join_state_of(entry, listing_read=True)
+__all__ = [
+    "COMMUNITY_LANES",
+    "JOIN_STATE_TEXT",          # re-exported from join_status (the read side)
+    "MEMBERSHIP",
+    "CommunityMembership",
+    "JoinState",
+    "ensure_community_subscription",
+    "ensure_report_lane",
+    "join_state_of",
+    "join_verdict",
+    "needs_join",
+    "pending_join_agents",
+    "read_join_state",
+]

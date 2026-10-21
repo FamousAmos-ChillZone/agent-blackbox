@@ -48,7 +48,7 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
     try:
         # KI-034: updated existing installs must join without a manual sync —
         # but only when the node says it is not subscribed, and at most once
-        # per retry window (R0, KI-064/114; community/membership.py).
+        # per retry window (R0, KI-064/114; community/membership/).
         community.ensure_community_subscription(client, cfg)
         # R0c/R0d: only reports whose signature verifies for THIS network and
         # graph are counted; the self-described reporter field never is.
