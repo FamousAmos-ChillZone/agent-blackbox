@@ -54,7 +54,7 @@ def run_payload(body: Any) -> tuple[int, dict[str, Any]]:
 
 def register(app: Any, swr: Cache) -> None:
     """Add the panel script and the two Playground routes to *app* (*swr* is unused: never cached)."""
-    from fastapi import Request
+    from fastapi import Body
     from fastapi.responses import FileResponse, JSONResponse
 
     @app.get("/playground.js")
@@ -65,13 +65,10 @@ def register(app: Any, swr: Cache) -> None:
     def playground_state() -> Any:
         return JSONResponse(state_payload(), headers=NO_CACHE)
 
+    # A plain (sync) handler: FastAPI runs it in its thread pool, so a test that waits
+    # up to ~90 s for its share never blocks the dashboard. The body is a plain dict
+    # (this module uses postponed annotations; a Request annotation would not resolve).
     @app.post("/api/playground/run")
-    async def playground_run(request: Request) -> Any:
-        from starlette.concurrency import run_in_threadpool
-
-        try:
-            body = await request.json()
-        except ValueError:
-            body = {}
-        status, payload = await run_in_threadpool(run_payload, body)   # the test waits up to ~90 s for its share
+    def playground_run(body: dict[str, Any] = Body(default={})) -> Any:
+        status, payload = run_payload(body)
         return JSONResponse(payload, status_code=status, headers=NO_CACHE)

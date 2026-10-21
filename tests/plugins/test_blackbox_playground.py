@@ -114,3 +114,20 @@ def test_the_lane_reader_asks_for_the_sandbox_lane_only():
     assert asked == {"graph": "0xabc/graph", "view": constants.VIEW_SHARED_WORKING_MEMORY, "sub_graph": "sandbox",
                      "limited": True}
     assert view.readable and view.entries[0].identifier == IDENTIFIER
+
+
+def test_the_run_route_takes_a_json_body_and_answers_409(monkeypatch):
+    """Drive the REAL route (not the handler): the first bench run found the body
+    declared in a way FastAPI read as a required query parameter (422)."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    def refuse(kind):
+        raise playground.PlaygroundRefused(f"refused {kind}")
+
+    monkeypatch.setattr(playground, "run_test", refuse)
+    app = FastAPI()
+    playground_routes.register(app, lambda *a: None)
+    reply = TestClient(app).post("/api/playground/run", json={"kind": "domain"})
+    assert reply.status_code == 409 and reply.json() == {"ok": False, "error": "refused domain"}
+    assert TestClient(app).get("/playground.js").status_code == 200
