@@ -1,5 +1,4 @@
 """Read-only admission for a new snapshot default; never remove a protection tier."""
-import math
 import time
 
 from ..kernel import constants
@@ -34,8 +33,9 @@ def recent_verified_sources(job, cfg):
             or not _matches_requested_scope(job.get("request"), payload)):
         return False
     finished = job.get("finishedAt")
-    if (type(finished) not in (int, float) or not math.isfinite(finished)
-            or not 0 <= time.time() - finished / 1000 <= SOURCE_PROOF_MAX_AGE_SECONDS):
+    now = time.time() * 1000
+    if (type(finished) not in (int, float)
+            or not now - SOURCE_PROOF_MAX_AGE_SECONDS * 1000 <= finished <= now):
         return False
     result = job.get("result")
     return (isinstance(result, dict) and result.get("mode") == "core-cache"

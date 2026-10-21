@@ -15,7 +15,7 @@ config = load_blackbox("kernel.config")
 @pytest.mark.parametrize("path,value", [
     (("id",), None), (("capabilities",), {}),
     *(( ("state",), value) for value in ("idle", "running", "failed")),
-    *(( ("finishedAt",), value) for value in (0, 10**16, "now", float("inf"))),
+    *(( ("finishedAt",), value) for value in (0, 10**16, 10**400, "now", float("inf"), float("nan"))),
     (("request", "contextGraphId"), "other/graph"), (("request", "sourcePolicy"), "advertised-core"),
     (("result", "coverageSourceCore"), "unselected-core"), (("result", "current"), False),
     (("result", "committed"), 11), (("result", "assets"), 0), (("result", "assets"), True),
