@@ -5,7 +5,8 @@ this is the read side the dashboard shows (connected or not); the membership
 module keeps the state machine that subscribes and joins.
 
 Public surface: :class:`JoinState`, :data:`JOIN_STATE_TEXT`, :func:`join_state_of`
-(pure), :func:`read_join_state` (one listing read), :func:`has_definition` (pure).
+(pure), :func:`read_join_state` (one listing read), and the pure listing reads
+:func:`has_definition`, :func:`needs_join` and :func:`owns`.
 """
 
 from __future__ import annotations
@@ -48,6 +49,20 @@ JOIN_STATE_TEXT: dict[JoinState, str] = {
     JoinState.JOINING: "connecting — subscribing to the graph",
     JoinState.UNKNOWN: "could not check the connection (local node not answering)",
 }
+
+
+def needs_join(entry: dict[str, object]) -> bool:
+    """Pure: whether writing to the listed graph needs the owner's admission — private
+    access, or a registered graph with a CURATED publish policy (the verified graph)."""
+    on_chain = entry.get("onChain") if isinstance(entry.get("onChain"), dict) else {}
+    return (str(entry.get("accessPolicy") or "") == "private"
+            or str(on_chain.get("publishPolicy") or "").lower() == "curated")
+
+
+def owns(address: str, graph: str) -> bool:
+    """*address* owns *graph*: a registered graph's id is its owner's address, "/", its name."""
+    owner, slash, _name = graph.partition("/")
+    return bool(slash) and owner.lower() == address.lower()
 
 
 def join_state_of(entry: Optional[dict[str, object]], *, listing_read: bool) -> JoinState:

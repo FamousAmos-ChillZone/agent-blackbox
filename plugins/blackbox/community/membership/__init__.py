@@ -56,7 +56,7 @@ from typing import Any, Callable, Optional
 
 from ...kernel import constants, identity
 from ...kernel.dkg_client import DkgClient, DkgError
-from .join_status import JOIN_STATE_TEXT, JoinState, has_definition, join_state_of, read_join_state
+from .join_status import JOIN_STATE_TEXT, JoinState, has_definition, join_state_of, needs_join, owns, read_join_state
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ class CommunityMembership:
         address = identity.reporter_address(client)
         if not address:
             return False
-        if not _owns(address, graph):   # a member: nothing to register
+        if not owns(address, graph):   # a member: nothing to register
             with self._lock:
                 self._lane_ready.add(graph)
             return True
@@ -172,7 +172,7 @@ class CommunityMembership:
         owner_peer = str(getattr(cfg, "graph_peer_id", "") or "")
         if not address or not owner_peer:
             return   # asked again at the next probe
-        if not _owns(address, graph):
+        if not owns(address, graph):
             try:
                 client.request_join(graph, owner_peer)
             except DkgError as exc:   # asked again at the next probe
@@ -309,14 +309,6 @@ def join_verdict(entry: Optional[dict[str, object]]) -> str:
     return "open" if has_definition(entry) else "undecided"
 
 
-def needs_join(entry: dict[str, object]) -> bool:
-    """Pure: whether writing to the listed graph needs the owner's admission — private
-    access, or a registered graph with a CURATED publish policy (the verified graph)."""
-    on_chain = entry.get("onChain") if isinstance(entry.get("onChain"), dict) else {}
-    return (str(entry.get("accessPolicy") or "") == "private"
-            or str(on_chain.get("publishPolicy") or "").lower() == "curated")
-
-
 def _graph_entry(client: DkgClient, graph: str) -> Optional[dict[str, object]]:
     """The node's own listing row for *graph* (``subscribed``, ``accessPolicy``…), or None."""
     try:
@@ -328,12 +320,6 @@ def _graph_entry(client: DkgClient, graph: str) -> Optional[dict[str, object]]:
         if str(entry.get("id") or "") == graph:
             return entry
     return None
-
-
-def _owns(address: str, graph: str) -> bool:
-    """*address* owns *graph*: a registered graph's id is its owner's address, "/", its name."""
-    owner, slash, _name = graph.partition("/")
-    return bool(slash) and owner.lower() == address.lower()
 
 
 #: The process's membership state (see module docstring).
