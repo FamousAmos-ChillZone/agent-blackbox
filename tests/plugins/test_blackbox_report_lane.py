@@ -1,9 +1,9 @@
-"""Community statements are written into the community sub-graph (2026-10-12).
+"""Community statements are written into the community sub-graphs (2026-10-12; sandbox lane 2026-10-21).
 
 DKG 10.0.23 refuses members' direct shares into a catalog-mode graph's root, so
 every community statement goes into a named sub-graph. The graph's OWNER
-registers it (``community.ensure_report_lane``, once per process per graph,
-before its first write); every other node writes into the owner's sub-graph
+registers both lanes, ``reports`` and ``sandbox`` (``community.ensure_report_lane``,
+once per process per graph, before its first write); every other node writes into the owner's sub-graph
 as it is, because DKG 10.0.25 looks the owner's registration up at a member's
 first write (OriginTrail/dkg#3306).
 """
@@ -43,13 +43,13 @@ class _Node:
         return {"created": body["subGraphName"]}
 
 
-def test_the_owners_node_registers_the_lane_once_per_graph():
+def test_the_owners_node_registers_both_lanes_once_per_graph():
     node, membership = _Node(), CommunityMembership()
     assert membership.ensure_report_lane(node, GRAPH) and membership.ensure_report_lane(node, GRAPH)
-    assert node.calls == [("POST", "/api/sub-graph/create",
-                           {"contextGraphId": GRAPH, "subGraphName": constants.COMMUNITY_SUB_GRAPH})]
+    assert node.calls == [("POST", "/api/sub-graph/create", {"contextGraphId": GRAPH, "subGraphName": lane})
+                          for lane in (constants.COMMUNITY_SUB_GRAPH, constants.SANDBOX_SUB_GRAPH)]
     membership.ensure_report_lane(node, "0x00000000000000000000000000000000000000AA/other")
-    assert len(node.calls) == 2                                   # a second graph of its own, address in any case
+    assert len(node.calls) == 4                                   # a second graph of its own, address in any case
 
 
 def test_a_member_registers_nothing_and_writes_into_the_owners_sub_graph():
@@ -64,7 +64,7 @@ def test_an_already_registered_lane_counts_as_ready():
     assert membership.ensure_report_lane(node, GRAPH) is True
     node.fail_with = ""
     membership.ensure_report_lane(node, GRAPH)
-    assert len(node.calls) == 1                                                     # remembered as ready
+    assert len(node.calls) == 2                                                     # both lanes, then remembered as ready
 
 
 def test_a_failed_registration_is_logged_and_tried_again(caplog):
@@ -72,14 +72,14 @@ def test_a_failed_registration_is_logged_and_tried_again(caplog):
     assert membership.ensure_report_lane(node, GRAPH) is False
     assert "could not register the community subgraph" in caplog.text
     node.fail_with = ""
-    assert membership.ensure_report_lane(node, GRAPH) is True and len(node.calls) == 2
+    assert membership.ensure_report_lane(node, GRAPH) is True and len(node.calls) == 3   # 1 refused + 2 lanes
 
 
 def test_an_unknown_own_address_registers_nothing_yet_and_asks_again():
     node, membership = _Node(address=""), CommunityMembership()
     assert membership.ensure_report_lane(node, GRAPH) is False and node.calls == []
     node.address = OWNER
-    assert membership.ensure_report_lane(node, GRAPH) is True and len(node.calls) == 1
+    assert membership.ensure_report_lane(node, GRAPH) is True and len(node.calls) == 2   # both lanes
 
 
 @pytest.mark.parametrize("module_path", ["plugins/blackbox/community/sharing.py",

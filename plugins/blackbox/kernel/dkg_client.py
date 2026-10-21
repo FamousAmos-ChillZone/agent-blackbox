@@ -417,8 +417,8 @@ class DkgClient:
 
     # -- knowledge assets --------------------------------------------------
 
-    def share_knowledge_asset(self, cg_id: str, name: str, quads: list[Quad],
-                              create_timeout: Optional[float] = None) -> dict[str, Any]:   # community statements only
+    def share_knowledge_asset(self, cg_id: str, name: str, quads: list[Quad], create_timeout: Optional[float] = None,
+                              sub_graph: str = constants.COMMUNITY_SUB_GRAPH) -> dict[str, Any]:   # community lanes only
         """Create/finalize a KA, then explicitly share its sealed assertion to SWM.
 
         Private/agent-gated context graphs require the node's sender-key SWM
@@ -438,13 +438,13 @@ class DkgClient:
                 "POST",
                 "/api/knowledge-assets",
                 {"contextGraphId": cg_id, "name": name, "quads": quads, "alsoShareSwm": False,
-                 "subGraphName": constants.COMMUNITY_SUB_GRAPH},
+                 "subGraphName": sub_graph},
                 timeout=create_timeout or _STORE_TIMEOUT,
             )
         except DkgError as exc:
             if not (_is_already_finalized(exc) or _is_wm_merkle_conflict(exc)):
                 raise
-        return self.share_finalized_knowledge_asset(cg_id, name, constants.COMMUNITY_SUB_GRAPH)
+        return self.share_finalized_knowledge_asset(cg_id, name, sub_graph)
 
     def _ka_path(self, name: str, suffix: str = "") -> str:
         enc = urllib.parse.quote(name, safe="")
@@ -574,9 +574,9 @@ class DkgClient:
         view: Optional[str] = constants.VIEW_VERIFIABLE_MEMORY,
         on_error: Any = None,
         agent_address: Optional[str] = None,
-        timeout: Optional[float] = None,
+        timeout: Optional[float] = None, sub_graph: str = constants.COMMUNITY_SUB_GRAPH,
     ) -> list[dict[str, Any]]:
-        """Run a SPARQL SELECT and return normalized bindings.
+        """Run a SPARQL SELECT and return normalized bindings (shared memory: the *sub_graph* lane).
 
         Each binding is a ``{var: value}`` dict of plain strings (literals and
         IRIs already unwrapped — see :func:`extract_binding`). On transport
@@ -588,7 +588,7 @@ class DkgClient:
         if view:
             payload["view"] = view
         if view == constants.VIEW_SHARED_WORKING_MEMORY:   # community statements live in their subgraph
-            payload["subGraphName"] = constants.COMMUNITY_SUB_GRAPH
+            payload["subGraphName"] = sub_graph
         if agent_address:
             payload["agentAddress"] = agent_address
         try:

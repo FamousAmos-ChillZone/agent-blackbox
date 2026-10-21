@@ -278,6 +278,9 @@ COMMUNITY_GRAPH_ENABLED = True
 #: writer — a named sub-graph has no per-author catalog. (DKG 10.0.23 also
 #: refuses members' direct shares into a catalog-mode root.)
 COMMUNITY_SUB_GRAPH = "reports"
+#: The sandbox lane (2026-10-21): shares made while sandbox mode is on. Nothing that builds
+#: rules or community flags reads it — every shared-memory query names ``reports``.
+SANDBOX_SUB_GRAPH = "sandbox"
 
 #: Default daily cap on outbound community reports per node. Bounds a runaway
 #: or compromised agent's graph footprint even before the per-threat 6-hour

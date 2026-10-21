@@ -370,7 +370,7 @@ class _SendClient:
     def __init__(self, result=None, raises=None):
         self.result, self.raises, self.calls = result, raises, 0
 
-    def share_knowledge_asset(self, graph, name, quads):
+    def share_knowledge_asset(self, graph, name, quads, sub_graph="reports"):
         self.calls += 1
         if self.raises is not None:
             raise self.raises

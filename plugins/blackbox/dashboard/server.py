@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Set, Tuple
 from ..kernel.browser_boundary import BrowserBoundary
 from .. import shields
 from ..sync import read_durable_progress, state as sync_state
-from . import community_routes, docs_routes, graph_pages, lifecycle, shields_routes, sync_meter, sync_timing
+from . import community_routes, docs_routes, graph_pages, lifecycle, playground_routes, shields_routes, sync_meter, sync_timing
 from .graph_pages import _balanced_graph_entries, _graph_entries
 from .network_sync import network_sync_argv as _network_sync_argv
 from .node_probe import NodeLiveness, NodeReadCache, RepeatGate, node_sync_probe
@@ -75,7 +75,7 @@ _FONT_FILES = frozenset({
     "ibm-plex-mono-600-latin.woff2", "ibm-plex-mono-600-latin-ext.woff2",
 })
 #: The sub-packages that add their own routes and pages, each through ``register(app, swr)``.
-_ROUTE_PACKAGES = (shields_routes, docs_routes)
+_ROUTE_PACKAGES = (shields_routes, docs_routes, playground_routes)
 def _dkg_durable_progress(dkg_home: str, context_graph_id: str) -> dict[str, Any]:
     """Read the latest resumable VM offset reported by the managed DKG."""
     return read_durable_progress(dkg_home, context_graph_id)

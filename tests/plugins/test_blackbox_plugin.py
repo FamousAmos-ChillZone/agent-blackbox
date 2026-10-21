@@ -3273,7 +3273,7 @@ def test_share_sighting_forwards_candidate_fields(monkeypatch, tmp_path):
         def status(self):
             return {"networkId": "test-network-id"}  # signing needs it (R0b)
 
-        def share_knowledge_asset(self, cg, name, q):
+        def share_knowledge_asset(self, cg, name, q, sub_graph="reports"):
             shared["quads"] = q
             return {}
 

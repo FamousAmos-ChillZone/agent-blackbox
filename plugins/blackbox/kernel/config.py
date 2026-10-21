@@ -128,6 +128,10 @@ class BlackboxConfig:
     #: R15 shadow phase: community stages are computed and logged, but every
     #: community rule is clamped to MONITOR — nothing community-derived reaches an agent.
     community_shadow: bool = False
+    #: Sandbox mode (2026-10-21): shares go to the ``sandbox`` lane, which nothing that builds rules or flags reads.
+    community_sandbox: bool = False
+    #: Owner node only: approve every pending join request on the pulse (sync allowlist, never publish).
+    community_auto_approve: bool = False
     #: DKG-lookup B9: ``off`` (default: a failed lookup is could-not-tell + an alarm) | ``index`` (opt-in on-disk SQLite last resort).
     verified_lookup_fallback: str = "off"
     block_severity: str = "critical"
@@ -281,23 +285,13 @@ def load_blackbox_config() -> BlackboxConfig:
     referenced_key = read_host_secret(str(llm_entry.get("api_key_env") or "").strip())   # KI-371: a variable's name
     llm_api_key = (read_host_secret("BLACKBOX_LLM_API_KEY") or str(llm_entry.get("api_key") or "").strip() or referenced_key)
     llm_enabled = _as_bool(_env_or(llm_entry, env="BLACKBOX_LLM_ENABLED", key="enabled", default=False), False)
-    context_graph_id = str(
-        _env_or(
-            entry,
-            env="BLACKBOX_CONTEXT_GRAPH_ID",
-            key="context_graph_id",
-            default=constants.DEFAULT_CONTEXT_GRAPH_ID,
-        )
-    )
+    context_graph_id = str(_env_or(entry, env="BLACKBOX_CONTEXT_GRAPH_ID", key="context_graph_id",
+                                   default=constants.DEFAULT_CONTEXT_GRAPH_ID))
     # Auto-switch an install still pointed at a legacy (pre-Blackbox) graph to the
     # current default, so an existing DKG user syncs the correct CG with no manual
     # step. A genuinely custom graph id is not in the legacy set and is untouched.
     if context_graph_id in constants.LEGACY_CONTEXT_GRAPH_IDS:
-        logger.info(
-            "blackbox: switching legacy context_graph_id %s -> %s",
-            context_graph_id,
-            constants.DEFAULT_CONTEXT_GRAPH_ID,
-        )
+        logger.info("blackbox: switching legacy context_graph_id %s -> %s", context_graph_id, constants.DEFAULT_CONTEXT_GRAPH_ID)
         context_graph_id = constants.DEFAULT_CONTEXT_GRAPH_ID
     default_dkg_home = str(constants.blackbox_dkg_home())
     dkg_home_env = _first_env("BLACKBOX_DKG_HOME")
@@ -360,6 +354,8 @@ def load_blackbox_config() -> BlackboxConfig:
         report=_as_bool(_env_or(entry, env="BLACKBOX_REPORT", key="report", default=False), False),
         daily_report_limit=constants.effective_daily_report_limit(_as_int(_env_or(entry, env="BLACKBOX_DAILY_REPORT_LIMIT", key="daily_report_limit", default=constants.DEFAULT_DAILY_REPORT_LIMIT), constants.DEFAULT_DAILY_REPORT_LIMIT)),
         community_shadow=_as_bool(_env_or(entry, env="BLACKBOX_COMMUNITY_SHADOW", key="community_shadow", default=False), False),
+        community_sandbox=_as_bool(_env_or(entry, env="BLACKBOX_COMMUNITY_SANDBOX", key="community_sandbox", default=False), False),
+        community_auto_approve=_as_bool(_env_or(entry, env="BLACKBOX_COMMUNITY_AUTO_APPROVE", key="community_auto_approve", default=False), False),
         verified_lookup_fallback=_fallback_mode(_env_or(entry, env="BLACKBOX_VERIFIED_LOOKUP_FALLBACK", key="verified_lookup_fallback", default="off")),
         community_poll_interval=_as_int(_env_or(entry, env="BLACKBOX_COMMUNITY_POLL_INTERVAL", key="community_poll_interval", default=20), 20),
         community_keepalive_epoch_days=_as_float(_env_or(entry, env="BLACKBOX_COMMUNITY_KEEPALIVE_EPOCH_DAYS", key="community_keepalive_epoch_days", default=10.0), 10.0),
