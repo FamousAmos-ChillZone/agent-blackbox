@@ -15,7 +15,7 @@ from .. import audit, detection, shields
 from .. import community
 from ..kernel import identity
 from ..kernel.config import BlackboxConfig
-from ..kernel.dkg_client import DkgClient, DkgError
+from ..kernel.dkg_client import DkgClient
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,7 @@ def _share_findings(cfg: BlackboxConfig, event: str, finding_dicts: list[dict[st
     client: Optional[DkgClient] = None
     try:
         client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-    except (DkgError, OSError, ValueError):   # no node or no token here: record locally, share nothing
+    except Exception:   # health: allow BLE001 -- the hook boundary is fail-open: a node client that cannot be built must never break the agent's tool call (KI-033)
         client = None
     policy = community.CommunitySharePolicy(cfg)
     reporter = identity.reporter_address(client) if client is not None else None
