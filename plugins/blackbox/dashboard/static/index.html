@@ -848,6 +848,12 @@
     color: var(--sandbox, #8B5CF6); font: 800 15px/1 var(--mono, ui-monospace, monospace); }
   .pg-ribbon b { display: block; font: 700 12px/1.2 var(--mono, ui-monospace, monospace); letter-spacing: 0.14em; }
   .pg-ribbon span { display: block; font-size: 11px; opacity: 0.9; }
+  /* Narrow screens: the stage's search and view controls sit at the top, so the
+     ribbon moves to the bottom-left corner, clear of the fullscreen button. */
+  @media (max-width: 720px) {
+    .pg-ribbon { top: auto; bottom: 12px; max-width: calc(100% - 72px); padding-block: 6px; }
+    .pg-ribbon span { display: none; }
+  }
 
   /* ---------- Shields: the "New" banner (static/shields.js) ---------- */
   .ts-banner { position: relative; overflow: hidden; margin-top: 28px; border: 1px solid color-mix(in srgb, var(--signal) 55%, transparent);
@@ -3505,6 +3511,7 @@
   }
 
   function tierProgress(tier) {
+    if (sandboxCommunity(tier)) return { count: graphTotalForTier(tier) || 0, state: "ready", label: "sandbox lane" };
     var p = lastStatus && lastStatus.sync_progress && lastStatus.sync_progress[tier];
     if (p && typeof p === "object") return p;
     var count = tier === "public"
@@ -3610,6 +3617,12 @@
   }
 
   function graphTotalForTier(tier) {
+    // Sandbox mode draws the sandbox lane: the status poll counts the REAL
+    // community tier, so the lane's own page total is the only true count.
+    if (sandboxCommunity(tier)) {
+      var lane = graphCache[tier];
+      return lane && lane.total != null ? Number(lane.total) || 0 : null;
+    }
     // /api/graph-status is the freshest cache generation. Prefer it over an
     // older page payload so a 0/partial graph is reloaded as soon as sync lands.
     var progress = lastStatus && lastStatus.sync_progress && lastStatus.sync_progress[tier];
