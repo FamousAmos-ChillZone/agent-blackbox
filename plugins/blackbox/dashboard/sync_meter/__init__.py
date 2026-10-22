@@ -34,12 +34,13 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Callable, Dict, Optional
 
 from ... import ruleset
 from ...kernel.dkg_client import DkgClient
 from ...sync import read_recovery_backlog
+from .progress import STALL_SECONDS, WATCH, SyncProgress, SyncProgressWatch, sync_phase
 
 #: Seconds one meter reading is reused — the page polls every few seconds and
 #: the node only moves every minute or two, so the node is asked at most this often.
@@ -78,6 +79,14 @@ class SyncMeter:
     #: fallback | paused | not-live, ``label`` the few words the panel shows next to its
     #: mark, ``text`` the full sentence (the hover) — see :func:`lookup_status`.
     lookups: dict[str, str] = field(default_factory=dict)
+    #: The step the sync is on, for the "sit tight" line (:func:`.progress.sync_phase`): finding |
+    #: queued | downloading | compiling | synced | stalled | "" (nothing to say), and its sentence.
+    phase: str = ""
+    phase_text: str = ""
+    #: Epoch seconds: when the sync was first seen running, and when its counts last moved
+    #: (:class:`.progress.SyncProgressWatch`); None when not syncing.
+    running_since: Optional[float] = None
+    last_progress: Optional[float] = None
 
 
 def _percent(part: int, whole: int) -> float:
@@ -243,6 +252,7 @@ def register_sync_meter_routes(app: Any, *, load_config: Callable[[], Any],
                                verified_rules: Callable[[Any], int]) -> Callable[[], dict[str, Any]]:
     """Add ``GET /api/verified-sync`` to *app* (a FastAPI app); returns the handler.
 
+    Each reading also feeds :data:`WATCH` and carries the sync's phase (:func:`sync_phase`).
     *node_reachable* is the server's cached liveness probe (never blocks);
     *verified_rules* maps cfg → the compiled verified-rule count. Readings are
     cached for :data:`CACHE_SECONDS` behind one lock, so concurrent polls
@@ -259,7 +269,16 @@ def register_sync_meter_routes(app: Any, *, load_config: Callable[[], Any],
                 cfg = load_config()
                 meter = read_sync_meter(cfg, node_reachable=node_reachable(cfg), verified_rules=verified_rules(cfg),
                                         anchor=anchor)
+                progress = WATCH.observe(meter)
+                phase, phase_text = sync_phase(meter, progress.stalled)
+                meter = replace(meter, phase=phase, phase_text=phase_text, running_since=progress.running_since,
+                                last_progress=progress.last_progress)
                 cached["body"], cached["at"] = asdict(meter), time.monotonic()
             return dict(cached["body"])
 
     return verified_sync
+
+
+__all__ = ["STALL_SECONDS", "WATCH", "GraphSizeAnchor", "SyncMeter", "SyncProgress", "SyncProgressWatch",
+           "build_sync_meter", "lookup_status", "read_sync_meter", "register_sync_meter_routes", "sync_phase",
+           "verified_graph_still_arriving"]

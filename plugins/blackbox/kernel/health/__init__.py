@@ -156,8 +156,7 @@ def _node_and_ruleset(inputs: HealthInputs) -> list[HealthItem]:
         items.append(HealthItem(_OPERATOR, HealthClass.ACTION, f"my node is stale: {why}",
                                 "run `blackbox sync --wait`; check the DKG node is running"))
     if inputs.rule_count == 0:
-        items.append(HealthItem(_OPERATOR, HealthClass.ACTION, "UNPROTECTED: the threat ruleset is empty",
-                                "run `blackbox sync --wait` to load the threat graph"))
+        items.append(_empty_ruleset_item(inputs.first_sync))
     if inputs.verified_lookup_problem:
         items.append(HealthItem(_OPERATOR, HealthClass.ACTION,
                                 f"DEGRADED: verified rules cannot be looked up — {inputs.verified_lookup_problem}",
@@ -168,6 +167,26 @@ def _node_and_ruleset(inputs: HealthInputs) -> list[HealthItem]:
                                 "nothing to do — the last-good asset tiers stay in force; reinstall Blackbox from the "
                                 "official release and tell the curators"))
     return items
+
+
+def _empty_ruleset_item(first_sync: str) -> HealthItem:
+    """No verified rules yet. While the first sync is moving that is setting up, not an
+    alarm: INFO, saying what happens and how long it takes (founder, 2026-10-22: a red
+    "run blackbox sync --wait" over a sync already running read as broken). A stalled
+    sync, or one nobody is watching, stays the ACTION alarm."""
+    if first_sync == "running":
+        return HealthItem(_OPERATOR, HealthClass.INFO,
+                          "Setting up: Umanitek's verified threat graph is loading for the first time "
+                          "(about 30 minutes on a new machine)",
+                          "nothing to do — verified checks switch on as the rules compile; until then the "
+                          "built-in rules (protected paths, secrets, Trader Shield) protect; the Threat graph "
+                          "card shows each step")
+    if first_sync == "stalled":
+        return HealthItem(_OPERATOR, HealthClass.ACTION,
+                          "UNPROTECTED: the first sync of the verified threat graph has stopped making progress",
+                          "check the DKG node is running (`blackbox status`), then run `blackbox sync --wait`")
+    return HealthItem(_OPERATOR, HealthClass.ACTION, "UNPROTECTED: the threat ruleset is empty",
+                      "run `blackbox sync --wait` to load the threat graph")
 
 
 def _community(inputs: HealthInputs) -> list[HealthItem]:
@@ -287,7 +306,7 @@ def node_installed(cfg: Any, node_reachable: bool) -> bool:
 
 def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked_by_identifier: Mapping[str, int],
            now: float, *, pending_shares: int = 0, shares_given_up: int = 0, sharing_consent_problem: str = "",
-           verified_lookup_problem: str = "",
+           verified_lookup_problem: str = "", first_sync: str = "",
            watch: Optional[manifest_watcher.ManifestWatchInputs] = None) -> HealthInputs:
     """Build :class:`HealthInputs` from a config, a compiled ruleset, node
     reachability, the last community read (or None), how many actions each
@@ -314,6 +333,7 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         pending_shares=int(pending_shares),
         sharing_consent_problem=sharing_consent_problem if getattr(cfg, "community_enabled", False) else "",
         verified_lookup_problem=verified_lookup_problem,
+        first_sync=first_sync,
         shares_given_up=int(shares_given_up),
         curators_last_day=(view.last_statement_day if view is not None else ""),
         today=datetime.fromtimestamp(now, UTC).date().isoformat(),
