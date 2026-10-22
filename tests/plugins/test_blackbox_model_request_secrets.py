@@ -23,7 +23,7 @@ from agent.codex_responses_adapter import _chat_messages_to_responses_input
 from plugins.blackbox import audit
 from plugins.blackbox import ruleset as ruleset_mod
 from plugins.blackbox.guard import background as guard_background
-from plugins.blackbox.guard import hooks
+from plugins.blackbox.guard import api_request, hooks
 from plugins.blackbox.guard import reporting as guard_reporting
 from plugins.blackbox.kernel import config as config_mod
 from plugins.blackbox.kernel.crypto_secrets import seed_phrase
@@ -73,7 +73,7 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setattr(guard_background, "_spawn_llm_review", lambda *a, **k: None)
     monkeypatch.setattr(guard_reporting, "DkgClient", lambda **k: (_ for _ in ()).throw(OSError("no node in tests")))
     monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=True))
-    hooks._seen_api_findings.clear()
+    api_request._seen_api_findings.clear()
     return tmp_path / "bb"
 
 
