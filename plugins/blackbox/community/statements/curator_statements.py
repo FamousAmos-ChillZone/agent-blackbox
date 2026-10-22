@@ -46,8 +46,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from ...kernel import constants, rdf_terms, signing, sparql_text, threat_ids
 from ...kernel.dkg_client import extract_binding
-from ...kernel.signing.key_manifest import KeyManifest
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import KeyManifest
+from ...kernel.signing import CuratorStatement
 from .. import report_schema
 
 #: The frozen payload schema of reduction-only statements (revocation,

@@ -24,8 +24,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from .. import community, killlist
 from ..kernel import health, signing
 from ..kernel.signing import key_manifest
-from ..kernel.signing.authority import Authority
-from ..kernel.signing.statement_order import CuratorStatement
+from ..kernel.signing import Authority
+from ..kernel.signing import CuratorStatement
 from . import dossier, keys, promotion, transport
 from .context import CurateContext, KillListDraft, ManifestDraft, PromotionDraft, StatementDraft
 from .proposal import Proposal, ProposalState, ProposalStore

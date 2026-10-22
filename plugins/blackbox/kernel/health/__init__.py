@@ -34,10 +34,12 @@ from .. import constants
 # and manifest_watch.
 from . import community_authority as community_alarms
 from . import manifest_watch as manifest_watcher
+from .manifest_watch import key_fingerprint
 from .inputs import HealthInputs   # the facts the rules read; its own module (this file is at its size limit)
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, List, Mapping, Optional
+__all__ = ["CURATOR_SILENCE_DAYS", "DRIFT_SHARE", "HEARTBEAT_SILENCE_DAYS", "LANE_SLA_DAYS", "NODE_INSTALL_HINT", "STALE_INTERVALS", "CuratorInputs", "HealthClass", "HealthInputs", "HealthItem", "community_authority", "curator_health", "gather", "key_fingerprint", "manifest_watch", "node_installed", "operator_health", "red", "render_lines", "ruleset_age_text"]   # the surface other modules may import (test_blackbox_architecture checks it)
 
 
 class HealthClass(Enum):

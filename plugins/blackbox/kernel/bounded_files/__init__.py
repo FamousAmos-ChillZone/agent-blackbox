@@ -76,3 +76,4 @@ def _read_up_to(descriptor: int, limit: int) -> bytes:
 
 
 from .probe_stamp import ProbeStamp   # the stamp shares this package: a small file read on the hot path
+__all__ = ["ProbeStamp", "read_small_text"]   # the surface other modules may import

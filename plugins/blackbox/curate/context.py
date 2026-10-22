@@ -49,9 +49,9 @@ from ..kernel import constants, signing
 from ..kernel.config import BlackboxConfig, load_blackbox_config
 from ..kernel.dkg_client import DkgClient
 from ..kernel.signing import key_manifest, trust_anchors
-from ..kernel.signing.authority import VERIFIED_GRAPH, Authority, RootStatement, home_graph
-from ..kernel.signing.key_manifest import KeyManifest
-from ..kernel.signing.statement_order import CuratorStatement
+from ..kernel.signing import VERIFIED_GRAPH, Authority, RootStatement, home_graph
+from ..kernel.signing import KeyManifest
+from ..kernel.signing import CuratorStatement
 from . import keys
 from .watch import SigningLog
 

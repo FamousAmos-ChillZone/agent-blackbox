@@ -20,7 +20,7 @@ from typing import List
 from ... import community
 from ...kernel import constants, signing, sparql_text
 from ...kernel.signing import promotion_statement as statement
-from ...kernel.signing.authority import Authority
+from ...kernel.signing import Authority
 from ..context import CurateContext
 from ..proposal import ProposalStore
 

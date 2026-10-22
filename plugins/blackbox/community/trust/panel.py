@@ -24,7 +24,7 @@ from datetime import date
 from typing import Any, Dict, List, Optional, TypedDict
 
 from ...kernel import display_safety
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from ..statements import curator_view
 
 #: A curator key without a heartbeat for longer than this is shown as silent (plan §13: 48 hours).

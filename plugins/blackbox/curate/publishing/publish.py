@@ -49,8 +49,8 @@ from ...kernel import constants, node_routes, rdf_terms, signing, sparql_text, t
 from ...kernel.dkg_client import DkgError
 from ...kernel.signing import key_manifest
 from ...kernel.signing import promotion_statement as statement
-from ...kernel.signing.authority import COMMUNITY_GRAPH, VERIFIED_GRAPH
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import COMMUNITY_GRAPH, VERIFIED_GRAPH
+from ...kernel.signing import CuratorStatement
 from .. import consent, promotion
 from ..ladder import outcomes
 from ..upkeep import published

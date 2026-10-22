@@ -58,7 +58,7 @@ from pathlib import Path
 from typing import Callable, Collection, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from ...kernel import constants, signing, threat_ids, yaml_files
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 
 logger = logging.getLogger(__name__)
 

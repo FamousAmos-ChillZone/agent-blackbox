@@ -33,8 +33,8 @@ from datetime import date, datetime, timedelta, timezone, UTC
 from typing import Any, AbstractSet, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
 from ...kernel.signing import key_manifest, statement_order
-from ...kernel.signing.authority import Authority, allowed_kinds
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import Authority, allowed_kinds
+from ...kernel.signing import CuratorStatement
 from . import curator_statements
 from .curator_statements import CuratorRecord
 

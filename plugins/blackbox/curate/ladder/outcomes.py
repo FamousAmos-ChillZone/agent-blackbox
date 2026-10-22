@@ -37,8 +37,8 @@ from typing import Any, Dict, Iterable, List, Optional
 from ... import community
 from ...community import reputation
 from ...detection import osv
-from ...kernel.signing.authority import Authority
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import Authority
+from ...kernel.signing import CuratorStatement
 from ..context import CurateContext, verified_identifiers
 from . import novelty_facts
 

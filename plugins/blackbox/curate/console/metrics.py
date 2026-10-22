@@ -39,8 +39,8 @@ from datetime import date, datetime, timezone, UTC
 from decimal import Decimal
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple, TypeVar
 
-from ...kernel.health.manifest_watch import key_fingerprint
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.health import key_fingerprint
+from ...kernel.signing import CuratorStatement
 from .. import queue
 from ..context import CurateContext, verified_identifiers
 from ..lab.jobs import LabJobState, LabJobStore

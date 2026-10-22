@@ -20,7 +20,7 @@ from ...kernel import display_safety
 from ...kernel.config import load_blackbox_config
 from ...kernel.dkg_client import DkgClient
 from ...kernel.signing import trust_anchors
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from ..context import CurateContext
 from ..dossier import CommunityConfirmation
 from ..publishing import VerbError

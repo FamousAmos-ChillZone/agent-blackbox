@@ -52,7 +52,7 @@ from typing import TYPE_CHECKING, Callable, List, Mapping, Optional, Sequence
 from ... import community
 from ...community import reputation
 from ...kernel import signing
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from .. import keys, publishing, queue, transport, verbs
 from ..context import CurateContext
 from ..ladder import outcomes

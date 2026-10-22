@@ -50,7 +50,7 @@ from datetime import date, datetime, timedelta, timezone, UTC
 from pathlib import Path
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from .. import keys
 from ..context import CurateContext
 from ..proposal import Proposal, ProposalState, ProposalStore

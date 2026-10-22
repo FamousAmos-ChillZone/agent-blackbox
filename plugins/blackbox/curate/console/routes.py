@@ -34,7 +34,7 @@ from datetime import datetime, timezone, UTC
 from typing import Any, Callable, Dict, Optional
 
 from ...kernel.signing import key_manifest, trust_anchors
-from ...kernel.signing.authority import Authority
+from ...kernel.signing import Authority
 from .. import consent, publishing
 from ..context import CurateContext
 from ..proposal import Proposal, ProposalState, ProposalStore

@@ -22,8 +22,8 @@ from typing import Callable, Dict
 from .. import community
 from ..detection import osv
 from ..kernel import display_safety, node_routes, signing
-from ..kernel.signing.authority import Authority
-from ..kernel.signing.statement_order import CuratorStatement
+from ..kernel.signing import Authority
+from ..kernel.signing import CuratorStatement
 from . import console, dossier, handoff, intake, keys, node_ui_views, promotion, publishing, queue, transport, verbs, watch
 from .ladder import outcomes
 from .upkeep import heartbeat, published
