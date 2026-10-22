@@ -36,6 +36,11 @@ RECORD = _section("# ── All or nothing: the install record", "# ── Main"
 PREFLIGHT = _section("# ── Pre-flight: everything that can be known", "# ── All or nothing: the install record")
 
 
+def _assignment(name: str) -> str:
+    """The installer's own ``NAME=value`` line, so a test runs with the shipped value."""
+    return next(line for line in TEXT.splitlines() if line.startswith(f"{name}="))
+
+
 def _function(name: str) -> str:
     """The text of one installer function, skipping `}` lines inside its heredocs."""
     lines = TEXT[TEXT.index(f"\n{name}() {{\n") + 1:].splitlines(keepends=True)
@@ -317,8 +322,8 @@ err() {{ echo "err: $1"; }}
 warn() {{ :; }}
 step() {{ :; }}
 port_in_use() {{ case "$1" in {busy_case}) return 0 ;; *) return 1 ;; esac; }}
-BLACKBOX_OXIGRAPH_FIRST_PORT=7878
-BLACKBOX_OXIGRAPH_LAST_PORT=7978
+{_assignment("BLACKBOX_OXIGRAPH_FIRST_PORT")}
+{_assignment("BLACKBOX_OXIGRAPH_LAST_PORT")}
 {_function("choose_blackbox_oxigraph_port")}
 {_function("ensure_blackbox_dkg_config")}
 VENV_DIR={shlex.quote(str(venv.parent))}
@@ -341,6 +346,14 @@ def test_a_new_node_gets_a_free_oxigraph_port_beside_another_dkg_node(tmp_path: 
     store = _oxigraph_config(tmp_path, busy={7878}, running=False, existing=None)
 
     assert store == {"backend": "oxigraph-server", "options": {"port": 7879}}
+
+
+def test_a_new_node_never_takes_the_dkg_default_store_port(tmp_path: Path) -> None:
+    """7878 is every DKG node's default; another node restarting leaves it free for a moment
+    (a Mac install took it in a 2-second restart gap and its node could not start)."""
+    store = _oxigraph_config(tmp_path, busy=set(), running=False, existing=None)
+
+    assert store["options"]["port"] == 7879
 
 
 def test_a_configured_oxigraph_port_is_kept(tmp_path: Path) -> None:
