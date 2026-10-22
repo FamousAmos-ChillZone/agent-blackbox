@@ -37,9 +37,9 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Dict, Optional
 
-from .. import ruleset
-from ..kernel.dkg_client import DkgClient
-from ..sync import read_recovery_backlog
+from ... import ruleset
+from ...kernel.dkg_client import DkgClient
+from ...sync import read_recovery_backlog
 
 #: Seconds one meter reading is reused — the page polls every few seconds and
 #: the node only moves every minute or two, so the node is asked at most this often.
