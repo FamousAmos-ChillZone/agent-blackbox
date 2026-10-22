@@ -58,6 +58,7 @@ from ...kernel import constants, identity
 from ...kernel.dkg_client import DkgClient, DkgError
 from .join_status import (ADMISSION_TEXT, JOIN_STATE_TEXT, Admission, JoinState, MembershipStatus, has_definition,
                           join_state_of, needs_join, owns, read_join_state, read_membership_status)
+from .readiness import READINESS, GraphReadiness
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +78,11 @@ class CommunityMembership:
     #: Owner node with ``community_auto_approve``: how often the pending join requests are read.
     APPROVE_SECONDS = 60.0
 
-    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(self, clock: Callable[[], float] = time.monotonic, readiness: Optional[GraphReadiness] = None) -> None:
         self._clock = clock
+        #: when this node may add the graph's shared memory (KI-449, :mod:`.readiness`);
+        #: None = the process's :data:`READINESS`, looked up on use
+        self._own_readiness = readiness
         self._lock = threading.Lock()
         self._last_subscribe: dict[str, float] = {}
         #: graph -> when the node last confirmed it is subscribed; inside
@@ -93,6 +97,10 @@ class CommunityMembership:
         self._open: set[str] = set()            # graphs known to need no join (open, unregistered)
         self._last_join_probe: dict[str, float] = {}
         self._last_approve: dict[str, float] = {}
+
+    @property
+    def _readiness(self) -> GraphReadiness:
+        return self._own_readiness if self._own_readiness is not None else READINESS
 
     def ensure_report_lane(self, client: DkgClient, graph: str) -> bool:
         """Before this node's first write into the community sub-graph: when this
@@ -136,8 +144,14 @@ class CommunityMembership:
         self._join_check(client, cfg, graph)
         if self._recently_confirmed(graph):
             return True, "subscribed"
-        if graph in self._with_shared_memory:
-            entry = _graph_entry(client, graph)
+        # KI-449: shared memory waits until the verified graph is downloaded and compiled
+        # here (sync records it), so a fresh node's single sync slot serves the download.
+        if not self._readiness.verified_ready(graph):
+            return False, "waiting for the verified graph before adding its shared memory"
+        if graph in self._with_shared_memory or self._readiness.shared_memory_added(graph):
+            readable, entry = _listing_row(client, graph)
+            if not readable:   # could not tell: request nothing (LES-011)
+                return False, "the node's listing could not be read; nothing requested"
             if entry and entry.get("subscribed"):
                 self._confirm(graph)
                 return True, "subscribed"
@@ -230,6 +244,7 @@ class CommunityMembership:
             return True, "subscribed; shared memory follows once the running catch-up ends"
         with self._lock:
             self._with_shared_memory.add(graph)
+        self._readiness.mark_shared_memory_added(graph)   # added once: later processes only confirm
         self._confirm(graph)
         return True, "subscribed"
 
@@ -310,17 +325,20 @@ def join_verdict(entry: Optional[dict[str, object]]) -> str:
     return "open" if has_definition(entry) else "undecided"
 
 
-def _graph_entry(client: DkgClient, graph: str) -> Optional[dict[str, object]]:
-    """The node's own listing row for *graph* (``subscribed``, ``accessPolicy``…), or None."""
+def _listing_row(client: DkgClient, graph: str) -> tuple[bool, Optional[dict[str, object]]]:
+    """``(readable, row)``: whether the node's listing could be read, and its row for
+    *graph* (None when not listed) — "could not read" and "not listed" kept apart."""
     try:
         entries = client.context_graphs()
-    except Exception as exc:  # cannot tell -> treat as not subscribed (gated by the retry window)
+    except Exception as exc:  # health: allow BLE001 -- fail-open probe: any failure means "could not tell", and the caller then requests nothing
         logger.debug("blackbox: subscription probe failed: %s", exc)
-        return None
-    for entry in entries:
-        if str(entry.get("id") or "") == graph:
-            return entry
-    return None
+        return False, None
+    return True, next((entry for entry in entries if str(entry.get("id") or "") == graph), None)
+
+
+def _graph_entry(client: DkgClient, graph: str) -> Optional[dict[str, object]]:
+    """The node's own listing row for *graph* (``subscribed``, ``accessPolicy``…), or None."""
+    return _listing_row(client, graph)[1]
 
 
 #: The process's membership state (see module docstring).
@@ -331,6 +349,12 @@ def ensure_report_lane(client: DkgClient, graph: str) -> bool:
     """Before writing a community statement: on the graph owner's node, register
     the community sub-graph (:meth:`CommunityMembership.ensure_report_lane`)."""
     return MEMBERSHIP.ensure_report_lane(client, graph)
+
+
+def mark_verified_ready(graph: str) -> None:
+    """The verified graph is downloaded and compiled on this node: from now on membership
+    may add its shared memory (KI-449). Called by ``sync`` when it sees the graph complete."""
+    READINESS.mark_verified_ready(graph)
 
 
 def ensure_community_subscription(client: DkgClient, cfg: object) -> tuple[bool, str]:
@@ -352,6 +376,7 @@ __all__ = [
     "ensure_report_lane",
     "join_state_of",
     "join_verdict",
+    "mark_verified_ready",
     "needs_join",
     "pending_join_agents",
     "read_join_state",

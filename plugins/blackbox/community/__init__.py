@@ -71,7 +71,7 @@ from __future__ import annotations
 from .report_builder import build_false_positive_quads, build_report_quads, build_retraction_quads
 from .sighting import injection_host_identifier, sighting_fields
 from .membership import (ADMISSION_TEXT, JOIN_STATE_TEXT, Admission, JoinState, MembershipStatus,
-                         ensure_community_subscription, ensure_report_lane, read_join_state,
+                         ensure_community_subscription, ensure_report_lane, mark_verified_ready, read_join_state,
                          read_membership_status)
 from .report_cli import add_report_parser, cmd_report, print_community_status
 from .sharing import ALREADY_SEALED_REPLY, NEVER_SHARED_SOURCES, CommunitySharePolicy, spawn_community_share
@@ -172,6 +172,7 @@ __all__ = [
     "known_curator_statements",
     "lifetime_days",
     "manifest_on_day",
+    "mark_verified_ready",
     "most_reported_threats",
     "network_environment",
     "page_rows",

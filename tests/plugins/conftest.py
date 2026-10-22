@@ -26,6 +26,35 @@ def _fresh_community_membership(monkeypatch):
     yield
 
 
+class _GraphAlwaysReady:
+    """KI-449 test double: the verified graph counts as downloaded and compiled, so the
+    suite's subscribe-mechanics tests run as before. The readiness rules themselves are
+    tested with an explicit ``CommunityMembership(readiness=GraphReadiness(...))``."""
+
+    def verified_ready(self, graph):
+        return True
+
+    def shared_memory_added(self, graph):
+        return False
+
+    def mark_verified_ready(self, graph):
+        return None
+
+    def mark_shared_memory_added(self, graph):
+        return None
+
+
+@pytest.fixture(autouse=True)
+def _verified_graph_ready(monkeypatch):
+    """Membership's readiness record (KI-449) defaults to "ready" in tests, never the real
+    Blackbox home. Only touches the module when a test has already imported it."""
+    for name in ("plugins.blackbox.community.membership", "hermes_plugins.blackbox.community.membership"):
+        module = sys.modules.get(name)
+        if module is not None:
+            monkeypatch.setattr(module, "READINESS", _GraphAlwaysReady())
+    yield
+
+
 @pytest.fixture(autouse=True)
 def _sharing_consent_in_force(monkeypatch):
     """R13: sharing is opt-in and refused without a consent record. The suite's

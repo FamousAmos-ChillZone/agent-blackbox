@@ -8,7 +8,8 @@ against the chain. With the exact-batch stream and recovery prefetch switched on
 at "waiting-for-dkg-capacity" for an hour on the same release (KI-282).
 
 So for the default graph, ``blackbox sync`` no longer drives the transfer. It
-**observes** it (an Observer, in pattern terms): subscribe once, then compile
+**observes** it (an Observer, in pattern terms): subscribe once (verified memory only
+— the graph's shared memory is added after the graph is complete, KI-449), then compile
 the rules the node already holds, until the first usable verified rules exist.
 The node keeps fetching after this command returns; the ordinary hourly refresh
 and the dashboard's refresh worker compile the rest as it lands.
@@ -29,13 +30,14 @@ import argparse
 import logging
 import time
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Optional
 
-from .. import ruleset
+from .. import community, ruleset
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig, load_blackbox_config
 from ..kernel.dkg_client import DkgClient, DkgError
 from . import state as sync_state
+from .progress import read_recovery_backlog
 
 logger = logging.getLogger(__name__)
 
@@ -115,10 +117,24 @@ def _refused_for_good(exc: DkgError) -> bool:
 
 
 def _subscribe(client: DkgClient, cfg: BlackboxConfig, seen: _Observation) -> None:
-    """Subscribe the node to the verified graph once; a refusal the node will
-    not change its mind about ends the observation."""
+    """Subscribe the node to the verified graph once, WITHOUT its shared memory; a
+    refusal the node will not change its mind about ends the observation.
+
+    KI-449: a subscribe that includes shared memory makes DKG 10.0.25 run shared-memory
+    catch-ups for about an hour, which starved the single sync slot the verified download
+    needs (30 of 565 assets after 40 min on a fresh node). So this subscribes only when the
+    node lists the graph as NOT subscribed — never again on each sync run — and the shared
+    memory is added by membership once the graph is complete (:func:`_open_shared_memory`).
+    A listing that cannot be read requests nothing this poll (LES-011)."""
+    state = community.read_join_state(client, cfg.context_graph_id)
+    if state is community.JoinState.UNKNOWN:
+        seen.error = "the DKG node's listing could not be read; asking again shortly"
+        return
+    if state is not community.JoinState.JOINING:   # already subscribed: nothing to request
+        seen.subscribed = True
+        return
     try:
-        reply = client.subscribe_context_graph(cfg.context_graph_id)
+        reply = client.subscribe_context_graph(cfg.context_graph_id, include_shared_memory=False)
     except DkgError as exc:
         seen.gave_up = _refused_for_good(exc)
         seen.error = f"DKG subscription unavailable: {exc}"
@@ -127,6 +143,35 @@ def _subscribe(client: DkgClient, cfg: BlackboxConfig, seen: _Observation) -> No
     if not seen.subscribed:
         seen.gave_up = True
         seen.error = "the DKG node did not acknowledge the subscription"
+
+
+def _graph_complete(cfg: BlackboxConfig) -> Optional[bool]:
+    """True when the node has downloaded every verified asset of the graph (its last
+    reconcile pass reports none pending) and the rules cover all it holds; False while
+    either lags; None when either cannot be read (could not tell)."""
+    backlog = read_recovery_backlog(cfg.dkg_home, cfg.context_graph_id)
+    if backlog is None:
+        return None
+    if backlog.pending > 0:
+        return False
+    done = ruleset.verified_progress(cfg.context_graph_id) or {}
+    compiled, total = done.get("assets_compiled"), done.get("assets_total")
+    if not isinstance(compiled, int) or not isinstance(total, int):
+        return None
+    return total > 0 and compiled >= total
+
+
+def _open_shared_memory(client: DkgClient, cfg: BlackboxConfig) -> None:
+    """Once the verified graph is complete here, record it and let membership add the
+    graph's shared memory (once; KI-449). Fail-open: a node that does not answer is
+    simply asked again on a later sync."""
+    if _graph_complete(cfg) is not True:
+        return
+    community.mark_verified_ready(cfg.context_graph_id)
+    try:
+        community.ensure_community_subscription(client, cfg)
+    except (DkgError, OSError) as exc:
+        logger.info("blackbox: adding the verified graph's shared memory waits for the next sync: %s", exc)
 
 
 def _compile_what_the_node_holds(client: DkgClient, cfg: BlackboxConfig, seen: _Observation) -> None:
@@ -168,6 +213,7 @@ def run(client: DkgClient, cfg: BlackboxConfig, args: argparse.Namespace) -> int
                 if seen.gave_up:
                     break
             _compile_what_the_node_holds(client, cfg, seen)
+            _open_shared_memory(client, cfg)
             if seen.verified_rules > 0:
                 seen.record("partial", "verified-rules-available", cfg)
                 print(
