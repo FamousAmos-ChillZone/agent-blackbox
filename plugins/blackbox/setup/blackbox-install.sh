@@ -569,7 +569,10 @@ choose_blackbox_dkg_port() {
 # config names no port gets the first free one from BLACKBOX_OXIGRAPH_FIRST_PORT, written
 # into its config. Prints the port to write, or nothing to leave the config as it is (a
 # configured port is kept; a Blackbox node already running holds its port itself).
-BLACKBOX_OXIGRAPH_FIRST_PORT=7878
+# The search starts ABOVE 7878: "free" is only what this moment shows, and another node's
+# store is briefly down whenever that node restarts — a Mac install probed inside such a
+# 2-second gap, took 7878 and failed to start (2026-10-22). Blackbox never takes the default.
+BLACKBOX_OXIGRAPH_FIRST_PORT=7879
 BLACKBOX_OXIGRAPH_LAST_PORT=7978
 choose_blackbox_oxigraph_port() {
     local candidate
