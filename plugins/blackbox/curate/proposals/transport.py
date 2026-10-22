@@ -30,12 +30,12 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from ..kernel import node_routes, yaml_files
-from ..kernel.dkg_client import DkgClient
-from ..kernel.health import HealthClass, HealthItem
-from . import keys
+from ...kernel import node_routes, yaml_files
+from ...kernel.dkg_client import DkgClient
+from ...kernel.health import HealthClass, HealthItem
+from .. import keys
 from .proposal import Proposal, ProposalError, ProposalState
-from ..kernel.bounded_files import atomic_write
+from ...kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 

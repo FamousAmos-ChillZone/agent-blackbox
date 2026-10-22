@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 from ...community import reputation
 from .. import queue
 from ..context import CurateContext, verified_identifiers
-from ..proposal import ProposalStore
+from ..proposals import ProposalStore
 from . import policy
 from ...kernel.signing import CuratorStatement
 from .budget import ServiceBudget

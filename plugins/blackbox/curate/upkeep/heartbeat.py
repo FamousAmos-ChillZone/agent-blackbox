@@ -23,7 +23,7 @@ from ...kernel import signing
 from ...kernel.signing import CuratorStatement
 from .. import keys, publishing, verbs
 from ..context import CurateContext
-from ..proposal import Proposal, ProposalState, ProposalStore
+from ..proposals import Proposal, ProposalState, ProposalStore
 
 #: The identifier every curator notice carries.
 CURATOR = "curator"

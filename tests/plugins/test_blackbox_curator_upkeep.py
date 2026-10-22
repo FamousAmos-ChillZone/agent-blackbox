@@ -26,7 +26,7 @@ from plugins.blackbox.community import read_curator_view
 from plugins.blackbox.community.statements import curator_statements as cs
 from plugins.blackbox.community.statements import curator_view as cv
 from plugins.blackbox.curate import keys, verbs
-from plugins.blackbox.curate.proposal import ProposalStore
+from plugins.blackbox.curate.proposals.proposal import ProposalStore
 from plugins.blackbox.curate.upkeep import heartbeat, published
 from plugins.blackbox.kernel import signing
 from plugins.blackbox.kernel.signing.authority import Authority

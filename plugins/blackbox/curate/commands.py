@@ -24,11 +24,12 @@ from ..detection import osv
 from ..kernel import display_safety, node_routes, signing
 from ..kernel.signing import Authority
 from ..kernel.signing import CuratorStatement
-from . import console, dossier, handoff, intake, keys, node_ui_views, promotion, publishing, queue, transport, verbs, watch
+from . import console, dossier, handoff, intake, keys, node_ui_views, promotion, publishing, queue, verbs, watch
+from .proposals import transport
 from .ladder import outcomes
 from .upkeep import heartbeat, published
 from .context import CurateContext, build_context, verified_identifiers
-from .proposal import ProposalState, ProposalStore
+from .proposals import ProposalState, ProposalStore
 from ..kernel.health import today_utc
 
 _term = display_safety.term_safe

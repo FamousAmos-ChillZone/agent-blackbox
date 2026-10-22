@@ -25,7 +25,7 @@ from ...kernel.signing import VERIFIED_GRAPH
 from ...kernel.signing import KeyManifest
 from ...kernel.signing import CuratorStatement
 from ..context import CurateContext
-from ..proposal import Proposal
+from ..proposals import Proposal
 
 
 def from_a_curator(manifest: Optional[KeyManifest], proposal: Proposal) -> bool:

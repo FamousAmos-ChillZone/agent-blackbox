@@ -208,7 +208,7 @@ def test_a_listing_longer_than_twelve_months_is_refused_and_a_signed_pause_is_en
 
 def test_a_cosign_that_outgrows_the_envelope_is_a_refusal(keys, monkeypatch, tmp_path):
     from plugins.blackbox.curate import verbs
-    from plugins.blackbox.curate.proposal import Proposal, ProposalState, ProposalStore
+    from plugins.blackbox.curate.proposals.proposal import Proposal, ProposalState, ProposalStore
     from test_blackbox_curate import FakeNode, _ctx, _machine
     manifest = _manifest(keys, graph="0xabc/agent-blackbox-vm")
     big = killlist.KillList(version=1, day=TODAY, entries=(killlist.KillEntry("skill", "evil", killlist.KillAction.WARN, version="1"),))

@@ -46,7 +46,7 @@ from ..context import CurateContext, verified_identifiers
 from ..lab.jobs import LabJobState, LabJobStore
 from ..publishing.ledger import PublishLedger
 from ..sources import LookupItem, queue_metrics
-from ..transport import DeliveryLedger
+from ..proposals import DeliveryLedger
 from ..watch import SigningLog
 from .roster import renewal_status
 from ...kernel.health import days_between

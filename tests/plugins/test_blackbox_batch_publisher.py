@@ -28,7 +28,7 @@ from types import SimpleNamespace
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from plugins.blackbox.curate.proposal import Proposal, ProposalState, ProposalStore
+from plugins.blackbox.curate.proposals.proposal import Proposal, ProposalState, ProposalStore
 from plugins.blackbox.curate.publishing import batch as batch_module
 from plugins.blackbox.curate.publishing import row_builders as rb
 from plugins.blackbox.curate.publishing.batch import BatchPublisher

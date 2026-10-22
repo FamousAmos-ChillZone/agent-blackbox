@@ -51,7 +51,7 @@ from ... import community
 from ...kernel import constants, rdf_terms, signing, threat_ids
 from ...kernel.signing import promotion_statement as statement
 from .. import promotion
-from ..proposal import Proposal
+from ..proposals import Proposal
 from . import row_builders
 
 CURATOR_ASSET = "curator-asset"

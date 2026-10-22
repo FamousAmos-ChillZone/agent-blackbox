@@ -32,9 +32,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, FrozenSet, List, Mapping, Optional
 
-from ..kernel import signing, threat_ids
-from . import keys
-from ..kernel.bounded_files import atomic_write
+from ...kernel import signing, threat_ids
+from .. import keys
+from ...kernel.bounded_files import atomic_write
 
 #: A proposal nobody approved in this long expires (plan §09 / §12).
 PROPOSAL_TTL_DAYS = 7

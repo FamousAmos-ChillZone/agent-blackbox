@@ -21,7 +21,7 @@ from plugins.blackbox.community import EVIDENCE_REFERENCE, read_curator_view
 from plugins.blackbox.community.statements import curator_statements as cs
 from plugins.blackbox.community.statements import curator_view as cv
 from plugins.blackbox.curate import dossier, verbs
-from plugins.blackbox.curate.proposal import ProposalStore
+from plugins.blackbox.curate.proposals.proposal import ProposalStore
 from plugins.blackbox.kernel import signing
 from plugins.blackbox.kernel.signing.authority import Authority
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind

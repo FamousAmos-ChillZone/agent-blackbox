@@ -26,9 +26,10 @@ from _one_graph import (NETWORK, SHARED, STORE_URL, SUB_GRAPH, VERIFIED, VM_GRAP
                         shared_report, use_store)
 from plugins.blackbox import community
 from plugins.blackbox.community.statements.curator_view import CuratorView
-from plugins.blackbox.curate import promotion, transport, verbs
+from plugins.blackbox.curate import promotion, verbs
+from plugins.blackbox.curate.proposals import transport
 from plugins.blackbox.curate.context import CurateContext
-from plugins.blackbox.curate.proposal import Proposal, ProposalState, ProposalStore
+from plugins.blackbox.curate.proposals.proposal import Proposal, ProposalState, ProposalStore
 from plugins.blackbox.curate.publishing import commands as correction_verbs
 from plugins.blackbox.curate.publishing import strategies
 from plugins.blackbox.curate.publishing.batch import BatchPublisher

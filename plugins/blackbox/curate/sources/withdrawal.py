@@ -51,7 +51,7 @@ from typing import Callable, Mapping, Optional, Sequence
 from ...kernel.signing import CuratorStatement
 from .. import keys
 from ..context import CurateContext
-from ..proposal import Proposal, ProposalState, ProposalStore
+from ..proposals import Proposal, ProposalState, ProposalStore
 from ..service.evidence import Lookup
 from .client import HttpClient, UrllibClient
 from .protocol import Source

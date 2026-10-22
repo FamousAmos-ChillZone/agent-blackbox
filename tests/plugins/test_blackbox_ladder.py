@@ -23,7 +23,7 @@ from test_blackbox_curate_community import ADDRESS, Curators, _listing
 from plugins.blackbox.community import reputation
 from plugins.blackbox.curate import verbs
 from plugins.blackbox.curate.ladder import novelty_facts, outcomes
-from plugins.blackbox.curate.proposal import ProposalStore
+from plugins.blackbox.curate.proposals.proposal import ProposalStore
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind
 
 TODAY = utc_today()
@@ -233,7 +233,7 @@ def test_a_band_moves_when_the_listing_is_published_and_not_before(tmp_path, mon
         verbs.send(team.ctx(team.a), proposal, team.b.name)
     assert team.standing(team.b, alice).band is reputation.ReputationBand.PROBATION      # proposed, not published
     with team.b:
-        from plugins.blackbox.curate import transport
+        from plugins.blackbox.curate.proposals import transport
         for received in transport.receive_proposals(team.b.node, transport.InboxCursor()):
             ProposalStore().save(received)
         _, outcome = verbs.approve(team.ctx(team.b, interest=[f"author:{alice.author}"]), ProposalStore(), proposal.id,
