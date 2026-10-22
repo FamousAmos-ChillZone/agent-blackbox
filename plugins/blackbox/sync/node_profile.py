@@ -12,10 +12,10 @@ import json
 import os
 import psutil
 from pathlib import Path
-from typing import Dict
 
 from ..kernel.config import BlackboxConfig
 from . import process_limits
+from ..kernel.bounded_files import atomic_write
 
 #: The node's own sync limits (DKG 10.0.25 defaults: 10 transfers at once, a queue of 20),
 #: so the verified download and the graph's shared memory (the community) sync side by
@@ -176,7 +176,5 @@ def _set_persisted_dkg_sync_state(cfg: BlackboxConfig) -> bool:
     data["syncSharedMemoryOnConnect"] = True
     if original == json.dumps(data, sort_keys=True):
         return False
-    tmp = path.with_suffix(f".tmp-{os.getpid()}")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    atomic_write(path, json.dumps(data, indent=2) + "\n")
     return True

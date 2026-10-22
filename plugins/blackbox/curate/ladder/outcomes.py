@@ -31,8 +31,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone, UTC
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Iterable, Optional
 
 from ... import community
 from ...community import reputation
@@ -41,6 +40,7 @@ from ...kernel.signing import Authority
 from ...kernel.signing import CuratorStatement
 from ..context import CurateContext, verified_identifiers
 from . import novelty_facts
+from ...kernel.health import today_utc
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +57,6 @@ class CreditReport:
     novel: int = 0
     available: bool = True
 
-
-def _today() -> str:
-    return datetime.now(UTC).date().isoformat()
 
 
 def credit_verdicts(ctx: CurateContext, *, osv_lookup: Optional[novelty_facts.OsvLookup] = None,
@@ -103,7 +100,7 @@ def credit_verdicts(ctx: CurateContext, *, osv_lookup: Optional[novelty_facts.Os
                                 publisher=facts.publisher if earns else ""):
                 credited += 1
                 novel += 1 if earns else 0
-    sync_bands(own, book, _today())
+    sync_bands(own, book, today_utc())
     if credited:
         logger.info("blackbox: credited %d reporter outcome(s) from published verdicts (%d novel)", credited, novel)
     return CreditReport(credited=credited, novel=novel)

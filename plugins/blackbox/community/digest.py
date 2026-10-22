@@ -46,6 +46,7 @@ from ..kernel.dkg_client import DkgClient
 from ..kernel import identity
 from . import report_signer, sharing
 from .report_signer import DIGEST_STATEMENT, ReportSigner
+from ..kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -184,9 +185,7 @@ class SightingTally:
         state["published"] = [w for w in state["published"] if w in weeks]  # type: ignore[index]
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-            tmp.write_text(json.dumps(state), encoding="utf-8")
-            os.replace(tmp, self._path)
+            atomic_write(self._path, json.dumps(state))
         except OSError as exc:   # fail-open: an unwritable home only loses this week's counts
             logger.warning("blackbox: could not save the sighting tally (%s)", exc)
 

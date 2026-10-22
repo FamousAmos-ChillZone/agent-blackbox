@@ -24,7 +24,7 @@ import logging
 from pathlib import Path
 from typing import Callable, Optional
 
-from ..yaml_files import atomic_write
+from .atomic_write import atomic_write
 
 logger = logging.getLogger(__name__)
 

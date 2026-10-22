@@ -34,6 +34,7 @@ from .node_profile import (
     _set_persisted_dkg_sync_state,
     node_sync_settings,
 )
+from ..kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -159,9 +160,7 @@ def _managed_dkg_node_executable(cfg: BlackboxConfig) -> Optional[Path]:
             continue
         try:
             marker.parent.mkdir(parents=True, exist_ok=True)
-            tmp = marker.with_suffix(f".tmp-{os.getpid()}")
-            tmp.write_text(str(executable.resolve()) + "\n", encoding="utf-8")
-            os.replace(tmp, marker)
+            atomic_write(marker, str(executable.resolve()) + "\n")
         except OSError:
             pass
         return executable

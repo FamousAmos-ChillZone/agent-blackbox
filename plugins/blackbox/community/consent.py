@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from ..kernel import constants
+from ..kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -198,10 +199,7 @@ def _save(entry: SharingConsentRecord) -> bool:
     path = _record_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-        tmp.write_text(json.dumps(entry.__dict__), encoding="utf-8")
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
+        atomic_write(path, json.dumps(entry.__dict__), mode=0o600)
         return True
     except OSError as exc:   # an opt-out that could not be written must be loud: sharing would continue
         logger.warning("blackbox: could not save the community sharing choice (%s)", exc)
