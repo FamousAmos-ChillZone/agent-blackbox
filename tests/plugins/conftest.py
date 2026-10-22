@@ -16,7 +16,7 @@ _REAL_IN_FORCE = _consent_module.in_force
 
 @pytest.fixture(autouse=True)
 def _fresh_community_membership(monkeypatch):
-    """Blackbox keeps per-process subscribe/join state (community/membership.py);
+    """Blackbox keeps per-process subscribe/join state (community/membership/);
     each test starts from a fresh one so retry windows never leak between tests.
     Only touches the module when a test has already imported it."""
     for name in ("plugins.blackbox.community.membership", "hermes_plugins.blackbox.community.membership"):

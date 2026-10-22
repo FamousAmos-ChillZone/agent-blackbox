@@ -16,7 +16,7 @@ publish authority (checked on chain). Trust stays read-side: reports are signed,
 counted by verified author, and community data only ever flags.
 
 Standard library only: the owner node runs the bare DKG node, not Blackbox.
-The pending-request parser mirrors ``plugins/blackbox/community/membership.py``
+The pending-request parser mirrors ``plugins/blackbox/community/membership/``
 ``pending_join_agents`` (parity test: tests/test_blackbox_curator_approve.py).
 
 Usage (on the owner node)::
