@@ -189,8 +189,25 @@ def _empty_ruleset_item(first_sync: str) -> HealthItem:
                       "run `blackbox sync --wait` to load the threat graph")
 
 
+def _not_admitted_item(sharing_enabled: bool) -> HealthItem:
+    """The graph's owner has not admitted this node yet — or approved it but the approval has
+    not reached the node (bench 2026-10-22: approved 13 times, the allowlist never arrived, every
+    share refused). Founder: the dashboard must SAY so, not leave a silent "share failed"."""
+    message = ("not admitted to the community graph yet: the graph owner's approval has not reached "
+               "this node")
+    if sharing_enabled:
+        return HealthItem(_OPERATOR, HealthClass.ACTION, message,
+                          "anything this node shares is refused until it arrives; it keeps asking by itself — "
+                          "if this lasts more than about 30 minutes, the graph owner's node is likely unreachable "
+                          "from here. Community warnings from other members are still read and flagged")
+    return HealthItem(_OPERATOR, HealthClass.INFO, message,
+                      "nothing to do while sharing is off — community warnings are still read and flagged")
+
+
 def _community(inputs: HealthInputs) -> list[HealthItem]:
     items = []
+    if inputs.admission == "waiting":
+        items.append(_not_admitted_item(inputs.sharing_enabled))
     if inputs.read_unavailable_reason:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"community graph could not be read: {inputs.read_unavailable_reason}",
                                 "nothing to do — the last good community tier is kept; verified rules still enforce"))
@@ -306,16 +323,16 @@ def node_installed(cfg: Any, node_reachable: bool) -> bool:
 
 def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked_by_identifier: Mapping[str, int],
            now: float, *, pending_shares: int = 0, shares_given_up: int = 0, sharing_consent_problem: str = "",
-           verified_lookup_problem: str = "", first_sync: str = "",
+           verified_lookup_problem: str = "", first_sync: str = "", admission: str = "",
            watch: Optional[manifest_watcher.ManifestWatchInputs] = None) -> HealthInputs:
-    """Build :class:`HealthInputs` from a config, a compiled ruleset, node
-    reachability, the last community read (or None), how many actions each
-    threat blocked here (``audit.blocked_counts_by_identifier()``) and the
-    share-retry counts (``community.share_retry_stats()``); *watch* is the
-    manifest watcher's facts (``manifest_watch.watch_inputs``), None = not watched."""
+    """Build :class:`HealthInputs` from a config, a compiled ruleset, node reachability, the last community
+    read (or None), how many actions each threat blocked here (``audit.blocked_counts_by_identifier()``), the
+    share-retry counts (``community.share_retry_stats()``) and this node's ``admission`` to the graph;
+    *watch* is the manifest watcher's facts (``manifest_watch.watch_inputs``), None = not watched."""
     view = getattr(read, "curator", None)
     revoked = {ident: int(blocked_by_identifier.get(ident, 0)) for ident in (view.revoked if view is not None else ())}
     kill_list = getattr(rs, "kill_list", None) or {}
+    today = datetime.fromtimestamp(now, UTC).date().isoformat()
     return HealthInputs(
         node_reachable=node_reachable,
         node_installed=node_installed(cfg, node_reachable),
@@ -334,9 +351,10 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         sharing_consent_problem=sharing_consent_problem if getattr(cfg, "community_enabled", False) else "",
         verified_lookup_problem=verified_lookup_problem,
         first_sync=first_sync,
+        admission=admission, sharing_enabled=bool(getattr(cfg, "community_enabled", False)),
         shares_given_up=int(shares_given_up),
         curators_last_day=(view.last_statement_day if view is not None else ""),
-        today=datetime.fromtimestamp(now, UTC).date().isoformat(),
+        today=today,
         heartbeat_missing_keys=_heartbeat_missing(view, now),
         manifest_conflict=bool(view is not None and view.manifest_conflict),
         manifest_conflict_ignored=bool(view is not None and view.manifest_conflict_ignored),
@@ -350,8 +368,7 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         manifest_state=(view.manifest_state if view is not None else ""),
         manifest_state_day=(view.manifest_state_day if view is not None else ""),
         manifest_expires_day=(view.manifest_expires_day if view is not None else ""),
-        community_authority=community_alarms.gather(
-            getattr(view, "community", None), datetime.fromtimestamp(now, UTC).date().isoformat()),
+        community_authority=community_alarms.gather(getattr(view, "community", None), today),
         manifest_watch=watch or manifest_watcher.ManifestWatchInputs(),
     )
 

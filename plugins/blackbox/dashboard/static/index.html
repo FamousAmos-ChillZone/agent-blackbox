@@ -2350,6 +2350,7 @@
   }
   .toast.show { opacity: 1; transform: none; }
   .toast.ok { color: var(--mint); }
+  .toast.caution { color: var(--caution); border-color: color-mix(in srgb, var(--caution) 45%, var(--border)); }
 
   /* In-app threat alert. One toast represents all findings from a poll cycle,
      preventing noisy agents from creating a wall of notifications. */
@@ -4070,10 +4071,22 @@
   }
 
   // Refine R10: the shared health items (kernel.health) — the same lines `blackbox status` prints.
+  // Health items that also pop up once when they first appear (the strip alone is easy to
+  // miss): an approved node whose approval has not reached it has every share refused.
+  var HEALTH_POPUPS = [{ match: "not admitted to the community graph", seen: false }];
+  function popUpNewHealth(items) {
+    HEALTH_POPUPS.forEach(function (popup) {
+      var hit = items.filter(function (it) { return String(it.message || "").indexOf(popup.match) >= 0; })[0];
+      if (hit && !popup.seen) showToast("Community: " + hit.message + " \u2014 " + hit.what_to_do, "caution", 12000);
+      popup.seen = !!hit;
+    });
+  }
+
   function renderHealth(data) {
     var strip = $("health-strip");
     if (!strip) return;
     var items = (data && Array.isArray(data.items)) ? data.items : [];
+    popUpNewHealth(items);
     strip.innerHTML = items.map(function (it) {
       return '<div class="health-item' + (it.red ? ' red' : '') + '">' +
         '<span class="h-class">' + esc(it["class"]) + '</span>' + esc(it.message) +
@@ -8246,7 +8259,7 @@
     else openChat();
   }
   var toastTimer = null;
-  function showToast(message, kind) {
+  function showToast(message, kind, durationMs) {
     var toast = $("toast");
     if (!toast) return;
     toast.textContent = message || "";
@@ -8254,7 +8267,7 @@
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(function () {
       toast.className = "toast " + (kind || "ok");
-    }, 3200);
+    }, durationMs || 3200);
   }
   function setChatBusy(busy) {
     chatBusy = !!busy;

@@ -24,6 +24,7 @@ community pulse beats while the dashboard runs even with no browser open (KI-283
 from __future__ import annotations
 
 import json
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
@@ -84,14 +85,13 @@ def community_stats_payload(verified_reports: VerifiedReportsRead) -> Any:
     """The launch instruments: contributing agents, corroboration, health."""
     from .. import community, ruleset
     from ..kernel.config import load_blackbox_config
-    from ..kernel.dkg_client import DkgClient
 
     cfg = load_blackbox_config()
     rs = ruleset.peek(cfg)
     community_rules = getattr(rs, "community", {}) or {}
     now = time.time()
     graph = str(getattr(cfg, "context_graph_id", "") or "")   # the community lives in the verified graph's shared memory
-    status = community.read_membership_status(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home), graph) if graph else None
+    status = MEMBERSHIP_STATUS.read(cfg) if graph else None
     corroborated = sum(1 for r in community_rules.values() if int(r.get("reporterCount") or 0) >= 2)
     # Reports-today from OUR ingest observations (KI-012), not
     # reporter-supplied timestamps.
@@ -211,6 +211,52 @@ def _curator_payload(view: Any) -> dict[str, Any]:
     }
 
 
+class MembershipStatusCache:
+    """This node's standing with the community graph (connected? admitted?), read at most once
+    per :attr:`TTL_SECONDS` and shared by the Community card and the health banner — the node's
+    listing is its most expensive call, and both poll every few seconds. One lock."""
+
+    TTL_SECONDS = 30.0
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._graph = ""
+        self._at = -1e9
+        self._status: Any = None
+
+    def read(self, cfg: Any) -> Any:
+        """A ``community.MembershipStatus`` for ``cfg.context_graph_id`` (cached)."""
+        from .. import community
+        from ..kernel.dkg_client import DkgClient
+
+        graph = str(getattr(cfg, "context_graph_id", "") or "")
+        with self._lock:
+            if graph == self._graph and self._clock() - self._at < self.TTL_SECONDS:
+                return self._status
+        status = community.read_membership_status(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home), graph)
+        with self._lock:
+            self._graph, self._at, self._status = graph, self._clock(), status
+        return status
+
+    def clear(self) -> None:
+        """Forget the reading (tests, and a changed graph setting read at once)."""
+        with self._lock:
+            self._graph, self._at, self._status = "", -1e9, None
+
+
+#: The dashboard process's membership reading (see :class:`MembershipStatusCache`).
+MEMBERSHIP_STATUS = MembershipStatusCache()
+
+
+def _admission_value(cfg: Any) -> str:
+    """The admission state for the health banner, "" when no graph is configured."""
+    if not getattr(cfg, "context_graph_id", ""):
+        return ""
+    status = MEMBERSHIP_STATUS.read(cfg)
+    return status.admission.value if status is not None else ""
+
+
 def health_payload(community_read: CommunityReadSource, node_reachable: Callable[[Any], bool]) -> dict[str, Any]:
     """R10: the operator's health items from the same inputs `blackbox status` uses."""
     from .. import audit, community, ruleset
@@ -227,7 +273,8 @@ def health_payload(community_read: CommunityReadSource, node_reachable: Callable
                            pending_shares=retries.pending, shares_given_up=retries.given_up,
                            sharing_consent_problem=community.consent.why_not(),
                            verified_lookup_problem=ruleset.live.HEALTH.read().problem(),
-                           first_sync=sync_meter.WATCH.first_sync())
+                           first_sync=sync_meter.WATCH.first_sync(),
+                           admission=_admission_value(cfg))
     items = health.operator_health(inputs)
     return {"items": [{**item.as_dict(), "red": health.red(item)} for item in items],
             "ruleset_age": health.ruleset_age_text(inputs.ruleset_age_s), "community_paused": inputs.community_paused}

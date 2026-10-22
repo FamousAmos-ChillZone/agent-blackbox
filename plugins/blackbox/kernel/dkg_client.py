@@ -515,8 +515,8 @@ class DkgClient:
             if last_state in {"succeeded", "success", "completed", "complete"}:
                 return last_job
             if last_state in {"failed", "error", "cancelled", "canceled"}:
-                detail = json.dumps(last_job, sort_keys=True)[:1000]
-                raise DkgError(f"SWM share job {job_id} failed: {detail}")
+                error = last_job.get("lastError") if isinstance(last_job.get("lastError"), dict) else {}  # the node's reason first:
+                raise DkgError(f"SWM share job {job_id} failed: {error.get('message') or json.dumps(last_job, sort_keys=True)[:1000]}")
             if time.monotonic() >= deadline:
                 detail = json.dumps(last_job, sort_keys=True)[:1000]
                 raise DkgError(
