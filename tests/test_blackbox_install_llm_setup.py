@@ -737,8 +737,8 @@ def test_dkg_config_writer_leaves_subscriptions_to_the_dkg_api(tmp_path: Path) -
     assert migrated["syncOnConnectEnabled"] is True
     assert migrated["syncReconcilerEnabled"] is True
     assert migrated["durableSyncEnabled"] is True
-    assert migrated["syncGlobalMaxInflight"] == 1
-    assert migrated["syncGlobalQueueLimit"] == 0
+    assert migrated["syncGlobalMaxInflight"] == 10   # the node default (KI-449)
+    assert migrated["syncGlobalQueueLimit"] == 20
     assert "restrictAutoSubscribeContextGraphs" not in migrated
     assert migrated["store"] == {
         "backend": "blazegraph",
@@ -1507,8 +1507,8 @@ def test_installers_use_native_dkg_membership_without_sync_overrides() -> None:
         assert "DKG_EXACT_BATCH_STREAM_ENABLED" in text
         assert "DKG_VM_RECOVERY_PREFETCH_ENABLED" in text
         assert 'data["durableSyncEnabled"] = True' in text
-        assert 'data["syncGlobalMaxInflight"] = 1' in text
-        assert 'data["syncGlobalQueueLimit"] = 0' in text
+        assert 'data["syncGlobalMaxInflight"] = 10' in text   # the node default (KI-449)
+        assert 'data["syncGlobalQueueLimit"] = 20' in text
         assert 'data.pop("restrictAutoSubscribeContextGraphs", None)' in text
         assert 'data["syncSharedMemoryOnConnect"] = True' in text
         assert 'data["syncContextGraphPriorities"] = priorities' in text
@@ -1527,13 +1527,13 @@ def test_installers_use_native_dkg_membership_without_sync_overrides() -> None:
         assert "Blazegraph SPARQL endpoint is healthy" in text
         assert "Blazegraph is unavailable or returned an error" in text
 
-    assert 'BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT="1"' in unix
-    assert 'BLACKBOX_DKG_SYNC_GLOBAL_QUEUE_LIMIT="1"' in unix
+    assert 'BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT="10"' in unix
+    assert 'BLACKBOX_DKG_SYNC_GLOBAL_QUEUE_LIMIT="20"' in unix
     assert 'BLACKBOX_DKG_DURABLE_SYNC_ENABLED="${BLACKBOX_DKG_DURABLE_SYNC_ENABLED:-1}"' in unix
     assert 'BLACKBOX_DKG_CATCHUP_MAX_CONCURRENT_PEERS="1"' in unix
     assert 'BLACKBOX_DKG_STORE_QUEUE_WAIT_TIMEOUT_MS="300000"' in unix
-    assert '$DkgSyncGlobalMaxInflight = "1"' in windows
-    assert '$DkgSyncGlobalQueueLimit = "1"' in windows
+    assert '$DkgSyncGlobalMaxInflight = "10"' in windows
+    assert '$DkgSyncGlobalQueueLimit = "20"' in windows
     assert 'else { "1" }' in windows
     assert "restart_blackbox_dkg_for_sync_mode" not in unix
     assert "Restart-BlackboxDkgForSyncMode" not in windows

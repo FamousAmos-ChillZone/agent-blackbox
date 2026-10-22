@@ -16,21 +16,25 @@ from typing import Dict
 
 from ..kernel.config import BlackboxConfig
 
-#: One sync transfer at a time, no queue: a refresh of a graph's metadata that meets
-#: a busy slot takes the node's reserved control-plane slot (DKG 10.0.25,
-#: OriginTrail/dkg#3302), so it is not refused behind a transfer.
+#: The node's own sync limits (DKG 10.0.25 defaults: 10 transfers at once, a queue of 20),
+#: so the verified download and the graph's shared memory (the community) sync side by
+#: side. Blackbox ran the node with ONE slot and no queue until 2026-10-22; under one graph
+#: the community catch-ups then starved the verified download (30 of 565 assets after 40
+#: minutes). Bench with 10 slots and the community on from the start: the whole graph in
+#: about 30 minutes, no deferred fetch, no store recovery, ~4.4 GB of 8 GB in use.
+#: Existing installs move to these values at their next sync (one node restart).
 _DKG_STEADY_SYNC_SETTINGS = {
     "DKG_SYNC_ON_CONNECT_ENABLED": "1",
     "DKG_SYNC_RECONCILER_ENABLED": "1",
     "DKG_DURABLE_SYNC_ENABLED": "1",
-    "DKG_SYNC_GLOBAL_MAX_INFLIGHT": "1",
-    "DKG_SYNC_GLOBAL_QUEUE_LIMIT": "0",
+    "DKG_SYNC_GLOBAL_MAX_INFLIGHT": "10",
+    "DKG_SYNC_GLOBAL_QUEUE_LIMIT": "20",
 }
 
 #: The native profile for Umanitek's default graph on DKG 10.0.21+ (KI-282):
 #: the node's own VM reconciler recovers the graph, and the older periodic sync
-#: reconciler is off so it does not compete with that recovery for the single
-#: sync slot. Connection-time sync stays on (KI-044). See :mod:`.native`.
+#: reconciler is off so it does not compete with that recovery for sync slots.
+#: Connection-time sync stays on (KI-044). See :mod:`.native`.
 _DKG_NATIVE_SYNC_SETTINGS = {
     **_DKG_STEADY_SYNC_SETTINGS,
     "DKG_SYNC_RECONCILER_ENABLED": "0",

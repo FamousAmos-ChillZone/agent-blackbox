@@ -131,7 +131,7 @@ def _cmd_sync_with_managed_dkg(cfg: BlackboxConfig, args: argparse.Namespace) ->
     """Run foreground recovery while leaving native reconciliation resumable.
 
     A running steady-state node may already be advancing a durable checkpoint.
-    Do not restart it merely to reserve the single sync slot: the pinned request
+    Do not restart it merely to reserve a sync slot: the pinned request
     can wait behind that work, while the existing transfer keeps making progress.
     A restart is required only to repair an unreachable node or an installation
     left in the obsolete bootstrap-only mode by an interrupted older command.

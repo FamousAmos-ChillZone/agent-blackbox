@@ -87,8 +87,10 @@ $DkgAllowScripts = @("@origintrail-official/dkg", "better-sqlite3", "@openuidev/
 $DkgDaemonUrl = "http://127.0.0.1:$DkgPort"
 $DkgStoreQueueLimit = if ($env:BLACKBOX_DKG_STORE_QUEUE_LIMIT) { [int]$env:BLACKBOX_DKG_STORE_QUEUE_LIMIT } else { 512 }
 $DkgListContextGraphsProjection = if ($env:BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION) { $env:BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION } else { "1" }
-$DkgSyncGlobalMaxInflight = "1"
-$DkgSyncGlobalQueueLimit = "1"
+# The node's own sync defaults (DKG 10.0.25: 10 sync jobs, queue 20), so verified data and community
+# data sync side by side (bench 2026-10-22; was 1/1 from the original installer).
+$DkgSyncGlobalMaxInflight = "10"
+$DkgSyncGlobalQueueLimit = "20"
 $script:DkgDurableSyncEnabled = if ($env:BLACKBOX_DKG_DURABLE_SYNC_ENABLED) { $env:BLACKBOX_DKG_DURABLE_SYNC_ENABLED } else { "1" }
 $DkgCatchupMaxConcurrentPeers = "1"
 $DkgStoreQueueWaitTimeoutMs = "300000"
@@ -897,8 +899,8 @@ if native_profile:
     data["vmReconcilerEnabled"] = True
     data["vmRecoveryPrefetchEnabled"] = True
 data.pop("syncAgentsMeta", None)
-data["syncGlobalMaxInflight"] = 1
-data["syncGlobalQueueLimit"] = 0
+data["syncGlobalMaxInflight"] = 10   # the node default: verified and community data side by side
+data["syncGlobalQueueLimit"] = 20
 data.pop("restrictAutoSubscribeContextGraphs", None)
 # One graph (2026-10-16): community reports live in the shared memory of the
 # verified graph; ones written while this node was offline come back on connect.

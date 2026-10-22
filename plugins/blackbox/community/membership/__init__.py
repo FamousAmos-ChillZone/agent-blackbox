@@ -80,8 +80,8 @@ class CommunityMembership:
 
     def __init__(self, clock: Callable[[], float] = time.monotonic, readiness: Optional[GraphReadiness] = None) -> None:
         self._clock = clock
-        #: when this node may add the graph's shared memory (KI-449, :mod:`.readiness`);
-        #: None = the process's :data:`READINESS`, looked up on use
+        #: whether this node already added the graph's shared memory (KI-449,
+        #: :mod:`.readiness`); None = the process's :data:`READINESS`, looked up on use
         self._own_readiness = readiness
         self._lock = threading.Lock()
         self._last_subscribe: dict[str, float] = {}
@@ -144,10 +144,8 @@ class CommunityMembership:
         self._join_check(client, cfg, graph)
         if self._recently_confirmed(graph):
             return True, "subscribed"
-        # KI-449: shared memory waits until the verified graph is downloaded and compiled
-        # here (sync records it), so a fresh node's single sync slot serves the download.
-        if not self._readiness.verified_ready(graph):
-            return False, "waiting for the verified graph before adding its shared memory"
+        # KI-449: the shared memory is added ONCE per node (the readiness record survives
+        # restarts); afterwards only the node's listing is confirmed, never re-subscribed.
         if graph in self._with_shared_memory or self._readiness.shared_memory_added(graph):
             readable, entry = _listing_row(client, graph)
             if not readable:   # could not tell: request nothing (LES-011)
@@ -351,12 +349,6 @@ def ensure_report_lane(client: DkgClient, graph: str) -> bool:
     return MEMBERSHIP.ensure_report_lane(client, graph)
 
 
-def mark_verified_ready(graph: str) -> None:
-    """The verified graph is downloaded and compiled on this node: from now on membership
-    may add its shared memory (KI-449). Called by ``sync`` when it sees the graph complete."""
-    READINESS.mark_verified_ready(graph)
-
-
 def ensure_community_subscription(client: DkgClient, cfg: object) -> tuple[bool, str]:
     """Subscribe this node to the verified graph with its shared memory — at
     most once per process, again only when the node says it is not subscribed."""
@@ -376,7 +368,6 @@ __all__ = [
     "ensure_report_lane",
     "join_state_of",
     "join_verdict",
-    "mark_verified_ready",
     "needs_join",
     "pending_join_agents",
     "read_join_state",

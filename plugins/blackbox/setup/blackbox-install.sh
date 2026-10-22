@@ -91,8 +91,12 @@ BLACKBOX_DKG_ALLOW_SCRIPTS=(@origintrail-official/dkg better-sqlite3 @openuidev/
 BLACKBOX_DKG_DAEMON_URL="http://127.0.0.1:$BLACKBOX_DKG_PORT"
 BLACKBOX_DKG_STORE_QUEUE_LIMIT="${BLACKBOX_DKG_STORE_QUEUE_LIMIT:-512}"
 BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION="${BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION:-1}"
-BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT="1"
-BLACKBOX_DKG_SYNC_GLOBAL_QUEUE_LIMIT="1"
+# The node's own sync defaults (DKG 10.0.25: 10 sync jobs, queue 20), so verified data and community
+# data sync side by side. Was 1/0 from the original installer; with one slot the community catch-ups
+# starved the verified download (bench 2026-10-22: 10 slots, community on from the start, full graph
+# in about 30 min with no deferrals and no store recovery).
+BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT="10"
+BLACKBOX_DKG_SYNC_GLOBAL_QUEUE_LIMIT="20"
 BLACKBOX_DKG_DURABLE_SYNC_ENABLED="${BLACKBOX_DKG_DURABLE_SYNC_ENABLED:-1}"
 BLACKBOX_DKG_CATCHUP_MAX_CONCURRENT_PEERS="1"
 BLACKBOX_DKG_STORE_QUEUE_WAIT_TIMEOUT_MS="300000"
@@ -1002,15 +1006,15 @@ data["durableSyncEnabled"] = True
 # Umanitek's default graph uses the DKG 10.0.21 native profile (KI-282, the same
 # profile `blackbox sync` persists in sync/managed_node.py): the node's VM
 # reconciler recovers the graph and the older sync reconciler stays off so it
-# does not compete for the single sync slot. Any other graph keeps the steady one.
+# does not compete with that recovery. Any other graph keeps the steady one.
 native_profile = context_graph_id == default_context_graph_id
 data["syncReconcilerEnabled"] = not native_profile
 if native_profile:
     data["vmReconcilerEnabled"] = True
     data["vmRecoveryPrefetchEnabled"] = True
 data.pop("syncAgentsMeta", None)
-data["syncGlobalMaxInflight"] = 1
-data["syncGlobalQueueLimit"] = 0
+data["syncGlobalMaxInflight"] = 10   # the node default: verified and community data side by side
+data["syncGlobalQueueLimit"] = 20
 data.pop("restrictAutoSubscribeContextGraphs", None)
 # One graph (2026-10-16): community reports live in the shared memory of the
 # verified graph; ones written while this node was offline come back on connect.
