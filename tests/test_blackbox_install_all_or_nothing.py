@@ -192,21 +192,37 @@ install_record_commit
     assert paths["root"].is_dir() and paths["hermes"].is_dir()
 
 
+#: Starts bash with Ctrl-C at its default handling, whatever the test runner's is (see
+#: the test below): a tiny launcher resets SIGINT, then becomes bash (no preexec_fn).
+_WITH_DEFAULT_SIGINT = [sys.executable, "-c",
+                        "import os, signal, sys; signal.signal(signal.SIGINT, signal.SIG_DFL); "
+                        "os.execvp('bash', ['bash', '-c', sys.argv[1]])"]
+
+
 def test_ctrl_c_rolls_the_install_back(tmp_path: Path) -> None:
+    """Ctrl-C as a terminal sends it: to the whole foreground process group, once the
+    installer is past install_record_begin, into a shell that starts with Ctrl-C at its
+    default handling. KI-447: a suite started as a background job runs with SIGINT
+    IGNORED, every child inherits that, and bash cannot trap a signal that was ignored
+    when it started — so the installer's rollback trap never ran and the test timed
+    out. The shell starts through a launcher that resets SIGINT, as a terminal would have it."""
     paths = _sandbox(tmp_path)
     ready = tmp_path / "ready"
     _isolated_bin(paths["bin"], paths["service_calls"])
-    process = subprocess.Popen(["bash", "-c", _script(paths, f"""
+    process = subprocess.Popen([*_WITH_DEFAULT_SIGINT, _script(paths, f"""
 install_record_begin
 mkdir -p "$BLACKBOX_INSTALL_ROOT"
 touch {shlex.quote(str(ready))}
 while :; do sleep 0.1; done
-""")], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    deadline = time.monotonic() + 30
-    while not ready.exists() and time.monotonic() < deadline:
-        time.sleep(0.05)
-    process.send_signal(signal.SIGINT)
-    stdout, _ = process.communicate(timeout=30)
+""")], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+    try:
+        assert wait_until(ready.exists, timeout=180), "the installer never reached its ready point"
+        os.killpg(process.pid, signal.SIGINT)
+        stdout, _ = process.communicate(timeout=60)
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.communicate()
 
     assert process.returncode == 130
     assert "Nothing from this install attempt was left behind." in stdout
