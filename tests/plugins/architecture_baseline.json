@@ -16,7 +16,6 @@
     "cli.py::setup_cli": 64,
     "community/report_cli/report_command.py::cmd_report": 57,
     "curate/catalog_import.py::_entry_to_threat": 114,
-    "dashboard/command.py::_replace_existing_dashboard": 65,
     "dashboard/server.py::_blackbox_sync_health": 110,
     "dashboard/server.py::_network_sync_once": 54,
     "dashboard/server.py::_profile_activity_state": 61,
