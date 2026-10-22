@@ -12,8 +12,10 @@ import json
 import os
 import threading
 from pathlib import Path
-from typing import Any, Dict, Iterator, List
+from typing import Any, Callable, Dict, Iterable, Iterator, List, TypeVar
 from ..kernel import constants
+
+T = TypeVar("T")
 
 #: Set inside :func:`sandbox_run`: every log, ledger and cooldown this module's
 #: callers write goes to ``$BLACKBOX_HOME/sandbox/`` instead (2026-10-21). A
@@ -59,6 +61,47 @@ def _home() -> Path:
     except Exception:  # pragma: no cover - defensive
         pass
     return home
+
+
+# ---------------------------------------------------------------------------
+# Whole-log reads, cached by what is on disk
+# ---------------------------------------------------------------------------
+
+_read_cache: dict[str, tuple[tuple, Any]] = {}
+_read_cache_lock = threading.Lock()
+
+
+def _signature(paths: Iterable[Path]) -> tuple:
+    """(path, mtime_ns, size) per file — what makes a parsed log stale. A missing file
+    is part of the signature too, so its arrival invalidates the entry."""
+    out = []
+    for path in paths:
+        try:
+            st = path.stat()
+            out.append((str(path), st.st_mtime_ns, st.st_size))
+        except OSError:
+            out.append((str(path), None, None))
+    return tuple(out)
+
+
+def cached(key: str, paths: Iterable[Path], build: Callable[[], T]) -> T:
+    """``build()``'s result for *key*, rebuilt only when any of *paths* changed on disk.
+
+    Why: the dashboard polls every 4 s and several readers parse, dedupe and sort
+    every log in the home per request — up to 16 MB twice per poll for a page of
+    50 (review 2026-10-22). Appends change a file's size, trims change its mtime,
+    so (mtime, size) per file is a safe staleness key. Callers treat the value as
+    read-only; the same object is handed to every caller until the logs change.
+    """
+    signature = _signature(paths)
+    with _read_cache_lock:
+        hit = _read_cache.get(key)
+        if hit is not None and hit[0] == signature:
+            return hit[1]
+    value = build()
+    with _read_cache_lock:
+        _read_cache[key] = (signature, value)
+    return value
 
 
 def _append_jsonl(path: Path, record: dict[str, Any]) -> None:
