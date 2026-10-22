@@ -4154,8 +4154,24 @@
     line.innerHTML = mark(join, s.join_text) + mark(admission, s.admission_text);
   }
 
-  // The two summary tiles, from /api/community-stats.
+  // The two summary tiles, from /api/community-stats. In sandbox mode the Community tile
+  // counts what the graph above it draws, the sandbox lane (window.__bbSandboxLane, set by
+  // playground.js), and says so; the real counts return the moment sandbox mode is off.
+  var lastCommunityStats = null;
+  window.blackboxRenderCommunityCard = function () { if (lastCommunityStats) renderCommunityStats(lastCommunityStats); };
+  function renderSandboxCommunityTile() {
+    var lane = window.__bbSandbox === true ? window.__bbSandboxLane : null;
+    if (!lane) return false;
+    $("stat-community-count").textContent = num(lane.threats);
+    var tile = $("stat-community-meta");
+    tile.textContent = "sandbox lane \u00b7 " + num(lane.agents) + " agent" + (lane.agents === 1 ? "" : "s") +
+      " heard \u00b7 tests only, never a flag";
+    tile.title = "Sandbox mode: this tile counts the verified graph's sandbox lane, like the graph above.";
+    return true;
+  }
+
   function renderCommunityStats(s) {
+    lastCommunityStats = s;
     if (!s || !s.configured) {
       $("stat-community-count").textContent = "off";
       $("stat-community-meta").textContent = "no community graph configured";
@@ -4176,6 +4192,7 @@
     tile.title = (s.graph_id ? "Community graph " + s.graph_id + ". " : "") +
       "Threats other Blackbox agents reported. They flag for you and never block.";
     $("stat-community-count").textContent = num(s.community_threats || 0);
+    renderSandboxCommunityTile();   // sandbox mode: count the lane the graph draws instead
     renderMemberLine(s);
     $("stat-sharing-state").textContent = sharing;
     var last = s.last_share;
@@ -4745,7 +4762,10 @@
       var hubId = "__lcat__:" + ck;
       // count = different threats of this type (two wallets' vaults are two); how often each was
       // seen belongs to that threat, so the total sightings only appear in the hover card.
-      nodes.push({ id: hubId, kind: "hub", cat: ck, label: meta.name, count: items.length, sightings: sightings, color: meta.color,
+      // count = REAL threats only; sandbox tests (sandbox mode) are their own number, drawn as "+ N TESTS".
+      var sandboxItems = items.filter(function (it) { return it.t.sandbox; }).length;
+      nodes.push({ id: hubId, kind: "hub", cat: ck, label: meta.name, count: items.length - sandboxItems,
+                   sandboxCount: sandboxItems, sightings: sightings, color: meta.color,
                    val: 13 + Math.min(19, Math.log(items.length + 1) * 3.2),
                    // Every local threat of this type (newest first), for the type's detail window.
                    localItems: items.map(function (it) {
@@ -5059,7 +5079,8 @@
       var cy = ty + fontPx + 2 / labelScale;
       ctx.font = "700 " + ((screenFontPx + 1.2) / labelScale) + "px 'IBM Plex Mono', ui-monospace, monospace";
       var magnitude = isHub ? node.count : node.threatTotal;
-      var cstr = magnitude.toLocaleString() + " THREAT" + (magnitude === 1 ? "" : "S");
+      var cstr = magnitude.toLocaleString() + " THREAT" + (magnitude === 1 ? "" : "S") +
+        (isHub && node.sandboxCount ? " + " + node.sandboxCount.toLocaleString() + " TEST" + (node.sandboxCount === 1 ? "" : "S") : "");
       ctx.fillStyle = GRAPH_LABEL_SHADOW;
       ctx.fillText(cstr, node.x + 0.4 / scale, cy + 0.4 / scale);
       ctx.fillStyle = isCenter ? MINT : node.color;
@@ -5095,7 +5116,8 @@
 	        var action = graphDetailMode[activeTier] === "explore" ? "click to focus" : "click for details";
 	        var hc = node.count != null
 	          ? (node.count.toLocaleString() + ' threat' + (node.count === 1 ? '' : 's') +
-	             (node.sightings && node.sightings !== node.count ? ' · seen ' + num(node.sightings) + ' times in all' : '') + ' · ' + action)
+	             (node.sandboxCount ? ' · plus ' + num(node.sandboxCount) + ' sandbox test' + (node.sandboxCount === 1 ? '' : 's') :
+	              (node.sightings && node.sightings !== node.count ? ' · seen ' + num(node.sightings) + ' times in all' : '')) + ' · ' + action)
 	          : 'category hub';
 	        return '<div class="graph-tip"><div class="t-name">' + esc(node.label) + '</div>' +
 	          '<div class="t-cat">' + hc + '</div></div>';

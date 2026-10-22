@@ -62,6 +62,13 @@
     var mode = !!state.sandbox;
     var signature = mode ? ((state.lane && state.lane.entries) || []).map(function (e) { return e.identifier + "|" + e.reporter; }).sort().join(",") : "";
     window.__bbSandbox = mode;
+    // What the Community card counts in sandbox mode: the lane's distinct threats and agents heard.
+    var entries = (state.lane && state.lane.entries) || [];
+    var distinct = {};
+    entries.forEach(function (e) { distinct[e.identifier] = true; });
+    window.__bbSandboxLane = mode && state.lane && state.lane.readable
+      ? { threats: Object.keys(distinct).length, agents: state.lane.agents || 0 } : null;
+    if (typeof window.blackboxRenderCommunityCard === "function") window.blackboxRenderCommunityCard();
     var flipped = lastMode !== null && lastMode !== mode;
     var startedInSandbox = lastMode === null && mode;
     var arrived = mode && lastMode === mode && signature !== lastLaneSignature;
