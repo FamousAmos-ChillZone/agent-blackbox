@@ -78,11 +78,17 @@ BLACKBOX_DKG_ACCEPT_STORE_RESET=false
 BLACKBOX_DKG_HOME="$BLACKBOX_INSTALL_ROOT/.dkg"
 BLACKBOX_DKG_CLI_DIR="$BLACKBOX_INSTALL_ROOT/dkg"
 BLACKBOX_DKG_BIN="$BLACKBOX_DKG_CLI_DIR/node_modules/.bin/dkg"
-BLACKBOX_DKG_PACKAGE="${BLACKBOX_DKG_PACKAGE:-@origintrail-official/dkg@latest}"
-# The npm integrity hash BLACKBOX_DKG_PACKAGE must have ("sha512-…"); empty = not checked.
-# `hermes blackbox setup` pins an exact version and its hash (Hermes plugin catalog: a
-# download made at setup comes from the official source, pinned by checksum).
+# The DKG node release this Blackbox installs and the sha512 the downloaded package must
+# have (`npm view <package> dist.integrity`). The hash is checked on the tarball npm will
+# install, never on the registry's own claim about it. Another BLACKBOX_DKG_PACKAGE needs
+# its own BLACKBOX_DKG_INTEGRITY, or BLACKBOX_DKG_INTEGRITY=unpinned to skip the check knowingly.
+BLACKBOX_DKG_DEFAULT_PACKAGE="@origintrail-official/dkg@10.0.25"
+BLACKBOX_DKG_DEFAULT_INTEGRITY="sha512-ZdEnX1DANj8/Cnu0acV9au+ht2OvxZ+p4MSPpEFur+pI0k6reMzJcsZlpVoby60wnqgE3Nn6oXVL8ubx0wQJrA=="
+BLACKBOX_DKG_PACKAGE="${BLACKBOX_DKG_PACKAGE:-$BLACKBOX_DKG_DEFAULT_PACKAGE}"
 BLACKBOX_DKG_INTEGRITY="${BLACKBOX_DKG_INTEGRITY:-}"
+if [ -z "$BLACKBOX_DKG_INTEGRITY" ] && [ "$BLACKBOX_DKG_PACKAGE" = "$BLACKBOX_DKG_DEFAULT_PACKAGE" ]; then
+    BLACKBOX_DKG_INTEGRITY="$BLACKBOX_DKG_DEFAULT_INTEGRITY"
+fi
 # Packages whose install scripts the DKG node needs (its sqlite runtime check, the better-sqlite3
 # native build, a postinstall). Older npm ran every install script; npm 12 runs only those the
 # project's package.json lists under "allowScripts" (its --allow-scripts flag is refused for a
@@ -219,6 +225,15 @@ prepare_blackbox_dkg_process_environment() {
         warn "Could not prepare Node.js options for the DKG daemon."
         return 1
     fi
+    # Sync transfers at once, by the machine's memory (sync/process_limits.sync_slots): the
+    # node's own 10 from 8 GB, 4 below — the store shares the machine (bench 2026-10-22).
+    local slots=""
+    if slots="$("$VENV_DIR/bin/python" "$helper" sync-slots)" && [[ "$slots" =~ ^[0-9]+\ [0-9]+$ ]]; then
+        BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT="${slots%% *}"
+        BLACKBOX_DKG_SYNC_GLOBAL_QUEUE_LIMIT="${slots##* }"
+    else
+        warn "Could not size the node's sync slots for this machine; using the node's defaults."
+    fi
     # Record them so Blackbox's own node restarts (blackbox sync, the dashboard)
     # relaunch with the same limits (sync/process_limits.py). Not fatal: without
     # the record those restarts use the same defaults computed again.
@@ -226,7 +241,7 @@ prepare_blackbox_dkg_process_environment() {
         "$BLACKBOX_DKG_STORE_QUEUE_LIMIT" >/dev/null; then
         warn "Could not record the DKG node limits; Blackbox restarts will recompute them."
     fi
-    ok "DKG safety limits: one large sync at a time; V8 heap ${heap_mb}MB"
+    ok "DKG safety limits: V8 heap ${heap_mb}MB; $BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT syncs at once"
 }
 
 blackbox_dkg() {
@@ -949,7 +964,7 @@ ensure_blackbox_dkg_config() {
         err "No free port for the Oxigraph store in $BLACKBOX_OXIGRAPH_FIRST_PORT-$BLACKBOX_OXIGRAPH_LAST_PORT."
         return 1
     fi
-    config_state="$("$VENV_DIR/bin/python" - "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_PORT" "$BLACKBOX_DKG_SELECTED_STORE_BACKEND" "$BLACKBOX_DKG_STORE_URL" "$BLACKBOX_DKG_STORE_MANAGED_BY_DKG" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID" "$oxigraph_port" <<'PYEOF'
+    config_state="$("$VENV_DIR/bin/python" - "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_PORT" "$BLACKBOX_DKG_SELECTED_STORE_BACKEND" "$BLACKBOX_DKG_STORE_URL" "$BLACKBOX_DKG_STORE_MANAGED_BY_DKG" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID" "$oxigraph_port" "${BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT:-}" "${BLACKBOX_DKG_SYNC_GLOBAL_QUEUE_LIMIT:-}" <<'PYEOF'
 import json
 import os
 import secrets
@@ -969,6 +984,9 @@ default_context_graph_id = sys.argv[7] if len(sys.argv) > 7 else ""
 # The free port the installer chose for a DKG-managed Oxigraph store; used only when the
 # config names none (empty = keep the config as it is).
 oxigraph_port = int(sys.argv[8]) if len(sys.argv) > 8 and sys.argv[8] else 0
+# Sync slots for this machine (sync/process_limits.sync_slots): 10/20 from 8 GB, 4/8 below.
+sync_inflight = int(sys.argv[9]) if len(sys.argv) > 9 and sys.argv[9] else 10
+sync_queue = int(sys.argv[10]) if len(sys.argv) > 10 and sys.argv[10] else 20
 home.mkdir(parents=True, exist_ok=True)
 cfg_path = home / "config.json"
 original = None
@@ -1016,8 +1034,8 @@ if native_profile:
     data["vmReconcilerEnabled"] = True
     data["vmRecoveryPrefetchEnabled"] = True
 data.pop("syncAgentsMeta", None)
-data["syncGlobalMaxInflight"] = 10   # the node default: verified and community data side by side
-data["syncGlobalQueueLimit"] = 20
+data["syncGlobalMaxInflight"] = sync_inflight   # verified and community data side by side, sized for the machine
+data["syncGlobalQueueLimit"] = sync_queue
 data.pop("restrictAutoSubscribeContextGraphs", None)
 # One graph (2026-10-16): community reports live in the shared memory of the
 # verified graph; ones written while this node was offline come back on connect.
@@ -1781,6 +1799,28 @@ run_hermes_setup() {
 }
 
 # ── DKG node CLI + bootstrap ────────────────────────────────────────────────
+# Download BLACKBOX_DKG_PACKAGE as a tarball and check ITS sha512 against the pin — the file
+# npm will install, not the registry's claim about it (a registry serving a different file
+# would also report a matching hash). Prints the tarball path (so its warnings go to stderr);
+# the caller installs and removes it.
+fetch_pinned_dkg_tarball() {
+    local dir="" file="" actual=""
+    dir="$(mktemp -d "${TMPDIR:-/tmp}/blackbox-dkg-pack.XXXXXX")" || return 1
+    if ! file="$(npm pack "$BLACKBOX_DKG_PACKAGE" --pack-destination "$dir" --silent 2>/dev/null | tail -n 1)" ||
+        [ -z "$file" ] || [ ! -f "$dir/$file" ]; then
+        rm -rf "$dir"
+        warn "Could not download $BLACKBOX_DKG_PACKAGE from the npm registry." >&2
+        return 1
+    fi
+    actual="$(node -e 'const c=require("crypto"),f=require("fs");console.log("sha512-"+c.createHash("sha512").update(f.readFileSync(process.argv[1])).digest("base64"))' "$dir/$file" 2>/dev/null)"
+    if [ "$actual" != "$BLACKBOX_DKG_INTEGRITY" ]; then
+        rm -rf "$dir"
+        warn "The downloaded $BLACKBOX_DKG_PACKAGE (${actual:-no checksum}) is not the one this Blackbox release pins; it was not installed." >&2
+        return 1
+    fi
+    printf '%s\n' "$dir/$file"
+}
+
 install_blackbox_dkg_package() {
     local backup_dir=""
     local package_json="$BLACKBOX_DKG_CLI_DIR/node_modules/@origintrail-official/dkg/package.json"
@@ -1792,17 +1832,19 @@ install_blackbox_dkg_package() {
         return 1
     fi
 
-    # A pinned checksum is compared with what the registry publishes for the package BEFORE
-    # anything is installed; npm then checks the download against that same published hash.
-    if [ -n "$BLACKBOX_DKG_INTEGRITY" ]; then
-        local published=""
-        published="$(npm view "$BLACKBOX_DKG_PACKAGE" dist.integrity 2>/dev/null || true)"
-        if [ "$published" != "$BLACKBOX_DKG_INTEGRITY" ]; then
-            warn "The registry's checksum for $BLACKBOX_DKG_PACKAGE (${published:-unavailable}) is not the one this Blackbox release pins; it was not installed."
-            return 1
-        fi
-        ok "DKG package checksum matches the pinned one ($BLACKBOX_DKG_PACKAGE)"
-    fi
+    # The package is downloaded first and the tarball's own sha512 compared with the pin;
+    # only a tarball that matches is handed to npm install. No pin = not installed.
+    local tarball=""
+    case "$BLACKBOX_DKG_INTEGRITY" in
+        unpinned)
+            warn "BLACKBOX_DKG_INTEGRITY=unpinned: $BLACKBOX_DKG_PACKAGE is installed without a checksum check." ;;
+        "")
+            warn "No checksum is pinned for $BLACKBOX_DKG_PACKAGE; it was not installed. Set BLACKBOX_DKG_INTEGRITY to its sha512 (npm view $BLACKBOX_DKG_PACKAGE dist.integrity), or BLACKBOX_DKG_INTEGRITY=unpinned to skip the check knowingly."
+            return 1 ;;
+        *)
+            tarball="$(fetch_pinned_dkg_tarball)" || return 1
+            ok "DKG package checksum verified ($BLACKBOX_DKG_PACKAGE)" ;;
+    esac
 
     if [ -d "$BLACKBOX_DKG_CLI_DIR/.git" ]; then
         backup_dir="${BLACKBOX_DKG_CLI_DIR}.custom-backup-$(date +%Y%m%d%H%M%S)"
@@ -1824,8 +1866,12 @@ pkg.allowScripts = Object.assign({}, pkg.allowScripts);
 for (const name of process.argv.slice(2)) if (pkg.allowScripts[name] !== false) pkg.allowScripts[name] = true;
 fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
 ' "$BLACKBOX_DKG_CLI_DIR/package.json" "${BLACKBOX_DKG_ALLOW_SCRIPTS[@]}"
-    if ! npm install --prefix "$BLACKBOX_DKG_CLI_DIR" --prefer-online \
-        "$BLACKBOX_DKG_PACKAGE" >"$npm_log" 2>&1; then
+    local install_spec="$BLACKBOX_DKG_PACKAGE"
+    [ -n "$tarball" ] && install_spec="$tarball"
+    npm install --prefix "$BLACKBOX_DKG_CLI_DIR" --prefer-online "$install_spec" >"$npm_log" 2>&1
+    local npm_status=$?
+    [ -n "$tarball" ] && rm -rf "$(dirname "$tarball")"
+    if [ "$npm_status" -ne 0 ]; then
         if [ -n "$backup_dir" ]; then
             rm -rf "$BLACKBOX_DKG_CLI_DIR"
             mv "$backup_dir" "$BLACKBOX_DKG_CLI_DIR"
