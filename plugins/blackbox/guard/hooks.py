@@ -191,8 +191,8 @@ def on_pre_tool_call(
         if blocking:
             return {"action": "block", "message": blackbox_block_message(blocking)}
         return None
-    except Exception as exc:  # pragma: no cover - fail open
-        logger.debug("blackbox: pre_tool_call failed: %s", exc)
+    except Exception as exc:  # pragma: no cover - fail open, said out loud (FIX-0160)
+        reporting.hook_failed("pre_tool_call", exc, tool_name=tool_name, consequence="the action passed unchecked")
         return None
 
 
@@ -246,8 +246,8 @@ def on_post_tool_call(
                 "result": audit.redact(result),
             },
         )
-    except Exception as exc:  # pragma: no cover - fail open
-        logger.debug("blackbox: post_tool_call failed: %s", exc)
+    except Exception as exc:  # pragma: no cover - fail open, said out loud (FIX-0160)
+        reporting.hook_failed("post_tool_call", exc, tool_name=tool_name, consequence="the result was not audited")
 
 
 def _untrusted_request_sources(user_message: Any, request_messages: Any) -> list[tuple[str, str]]:
@@ -375,8 +375,8 @@ def on_pre_api_request(**kwargs: Any) -> None:
         # Optional LLM second opinion, off-thread so it never delays the request.
         if cfg.llm_ready:
             background._spawn_llm_review(cfg, text, detail)
-    except Exception as exc:  # pragma: no cover - fail open
-        logger.debug("blackbox: pre_api_request failed: %s", exc)
+    except Exception as exc:  # pragma: no cover - fail open, said out loud (FIX-0160)
+        reporting.hook_failed("pre_api_request", exc, consequence="the request passed unchecked")
 
 
 def on_session_start(session_id: str = "", **kwargs: Any) -> None:
