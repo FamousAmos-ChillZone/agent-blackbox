@@ -13,7 +13,9 @@ the reader's job; this module only says whether there is anything new.
 
 Pattern: one stateful object with one lock (the last fingerprint and the
 last probe time), module-level because the state is per process like the
-node it talks to.
+node it talks to. The probe slot itself is per MACHINE: :data:`PULSE` pairs
+the in-process timer with a :class:`~..kernel.bounded_files.ProbeStamp`, so
+ten protected profiles share one probe per interval instead of running ten.
 
 Usage::
 
@@ -28,6 +30,7 @@ import time
 from typing import Any, Callable, Optional
 
 from ..kernel import constants, sparql_text
+from ..kernel.bounded_files import ProbeStamp
 from ..kernel.dkg_client import DkgClient, extract_binding
 
 logger = logging.getLogger(__name__)
@@ -69,8 +72,9 @@ def fingerprint(client: DkgClient, cfg: Any) -> Optional[str]:
 class CommunityPulse:
     """Remembers when the graph was last probed and what it looked like."""
 
-    def __init__(self, clock: Callable[[], float] = time.time) -> None:
+    def __init__(self, clock: Callable[[], float] = time.time, stamp: Optional[ProbeStamp] = None) -> None:
         self._clock = clock
+        self._stamp = stamp
         self._lock = threading.Lock()
         self._last_probe = 0.0
         self._fingerprint: Optional[str] = None
@@ -84,6 +88,11 @@ class CommunityPulse:
         with self._lock:
             if now - self._last_probe < interval_s:
                 return False
+            if self._stamp is not None:
+                held_at = self._stamp.claim(interval_s, now)
+                if held_at is not None:                     # another process probed: wait out its interval
+                    self._last_probe = held_at
+                    return False
             self._last_probe = now
             return True
 
@@ -144,7 +153,9 @@ class CommunityPulse:
             self._last_probe = 0.0
             self._fingerprint = None
             self._baselined_now = False
+            if self._stamp is not None:
+                self._stamp.clear()
 
 
-#: The per-process pulse.
-PULSE = CommunityPulse()
+#: This process's pulse, paced with every other process on the machine through the stamp.
+PULSE = CommunityPulse(stamp=ProbeStamp(lambda: constants.blackbox_home() / "community-pulse.stamp"))

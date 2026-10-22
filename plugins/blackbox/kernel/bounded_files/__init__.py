@@ -73,3 +73,6 @@ def _read_up_to(descriptor: int, limit: int) -> bytes:
         chunks.append(chunk)
         remaining -= len(chunk)
     return b"".join(chunks)
+
+
+from .probe_stamp import ProbeStamp   # the stamp shares this package: a small file read on the hot path

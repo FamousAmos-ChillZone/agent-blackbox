@@ -224,7 +224,7 @@ def test_a_wedged_beat_does_not_stall_the_pulse_forever(monkeypatch):
     monkeypatch.setattr(pulse_beat, "_pulsing", True)
     monkeypatch.setattr(pulse_beat, "_pulsing_since", time.time())
     assert pulse_beat.pulse(cfg) is False                           # a live beat is respected
-    community.PULSE._last_probe = 0.0
+    community.PULSE.reset()                                         # re-arm: this process AND the machine stamp
     monkeypatch.setattr(pulse_beat, "_pulsing_since", time.time() - pulse_beat.STUCK_BEAT_SECONDS - 1)
     started = threading.Event()
     monkeypatch.setattr(pulse_beat, "_background_pulse", lambda config: started.set())
@@ -287,3 +287,29 @@ def test_the_beat_runs_membership_so_a_fresh_node_subscribes_without_a_full_refr
     cfg = BlackboxConfig(context_graph_id=GRAPH)
     pulse_beat._background_pulse(cfg)
     assert calls == [GRAPH]
+
+
+# ------------------------------------------------ one probe per machine, not per process (2026-10-22)
+
+def test_processes_on_one_machine_share_the_probe_slot(tmp_path):
+    """Ten protected profiles used to run ten whole-tier counts every interval."""
+    from plugins.blackbox.kernel.bounded_files import ProbeStamp
+
+    clock = _Clock()
+    stamp = tmp_path / "community-pulse.stamp"
+    first, second = (pulse_module.CommunityPulse(clock=clock, stamp=ProbeStamp(stamp)) for _ in range(2))
+
+    assert first.due(20) is True
+    assert second.due(20) is False            # the slot is taken for this interval
+    clock.now += 19
+    assert second.due(20) is False            # still inside the first claim's interval
+    clock.now += 1
+    assert second.due(20) is True             # and now the second process takes it
+    assert first.due(20) is False
+
+
+def test_an_unwritable_stamp_never_blocks_a_probe(tmp_path):
+    from plugins.blackbox.kernel.bounded_files import ProbeStamp
+
+    pulse = pulse_module.CommunityPulse(clock=_Clock(), stamp=ProbeStamp(tmp_path / "missing-dir" / "x" / "stamp"))
+    assert pulse.due(20) is True
