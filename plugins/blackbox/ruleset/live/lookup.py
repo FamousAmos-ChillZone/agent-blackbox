@@ -111,7 +111,7 @@ class VerifiedLookup:
     def _run(self, items: Sequence[Any], build_query: Any, category: str) -> LookupAnswer:
         if not items:
             return LookupAnswer({}, CLEAN)
-        skipped = self._while_degraded()
+        skipped = None if not self.scope.ready else self._while_degraded()   # not-ready is its own answer, recorded as before
         if skipped is not None:
             answer = skipped                                   # the breaker: not asked, not recorded
         else:

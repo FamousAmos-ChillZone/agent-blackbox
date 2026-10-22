@@ -14,6 +14,13 @@ from plugins.blackbox.kernel.store import StoreAnswer, StoreClient
 from plugins.blackbox.ruleset import compiler, disk_cache, live
 from plugins.blackbox.ruleset.live import lookup as live_lookup
 
+
+@pytest.fixture(autouse=True)
+def _fresh_lookup_health(monkeypatch, tmp_path):
+    """The process-wide lookup health is a real record (one degraded answer pauses the
+    store's probes for 10 s); each test here starts with its own, never a neighbour's."""
+    monkeypatch.setattr(live_lookup, "HEALTH", live.LookupHealth(tmp_path / "lookup-state.json"))
+
 TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 DP = "urn:defender:p:"
 BP = "urn:blackbox:p:"
