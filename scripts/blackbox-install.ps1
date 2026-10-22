@@ -87,8 +87,10 @@ $DkgAllowScripts = @("@origintrail-official/dkg", "better-sqlite3", "@openuidev/
 $DkgDaemonUrl = "http://127.0.0.1:$DkgPort"
 $DkgStoreQueueLimit = if ($env:BLACKBOX_DKG_STORE_QUEUE_LIMIT) { [int]$env:BLACKBOX_DKG_STORE_QUEUE_LIMIT } else { 512 }
 $DkgListContextGraphsProjection = if ($env:BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION) { $env:BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION } else { "1" }
-$DkgSyncGlobalMaxInflight = "1"
-$DkgSyncGlobalQueueLimit = "1"
+# The node's own sync defaults (DKG 10.0.25: 10 sync jobs, queue 20), so verified data and community
+# data sync side by side (bench 2026-10-22; was 1/1 from the original installer).
+$DkgSyncGlobalMaxInflight = "10"
+$DkgSyncGlobalQueueLimit = "20"
 $script:DkgDurableSyncEnabled = if ($env:BLACKBOX_DKG_DURABLE_SYNC_ENABLED) { $env:BLACKBOX_DKG_DURABLE_SYNC_ENABLED } else { "1" }
 $DkgCatchupMaxConcurrentPeers = "1"
 $DkgStoreQueueWaitTimeoutMs = "300000"
@@ -377,6 +379,8 @@ function Invoke-BlackboxDkg {
         $env:DKG_SYNC_GLOBAL_QUEUE_LIMIT = "$DkgSyncGlobalQueueLimit"
         $env:DKG_CATCHUP_MAX_CONCURRENT_PEERS = "$DkgCatchupMaxConcurrentPeers"
         $env:DKG_STORE_QUEUE_WAIT_TIMEOUT_MS = "$DkgStoreQueueWaitTimeoutMs"
+        # No effect: the node reads neither of the next two (DKG 10.0.25 has its
+        # sync limits built in).
         $env:DKG_SYNC_TOTAL_TIMEOUT_MS = "1800000"
         $env:DKG_SWM_RECOVERY_TIMEOUT_MS = "3600000"
         $env:DKG_EXACT_BATCH_STREAM_ENABLED = "$DkgExactBatchStreamEnabled"
@@ -895,10 +899,12 @@ if native_profile:
     data["vmReconcilerEnabled"] = True
     data["vmRecoveryPrefetchEnabled"] = True
 data.pop("syncAgentsMeta", None)
-data["syncGlobalMaxInflight"] = 1
-data["syncGlobalQueueLimit"] = 0
+data["syncGlobalMaxInflight"] = 10   # the node default: verified and community data side by side
+data["syncGlobalQueueLimit"] = 20
 data.pop("restrictAutoSubscribeContextGraphs", None)
-data["syncSharedMemoryOnConnect"] = False
+# One graph (2026-10-16): community reports live in the shared memory of the
+# verified graph; ones written while this node was offline come back on connect.
+data["syncSharedMemoryOnConnect"] = True
 priorities = data.get("syncContextGraphPriorities")
 if not isinstance(priorities, dict):
     priorities = {}
@@ -1475,6 +1481,11 @@ if current_graph in legacy_graphs:
 if not blackbox.get("graph_peer_id") or str(blackbox.get("graph_peer_id")) in legacy_peers:
     blackbox["graph_peer_id"] = graph_peer_id
     added.append("graph_peer_id")
+# One graph (2026-10-16): community reports live in the verified graph's shared
+# memory, so the separate community graph and its owner's peer id are dropped.
+for key in ("community_graph_id", "community_graph_peer_id"):
+    if blackbox.pop(key, None) is not None:
+        added.append(f"{key} (removed)")
 defaults = {
     "mode": "audit",
     "context_graph_id": context_graph_id,
@@ -1710,7 +1721,8 @@ function Show-NextSteps {
   your agent meets a threat already listed in the verified threat graph, this
   node shares a privacy-safe statement (the threat's identifier and type, the
   tool that met it, blocked or flagged, and what the threat targets; never
-  prompts, commands, file paths or files) with the Blackbox community graph.
+  prompts, commands, file paths or files) with the Blackbox community, in that
+  graph's shared memory, where Umanitek's curators review it.
   Turn it on (this records your agreement to the reporter terms):
        blackbox report --enable-sharing      (or the dashboard's sharing toggle)
 "@ | Write-Host
@@ -1742,7 +1754,8 @@ function Show-NextSteps {
   your agent meets a threat already listed in the verified threat graph, this
   node shares a privacy-safe statement (the threat's identifier and type, the
   tool that met it, blocked or flagged, and what the threat targets; never
-  prompts, commands, file paths or files) with the Blackbox community graph.
+  prompts, commands, file paths or files) with the Blackbox community, in that
+  graph's shared memory, where Umanitek's curators review it.
   Turn it on (this records your agreement to the reporter terms):
        blackbox report --enable-sharing      (or the dashboard's sharing toggle)
 "@ | Write-Host

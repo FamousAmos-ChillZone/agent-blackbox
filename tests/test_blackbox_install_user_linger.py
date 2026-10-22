@@ -41,14 +41,15 @@ def _run(tmp_path: Path, *, lingering: bool = False, self_allowed: bool = True, 
     calls.write_text("", encoding="utf-8")
     if lingering:
         (linger_dir / "trader").write_text("", encoding="utf-8")
-    log = f'echo "$(basename "$0") $*" >> {shlex.quote(str(calls))}\n'
+    # ${0##*/} instead of basename: PATH below holds only the fakes, so no system tool is reachable.
+    log = f'echo "${{0##*/}} $*" >> {shlex.quote(str(calls))}\n'
     _fake(bin_dir, "id", 'echo trader\n')
     if loginctl:
         _fake(bin_dir, "loginctl", log + f"exit {0 if self_allowed else 1}\n")
     _fake(bin_dir, "sudo", log + f"exit {0 if sudo_allowed else 1}\n")
     script = f"""
 BLACKBOX_LINGER_DIR={shlex.quote(str(linger_dir))}
-PATH={shlex.quote(str(bin_dir))}:/usr/bin:/bin
+PATH={shlex.quote(str(bin_dir))}
 ok() {{ echo "OK $*"; }}
 warn() {{ echo "WARN $*"; }}
 ensure_user_lingering() {{
@@ -87,6 +88,8 @@ def test_a_user_already_lingering_is_left_alone(tmp_path):
 
 
 def test_without_logind_there_is_nothing_to_do(tmp_path):
+    # PATH is only the fakes folder: a machine's real loginctl (GitHub's Linux runners have one)
+    # must not stand in for the "no logind" case this test is about (LES-064).
     calls, output = _run(tmp_path, loginctl=False)
     assert calls == [] and output == ""
 

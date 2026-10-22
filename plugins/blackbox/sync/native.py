@@ -8,7 +8,8 @@ against the chain. With the exact-batch stream and recovery prefetch switched on
 at "waiting-for-dkg-capacity" for an hour on the same release (KI-282).
 
 So for the default graph, ``blackbox sync`` no longer drives the transfer. It
-**observes** it (an Observer, in pattern terms): subscribe once, then compile
+**observes** it (an Observer, in pattern terms): subscribe once (never again on each
+run, KI-449), then compile
 the rules the node already holds, until the first usable verified rules exist.
 The node keeps fetching after this command returns; the ordinary hourly refresh
 and the dashboard's refresh worker compile the rest as it lands.
@@ -31,7 +32,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
-from .. import ruleset
+from .. import community, ruleset
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig, load_blackbox_config
 from ..kernel.dkg_client import DkgClient, DkgError
@@ -115,10 +116,23 @@ def _refused_for_good(exc: DkgError) -> bool:
 
 
 def _subscribe(client: DkgClient, cfg: BlackboxConfig, seen: _Observation) -> None:
-    """Subscribe the node to the verified graph once; a refusal the node will
-    not change its mind about ends the observation."""
+    """Subscribe the node to the verified graph once; a refusal the node will not change
+    its mind about ends the observation. Membership adds the graph's shared memory (the
+    community) in the same breath, once (``community/membership``).
+
+    KI-449: every subscribe that includes shared memory makes DKG 10.0.25 restart its
+    shared-memory catch-up, and Blackbox used to subscribe on EVERY sync run, so a fresh
+    node's download kept being pushed back. This subscribes only when the node lists the
+    graph as NOT subscribed; a listing that cannot be read requests nothing (LES-011)."""
+    state = community.read_join_state(client, cfg.context_graph_id)
+    if state is community.JoinState.UNKNOWN:
+        seen.error = "the DKG node's listing could not be read; asking again shortly"
+        return
+    if state is not community.JoinState.JOINING:   # already subscribed: nothing to request
+        seen.subscribed = True
+        return
     try:
-        reply = client.subscribe_context_graph(cfg.context_graph_id)
+        reply = client.subscribe_context_graph(cfg.context_graph_id, include_shared_memory=False)
     except DkgError as exc:
         seen.gave_up = _refused_for_good(exc)
         seen.error = f"DKG subscription unavailable: {exc}"

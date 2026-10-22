@@ -156,8 +156,7 @@ def _node_and_ruleset(inputs: HealthInputs) -> list[HealthItem]:
         items.append(HealthItem(_OPERATOR, HealthClass.ACTION, f"my node is stale: {why}",
                                 "run `blackbox sync --wait`; check the DKG node is running"))
     if inputs.rule_count == 0:
-        items.append(HealthItem(_OPERATOR, HealthClass.ACTION, "UNPROTECTED: the threat ruleset is empty",
-                                "run `blackbox sync --wait` to load the threat graph"))
+        items.append(_empty_ruleset_item(inputs.first_sync))
     if inputs.verified_lookup_problem:
         items.append(HealthItem(_OPERATOR, HealthClass.ACTION,
                                 f"DEGRADED: verified rules cannot be looked up — {inputs.verified_lookup_problem}",
@@ -170,8 +169,45 @@ def _node_and_ruleset(inputs: HealthInputs) -> list[HealthItem]:
     return items
 
 
+def _empty_ruleset_item(first_sync: str) -> HealthItem:
+    """No verified rules yet. While the first sync is moving that is setting up, not an
+    alarm: INFO, saying what happens and how long it takes (founder, 2026-10-22: a red
+    "run blackbox sync --wait" over a sync already running read as broken). A stalled
+    sync, or one nobody is watching, stays the ACTION alarm."""
+    if first_sync == "running":
+        return HealthItem(_OPERATOR, HealthClass.INFO,
+                          "Setting up: Umanitek's verified threat graph is loading for the first time "
+                          "(about 30 minutes on a new machine)",
+                          "nothing to do — verified checks switch on as the rules compile; until then the "
+                          "built-in rules (protected paths, secrets, Trader Shield) protect; the Threat graph "
+                          "card shows each step")
+    if first_sync == "stalled":
+        return HealthItem(_OPERATOR, HealthClass.ACTION,
+                          "UNPROTECTED: the first sync of the verified threat graph has stopped making progress",
+                          "check the DKG node is running (`blackbox status`), then run `blackbox sync --wait`")
+    return HealthItem(_OPERATOR, HealthClass.ACTION, "UNPROTECTED: the threat ruleset is empty",
+                      "run `blackbox sync --wait` to load the threat graph")
+
+
+def _not_admitted_item(sharing_enabled: bool) -> HealthItem:
+    """The graph's owner has not admitted this node yet — or approved it but the approval has
+    not reached the node (bench 2026-10-22: approved 13 times, the allowlist never arrived, every
+    share refused). Founder: the dashboard must SAY so, not leave a silent "share failed"."""
+    message = ("not admitted to the community graph yet: the graph owner's approval has not reached "
+               "this node")
+    if sharing_enabled:
+        return HealthItem(_OPERATOR, HealthClass.ACTION, message,
+                          "anything this node shares is refused until it arrives; it keeps asking by itself — "
+                          "if this lasts more than about 30 minutes, the graph owner's node is likely unreachable "
+                          "from here. Community warnings from other members are still read and flagged")
+    return HealthItem(_OPERATOR, HealthClass.INFO, message,
+                      "nothing to do while sharing is off — community warnings are still read and flagged")
+
+
 def _community(inputs: HealthInputs) -> list[HealthItem]:
     items = []
+    if inputs.admission == "waiting":
+        items.append(_not_admitted_item(inputs.sharing_enabled))
     if inputs.read_unavailable_reason:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"community graph could not be read: {inputs.read_unavailable_reason}",
                                 "nothing to do — the last good community tier is kept; verified rules still enforce"))
@@ -287,23 +323,23 @@ def node_installed(cfg: Any, node_reachable: bool) -> bool:
 
 def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked_by_identifier: Mapping[str, int],
            now: float, *, pending_shares: int = 0, shares_given_up: int = 0, sharing_consent_problem: str = "",
-           verified_lookup_problem: str = "",
+           verified_lookup_problem: str = "", first_sync: str = "", admission: str = "",
            watch: Optional[manifest_watcher.ManifestWatchInputs] = None) -> HealthInputs:
-    """Build :class:`HealthInputs` from a config, a compiled ruleset, node
-    reachability, the last community read (or None), how many actions each
-    threat blocked here (``audit.blocked_counts_by_identifier()``) and the
-    share-retry counts (``community.share_retry_stats()``); *watch* is the
-    manifest watcher's facts (``manifest_watch.watch_inputs``), None = not watched."""
+    """Build :class:`HealthInputs` from a config, a compiled ruleset, node reachability, the last community
+    read (or None), how many actions each threat blocked here (``audit.blocked_counts_by_identifier()``), the
+    share-retry counts (``community.share_retry_stats()``) and this node's ``admission`` to the graph;
+    *watch* is the manifest watcher's facts (``manifest_watch.watch_inputs``), None = not watched."""
     view = getattr(read, "curator", None)
     revoked = {ident: int(blocked_by_identifier.get(ident, 0)) for ident in (view.revoked if view is not None else ())}
     kill_list = getattr(rs, "kill_list", None) or {}
+    today = datetime.fromtimestamp(now, UTC).date().isoformat()
     return HealthInputs(
         node_reachable=node_reachable,
         node_installed=node_installed(cfg, node_reachable),
         ruleset_age_s=(now - getattr(rs, "synced_at", 0)) if getattr(rs, "synced_at", 0) else None,
         sync_interval_s=float(getattr(cfg, "sync_interval", 0) or 0),
         rule_count=sum(int(v) for k, v in rs.counts().items() if k != "community"),
-        community_configured=bool(getattr(cfg, "community_graph_id", "")),
+        community_configured=bool(getattr(cfg, "context_graph_id", "")),
         community_paused=bool(getattr(rs, "community_paused", False)),
         read_unavailable_reason=("" if read is None or read.available else str(read.reason)),
         curator_trusted=bool(view is not None and view.manifest is not None),
@@ -314,9 +350,11 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         pending_shares=int(pending_shares),
         sharing_consent_problem=sharing_consent_problem if getattr(cfg, "community_enabled", False) else "",
         verified_lookup_problem=verified_lookup_problem,
+        first_sync=first_sync,
+        admission=admission, sharing_enabled=bool(getattr(cfg, "community_enabled", False)),
         shares_given_up=int(shares_given_up),
         curators_last_day=(view.last_statement_day if view is not None else ""),
-        today=datetime.fromtimestamp(now, UTC).date().isoformat(),
+        today=today,
         heartbeat_missing_keys=_heartbeat_missing(view, now),
         manifest_conflict=bool(view is not None and view.manifest_conflict),
         manifest_conflict_ignored=bool(view is not None and view.manifest_conflict_ignored),
@@ -330,8 +368,7 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         manifest_state=(view.manifest_state if view is not None else ""),
         manifest_state_day=(view.manifest_state_day if view is not None else ""),
         manifest_expires_day=(view.manifest_expires_day if view is not None else ""),
-        community_authority=community_alarms.gather(
-            getattr(view, "community", None), datetime.fromtimestamp(now, UTC).date().isoformat()),
+        community_authority=community_alarms.gather(getattr(view, "community", None), today),
         manifest_watch=watch or manifest_watcher.ManifestWatchInputs(),
     )
 

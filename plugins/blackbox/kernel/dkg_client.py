@@ -257,13 +257,13 @@ class DkgClient:
             "POST", "/api/connect", {"multiaddr": multiaddr}, timeout=15.0
         )
 
-    def subscribe_context_graph(self, cg_id: str, *, include_shared_memory: bool = False) -> dict[str, Any]:
-        """Subscribe the node to a context graph and catch up its durable VM.
+    def subscribe_context_graph(self, cg_id: str, *, include_shared_memory: bool = True) -> dict[str, Any]:
+        """Subscribe the node to a context graph and catch up its VM and shared memory.
 
-        What a *consumer* node needs: a fresh install that only set
-        ``context_graph_id`` never subscribes the daemon, so its store stays empty.
-        Agent Blackbox is VM-only, so SWM catch-up is disabled by default.
-        Idempotent — the daemon no-ops when already subscribed.
+        A fresh install that only set ``context_graph_id`` never subscribes the
+        daemon, so its store stays empty. Shared memory is included because the
+        community's reports live there (one graph, 2026-10-16); a node subscribed
+        without it gets a catch-up job that adds it, an already-ready one a no-op.
         """
         return self.request(
             "POST",
@@ -285,7 +285,7 @@ class DkgClient:
         self,
         cg_id: str,
         *,
-        include_shared_memory: bool = False,
+        include_shared_memory: bool = True,
     ) -> dict[str, Any]:
         """Force a fresh official catch-up without deleting local graph data."""
         self.unsubscribe_context_graph(cg_id)
@@ -336,9 +336,9 @@ class DkgClient:
     ) -> dict[str, Any]:
         """Recover the graph's durable VM from one configured source peer.
 
-        DKG's route retains its historical ``shared-memory`` name, but the
-        explicit flags below skip SWM entirely. Pinning the source avoids
-        a generic peer returning a partial or stale graph.  A successful
+        DKG's route retains its historical ``shared-memory`` name, but the flags
+        below skip SWM: the shared memory comes with the subscription. Pinning the
+        source avoids a generic peer returning a partial or stale graph. A successful
         already-current recovery legitimately inserts zero triples.
         """
         bounded_budget = max(1_000, min(300_000, int(budget_ms)))
@@ -417,8 +417,8 @@ class DkgClient:
 
     # -- knowledge assets --------------------------------------------------
 
-    def share_knowledge_asset(self, cg_id: str, name: str, quads: list[Quad],
-                              create_timeout: Optional[float] = None) -> dict[str, Any]:   # community statements only
+    def share_knowledge_asset(self, cg_id: str, name: str, quads: list[Quad], create_timeout: Optional[float] = None,
+                              sub_graph: str = constants.COMMUNITY_SUB_GRAPH) -> dict[str, Any]:   # community lanes only
         """Create/finalize a KA, then explicitly share its sealed assertion to SWM.
 
         Private/agent-gated context graphs require the node's sender-key SWM
@@ -438,13 +438,13 @@ class DkgClient:
                 "POST",
                 "/api/knowledge-assets",
                 {"contextGraphId": cg_id, "name": name, "quads": quads, "alsoShareSwm": False,
-                 "subGraphName": constants.COMMUNITY_SUB_GRAPH},
+                 "subGraphName": sub_graph},
                 timeout=create_timeout or _STORE_TIMEOUT,
             )
         except DkgError as exc:
             if not (_is_already_finalized(exc) or _is_wm_merkle_conflict(exc)):
                 raise
-        return self.share_finalized_knowledge_asset(cg_id, name, constants.COMMUNITY_SUB_GRAPH)
+        return self.share_finalized_knowledge_asset(cg_id, name, sub_graph)
 
     def _ka_path(self, name: str, suffix: str = "") -> str:
         enc = urllib.parse.quote(name, safe="")
@@ -515,8 +515,8 @@ class DkgClient:
             if last_state in {"succeeded", "success", "completed", "complete"}:
                 return last_job
             if last_state in {"failed", "error", "cancelled", "canceled"}:
-                detail = json.dumps(last_job, sort_keys=True)[:1000]
-                raise DkgError(f"SWM share job {job_id} failed: {detail}")
+                error = last_job.get("lastError") if isinstance(last_job.get("lastError"), dict) else {}  # the node's reason first:
+                raise DkgError(f"SWM share job {job_id} failed: {error.get('message') or json.dumps(last_job, sort_keys=True)[:1000]}")
             if time.monotonic() >= deadline:
                 detail = json.dumps(last_job, sort_keys=True)[:1000]
                 raise DkgError(
@@ -574,9 +574,9 @@ class DkgClient:
         view: Optional[str] = constants.VIEW_VERIFIABLE_MEMORY,
         on_error: Any = None,
         agent_address: Optional[str] = None,
-        timeout: Optional[float] = None,
+        timeout: Optional[float] = None, sub_graph: str = constants.COMMUNITY_SUB_GRAPH,
     ) -> list[dict[str, Any]]:
-        """Run a SPARQL SELECT and return normalized bindings.
+        """Run a SPARQL SELECT and return normalized bindings (shared memory: the *sub_graph* lane).
 
         Each binding is a ``{var: value}`` dict of plain strings (literals and
         IRIs already unwrapped — see :func:`extract_binding`). On transport
@@ -588,7 +588,7 @@ class DkgClient:
         if view:
             payload["view"] = view
         if view == constants.VIEW_SHARED_WORKING_MEMORY:   # community statements live in their subgraph
-            payload["subGraphName"] = constants.COMMUNITY_SUB_GRAPH
+            payload["subGraphName"] = sub_graph
         if agent_address:
             payload["agentAddress"] = agent_address
         try:

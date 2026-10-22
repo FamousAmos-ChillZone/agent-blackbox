@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Set, Tuple
 from ..kernel.browser_boundary import BrowserBoundary
 from .. import shields
 from ..sync import read_durable_progress, state as sync_state
-from . import community_routes, docs_routes, graph_pages, lifecycle, shields_routes, sync_meter, sync_timing
+from . import community_routes, docs_routes, graph_pages, lifecycle, playground_routes, shields_routes, sync_meter, sync_timing
 from .graph_pages import _balanced_graph_entries, _graph_entries
 from .network_sync import network_sync_argv as _network_sync_argv
 from .node_probe import NodeLiveness, NodeReadCache, RepeatGate, node_sync_probe
@@ -75,7 +75,7 @@ _FONT_FILES = frozenset({
     "ibm-plex-mono-600-latin.woff2", "ibm-plex-mono-600-latin-ext.woff2",
 })
 #: The sub-packages that add their own routes and pages, each through ``register(app, swr)``.
-_ROUTE_PACKAGES = (shields_routes, docs_routes)
+_ROUTE_PACKAGES = (shields_routes, docs_routes, playground_routes)
 def _dkg_durable_progress(dkg_home: str, context_graph_id: str) -> dict[str, Any]:
     """Read the latest resumable VM offset reported by the managed DKG."""
     return read_durable_progress(dkg_home, context_graph_id)
@@ -1115,7 +1115,7 @@ def create_app(*, manage_blackbox: bool = False):
         CommunityRead (reports counted by signer; disputes, curator view, budget — R2), or
         None before the first lands; stale-while-revalidate, so it never blocks a request."""
         def _load() -> Any:
-            if not getattr(cfg, "community_graph_id", "") or not _node_reachable(cfg):
+            if not getattr(cfg, "context_graph_id", "") or not _node_reachable(cfg):
                 return None   # keep the cached value; retry next poll
             try:
                 read = community.read_verified_reports(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home), cfg)
@@ -1711,7 +1711,7 @@ def create_app(*, manage_blackbox: bool = False):
         """Map a UI tier name to a DKG SPARQL view.
 
         ``public`` → verifiable-memory (the curated source of truth),
-        ``community`` → shared-working-memory (the community graph; flag-only),
+        ``community`` → shared-working-memory (the community's reports; flag-only),
         ``local`` → working-memory (this node's own private graph).
         """
         tier = (tier or default).lower()
