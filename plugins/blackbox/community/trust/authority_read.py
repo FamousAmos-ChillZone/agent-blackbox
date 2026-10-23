@@ -43,7 +43,7 @@ from ...kernel import constants, signing
 from ...kernel.config import BlackboxConfig
 from ...kernel.dkg_client import DkgClient
 from ...kernel.signing import key_manifest, trust_anchors
-from ...kernel.signing.authority import Authority, allowed_kinds
+from ...kernel.signing import Authority, allowed_kinds
 from ...kernel.sparql_text import page_rows
 from ..report_signer import network_environment
 from ..statements import curator_statements, curator_view

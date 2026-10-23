@@ -25,9 +25,10 @@ from _machines import SWM, VM, Machine, Network, Node
 
 from plugins.blackbox.community import read_curator_view
 from plugins.blackbox.community.statements import curator_view as cv
-from plugins.blackbox.curate import consent, context, keys, publishing, transport, verbs
+from plugins.blackbox.curate import context, keys, publishing, verbs
+from plugins.blackbox.curate.proposals import consent, transport
 from plugins.blackbox.curate.context import CurateContext
-from plugins.blackbox.curate.proposal import ProposalState, ProposalStore
+from plugins.blackbox.curate.proposals.proposal import ProposalState, ProposalStore
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.kernel.signing import key_manifest
 from plugins.blackbox.kernel.signing.authority import Authority

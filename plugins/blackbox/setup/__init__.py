@@ -31,12 +31,12 @@ from pathlib import Path
 
 from ..kernel import constants
 
-#: The DKG node release a plugin-catalog setup installs, and the npm integrity hash it must have.
-#: 10.0.25 is the first release Blackbox needs no DKG work-around on. Its hash is known only once
-#: it is published: set DKG_INTEGRITY from `npm view @origintrail-official/dkg@10.0.25
-#: dist.integrity` then. Until then the installer refuses the package (checksum mismatch).
+#: The DKG node release a plugin-catalog setup installs, and the sha512 the downloaded tarball
+#: must have (`npm view @origintrail-official/dkg@10.0.25 dist.integrity`, read 2026-10-22).
+#: 10.0.25 is the first release Blackbox needs no DKG work-around on. The installer checks the
+#: tarball it downloads against this before npm installs it; a mismatch installs nothing.
 DKG_PACKAGE = "@origintrail-official/dkg@10.0.25"
-DKG_INTEGRITY = "sha512-UNSET-until-dkg-10.0.25-is-published"
+DKG_INTEGRITY = "sha512-ZdEnX1DANj8/Cnu0acV9au+ht2OvxZ+p4MSPpEFur+pI0k6reMzJcsZlpVoby60wnqgE3Nn6oXVL8ubx0wQJrA=="
 
 HERE = Path(__file__).resolve().parent
 PLUGIN_DIR = HERE.parent

@@ -32,8 +32,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, FrozenSet, List, Mapping, Optional
 
-from ..kernel import signing, threat_ids
-from . import keys
+from ...kernel import signing, threat_ids
+from .. import keys
+from ...kernel.bounded_files import atomic_write
 
 #: A proposal nobody approved in this long expires (plan §09 / §12).
 PROPOSAL_TTL_DAYS = 7
@@ -139,9 +140,7 @@ class ProposalStore:
         with self._lock:
             self._dir.mkdir(parents=True, exist_ok=True)
             target = self._dir / f"{proposal.id}.json"
-            tmp = target.with_name(f"{target.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-            tmp.write_text(proposal.to_json(), encoding="utf-8")
-            os.replace(tmp, target)
+            atomic_write(target, proposal.to_json())
 
     def get(self, proposal_id: str) -> Optional[Proposal]:
         path = self._dir / f"{proposal_id}.json"

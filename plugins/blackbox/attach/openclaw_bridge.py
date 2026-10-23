@@ -12,7 +12,7 @@ import json
 import os
 import shutil
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 from ..kernel import constants
 from . import openclaw_discovery
 from . import plugin_copy

@@ -24,11 +24,12 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from .. import community, killlist
 from ..kernel import health, signing
 from ..kernel.signing import key_manifest
-from ..kernel.signing.authority import Authority
-from ..kernel.signing.statement_order import CuratorStatement
-from . import dossier, keys, promotion, transport
+from ..kernel.signing import Authority
+from ..kernel.signing import CuratorStatement
+from . import dossier, keys, promotion
+from .proposals import transport
 from .context import CurateContext, KillListDraft, ManifestDraft, PromotionDraft, StatementDraft
-from .proposal import Proposal, ProposalState, ProposalStore
+from .proposals import Proposal, ProposalState, ProposalStore
 from .publishing import MANIFEST_KIND, VerbError, next_sequence, publish, strategies
 from .publishing.publish import checked_promotion
 from ..community import reputation

@@ -19,6 +19,7 @@ import time
 
 import pytest
 
+from _blackbox_fakes import FakeNodeClient
 from plugins.blackbox import audit, detection
 from plugins.blackbox.guard import hooks
 from plugins.blackbox import community as community_pkg
@@ -53,24 +54,12 @@ def _fresh_reporter_cache(monkeypatch):
 TEST_NETWORK = "test-network-id"
 
 
-class FakeClient:
-    """Captures share calls; resolves a real-looking identity."""
+class FakeClient(FakeNodeClient):
+    """The shared fake, bound to this file's reporter and network; ``fail`` = a node failure whose text carries a secret."""
 
     def __init__(self, fail=False):
-        self.shares = []
-        self.fail = fail
-
-    def agent_identity(self):
-        return {"agentAddress": REPORTER}
-
-    def status(self):
-        return {"networkId": TEST_NETWORK}  # real nodes always report one; signing needs it (R0b)
-
-    def share_knowledge_asset(self, cg_id, name, q, **kw):
-        if self.fail:
-            raise DkgError("simulated node failure with a Bearer sk-secret-token inside")
-        self.shares.append((cg_id, name, q))
-        return {"state": "succeeded"}
+        super().__init__(REPORTER, TEST_NETWORK,
+                         failure=DkgError("simulated node failure with a Bearer sk-secret-token inside") if fail else None)
 
 
 def _fields_for(identifier):

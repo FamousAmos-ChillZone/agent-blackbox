@@ -12,11 +12,10 @@
     "attach/openclaw_bridge.py::attach_openclaw": 68,
     "attach/openclaw_discovery.py::discover_openclaw_workspaces": 67,
     "attach/openclaw_json5.py::_json5_to_json": 156,
-    "audit/activity.py::read_local_activity": 129,
+    "audit/activity.py::_build_local_activity": 122,
     "cli.py::setup_cli": 64,
     "community/report_cli/report_command.py::cmd_report": 57,
     "curate/catalog_import.py::_entry_to_threat": 114,
-    "dashboard/command.py::_replace_existing_dashboard": 65,
     "dashboard/server.py::_blackbox_sync_health": 110,
     "dashboard/server.py::_network_sync_once": 54,
     "dashboard/server.py::_profile_activity_state": 61,
@@ -45,7 +44,7 @@
     "ruleset/row_adapters.py::_row_to_rule": 100,
     "sync/command.py::_catchup_authoritative_vm": 463,
     "sync/command.py::_cmd_sync_impl": 619,
-    "sync/managed_node.py::_managed_dkg_node_executable": 40,
+    "sync/managed_node.py::_managed_dkg_node_executable": 38,
     "sync/managed_node.py::_restart_managed_dkg": 43,
     "sync/progress.py::read_durable_progress": 62
   }

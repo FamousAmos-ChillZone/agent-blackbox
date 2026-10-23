@@ -121,3 +121,18 @@ def _share_findings(cfg: BlackboxConfig, event: str, finding_dicts: list[dict[st
         if client is None or not audit.allow_report(cfg.daily_report_limit):
             continue
         community.spawn_community_share(client, cfg, finding, reporter)
+
+
+def hook_failed(hook: str, exc: BaseException, *, tool_name: str = "", consequence: str) -> None:
+    """A hook raised and the host carried on (fail-open): say so at WARNING and
+    write an ``audit`` row (``event="guard_error"``) so the dashboard's activity
+    trail and the operator can see that an action went through unchecked.
+
+    Fail-open is never fail-silent: before this, a tool argument that tripped any
+    parser bug disabled the guard for that call with one DEBUG line.
+    *consequence* is the plain sentence for the log ("the action passed unchecked")."""
+    logger.warning("blackbox: %s raised %s: %s — %s", hook, type(exc).__name__, exc, consequence)
+    audit.record(event="guard_error", detail={"hook": hook, "tool_name": tool_name,
+                                              "error": type(exc).__name__, "message": str(exc)[:300],
+                                              "consequence": consequence})
+

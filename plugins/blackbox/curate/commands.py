@@ -17,18 +17,20 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from typing import Callable, Dict
+from typing import Callable
 
 from .. import community
 from ..detection import osv
 from ..kernel import display_safety, node_routes, signing
-from ..kernel.signing.authority import Authority
-from ..kernel.signing.statement_order import CuratorStatement
-from . import console, dossier, handoff, intake, keys, node_ui_views, promotion, publishing, queue, transport, verbs, watch
+from ..kernel.signing import Authority
+from ..kernel.signing import CuratorStatement
+from . import console, dossier, handoff, intake, keys, node_ui_views, promotion, publishing, queue, verbs, watch
+from .proposals import transport
 from .ladder import outcomes
 from .upkeep import heartbeat, published
 from .context import CurateContext, build_context, verified_identifiers
-from .proposal import ProposalState, ProposalStore
+from .proposals import ProposalState, ProposalStore
+from ..kernel.health import today_utc
 
 _term = display_safety.term_safe
 
@@ -289,7 +291,7 @@ def _watch(args: argparse.Namespace) -> int:
             announced = watcher.poll(queue.delta_view(compiled.community, verified_identifiers(compiled, compiled.community)), sink)
             if announced:
                 print(f"announced {len(announced)} new threat(s): " + ", ".join(_term(a, 60) for a in announced[:10]))
-        items = verbs.curator_alarms(ctx, compiled, today=_today(), now=now) + watch.manifest_items(ctx.manifest, now)
+        items = verbs.curator_alarms(ctx, compiled, today=today_utc(), now=now) + watch.manifest_items(ctx.manifest, now)
         delivered = alarms.poll(items, sink, now=now)   # R10b + W1 items + the daily dead-man beat
         alarms.post_metrics(lambda: console.collect_metrics(console.MetricsSources(), lambda: ctx, now),
                             sink, now)   # F-035: C4's one record, built only when the hourly post is due
@@ -300,12 +302,9 @@ def _watch(args: argparse.Namespace) -> int:
         time.sleep(max(5.0, args.interval))
 
 
-def _today() -> str:
-    return time.strftime("%Y-%m-%d", time.gmtime())
-
 
 def _outcome(args: argparse.Namespace) -> int:
-    standing = verbs.record_outcome(args.key, confirmed=args.confirmed, day=args.day or _today(), novel=args.novel,
+    standing = verbs.record_outcome(args.key, confirmed=args.confirmed, day=args.day or today_utc(), novel=args.novel,
                                     strike=args.strike, first_seen_day=args.first_seen)
     print(f"recorded for {_term(args.key[:16], 16)}…: band {standing.band.value} · confirmed {standing.confirmed} · "
           f"rejected {standing.rejected} · strikes {standing.strikes} · novel {standing.novel_credits}")
@@ -313,7 +312,7 @@ def _outcome(args: argparse.Namespace) -> int:
 
 
 def _graduate(args: argparse.Namespace) -> int:
-    today = _today()
+    today = today_utc()
     if args.erase:
         print("erased" if community.reputation.ReputationLedger().erase(args.erase) else "no ledger entry for that key")
         ended = published.forget_identifier(f"author:{args.erase.lower()}")   # and its listing is no longer kept alive
@@ -357,7 +356,7 @@ def _metrics(args: argparse.Namespace) -> int:
               f"(delta share {snapshot.delta_share:.0%}) · reporters median {snapshot.reporters_median:.1f} · "
               f"days to corroborated median {snapshot.days_to_corroborated_median:.1f}")
         print(f"  stages: {snapshot.stages} · would enforce: {snapshot.would_enforce} · counted {snapshot.counted} / unlisted {snapshot.unlisted}")
-    unlisted, counted, ratio = community.shadow.calibration_gap(community.reputation.ReputationLedger(), _today())
+    unlisted, counted, ratio = community.shadow.calibration_gap(community.reputation.ReputationLedger(), today_utc())
     print(f"  newcomer calibration: unlisted rejection {unlisted:.0%} vs counted {counted:.0%} → ratio {ratio:.2f}"
           + (" — REVIEW the graduation rule (gap > 2×)" if ratio > 2 else ""))
     return 0

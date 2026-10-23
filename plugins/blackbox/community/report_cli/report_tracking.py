@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ...kernel import display_safety, reporter_key
 from ...kernel.dkg_client import DkgClient
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from .. import reader as graph_reader
 from .. import reputation
 from ..statements.curator_view import today_utc as curator_today

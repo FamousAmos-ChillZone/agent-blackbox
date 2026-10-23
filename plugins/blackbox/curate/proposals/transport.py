@@ -25,18 +25,17 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import secrets
 import threading
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
-from ..kernel import node_routes, yaml_files
-from ..kernel.dkg_client import DkgClient
-from ..kernel.health import HealthClass, HealthItem
-from . import keys
+from ...kernel import node_routes, yaml_files
+from ...kernel.dkg_client import DkgClient
+from ...kernel.health import HealthClass, HealthItem
+from .. import keys
 from .proposal import Proposal, ProposalError, ProposalState
+from ...kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +67,7 @@ class InboxCursor:
     def advance(self, message: node_routes.InboxMessage) -> None:
         with self._lock:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-            tmp.write_text(json.dumps({"since": message.ts, "since_id": message.id}), encoding="utf-8")
-            os.replace(tmp, self._path)
+            atomic_write(self._path, json.dumps({"since": message.ts, "since_id": message.id}))
 
 
 def send_proposal(client: DkgClient, peer: str, proposal: Proposal) -> dict[str, Any]:

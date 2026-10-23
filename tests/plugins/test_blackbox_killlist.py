@@ -23,7 +23,7 @@ import pytest
 
 from plugins.blackbox import killlist, ruleset
 from plugins.blackbox.curate import verbs
-from plugins.blackbox.curate.proposal import ProposalStore
+from plugins.blackbox.curate.proposals.proposal import ProposalStore
 from plugins.blackbox.guard import hooks
 from plugins.blackbox.kernel import signing
 from plugins.blackbox.kernel.config import BlackboxConfig

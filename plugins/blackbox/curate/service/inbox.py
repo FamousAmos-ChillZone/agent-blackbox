@@ -21,11 +21,11 @@ from ... import community
 from ...kernel import constants, signing, sparql_text, threat_ids
 from ...kernel.signing import promotion_statement as statement
 from ..publishing import strategies
-from ...kernel.signing.authority import VERIFIED_GRAPH
-from ...kernel.signing.key_manifest import KeyManifest
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import VERIFIED_GRAPH
+from ...kernel.signing import KeyManifest
+from ...kernel.signing import CuratorStatement
 from ..context import CurateContext
-from ..proposal import Proposal
+from ..proposals import Proposal
 
 
 def from_a_curator(manifest: Optional[KeyManifest], proposal: Proposal) -> bool:

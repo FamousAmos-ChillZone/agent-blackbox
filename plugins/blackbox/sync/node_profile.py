@@ -12,9 +12,10 @@ import json
 import os
 import psutil
 from pathlib import Path
-from typing import Dict
 
 from ..kernel.config import BlackboxConfig
+from . import process_limits
+from ..kernel.bounded_files import atomic_write
 
 #: The node's own sync limits (DKG 10.0.25 defaults: 10 transfers at once, a queue of 20),
 #: so the verified download and the graph's shared memory (the community) sync side by
@@ -82,11 +83,13 @@ def node_sync_settings(cfg: BlackboxConfig) -> dict[str, str]:
     """
     from . import native   # sibling module; lazy so the two never import-cycle
 
-    if not native.handles(cfg):
-        return dict(_DKG_STEADY_SYNC_SETTINGS)
-    settings = dict(_DKG_NATIVE_SYNC_SETTINGS)
-    for name, default in _DKG_RECOVERY_SPEEDUPS.items():
-        settings[name] = os.environ.get(name, default)
+    settings = dict(_DKG_NATIVE_SYNC_SETTINGS if native.handles(cfg) else _DKG_STEADY_SYNC_SETTINGS)
+    # The tables carry the ≥ 8 GB values; a smaller machine runs fewer transfers at once.
+    inflight, queue = process_limits.sync_slots()
+    settings["DKG_SYNC_GLOBAL_MAX_INFLIGHT"], settings["DKG_SYNC_GLOBAL_QUEUE_LIMIT"] = str(inflight), str(queue)
+    if native.handles(cfg):
+        for name, default in _DKG_RECOVERY_SPEEDUPS.items():
+            settings[name] = os.environ.get(name, default)
     return settings
 
 
@@ -173,7 +176,5 @@ def _set_persisted_dkg_sync_state(cfg: BlackboxConfig) -> bool:
     data["syncSharedMemoryOnConnect"] = True
     if original == json.dumps(data, sort_keys=True):
         return False
-    tmp = path.with_suffix(f".tmp-{os.getpid()}")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    atomic_write(path, json.dumps(data, indent=2) + "\n")
     return True

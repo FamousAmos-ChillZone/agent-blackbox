@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from _community_rows import Reporter
 from _one_graph import NETWORK, VM_GRAPH, promotion_envelope, shared_report
-from plugins.blackbox.curate.proposal import Proposal, ProposalState, ProposalStore
+from plugins.blackbox.curate.proposals.proposal import Proposal, ProposalState, ProposalStore
 from plugins.blackbox.curate.publishing import row_builders as rb
 from plugins.blackbox.curate.publishing import strategies
 from plugins.blackbox.curate.publishing.errors import VerbError

@@ -78,9 +78,12 @@ $DkgAcceptStoreReset = $false
 $DkgHome     = Join-Path $DefaultRepoDir ".dkg"
 $DkgCliDir   = Join-Path $DefaultRepoDir "dkg"
 $DkgBin      = Join-Path $DkgCliDir "node_modules\.bin\dkg.cmd"
-$DkgPackage  = if ($env:BLACKBOX_DKG_PACKAGE) { $env:BLACKBOX_DKG_PACKAGE } else { "@origintrail-official/dkg@latest" }
-# The npm integrity hash $DkgPackage must have ("sha512-..."); empty = not checked (see the .sh).
-$DkgIntegrity = if ($env:BLACKBOX_DKG_INTEGRITY) { $env:BLACKBOX_DKG_INTEGRITY } else { "" }
+# The DKG release this Blackbox installs and the sha512 the downloaded tarball must have; another
+# package needs its own BLACKBOX_DKG_INTEGRITY, or "unpinned" to skip the check knowingly (see the .sh).
+$DkgDefaultPackage = "@origintrail-official/dkg@10.0.25"
+$DkgDefaultIntegrity = "sha512-ZdEnX1DANj8/Cnu0acV9au+ht2OvxZ+p4MSPpEFur+pI0k6reMzJcsZlpVoby60wnqgE3Nn6oXVL8ubx0wQJrA=="
+$DkgPackage  = if ($env:BLACKBOX_DKG_PACKAGE) { $env:BLACKBOX_DKG_PACKAGE } else { $DkgDefaultPackage }
+$DkgIntegrity = if ($env:BLACKBOX_DKG_INTEGRITY) { $env:BLACKBOX_DKG_INTEGRITY } elseif ($DkgPackage -eq $DkgDefaultPackage) { $DkgDefaultIntegrity } else { "" }
 # Packages whose install scripts the DKG node needs; npm 12 runs only those listed under
 # "allowScripts" in the project's package.json (see the .sh for the whole story).
 $DkgAllowScripts = @("@origintrail-official/dkg", "better-sqlite3", "@openuidev/lang-core")
@@ -267,6 +270,15 @@ function Initialize-BlackboxDkgProcessEnvironment {
         return $false
     }
     $script:DkgNodeOptions = "$($nodeOptionsOutput | Select-Object -Last 1)".Trim()
+    # Sync transfers at once, by the machine's memory (see the .sh): 10 from 8 GB, 4 below.
+    $slotsOutput = @(& $script:VenvPython $helper sync-slots 2>&1)
+    $slots = "$($slotsOutput | Select-Object -Last 1)".Trim()
+    if ($LASTEXITCODE -eq 0 -and $slots -match '^([0-9]+) ([0-9]+)$') {
+        $script:DkgSyncGlobalMaxInflight = $Matches[1]
+        $script:DkgSyncGlobalQueueLimit = $Matches[2]
+    } else {
+        Write-Warn2 "Could not size the node's sync slots for this machine; using the node's defaults."
+    }
     # Record them so Blackbox's own node restarts relaunch with the same limits
     # (sync/process_limits.py). Not fatal: without the record they are recomputed.
     $limitsOutput = @(& $script:VenvPython $helper write-limits $DkgHome $script:DkgNodeOptions "$DkgStoreQueueLimit" 2>&1)
@@ -274,7 +286,7 @@ function Initialize-BlackboxDkgProcessEnvironment {
         if ($limitsOutput) { $limitsOutput | ForEach-Object { Write-Warn2 "$_" } }
         Write-Warn2 "Could not record the DKG node limits; Blackbox restarts will recompute them."
     }
-    Write-Ok "DKG safety limits: one large sync at a time; V8 heap ${heapMb}MB"
+    Write-Ok "DKG safety limits: V8 heap ${heapMb}MB; $DkgSyncGlobalMaxInflight syncs at once"
     return $true
 }
 
@@ -855,6 +867,9 @@ context_graph_id = sys.argv[6]
 # Absent (an older caller): no graph is treated as the default, so the
 # steady profile stays exactly as before.
 default_context_graph_id = sys.argv[7] if len(sys.argv) > 7 else ""
+# Sync slots for this machine (sync/process_limits.sync_slots): 10/20 from 8 GB, 4/8 below.
+sync_inflight = int(sys.argv[9]) if len(sys.argv) > 9 and sys.argv[9] else 10
+sync_queue = int(sys.argv[10]) if len(sys.argv) > 10 and sys.argv[10] else 20
 home.mkdir(parents=True, exist_ok=True)
 cfg_path = home / "config.json"
 original = None
@@ -899,8 +914,8 @@ if native_profile:
     data["vmReconcilerEnabled"] = True
     data["vmRecoveryPrefetchEnabled"] = True
 data.pop("syncAgentsMeta", None)
-data["syncGlobalMaxInflight"] = 10   # the node default: verified and community data side by side
-data["syncGlobalQueueLimit"] = 20
+data["syncGlobalMaxInflight"] = sync_inflight   # verified and community data side by side, sized for the machine
+data["syncGlobalQueueLimit"] = sync_queue
 data.pop("restrictAutoSubscribeContextGraphs", None)
 # One graph (2026-10-16): community reports live in the shared memory of the
 # verified graph; ones written while this node was offline come back on connect.
@@ -959,7 +974,7 @@ print("switched" if switched else ("changed" if changed else "unchanged"))
     $writerFile = Join-Path $env:TEMP "blackbox_dkg_config.py"
     Set-Content -Path $writerFile -Value $writer -Encoding UTF8
     try {
-        $configState = & $VenvPython $writerFile $DkgHome $DkgPort $script:DkgSelectedStoreBackend $DkgStoreUrl $DkgStoreManagedByDkg $ContextGraphId $DefaultContextGraphId
+        $configState = & $VenvPython $writerFile $DkgHome $DkgPort $script:DkgSelectedStoreBackend $DkgStoreUrl $DkgStoreManagedByDkg $ContextGraphId $DefaultContextGraphId "" "$DkgSyncGlobalMaxInflight" "$DkgSyncGlobalQueueLimit"
         if ($LASTEXITCODE -ne 0) { throw "dkg config exit $LASTEXITCODE" }
         $configResult = $configState | Select-Object -Last 1
         if ($configResult -eq "switched") {
@@ -1154,14 +1169,33 @@ function Install-BlackboxDkgPackage {
         return $false
     }
 
-    # A pinned checksum is compared with what the registry publishes BEFORE anything is installed.
-    if ($DkgIntegrity) {
-        $published = (& npm view $DkgPackage dist.integrity 2>$null | Out-String).Trim()
-        if ($published -ne $DkgIntegrity) {
-            Write-Warn2 "The registry's checksum for $DkgPackage ($published) is not the one this Blackbox release pins; it was not installed."
+    # The package is downloaded first and the tarball's own sha512 compared with the pin; only a
+    # tarball that matches is handed to npm install. No pin = not installed (see the .sh).
+    $tarball = ""
+    if ($DkgIntegrity -eq "unpinned") {
+        Write-Warn2 "BLACKBOX_DKG_INTEGRITY=unpinned: $DkgPackage is installed without a checksum check."
+    } elseif (-not $DkgIntegrity) {
+        Write-Warn2 "No checksum is pinned for $DkgPackage; it was not installed. Set BLACKBOX_DKG_INTEGRITY to its sha512 (npm view $DkgPackage dist.integrity), or BLACKBOX_DKG_INTEGRITY=unpinned to skip the check knowingly."
+        return $false
+    } else {
+        $packDir = Join-Path $env:TEMP ("blackbox-dkg-pack-" + [System.IO.Path]::GetRandomFileName())
+        New-Item -ItemType Directory -Force -Path $packDir | Out-Null
+        $packed = @(& npm pack $DkgPackage --pack-destination $packDir --silent 2>$null)
+        $packedFile = "$($packed | Select-Object -Last 1)".Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $packedFile -or -not (Test-Path (Join-Path $packDir $packedFile))) {
+            Remove-Item $packDir -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Warn2 "Could not download $DkgPackage from the npm registry."
             return $false
         }
-        Write-Ok "DKG package checksum matches the pinned one ($DkgPackage)"
+        $tarball = Join-Path $packDir $packedFile
+        $sha512 = [System.Security.Cryptography.SHA512]::Create()
+        $actual = "sha512-" + [Convert]::ToBase64String($sha512.ComputeHash([System.IO.File]::ReadAllBytes($tarball)))
+        if ($actual -ne $DkgIntegrity) {
+            Remove-Item $packDir -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Warn2 "The downloaded $DkgPackage ($actual) is not the one this Blackbox release pins; it was not installed."
+            return $false
+        }
+        Write-Ok "DKG package checksum verified ($DkgPackage)"
     }
 
     if (Test-Path (Join-Path $DkgCliDir ".git")) {
@@ -1187,8 +1221,10 @@ for (const name of process.argv.slice(2)) if (pkg.allowScripts[name] !== false) 
 fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
 '@
     & node -e $allowScriptsMerge (Join-Path $DkgCliDir "package.json") @DkgAllowScripts
+    $installSpec = if ($tarball) { $tarball } else { $DkgPackage }
     try {
-        & npm install --prefix $DkgCliDir --prefer-online $DkgPackage 2>&1 | Tee-Object -FilePath $npmLog | Out-Null
+        & npm install --prefix $DkgCliDir --prefer-online $installSpec 2>&1 | Tee-Object -FilePath $npmLog | Out-Null
+        if ($tarball) { Remove-Item (Split-Path -Parent $tarball) -Recurse -Force -ErrorAction SilentlyContinue }
         if ($LASTEXITCODE -ne 0) { throw "npm install exit $LASTEXITCODE" }
     } catch {
         if ($backupDir) {

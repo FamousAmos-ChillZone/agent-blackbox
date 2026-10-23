@@ -433,10 +433,8 @@ def test_unix_installer_uses_isolated_blackbox_dkg_node() -> None:
     assert 'BLACKBOX_DKG_HOME="$BLACKBOX_INSTALL_ROOT/.dkg"' in text
     assert 'BLACKBOX_DKG_CLI_DIR="$BLACKBOX_INSTALL_ROOT/dkg"' in text
     assert 'BLACKBOX_DKG_BIN="$BLACKBOX_DKG_CLI_DIR/node_modules/.bin/dkg"' in text
-    assert (
-        'BLACKBOX_DKG_PACKAGE="${BLACKBOX_DKG_PACKAGE:-'
-        '@origintrail-official/dkg@latest}"'
-    ) in text
+    assert 'BLACKBOX_DKG_DEFAULT_PACKAGE="@origintrail-official/dkg@10.0.25"' in text
+    assert 'BLACKBOX_DKG_PACKAGE="${BLACKBOX_DKG_PACKAGE:-$BLACKBOX_DKG_DEFAULT_PACKAGE}"' in text
     assert 'BLACKBOX_DKG_DAEMON_URL="http://127.0.0.1:$BLACKBOX_DKG_PORT"' in text
     assert 'npm install --prefix "$BLACKBOX_DKG_CLI_DIR"' in text
     assert '--prefer-online' in text
@@ -667,9 +665,9 @@ def test_windows_installer_uses_isolated_blackbox_dkg_node() -> None:
     assert '$DkgHome     = Join-Path $DefaultRepoDir ".dkg"' in text
     assert '$DkgCliDir   = Join-Path $DefaultRepoDir "dkg"' in text
     assert r'$DkgBin      = Join-Path $DkgCliDir "node_modules\.bin\dkg.cmd"' in text
-    assert "@origintrail-official/dkg@latest" in text
+    assert "@origintrail-official/dkg@10.0.25" in text
     assert '$DkgDaemonUrl = "http://127.0.0.1:$DkgPort"' in text
-    assert "npm install --prefix $DkgCliDir --prefer-online $DkgPackage" in text
+    assert "npm install --prefix $DkgCliDir --prefer-online $installSpec" in text
     assert "BLACKBOX_DKG_REPO_URL" not in text
     assert "corepack pnpm" not in text
     assert "Ensure-BlackboxDkgConfig" in text
@@ -1507,8 +1505,8 @@ def test_installers_use_native_dkg_membership_without_sync_overrides() -> None:
         assert "DKG_EXACT_BATCH_STREAM_ENABLED" in text
         assert "DKG_VM_RECOVERY_PREFETCH_ENABLED" in text
         assert 'data["durableSyncEnabled"] = True' in text
-        assert 'data["syncGlobalMaxInflight"] = 10' in text   # the node default (KI-449)
-        assert 'data["syncGlobalQueueLimit"] = 20' in text
+        assert 'data["syncGlobalMaxInflight"] = sync_inflight' in text   # the node default (KI-449)
+        assert 'data["syncGlobalQueueLimit"] = sync_queue' in text
         assert 'data.pop("restrictAutoSubscribeContextGraphs", None)' in text
         assert 'data["syncSharedMemoryOnConnect"] = True' in text
         assert 'data["syncContextGraphPriorities"] = priorities' in text
@@ -1540,8 +1538,8 @@ def test_installers_use_native_dkg_membership_without_sync_overrides() -> None:
     assert unix_main.index("sync_ruleset\n") < unix_main.index("start_dashboard\n")
     assert '$DkgCatchupMaxConcurrentPeers = "1"' in windows
     assert '$DkgStoreQueueWaitTimeoutMs = "300000"' in windows
-    assert "one large sync at a time" in unix
-    assert "one large sync at a time" in windows
+    assert "syncs at once" in unix
+    assert "syncs at once" in windows
 
 
 @pytest.mark.parametrize("store_backend", ["blazegraph", "oxigraph-server"])

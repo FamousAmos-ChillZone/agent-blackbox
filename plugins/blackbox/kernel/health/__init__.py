@@ -27,17 +27,20 @@ Usage::
 from __future__ import annotations
 
 import os
-from datetime import date, datetime, timezone, UTC
+from datetime import datetime, UTC
 
 from .. import constants
 # Imported under these names to match inputs.py, where HealthInputs has fields called community_authority
 # and manifest_watch.
 from . import community_authority as community_alarms
 from . import manifest_watch as manifest_watcher
+from .manifest_watch import key_fingerprint
+from .days import days_between, today_utc
 from .inputs import HealthInputs   # the facts the rules read; its own module (this file is at its size limit)
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, List, Mapping, Optional
+from typing import Any, Mapping, Optional
+__all__ = ["CURATOR_SILENCE_DAYS", "DRIFT_SHARE", "HEARTBEAT_SILENCE_DAYS", "LANE_SLA_DAYS", "NODE_INSTALL_HINT", "STALE_INTERVALS", "CuratorInputs", "HealthClass", "HealthInputs", "HealthItem", "community_authority", "curator_health", "days_between", "gather", "key_fingerprint", "manifest_watch", "node_installed", "operator_health", "red", "render_lines", "ruleset_age_text", "today_utc"]   # the surface other modules may import (test_blackbox_architecture checks it)
 
 
 class HealthClass(Enum):
@@ -96,18 +99,12 @@ def _version_tuple(text: str) -> tuple:
     return tuple(int(part) for part in text.split(".") if part.isdigit())
 
 
-def _days_between(earlier: str, later: str) -> int:
-    try:
-        return (date.fromisoformat(later) - date.fromisoformat(earlier)).days
-    except ValueError:
-        return 0
-
 
 def _trust(inputs: HealthInputs) -> list[HealthItem]:
     """R10b: the states about the curators and the trust layer (plan §12)."""
     items = []
     if inputs.curator_trusted and inputs.curators_last_day and inputs.today \
-            and _days_between(inputs.curators_last_day, inputs.today) > CURATOR_SILENCE_DAYS:
+            and days_between(inputs.curators_last_day, inputs.today) > CURATOR_SILENCE_DAYS:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"curators have not published since {inputs.curators_last_day}",
                                 "nothing to do — protection unchanged; verified rules still enforce"))
     if inputs.heartbeat_missing_keys:
@@ -136,7 +133,7 @@ def _trust(inputs: HealthInputs) -> list[HealthItem]:
     if inputs.manifest_state == "pending":
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"a new curator key manifest takes effect on {inputs.manifest_state_day} (time-lock)",
                                 "nothing to do — the previous manifest stays in force until then"))
-    if inputs.manifest_expires_day and inputs.today and 0 <= _days_between(inputs.today, inputs.manifest_expires_day) <= 30:
+    if inputs.manifest_expires_day and inputs.today and 0 <= days_between(inputs.today, inputs.manifest_expires_day) <= 30:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"the curator key manifest expires on {inputs.manifest_expires_day}",
                                 "nothing to do — the curators publish a new manifest; rules keep enforcing either way"))
     if inputs.kill_list_refused:
@@ -381,7 +378,7 @@ def _heartbeat_missing(view: Any, now: float) -> int:
     missing = 0
     for key in view.manifest.curator_keys:
         last = view.heartbeats.get(key, "")
-        if not last or _days_between(last, today) > HEARTBEAT_SILENCE_DAYS:
+        if not last or days_between(last, today) > HEARTBEAT_SILENCE_DAYS:
             missing += 1
     return missing
 

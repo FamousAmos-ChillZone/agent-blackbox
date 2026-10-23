@@ -54,7 +54,7 @@ from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 from ...kernel import constants, signing
 from ...kernel.signing import promotion_statement as statement
 from ..context import CurateContext
-from ..proposal import Proposal, ProposalError, ProposalState, ProposalStore
+from ..proposals import Proposal, ProposalError, ProposalState, ProposalStore
 from . import strategies
 from .ledger import BatchEntry, BatchRecord, PublishLedger, PublishState
 from .precheck import VerifiedSubset, precheck, strict_verified_subset

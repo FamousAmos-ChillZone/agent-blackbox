@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Tuple
 
 from ... import community
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from ..context import CurateContext, verified_identifiers
 
 

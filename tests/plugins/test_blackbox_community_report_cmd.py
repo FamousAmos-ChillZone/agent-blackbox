@@ -14,6 +14,7 @@ import argparse
 
 import pytest
 
+from _blackbox_fakes import FakeNodeClient
 from plugins.blackbox import audit, cli
 from plugins.blackbox.community.report_cli import report_command
 from plugins.blackbox.kernel import constants
@@ -35,28 +36,9 @@ def bb_home(monkeypatch, tmp_path):
 TEST_NETWORK = "test-network-id"
 
 
-class FakeClient:
+class FakeClient(FakeNodeClient):
     def __init__(self, fail=False):
-        self.shares = []
-        self.fail = fail
-
-    def agent_identity(self):
-        return {"agentAddress": REPORTER}
-
-    def status(self):
-        return {"networkId": TEST_NETWORK}  # real nodes always report one; signing needs it (R0b)
-
-    def share_knowledge_asset(self, cg_id, name, q, **kw):
-        if self.fail:
-            raise RuntimeError("node exploded")
-        self.shares.append((cg_id, name, q))
-        return {"state": "succeeded"}
-
-    def query(self, *a, **kw):
-        return kw.get("on_error")
-
-    def reachable(self):
-        return True
+        super().__init__(REPORTER, TEST_NETWORK, failure=RuntimeError("node exploded") if fail else None)
 
 
 #: Namespace dest -> the flag an operator types, where they differ.

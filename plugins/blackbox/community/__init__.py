@@ -109,7 +109,7 @@ from .trust import status_lines as trust_status_lines
 from .trust import trust_panel
 from .trust.manifest_history import manifest_on_day, verified_manifest_history
 from ..kernel.sparql_text import page_rows
-from ..kernel.signing.trust_anchors import trusted_roots as curator_trusted_roots
+from ..kernel.signing import trusted_roots as curator_trusted_roots
 from .statements.curator_view import today_utc as curator_today
 
 

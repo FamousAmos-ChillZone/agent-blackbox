@@ -21,9 +21,10 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from plugins.blackbox import ruleset
 from plugins.blackbox.community.statements import curator_view as cv
-from plugins.blackbox.curate import consent, dossier, keys, node_ui_views, publishing, queue, transport, verbs
+from plugins.blackbox.curate import dossier, keys, node_ui_views, publishing, queue, verbs
+from plugins.blackbox.curate.proposals import consent, transport
 from plugins.blackbox.curate.context import CurateContext, PromotionDraft
-from plugins.blackbox.curate.proposal import Proposal, ProposalError, ProposalState, ProposalStore
+from plugins.blackbox.curate.proposals.proposal import Proposal, ProposalError, ProposalState, ProposalStore
 from plugins.blackbox.curate.publishing import strategies
 from plugins.blackbox.kernel import constants, node_routes, signing
 from plugins.blackbox.kernel.config import BlackboxConfig

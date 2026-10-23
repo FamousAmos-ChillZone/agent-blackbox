@@ -49,7 +49,7 @@ from typing import Dict, List, Mapping, Optional, Protocol, Sequence, Tuple
 
 from ...kernel import constants, rdf_terms, signing, threat_ids
 from ...kernel.signing import promotion_statement as statement
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from ..context import CORRECTION_STATEMENT
 
 #: The statement type every promoted row's envelope must carry.

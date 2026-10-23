@@ -20,11 +20,12 @@ from ...kernel import display_safety
 from ...kernel.config import load_blackbox_config
 from ...kernel.dkg_client import DkgClient
 from ...kernel.signing import trust_anchors
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from ..context import CurateContext
 from ..dossier import CommunityConfirmation
 from ..publishing import VerbError
 from .live_pool import bundle_text, read_live_pool
+from ...kernel.bounded_files import atomic_write
 
 _term = display_safety.term_safe
 
@@ -56,9 +57,7 @@ def export(ctx: CurateContext, out: str) -> int:
     text = bundle_text(ctx, pool)
     path = Path(out).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    atomic_write(path, text)
     print(f"exported {len(pool.entries)} confirmed threat(s) to {path} "
           f"(network {_term(ctx.environment, 60)}, graph {_term(ctx.verified_graph, 100)})")
     print("check it anywhere with: blackbox curate verify-bundle <file> --root <community root key> --network <network id>")

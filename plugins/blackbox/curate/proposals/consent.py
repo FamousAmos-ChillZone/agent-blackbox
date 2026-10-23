@@ -30,7 +30,7 @@ import time
 from pathlib import Path
 from typing import Optional, Tuple
 
-from . import keys
+from .. import keys
 
 #: Operators type this many hex characters of the content hash.
 CODE_CHARS = 8

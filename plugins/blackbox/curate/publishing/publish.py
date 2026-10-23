@@ -49,13 +49,14 @@ from ...kernel import constants, node_routes, rdf_terms, signing, sparql_text, t
 from ...kernel.dkg_client import DkgError
 from ...kernel.signing import key_manifest
 from ...kernel.signing import promotion_statement as statement
-from ...kernel.signing.authority import COMMUNITY_GRAPH, VERIFIED_GRAPH
-from ...kernel.signing.statement_order import CuratorStatement
-from .. import consent, promotion
+from ...kernel.signing import COMMUNITY_GRAPH, VERIFIED_GRAPH
+from ...kernel.signing import CuratorStatement
+from .. import promotion
+from ..proposals import consent
 from ..ladder import outcomes
 from ..upkeep import published
 from ..context import CORRECTION_STATEMENT, CurateContext
-from ..proposal import Proposal, ProposalState, ProposalStore
+from ..proposals import Proposal, ProposalState, ProposalStore
 from . import row_builders, strategies
 from .errors import VerbError
 from .node_writers import NodeReportWriter, definite_refusal

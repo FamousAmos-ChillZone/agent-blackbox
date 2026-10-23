@@ -38,10 +38,11 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Seque
 
 from ...kernel import constants, display_safety, signing, sparql_text, threat_ids
 from ...kernel.signing import promotion_statement as statement
-from ...kernel.signing.authority import Authority
-from .. import consent, keys, transport
+from ...kernel.signing import Authority
+from .. import keys
+from ..proposals import consent, transport
 from ..context import CORRECTION_STATEMENT, CorrectionDraft, CurateContext, build_context
-from ..proposal import Proposal, ProposalState, ProposalStore
+from ..proposals import Proposal, ProposalState, ProposalStore
 from . import never_flag, row_builders
 from .errors import VerbError
 from .publish import require_effective_manifest

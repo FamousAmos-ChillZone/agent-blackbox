@@ -27,11 +27,12 @@ from test_blackbox_curate_community import CFG, EVIDENCE, Curators, _listing
 
 from plugins.blackbox.community import CuratorView, read_curator_view, reputation
 from plugins.blackbox import cli, curate
-from plugins.blackbox.curate import intake, keys, queue, service, transport, verbs
+from plugins.blackbox.curate import intake, keys, queue, service, verbs
+from plugins.blackbox.curate.proposals import transport
 from plugins.blackbox.curate.context import DISPUTE_INTAKE_STATEMENT, CurateContext
 from plugins.blackbox.curate.lab import Check, NoteCode, validate_evidence
 from plugins.blackbox.curate.ladder import outcomes
-from plugins.blackbox.curate.proposal import Proposal, ProposalState, ProposalStore
+from plugins.blackbox.curate.proposals.proposal import Proposal, ProposalState, ProposalStore
 from plugins.blackbox.curate.service import Beat, Lookup, OwnCheck, PolicyConsent, policy
 from plugins.blackbox.curate.service import budget as service_budget
 from plugins.blackbox.curate.service import disputes, never_promote, self_test, verdicts
