@@ -71,8 +71,7 @@ def test_config_requires_operator_trust_and_preserves_unconfigured_profiles():
         with pytest.raises(ValueError):
             settings.snapshot_config({"detection_backend": "dkg", "snapshot_sync": {
                 "on_chain_id": "1", "trusted_core_peers": ["core"], **patch}})
-    with pytest.raises(ValueError, match="detection_backend"):
-        settings.snapshot_config({"snapshot_sync": {"on_chain_id": "1", "trusted_core_peers": ["core"]}})
+    assert settings.snapshot_config({"snapshot_sync": {"on_chain_id": "1", "trusted_core_peers": ["core"]}}).mode == "core-cache"
 
 
 def test_route_and_managed_profile_do_not_start_competing_recovery(tmp_path):
@@ -95,7 +94,8 @@ def test_real_http_job_waits_for_coverage_and_never_upgrades_failed_job(tmp_path
                       argparse.Namespace(wait=True, require_rules=True, timeout=5))
     assert result == expected
     assert sum(method == "POST" and path == core.PATH for method, path, _ in calls) == 1
-    assert not any(path == "/api/context-graph/subscribe" for _, path, _ in calls)
+    subscriptions = [i for i, (_, path, _) in enumerate(calls) if path == "/api/context-graph/subscribe"]
+    assert not subscriptions if terminal == "failed" else all(i > 2 for i in subscriptions)
     recorded = core.state.read_for_graph(configured.context_graph_id)
     assert recorded["detection_ready"] is True
     assert recorded["graph_complete"] is (terminal == "complete" and current)

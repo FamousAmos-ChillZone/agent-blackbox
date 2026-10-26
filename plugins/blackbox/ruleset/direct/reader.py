@@ -24,11 +24,13 @@ class DetectionRead:
     query_id: str = ""
     observed_at: str = ""
     chain_evidence_mode: str = "rpc-only"
+    community_state: str = "unavailable"
 
     def evidence(self):
         return {"backend": "dkg", "state": self.state, "code": self.code,
                 "coverage": "local-confirmed-subset", "graph_complete": None, "query_id": self.query_id,
-                "observed_at": self.observed_at, "chain_evidence_mode": self.chain_evidence_mode}
+                "observed_at": self.observed_at, "chain_evidence_mode": self.chain_evidence_mode,
+                "community_state": self.community_state}
 
 
 def read_for_action(cfg, tool: str, args, *, client=None) -> DetectionRead:
@@ -45,6 +47,8 @@ def read_for_action(cfg, tool: str, args, *, client=None) -> DetectionRead:
             raise GraphReadUnavailable("QUERY_AUTHORITY_UNAVAILABLE")
         if getattr(client, "failure_code", ""):
             raise GraphReadUnavailable(client.failure_code)
+        from .community import attach
+        result.community_state = "last-good" if attach(result.rules, cfg) else "unavailable"
         result.state, result.code = "available", ""
         result.query_id, result.observed_at = reply["queryId"], reply["observedAt"]
     except GraphReadUnavailable as exc:
@@ -70,13 +74,7 @@ def read_candidates(cfg, client, identifiers, packages):
 
 
 def validate_config(cfg):
-    """Reject unsupported combinations, never silently omit a protection tier.
-
-    Community's persisted reader-day budgets and 90-day retention require a
-    separate migration. Its existing backend remains available unchanged.
-    """
-    if cfg.community_graph_id:
-        raise GraphReadUnavailable("DIRECT_COMMUNITY_MIGRATION_REQUIRED")
+    """Require a local node; public reads and community state use separate models."""
     local_url(cfg.dkg_url)  # validate locality even when a test injects a reader
 
 

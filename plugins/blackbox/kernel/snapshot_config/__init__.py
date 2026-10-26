@@ -42,6 +42,17 @@ def snapshot_config(entry):
             or any(not isinstance(p, str) or not p or len(p) > 256 or p.strip() != p for p in peers)
             or len(set(peers)) != len(peers)):
         raise ValueError("snapshot_sync needs a positive on_chain_id, explicit trusted_core_peers or DKG_Core_chain_cache, and core-cache or rpc-only mode")
-    if entry.get("detection_backend", "legacy-cache") != "dkg":
-        raise ValueError("snapshot_sync requires detection_backend: dkg")
     return SnapshotSyncConfig(graph_id, tuple(peers), mode, policy)
+
+
+def query_evidence(config, url, home):
+    """Never transfer a profile's core-cache consent to another daemon or home."""
+    from pathlib import Path
+    settings = getattr(config, "snapshot_sync", None)
+    if (settings is None or config.dkg_url.rstrip("/") != url
+            or Path(config.dkg_home).expanduser().resolve() != Path(home).expanduser().resolve()):
+        return None
+    return config.context_graph_id, settings.mode
+
+
+__all__ = ["DKG_CORE_CHAIN_CACHE", "REGISTERED_BASE_CORES", "SnapshotSyncConfig", "query_evidence", "snapshot_config"]

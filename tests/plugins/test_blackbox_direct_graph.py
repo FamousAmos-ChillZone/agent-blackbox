@@ -86,7 +86,7 @@ def test_direct_matches_export_oracle_and_observes_withdrawal(subject, kind, pro
     pending = BASE + "/_verifiable_memory/1/2"
     node.partition(pending, "tentative")
     node.add("urn:poison", "urn:defender:InjectionSignal", {DP + "pattern": ".*"}, pending)
-    cfg = config.BlackboxConfig(detection_backend="dkg", context_graph_id=CG, community_graph_id='', report=False, auto_attach=False, osv_lookup=False)
+    cfg = config.BlackboxConfig(detection_backend="dkg", context_graph_id=CG, report=False, auto_attach=False, osv_lookup=False)
     triples = [(str(s), str(p), str(o)) for s, p, o in node.store.graph(URIRef(PART))]
     oracle = compiler.build_from_rows(rows_module.rows_from_triples(PART, triples))
     expected = detection.detect_all(tool, args, oracle, discover=False)
@@ -146,7 +146,7 @@ def test_live_hook_without_json_keeps_local_protection_on_unavailable_node(tmp_p
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        cfg = config.BlackboxConfig(detection_backend="dkg", context_graph_id=CG, community_graph_id='', report=False, mode="block", dkg_url=f"http://127.0.0.1:{server.server_port}",
+        cfg = config.BlackboxConfig(detection_backend="dkg", context_graph_id=CG, report=False, mode="block", dkg_url=f"http://127.0.0.1:{server.server_port}",
                                     dkg_home=str(tmp_path / "dkg"), auto_attach=False, osv_lookup=False, discover=False,
                                     protected_paths=("/private/test-secret",))
         hooks = load_blackbox("guard.hooks")
@@ -174,7 +174,7 @@ def test_live_hook_without_json_keeps_local_protection_on_unavailable_node(tmp_p
 
 def test_live_views_readiness_corrections_and_limits(tmp_path):
     node = GraphNode()
-    cfg = config.BlackboxConfig(detection_backend="dkg", context_graph_id=CG, community_graph_id='', report=False)
+    cfg = config.BlackboxConfig(detection_backend="dkg", context_graph_id=CG, report=False)
     for index in range(3):
         node.add(f"urn:defender:ioc:{index}", "urn:defender:IocSignal", {DP + "iocType": "domain", DP + "value": f"{index}.evil.example"})
     view = load_blackbox("ruleset.direct.view")
@@ -190,7 +190,6 @@ def test_live_views_readiness_corrections_and_limits(tmp_path):
     # This is a new read of live data, without refreshing/exporting anything.
     assert not view.lookup(cfg, "ioc:domain:0.evil.example", client=node)
     assert view.ready_sample(cfg, client=node) == 2
-    assert graph_read.read_for_action(replace(cfg, community_graph_id="community"), "terminal", {}, client=node).code == "DIRECT_COMMUNITY_MIGRATION_REQUIRED"
     with pytest.raises(client_module.GraphReadUnavailable, match="QUERY_CANDIDATE_LIMIT"):
         queries.candidates("browser", {"text": " ".join(f"https://test{i}.example" for i in range(80))})
 

@@ -49,3 +49,6 @@ def request(url, method, path, data, headers, *, deadline, max_bytes):
             timer.cancel()
             timer.join()
         connection.close()
+
+
+__all__ = ["request"]

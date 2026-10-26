@@ -28,4 +28,5 @@ def detection_rules(cfg, tool_name, args):
             read.rules.kill_list = previous.as_cache() if previous is not None else {}
         except Exception:
             logger.exception("blackbox: could not load last known trusted rules")
+    ruleset.pulse(cfg)
     return read.rules, read.evidence()

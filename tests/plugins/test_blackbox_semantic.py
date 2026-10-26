@@ -30,7 +30,7 @@ def fixture():
     node = SemanticNode()
     # Description-only evidence deliberately has no regex: semantic recall must not depend on compilation.
     node.add(SUBJECT, 'urn:defender:InjectionSignal', {SCHEMA + 'description': DESCRIPTION})
-    cfg = config.BlackboxConfig(context_graph_id=CG, community_graph_id='', report=False, detection_backend='dkg', auto_attach=False, discover=False,
+    cfg = config.BlackboxConfig(context_graph_id=CG, report=False, detection_backend='dkg', auto_attach=False, discover=False,
         semantic=settings.SemanticConfig(enabled=True, index_id=INDEX, model='local-test'))
     return cfg, node
 

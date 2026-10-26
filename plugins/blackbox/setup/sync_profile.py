@@ -15,7 +15,7 @@ def configure(args):
     path, data, target = _entry()
     if not explicit:
         # Re-running setup must not migrate an existing graph or trust mode.
-        if any(key in target for key in ("context_graph_id", "detection_backend", "snapshot_sync", "dkg_home")):
+        if "snapshot_sync" in target:
             return
         if (os.environ.get("BLACKBOX_DKG_NETWORK", "mainnet-base") != "mainnet-base"
                 or os.environ.get("BLACKBOX_CONTEXT_GRAPH_ID", constants.DEFAULT_CONTEXT_GRAPH_ID)
@@ -33,7 +33,7 @@ def configure(args):
                 or os.environ.get("BLACKBOX_DKG_NETWORK", "mainnet-base") != "mainnet-base"):
             raise ValueError("A custom graph requires --snapshot-graph-id")
         graph_id = "14"
-    requested = {"detection_backend": "dkg", "snapshot_sync": {
+    requested = {"snapshot_sync": {
         "on_chain_id": graph_id or "", "trusted_core_peers": peers or [], "mode": "core-cache",
         **({DKG_CORE_CHAIN_CACHE: True} if cache else {"source_policy": REGISTERED_BASE_CORES} if registered else {})}}
     snapshot_config(requested)

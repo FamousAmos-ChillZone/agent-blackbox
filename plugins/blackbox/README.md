@@ -561,16 +561,19 @@ blackbox sync --wait --timeout 180
 ## Direct local graph queries (opt-in)
 
 See [Direct graph reads](docs/DIRECT_GRAPH_READS.md) for the paired DKG capability,
-configuration, compatibility limits and validation gates. Community-enabled installations retain `legacy-cache`. Existing profiles keep
-their selected backend. A new public-only profile can adopt snapshot sync only
-after the installer verifies compatible local APIs and recent authenticated
-source evidence; see the rollout conditions below.
+configuration, compatibility limits and validation gates. Existing profiles keep
+their selected detection backend. The default compiled reader preserves community
+protections independently of the snapshot transfer path.
 
 ### Core snapshot sync
 
-The [core snapshot sync guide](CORE_SNAPSHOT_SYNC.md) describes the optional
-new DKG capability, configured-core trust (default within that path), independent
-RPC mode, and full-coverage validation without a rule export.
+With released DKG 10.0.26, fresh installs and upgrades without an explicit snapshot
+choice can use **Lower RPC usage by using the DKG Core chain cache** for the shipped
+mainnet graph. The local capability admits an attempt; DKG authenticates registered
+cores and checks graph/asset identities, roots and final coverage at runtime.
+Explicit opt-outs, custom graph/source settings and sharing consent are preserved.
+See the [core snapshot sync guide](CORE_SNAPSHOT_SYNC.md) for configuration,
+compatibility and the distinction between core-cache and independent RPC evidence.
 
 ## About
 

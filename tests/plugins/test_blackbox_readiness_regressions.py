@@ -40,7 +40,7 @@ def test_complete_snapshot_waits_for_fresh_read_and_preserves_read_failure(tmp_p
     else:
         assert recorded["readiness_error"] == ""
         assert recorded["public_entries"] == (3 if recovery == "transient" else 0)
-    assert sum(method == "POST" for method, _, _ in calls) == 1
+    assert sum(method == "POST" and path == core.PATH for method, path, _ in calls) == 1
 
 
 def test_partition_sample_keeps_corrections_owner_scope_and_observes_withdrawal():
@@ -61,7 +61,7 @@ def test_partition_sample_keeps_corrections_owner_scope_and_observes_withdrawal(
     meta = node.store.graph(URIRef(BASE+"/_meta"))
     meta.set((URIRef(foreign+"/ka"), URIRef(D+"kaUal"), URIRef("did:dkg:evm:1/0x2222222222222222222222222222222222222222/1")))
     node.add("urn:foreign", "urn:defender:IocSignal", {DP+"iocType":"domain", DP+"value":"foreign.example"}, foreign)
-    configured = config.BlackboxConfig(detection_backend="dkg", context_graph_id=CG, community_graph_id='', report=False)
+    configured = config.BlackboxConfig(detection_backend="dkg", context_graph_id=CG, report=False)
     sample = view.sample_rules(configured, client=node, category="ioc")
     assert set(sample.ioc) == {"ioc:domain:active.example"}
     node.store.graph(URIRef(other)).remove((URIRef("urn:observation"), None, None))

@@ -32,8 +32,8 @@ from pathlib import Path
 from ..kernel import constants
 
 #: The DKG node release a plugin-catalog setup installs, and the npm integrity hash it must have.
-DKG_PACKAGE = "@origintrail-official/dkg@10.0.25"
-DKG_INTEGRITY = "sha512-ZdEnX1DANj8/Cnu0acV9au+ht2OvxZ+p4MSPpEFur+pI0k6reMzJcsZlpVoby60wnqgE3Nn6oXVL8ubx0wQJrA=="
+DKG_PACKAGE = "@origintrail-official/dkg@10.0.26"
+DKG_INTEGRITY = "sha512-QlCW/5UvL2UHaR2QGAemQzvu+ZtBKfefwuitoX2hGr/XZAgkFXsln1NHitzftQM99qTrlKBq8CFfDSfDFAbMHg=="
 
 HERE = Path(__file__).resolve().parent
 PLUGIN_DIR = HERE.parent
@@ -99,7 +99,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         print(f"error: {exc}")
         return 1
     store = getattr(args, "store", None) or "auto"
-    print(f"Blackbox setup: the DKG node ({DKG_PACKAGE}), both threat graphs, every local agent, "
+    print(f"Blackbox setup: the DKG node ({DKG_PACKAGE}), the verified graph and its community reports, every local agent, "
           "the dashboard. This takes a few minutes.")
     # The installer asks its questions on the terminal itself (/dev/tty), never on stdin.
     completed = subprocess.run(_installer_command(store), env=setup_environment(), stdin=subprocess.DEVNULL, check=False)

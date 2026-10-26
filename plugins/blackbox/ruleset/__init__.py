@@ -42,6 +42,7 @@ from .partitions import progress as verified_progress
 from .pulse_beat import pulse, request_refresh_now
 from .refresh_cycle import get, peek, refresh
 
+from .direct.community import refresh as refresh_direct_community
 from .direct import DetectionRead, read_for_action, validate_config
 from .direct.client import GraphReadUnavailable, LocalGraphClient
 from .direct.view import ready_sample, page as graph_page, lookup as graph_lookup
@@ -72,6 +73,7 @@ __all__ = [
     "read_for_action",
     "ready_sample",
     "refresh",
+    "refresh_direct_community",
     "request_refresh_now",
     "semantic_candidates",
     "semantic_index_spec",

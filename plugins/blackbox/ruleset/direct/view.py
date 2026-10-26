@@ -79,6 +79,8 @@ class GraphView(Ruleset):
         validate_config(cfg)
         super().__init__(context_graph_id=cfg.context_graph_id)
         self.cfg, self.client, self._counts = cfg, client, None
+        from .community import attach
+        attach(self, cfg)
 
     def counts(self):
         if self._counts is None:
@@ -97,7 +99,7 @@ class GraphView(Ruleset):
         return dict(self._counts)
 
     def source_count(self, source):
-        return sum(self.counts().values()) if source == "public" else 0
+        return sum(self.counts().values()) if source == "public" else len(self.community) if source == "community" else 0
 
     def graph_count(self, source):
         return self.source_count(source)

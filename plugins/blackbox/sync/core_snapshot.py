@@ -1,7 +1,7 @@
 """One owned DKG snapshot job, with explicit configured-core or independent RPC trust.
 
 --wait waits for fresh inventory coverage; usable rules and full coverage remain
-separate facts. Detection always queries local DKG and writes no rule export.
+separate facts. The detection backend and community protections are independent of transport.
 """
 from __future__ import annotations
 
@@ -55,12 +55,13 @@ class _Progress:
     def __init__(self, cfg):
         self.cfg, self.job_id, self.usable, self.cursor = cfg, None, None, {}
         self.readiness_state, self.readiness_error, self.coverage = "pending", "", {}
+        self.next_compile = 0.0
 
     def record(self, status, phase, *, error="", result=None):
         result = self.coverage if result is None else result
         state.write(status, context_graph_id=self.cfg.context_graph_id, phase=phase,
                     chain_evidence_mode=self.cfg.snapshot_sync.mode, job_id=self.job_id,
-                    public_entries=self.usable, count_kind="sampled-usable-rules",
+                    public_entries=self.usable, count_kind=("sampled-usable-rules" if self.cfg.detection_backend == "dkg" else "compiled-rules"),
                     detection_ready=self.readiness_state == "ready", graph_complete=result.get("current") is True,
                     readiness_state=self.readiness_state, readiness_error=self.readiness_error,
                     complete=result.get("current") is True,
@@ -136,11 +137,11 @@ def _observe(job, payload, progress, args):
             progress.cursor.clear()
         progress.coverage = result
     try:
-        progress.usable = ruleset.ready_sample(progress.cfg, cursor=progress.cursor)
+        _read_rules(progress, complete=bool(progress.coverage))
         progress.readiness_error = ""
         progress.readiness_state = ("ready" if progress.usable > 0 else
                                     "empty" if progress.cursor.get("exhausted", True) else "pending")
-    except DkgError as exc:
+    except (DkgError, ruleset.RulesetRefreshUnavailable, ruleset.RulesetRefreshIncomplete) as exc:
         progress.usable = None
         progress.readiness_state = "unavailable"
         progress.readiness_error = getattr(exc, "code", "QUERY_UNAVAILABLE")
@@ -159,10 +160,27 @@ def _observe(job, payload, progress, args):
     return 0 if complete and (progress.readiness_state == "ready" or not getattr(args, "require_rules", False)) else 2
 
 
+def _read_rules(progress, *, complete):
+    cfg = progress.cfg
+    if cfg.detection_backend == "dkg":
+        progress.usable = ruleset.ready_sample(cfg, cursor=progress.cursor)
+        if complete:
+            ruleset.refresh_direct_community(cfg)
+        return
+    # Never issue a full export every two-second progress poll. At the coverage
+    # barrier force a new generation, so a pre-completion cache is not proof.
+    if not complete and time.monotonic() < progress.next_compile:
+        return
+    progress.next_compile = time.monotonic() + 30.0
+    client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg)
+    compiled = ruleset.refresh(cfg, client, wait_for_lock=False, force_query=complete)
+    progress.usable = compiled.source_count("public")
+
+
 def run(client, cfg, args):
     settings = cfg.snapshot_sync
-    if settings is None or cfg.detection_backend != "dkg":
-        raise ValueError("A snapshot sync requires configured direct DKG mode")
+    if settings is None:
+        raise ValueError("A snapshot sync requires configured core trust")
     payload = {"contextGraphId": cfg.context_graph_id, "onChainId": settings.on_chain_id,
                "trustedCorePeerIds": list(settings.trusted_core_peers), "mode": settings.mode}
     if settings.source_policy:

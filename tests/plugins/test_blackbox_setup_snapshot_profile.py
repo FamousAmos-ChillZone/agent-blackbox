@@ -24,7 +24,7 @@ def test_setup_writes_explicit_snapshot_scope_before_install_without_losing_sett
         cfg = config.load_blackbox_config()
         assert cfg.snapshot_sync.on_chain_id == "14"
         assert cfg.snapshot_sync.trusted_core_peers == ("configured-core",)
-        assert cfg.snapshot_sync.mode == "core-cache" and cfg.detection_backend == "dkg"
+        assert cfg.snapshot_sync.mode == "core-cache" and cfg.detection_backend == "legacy-cache"
         assert not cfg.report and cfg.mode == "audit"
         assert kwargs["env"]["BLACKBOX_DKG_PACKAGE"] == setup.DKG_PACKAGE
         return subprocess.CompletedProcess(command, 0)
@@ -61,7 +61,7 @@ def test_fresh_community_profile_keeps_ordinary_sync_and_existing_profiles_stay_
     monkeypatch.delenv("BLACKBOX_CONTEXT_GRAPH_ID", raising=False)
     profile.configure(argparse.Namespace())
     cfg = config.load_blackbox_config()
-    assert cfg.snapshot_sync is None and cfg.community_graph_id
+    assert cfg.snapshot_sync is None and cfg.context_graph_id
     assert cfg.detection_backend == "legacy-cache"
     path = tmp_path / "config.yaml"
     yaml_files.dump_yaml(path, {"plugins": {"entries": {"blackbox": {

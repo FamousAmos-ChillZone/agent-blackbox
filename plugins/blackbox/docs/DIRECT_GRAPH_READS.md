@@ -21,8 +21,9 @@ With `detection_backend: dkg`, each agent decision reads the local DKG store:
 - The existing block/flag policy remains: IOCs, vulnerabilities and historical
   skill findings do not acquire automatic blocking merely by using this backend.
 
-No full `ruleset.json` export is loaded, written, periodically refreshed or
-required for detection. Per-asset export caches are not used. The small selected
+No public `ruleset.json` export is written, periodically refreshed or required for
+detection. On an explicit backend switch, only the previous community model is
+carried over to retain first-seen history; public rules are not used. Per-asset export caches are not used. The small selected
 rule objects and compiled patterns live only for that decision. Operational
 state, audit records, local overrides and signed trust/kill-list records remain;
 removing the rules export does not mean deleting those independent records.
@@ -58,7 +59,6 @@ plugins:
   entries:
     blackbox:
       detection_backend: dkg
-      community_graph_id: ""
       auto_attach: false
 ```
 
@@ -69,15 +69,16 @@ compiles the full graph. Its sample count is explicitly a lower bound, not the
 old exported-rules total. Graph status and paged browsing report confirmed
 entity counts, which can differ from compiled usable-rule counts.
 
-The first rollout is the public consumer path. Community-enabled configurations
-are explicitly refused with `DIRECT_COMMUNITY_MIGRATION_REQUIRED`: the current
-community implementation has persisted first-seen budgets, retained threats and
-curator workflows tied to its compiled generation. Porting that read model must
-preserve those rules; silently dropping it or promoting SWM reports is unsafe.
-It continues to work through `legacy-cache`. Whole-graph curator enumeration
-also remains a legacy workflow. Custom graph sync drivers remain on the existing
-backend; direct detection reads can use confirmed wallet-pinned VM partitions.
-Legacy root-graph/proof-only layouts must be migrated before cutover.
+The community tier uses its own profile-local `community-read-model.json` and the
+same signed reader, daily budgets, revocations and retention as the compiled path.
+Public rows keep precedence; community content never acquires public blocking
+authority. Failed refreshes retain the previous generation. Background refreshes
+inherit the owning profile, and action evidence reports community cache availability
+separately from public-query success. No sharing consent is granted by switching
+readers. Whole-graph curator enumeration remains a compiled-reader workflow.
+Custom graph sync drivers remain on the existing backend; direct detection reads
+require confirmed wallet-pinned VM partitions. Legacy root-graph/proof-only layouts
+must be migrated before cutover.
 
 Source observations must use the canonical `normalizedValue` produced by the
 current publisher for exact indexed matching. This is not a compatibility
