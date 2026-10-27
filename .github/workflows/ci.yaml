@@ -90,8 +90,8 @@ jobs:
       e2e_upgrade: ${{ steps.gate-lanes.outputs.e2e_upgrade }}
       e2e_desktop_core: ${{ steps.gate-lanes.outputs.e2e_desktop_core }}
       e2e_desktop_update: ${{ steps.gate-lanes.outputs.e2e_desktop_update }}
-      # true on a manual dispatch or a release run only. A pull request or a
-      # main push runs the Blackbox lane alone (umanitek, 2026-10-27).
+      # true on a manual dispatch or a release run only: the heavy suites gate on
+      # it, and the Blackbox lane runs when it is false (umanitek, 2026-10-27).
       e2e_allowed: ${{ steps.gate-lanes.outputs.e2e_allowed }}
       event_name: ${{ github.event_name }}
     steps:
@@ -121,10 +121,7 @@ jobs:
           e2e_allowed = release or os.environ['EVENT_NAME'] == 'workflow_dispatch'
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               for lane, value in values.items():
-                  # Every host lane (not only E2E) is off unless this is a release
-                  # run or a manual dispatch: a pull request or a main push runs the
-                  # Blackbox lane alone (umanitek, 2026-10-27: Actions use).
-                  if not e2e_allowed:
+                  if lane.startswith('e2e') and not e2e_allowed:
                       value = 'false'
                   elif release and value in ('true', 'false'):
                       value = 'true'
@@ -147,7 +144,7 @@ jobs:
     name: Blackbox plugin
     needs: detect
     # Every pull request and main push: the plugin's suite and the blocking
-    # lints on one Linux runner. The host lanes run on dispatch or release.
+    # lints on one Linux runner. The heavy host suites run on dispatch/release.
     if: needs.detect.outputs.e2e_allowed != 'true'
     uses: ./.github/workflows/blackbox-ci.yml
     with:
@@ -158,7 +155,8 @@ jobs:
     needs: detect
     # Its E2E jobs are lanes of their own: a lane the classifier sets must reach
     # its job whatever `python` says (tests/ci/test_update_ci_routing.py).
-    if: needs.detect.outputs.python == 'true' || needs.detect.outputs.e2e == 'true' || needs.detect.outputs.e2e_upgrade == 'true'
+    # Heavy: dispatch or release only (umanitek, 2026-10-27: Actions use).
+    if: needs.detect.outputs.e2e_allowed == 'true' && (needs.detect.outputs.python == 'true' || needs.detect.outputs.e2e == 'true' || needs.detect.outputs.e2e_upgrade == 'true')
     uses: ./.github/workflows/tests.yml
     with:
       commit: ${{ inputs.commit }}
@@ -175,7 +173,8 @@ jobs:
   tests-os:
     name: OS-specific tests
     needs: detect
-    if: needs.detect.outputs.python == 'true' || needs.detect.outputs.desktop_updater == 'true' || needs.detect.outputs.e2e == 'true' || needs.detect.outputs.e2e_upgrade == 'true'
+    # Heavy (Windows + macOS runners): dispatch or release only.
+    if: needs.detect.outputs.e2e_allowed == 'true' && (needs.detect.outputs.python == 'true' || needs.detect.outputs.desktop_updater == 'true' || needs.detect.outputs.e2e == 'true' || needs.detect.outputs.e2e_upgrade == 'true')
     uses: ./.github/workflows/tests-os.yml
     with:
       commit: ${{ inputs.commit }}
@@ -201,7 +200,8 @@ jobs:
   js-tests:
     name: JS & TS checks
     needs: detect
-    if: needs.detect.outputs.frontend == 'true'
+    # Heavy (TypeScript matrix): dispatch or release only.
+    if: needs.detect.outputs.e2e_allowed == 'true' && needs.detect.outputs.frontend == 'true'
     uses: ./.github/workflows/js-tests.yml
     with:
       commit: ${{ inputs.commit }}
@@ -322,7 +322,6 @@ jobs:
       commit: ${{ inputs.commit }}
 
   infographic-check:
-    if: needs.detect.outputs.e2e_allowed == 'true'
     name: Check no committed infographics
     needs: detect
     uses: ./.github/workflows/infographic-check.yml
@@ -330,7 +329,6 @@ jobs:
       commit: ${{ inputs.commit }}
 
   profile-artifact-check:
-    if: needs.detect.outputs.e2e_allowed == 'true'
     name: Profile artifact check
     needs: detect
     uses: ./.github/workflows/profile-artifact-check.yml
@@ -338,7 +336,6 @@ jobs:
       commit: ${{ inputs.commit }}
 
   icons-freshness-check:
-    if: needs.detect.outputs.e2e_allowed == 'true'
     name: Icon assets freshness
     needs: detect
     uses: ./.github/workflows/icons-freshness-check.yml
@@ -360,7 +357,6 @@ jobs:
       commit: ${{ inputs.commit }}
 
   lazy-deps-guard:
-    if: needs.detect.outputs.e2e_allowed == 'true'
     name: No production imports of the tools.lazy_deps stub
     needs: detect
     uses: ./.github/workflows/lazy-deps-guard.yml

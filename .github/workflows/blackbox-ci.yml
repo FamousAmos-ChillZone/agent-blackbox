@@ -40,9 +40,15 @@ jobs:
           prune-python-cache: true
 
       - name: Blackbox suite
+        # scripts/run_tests.sh — the canonical runner, as every Hermes lane uses:
+        # one pytest subprocess per file (isolated HERMES_HOME, no state leaking
+        # between files), one worker per core. Bare pytest over the whole suite
+        # in one process failed six tests that pass under this runner.
         run: |
           set -euo pipefail
-          "$HERMES_PYTHON" -m pytest tests/plugins/test_blackbox_*.py tests/test_blackbox_*.py -p no:cacheprovider -q
+          SEPARATOR="$(python -c 'import os, sys; sys.stdout.write(os.pathsep)')"
+          FILES="$(ls tests/plugins/test_blackbox_*.py tests/test_blackbox_*.py | paste -sd "$SEPARATOR" -)"
+          scripts/run_tests.sh --files "$FILES" -- -q --tb=short
 
       - name: Install pinned ruff
         uses: ./.github/actions/retry
