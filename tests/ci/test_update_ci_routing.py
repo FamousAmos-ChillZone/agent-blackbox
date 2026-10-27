@@ -827,7 +827,8 @@ def test_pull_requests_and_main_pushes_never_run_e2e(event_name):
     for lane in ("e2e", "e2e_upgrade", "e2e_desktop_update"):
         assert not any(_consumers_reached(run, lane).values()), f"{event_name}: {lane} ran"
     assert "e2e-desktop-core" not in run
-    assert "tests" in run and "tests-os" in run  # the unit lanes still run
+    assert "tests" in run  # the Linux unit lane still runs
+    assert "tests-os" not in run  # Windows/macOS runners: dispatch or release only
 
 
 def test_windows_install_update_dispatch_alone_sets_strict():

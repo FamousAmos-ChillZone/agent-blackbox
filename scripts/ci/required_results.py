@@ -35,7 +35,9 @@ NEEDS_JSON_OUTPUT = "needs-json"
 # rather than a release.
 _UPDATE_CONSUMER_LANES = {
     "tests": ("python", "e2e", "e2e_upgrade"),
-    "tests-os": ("python", "desktop_updater", "e2e", "e2e_upgrade"),
+    # tests-os runs only on a manual dispatch or a release run (ci.yaml), so a
+    # PR's python/desktop_updater lane cannot make its skip a failure.
+    "tests-os": ("e2e", "e2e_upgrade"),
     "e2e-desktop-update": ("e2e_desktop_update",),
     "remote-backends": ("remote_backends",),
 }
