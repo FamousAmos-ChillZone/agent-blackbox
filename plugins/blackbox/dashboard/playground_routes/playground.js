@@ -12,6 +12,11 @@
  * redrawn when the mode flips or a new sandbox entry arrives. Display only: protection keeps
  * reading the real reports lane.
  *
+ * Below the threat tests it draws WALLET TESTS (GET /api/playground/wallets): every wallet the
+ * shields find on this machine plus a generated seed phrase and key, each runnable through the
+ * real check (POST /api/playground/wallets/run) — local only, never shared, nothing executed —
+ * with its result beside it (blocked / flagged / let through and why), and "Run all".
+ *
  * Every POST carries the dashboard's session token (X-Blackbox-Token from /api/session),
  * like index.html's own postJSON. Text from the node is written with textContent only.
  */
@@ -21,6 +26,18 @@
   var KIND_LABELS = { "package": "Malware package", "domain": "Malicious domain", "ip": "C2 server address", "url": "Payload link" };
   var root = null, badge = null, ribbon = null, timer = null, busy = "", firstSeen = {}, lastResult = null, lastError = "";
   var lastMode = null, lastLaneSignature = "";
+  var walletTests = [], walletResults = {}, walletBusy = "", walletError = "";
+  var DECISIONS = { blocked: ["BLOCKED", "pg-w-blocked"], flagged: ["FLAGGED", "pg-w-flagged"], allowed: ["LET THROUGH", "pg-w-allowed"] };
+  var WALLET_CSS = ".pg-wallets{margin-top:22px}.pg-wallets .pg-w-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:8px}" +
+    ".pg-w-group{margin:14px 0 4px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-strong)}" +
+    ".pg-w-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border)}" +
+    ".pg-w-row:last-child{border-bottom:0}.pg-w-title{color:var(--text)}.pg-w-cmd{font-family:var(--mono,ui-monospace,monospace);font-size:11px;color:var(--muted);overflow-wrap:anywhere}" +
+    ".pg-w-side{display:flex;align-items:center;gap:8px;justify-self:end}.pg-w-out{font:700 11px/1 var(--mono,ui-monospace,monospace);letter-spacing:.08em;padding:4px 8px;border-radius:999px}" +
+    ".pg-w-blocked{color:var(--secure);background:var(--secure-soft)}.pg-w-flagged{color:var(--caution);background:var(--caution-soft)}" +
+    ".pg-w-allowed{color:var(--signal);background:var(--signal-soft)}.pg-w-note{grid-column:1/-1;font-size:12px;color:var(--muted)}" +
+    ".pg-wallets button{border:1px solid var(--sandbox,#8B5CF6);background:transparent;color:var(--text);border-radius:8px;padding:5px 10px;cursor:pointer}" +
+    ".pg-wallets button:disabled{opacity:.55;cursor:progress}.pg-w-box{border:1px solid var(--border);border-radius:8px}" +
+    "@media (max-width:560px){.pg-w-row{grid-template-columns:1fr}.pg-w-side{justify-self:start}}";
 
   function el(tag, cls, text) {
     var node = document.createElement(tag);
@@ -122,6 +139,96 @@
     return li;
   }
 
+  function ensureWalletStyle() {
+    if (document.getElementById("pg-wallet-style")) return;
+    var style = el("style");
+    style.id = "pg-wallet-style";
+    style.textContent = WALLET_CSS;
+    document.head.appendChild(style);
+  }
+
+  function resultNote(test, result) {
+    if (!result) return test.note || "";
+    var parts = [];
+    if (result.note) parts.push(result.note);
+    if (result.decision === "flagged" && test.expect === "blocked" && !result.blocking) parts.push("Blackbox is in Audit mode: in Block mode this is blocked.");
+    if (result.identifiers && result.identifiers.length) parts.push(result.identifiers.join(", ") + " · " + (result.check_ms / 1000).toFixed(2) + " s");
+    return parts.join(" ");
+  }
+
+  function walletRow(test) {
+    var row = el("div", "pg-w-row");
+    var text = el("div");
+    text.appendChild(el("div", "pg-w-title", test.title));
+    text.appendChild(el("div", "pg-w-cmd", test.shown));
+    row.appendChild(text);
+    var side = el("div", "pg-w-side");
+    var result = walletResults[test.id];
+    var mark = result ? DECISIONS[result.decision] : null;
+    if (mark) side.appendChild(el("span", "pg-w-out " + mark[1], mark[0]));
+    else side.appendChild(el("span", "pg-meta", "should be " + test.expect));
+    var button = el("button", "", walletBusy === test.id ? "Checking…" : (result ? "Run again" : "Run"));
+    button.type = "button";
+    button.disabled = !!walletBusy;
+    button.addEventListener("click", function () { runWallets([test.id]); });
+    side.appendChild(button);
+    row.appendChild(side);
+    var note = resultNote(test, result);
+    if (note) row.appendChild(el("div", "pg-w-note", note));
+    return row;
+  }
+
+  function drawWallets(panel) {
+    ensureWalletStyle();
+    var box = el("div", "pg-wallets");
+    var head = el("div", "pg-w-head");
+    head.appendChild(el("h3", "", "Wallet tests · local only"));
+    var all = el("button", "", walletBusy ? "Running…" : "Run all " + walletTests.length);
+    all.type = "button";
+    all.disabled = !!walletBusy || !walletTests.length;
+    all.addEventListener("click", function () { runWallets(walletTests.map(function (t) { return t.id; })); });
+    head.appendChild(all);
+    box.appendChild(head);
+    box.appendChild(el("p", "", "Every wallet Blackbox finds on this machine, plus a seed phrase and a key made for the test, " +
+      "handed to the real check the way an agent's tool would hand it. Nothing is opened, run or sent; results stay in this " +
+      "machine's sandbox log and are never shared."));
+    if (walletError) box.appendChild(el("p", "pg-error", walletError));
+    if (!walletTests.length) box.appendChild(el("p", "pg-meta", "No wallet found on this machine yet."));
+    var group = null, list = null;
+    walletTests.forEach(function (test) {
+      if (test.group !== group) {
+        group = test.group;
+        box.appendChild(el("div", "pg-w-group", test.group_name));
+        list = el("div", "pg-w-box");
+        box.appendChild(list);
+      }
+      list.appendChild(walletRow(test));
+    });
+    panel.appendChild(box);
+  }
+
+  function runWallets(ids) {
+    walletError = "";
+    var queue = ids.slice();
+    token().then(function (tok) {
+      function next() {
+        var id = queue.shift();
+        if (!id) return Promise.resolve();
+        walletBusy = id;
+        refresh();
+        return fetch("/api/playground/wallets/run", {
+          method: "POST", cache: "no-store",
+          headers: { "Content-Type": "application/json", "Accept": "application/json", "X-Blackbox-Token": tok },
+          body: JSON.stringify({ id: id })
+        }).then(function (r) { return r.json(); }).then(function (body) {
+          if (body && body.ok) walletResults[id] = body.result; else walletError = (body && body.error) || "The test did not run.";
+        }).then(next);
+      }
+      return next();
+    }).catch(function (err) { walletError = err && err.message ? err.message : "The test did not run."; })
+      .then(function () { walletBusy = ""; return refresh(); });
+  }
+
   function draw(state) {
     root.innerHTML = "";
     var panel = el("section", "pg-panel");
@@ -158,6 +265,7 @@
     cols.appendChild(mine);
     cols.appendChild(lane);
     panel.appendChild(cols);
+    drawWallets(panel);
     root.appendChild(panel);
   }
 
@@ -167,7 +275,10 @@
       setSandboxLook(!!state.sandbox);
       syncCommunityGraph(state);
       root.hidden = !state.sandbox;
-      if (state.sandbox) draw(state); else root.innerHTML = "";
+      if (!state.sandbox) { root.innerHTML = ""; return; }
+      return fetch("/api/playground/wallets", { cache: "no-store" }).then(function (r) { return r.json(); })
+        .then(function (body) { walletTests = (body && body.tests) || []; }, function () { /* keep the last list */ })
+        .then(function () { draw(state); });
     }).catch(function () { /* the dashboard's own banner reports a down service */ });
   }
 
@@ -194,7 +305,7 @@
       if (tab) tab.addEventListener("click", function () { window.setTimeout(showRibbon, 0); });
     });
     refresh();
-    timer = window.setInterval(function () { if (!document.hidden && !busy) refresh(); }, POLL_MS);
+    timer = window.setInterval(function () { if (!document.hidden && !busy && !walletBusy) refresh(); }, POLL_MS);
   }
 
   window.blackboxPlayground = { refresh: refresh };

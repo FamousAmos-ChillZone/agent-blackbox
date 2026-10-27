@@ -46,6 +46,7 @@ from .contract import (
     ShieldStatus,
 )
 from .packs import TABLE_MAX_BYTES, ShieldData, load_shield_data, read_json_file
+from .self_test import SELF_TESTS, SelfTest
 from . import trader
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ __all__ = [
     "BrowserRoot",
     "Pack",
     "Shield",
+    "SelfTest",
     "ShieldEvent",
     "ShieldMode",
     "ShieldStatus",
@@ -67,6 +69,7 @@ __all__ = [
     "get",
     "loaded_packs",
     "pack_logo",
+    "self_tests",
     "settings_validators",
     "settings_view",
     "snapshot",
@@ -159,6 +162,19 @@ def allows(finding: Mapping[str, Any], active: ShieldsSnapshot) -> bool:
             logger.warning("blackbox: shield %s gate failed: %s", shield.id, exc)
             return False
     return True
+
+
+def self_tests() -> list[tuple[Shield, SelfTest]]:
+    """Every shield's sandbox self-tests for this machine under its current mode, each with its
+    shield (for the Playground); a builder that fails contributes nothing (fail-open)."""
+    tests: list[tuple[Shield, SelfTest]] = []
+    for shield, mode in snapshot().entries:
+        builder = SELF_TESTS.builder(shield.id)
+        try:
+            tests.extend((shield, test) for test in (builder(mode) if builder else ()))
+        except Exception as exc:
+            logger.warning("blackbox: shield %s self-tests could not be built: %s", shield.id, exc)
+    return tests
 
 
 def settings_validators() -> tuple[SettingsValidator, ...]:
