@@ -7,9 +7,10 @@
 * ``GET /api/playground/graph`` and ``GET /api/playground/threat`` — the sandbox lane in
   the Community graph's own response shapes; in sandbox mode the dashboard's Community
   tab reads these instead of ``/api/graph`` / ``/api/threat`` (display only);
-* ``GET /api/playground/local`` — this node's sandbox tests as findings rows and as
-  local activity; in sandbox mode the dashboard lists them beside the real findings
-  and in the Local tab, tagged SANDBOX, and never counts them or alerts on them;
+* ``GET /api/playground/local`` — this node's sandbox tests as findings rows, as local
+  activity and as Agent activity entries; in sandbox mode the dashboard lists them beside
+  the real findings, in the Local tab and in Agent activity, tagged SANDBOX, and alerts on
+  new ones the way it alerts on real findings (Amos, 2026-10-27) — counts stay the real ones;
 * ``POST /api/playground/run`` ``{"kind": "domain"}`` — run one sandbox test
   (:func:`playground.run_test`); 409 with a plain reason when it cannot run;
 * ``GET /api/playground/wallets`` — the shields' wallet tests for this machine (every
@@ -81,8 +82,10 @@ def local_payload() -> dict[str, Any]:
     from ...kernel.config import load_blackbox_config
 
     if not load_blackbox_config().community_sandbox:
-        return {"sandbox": False, "findings": [], "local": {"sessions": [], "sessionCount": 0, "threatCount": 0}}
-    return {"sandbox": True, "findings": playground.recent_tests(limit=100), "local": playground.sandbox_activity()}
+        return {"sandbox": False, "findings": [], "audit": [],
+                "local": {"sessions": [], "sessionCount": 0, "threatCount": 0}}
+    return {"sandbox": True, "findings": playground.recent_tests(limit=100), "audit": playground.sandbox_audit(),
+            "local": playground.sandbox_activity()}
 
 
 def run_payload(body: Any) -> tuple[int, dict[str, Any]]:

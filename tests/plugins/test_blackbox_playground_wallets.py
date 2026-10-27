@@ -141,3 +141,20 @@ def test_the_routes_list_the_tests_and_answer_409_with_the_reason(monkeypatch):
 
     monkeypatch.setattr(playground, "run_wallet_test", refuse)
     assert playground_routes.wallet_run_payload({"id": "x"}) == (409, {"ok": False, "error": "Sandbox mode is off."})
+
+
+def test_a_run_shows_in_the_sandbox_feed_the_dashboard_merges_into_agent_activity(machine, monkeypatch):
+    """Amos (2026-10-27): sandbox tests show in Local and Agent activity and alert like real
+    findings — the feed carries this run as a finding row AND as activity entries."""
+    monkeypatch.setattr(config_mod, "load_blackbox_config", lambda: _cfg())
+    playground.run_wallet_test("seed:sent-in-url", _cfg())
+    feed = playground_routes.local_payload()
+    assert feed["sandbox"] is True
+    assert any(row.get("identifier") == "secret:seed-phrase" for row in feed["findings"])
+    assert any(entry.get("event") in ("blocked", "flagged") for entry in feed["audit"])
+    assert feed["local"]["threatCount"] >= 1
+
+
+def test_outside_sandbox_mode_the_feed_is_empty(monkeypatch):
+    monkeypatch.setattr(config_mod, "load_blackbox_config", lambda: _cfg(community_sandbox=False))
+    assert playground_routes.local_payload()["audit"] == []

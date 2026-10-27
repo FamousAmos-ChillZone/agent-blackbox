@@ -15,6 +15,7 @@ Public surface (use only these):
   raises :class:`PlaygroundRefused` with a plain reason when it cannot run;
 * :func:`recent_tests` — this node's own sandbox findings, newest first;
 * :func:`sandbox_activity` — the same tests as sessions → events → threats;
+* :func:`sandbox_audit` — the same tests as Agent activity entries (``/api/audit``'s shape);
 * :func:`read_lane` — what every member has shared to the sandbox lane;
 * :func:`wallet_tests` / :func:`run_wallet_test` — the shields' self-tests for this machine
   (every wallet found here, generated seed phrases and keys), run through the real check,
@@ -34,7 +35,7 @@ from __future__ import annotations
 from . import graph
 from .lane import LaneEntry, LaneView, read_lane
 from .runner import (KINDS, SESSION_ID, PlaygroundRefused, TestResult, recent_tests, require_sandbox, run_test,
-                     sandbox_activity)
+                     sandbox_activity, sandbox_audit)
 from .wallets import WalletTestResult, require_sandbox_mode, run_wallet_test, wallet_tests
 
 __all__ = [
@@ -53,5 +54,6 @@ __all__ = [
     "run_test",
     "run_wallet_test",
     "sandbox_activity",
+    "sandbox_audit",
     "wallet_tests",
 ]
