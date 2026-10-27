@@ -498,6 +498,17 @@ _NIX_LANE_PATHS = (*_NIX_PATHS, *_NIX_FILES, *_DEP_MANIFESTS, *_NPM_MANIFESTS)
 # A pull request with this label runs every slow lane, whatever it touches.
 RUN_E2E_LABEL = "run-e2e"
 
+# The Blackbox plugin's own files. A diff made only of these (plus prose) runs the
+# ``blackbox_only`` lane — the plugin's suite and lints — and no host lane: the host
+# suites cannot see a plugin change, and they are the bulk of a CI run's minutes.
+_BLACKBOX_PATHS = (
+    "plugins/blackbox/",
+    "integrations/openclaw/",
+    "scripts/blackbox-",
+    "tests/plugins/test_blackbox_",
+    "tests/test_blackbox_",
+)
+
 def _is_docs(p: str) -> bool:
     if p.startswith(("skills/", "optional-skills/")):
         return False
@@ -506,6 +517,10 @@ def _is_docs(p: str) -> bool:
 
 def _is_nix(p: str) -> bool:
     return p.startswith(_NIX_PATHS) or p in _NIX_FILES
+
+
+def _is_blackbox(p: str) -> bool:
+    return p.startswith(_BLACKBOX_PATHS)
 
 
 def _py_irrelevant(p: str) -> bool:
@@ -602,6 +617,9 @@ def classify(files: list[str], run_e2e: bool = False) -> dict[str, bool]:
         "rust": any(_is_rust(f) for f in files),
         "remote_backends": any(f.startswith(_REMOTE_BACKEND_PATHS) for f in files),
         **{lane: run_e2e or on for lane, on in _slow_lanes(files).items()},
+        # At least one plugin file, and nothing outside the plugin but prose.
+        "blackbox_only": any(_is_blackbox(f) for f in files)
+        and all(_is_blackbox(f) or _is_docs(f) for f in files),
     }
     consumers = [c for f in files for c in _SHARED_FIXTURE_CONSUMERS.get(f, ())]
     if consumers:

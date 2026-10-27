@@ -90,6 +90,7 @@ jobs:
       e2e_upgrade: ${{ steps.gate-lanes.outputs.e2e_upgrade }}
       e2e_desktop_core: ${{ steps.gate-lanes.outputs.e2e_desktop_core }}
       e2e_desktop_update: ${{ steps.gate-lanes.outputs.e2e_desktop_update }}
+      blackbox_only: ${{ steps.gate-lanes.outputs.blackbox_only }}
       event_name: ${{ github.event_name }}
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
@@ -116,9 +117,13 @@ jobs:
           values = json.loads(os.environ['CLASSIFIED'])
           release = os.environ['RELEASE'] == 'true'
           e2e_allowed = release or os.environ['EVENT_NAME'] == 'workflow_dispatch'
+          # A Blackbox-only diff runs the plugin's lane alone (never on a release run).
+          blackbox_only = values.get('blackbox_only') == 'true' and not release
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               for lane, value in values.items():
                   if lane.startswith('e2e') and not e2e_allowed:
+                      value = 'false'
+                  elif blackbox_only and lane != 'blackbox_only':
                       value = 'false'
                   elif release and value in ('true', 'false'):
                       value = 'true'
@@ -136,6 +141,16 @@ jobs:
   # or a manual dispatch; the detect gate forces their lanes off for pull
   # requests and pushes to main.
   # ─────────────────────────────────────────────────────────────────────
+  blackbox:
+    name: Blackbox plugin
+    needs: detect
+    # A diff made only of the plugin's files: its suite and the blocking lints,
+    # one Linux runner. Every host lane is forced off by detect's gate-lanes.
+    if: needs.detect.outputs.blackbox_only == 'true'
+    uses: ./.github/workflows/blackbox-ci.yml
+    with:
+      commit: ${{ inputs.commit }}
+
   tests:
     name: Python tests
     needs: detect
@@ -305,6 +320,7 @@ jobs:
       commit: ${{ inputs.commit }}
 
   infographic-check:
+    if: needs.detect.outputs.blackbox_only != 'true'
     name: Check no committed infographics
     needs: detect
     uses: ./.github/workflows/infographic-check.yml
@@ -312,6 +328,7 @@ jobs:
       commit: ${{ inputs.commit }}
 
   profile-artifact-check:
+    if: needs.detect.outputs.blackbox_only != 'true'
     name: Profile artifact check
     needs: detect
     uses: ./.github/workflows/profile-artifact-check.yml
@@ -319,6 +336,7 @@ jobs:
       commit: ${{ inputs.commit }}
 
   icons-freshness-check:
+    if: needs.detect.outputs.blackbox_only != 'true'
     name: Icon assets freshness
     needs: detect
     uses: ./.github/workflows/icons-freshness-check.yml
@@ -340,6 +358,7 @@ jobs:
       commit: ${{ inputs.commit }}
 
   lazy-deps-guard:
+    if: needs.detect.outputs.blackbox_only != 'true'
     name: No production imports of the tools.lazy_deps stub
     needs: detect
     uses: ./.github/workflows/lazy-deps-guard.yml
@@ -412,6 +431,7 @@ jobs:
     name: All required checks pass (v2)
     needs:
       - detect
+      - blackbox
       - tests
       - tests-os
       - lint

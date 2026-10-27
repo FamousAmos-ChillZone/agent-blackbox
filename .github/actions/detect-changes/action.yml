@@ -69,6 +69,9 @@ outputs:
   remote_backends:
     description: Run the SSH and Docker terminal backends against a real sshd and Docker daemon.
     value: ${{ steps.classify.outputs.remote_backends }}
+  blackbox_only:
+    description: The diff touches only the Blackbox plugin (plus prose) — run its lane alone.
+    value: ${{ steps.classify.outputs.blackbox_only }}
 
 runs:
   using: composite
