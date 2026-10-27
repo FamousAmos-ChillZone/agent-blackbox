@@ -54,8 +54,8 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "BrowserRoot",
     "Pack",
-    "Shield",
     "SelfTest",
+    "Shield",
     "ShieldEvent",
     "ShieldMode",
     "ShieldStatus",
@@ -172,8 +172,8 @@ def self_tests() -> list[tuple[Shield, SelfTest]]:
         builder = SELF_TESTS.builder(shield.id)
         try:
             tests.extend((shield, test) for test in (builder(mode) if builder else ()))
-        except Exception as exc:
-            logger.warning("blackbox: shield %s self-tests could not be built: %s", shield.id, exc)
+        except Exception:   # a broken builder lists nothing; the traceback says why
+            logger.warning("blackbox: shield %s self-tests could not be built", shield.id, exc_info=True)
     return tests
 
 

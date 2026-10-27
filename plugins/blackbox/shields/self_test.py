@@ -25,12 +25,12 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
-from typing import Callable, Mapping, Union
+from typing import Callable, Mapping
 
 from .contract import ShieldMode
 
 #: A tool argument: a path or command text, or a list of URLs (the web tools take ``urls``).
-ToolArg = Union[str, tuple[str, ...]]
+ToolArg = str | tuple[str, ...]
 
 
 @dataclass(frozen=True)
