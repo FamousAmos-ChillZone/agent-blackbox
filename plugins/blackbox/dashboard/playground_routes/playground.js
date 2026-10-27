@@ -23,6 +23,7 @@
 (function () {
   "use strict";
   var POLL_MS = 5000;
+  var MIN_SPIN_MS = 600;   // how long a single wallet test's spinner stays up at least
   var KIND_LABELS = { "package": "Malware package", "domain": "Malicious domain", "ip": "C2 server address", "url": "Payload link" };
   var root = null, badge = null, ribbon = null, timer = null, busy = "", firstSeen = {}, lastResult = null, lastError = "";
   var lastMode = null, lastLaneSignature = "";
@@ -186,7 +187,11 @@
     setLabel(button, walletBusy === test.id ? "Checking…" : (result ? "Run again" : "Run"), walletBusy === test.id);
     button.type = "button";
     button.disabled = !!walletBusy;
-    button.addEventListener("click", function () { runWallets([test.id]); });
+    button.addEventListener("click", function () {
+      setLabel(button, "Checking…", true);   // at once, before the round trip
+      button.disabled = true;
+      runWallets([test.id]);
+    });
     side.appendChild(button);
     row.appendChild(side);
     var note = resultNote(test, result);
@@ -203,7 +208,11 @@
     setLabel(all, walletBusy ? "Running…" : "Run all " + walletTests.length, !!walletBusy);
     all.type = "button";
     all.disabled = !!walletBusy || !walletTests.length;
-    all.addEventListener("click", function () { runWallets(walletTests.map(function (t) { return t.id; })); });
+    all.addEventListener("click", function () {
+      setLabel(all, "Running…", true);
+      all.disabled = true;
+      runWallets(walletTests.map(function (t) { return t.id; }));
+    });
     head.appendChild(all);
     box.appendChild(head);
     box.appendChild(el("p", "", "Every wallet Blackbox finds on this machine, plus a seed phrase and a key made for the test, " +
@@ -233,11 +242,14 @@
         if (!id) return Promise.resolve();
         walletBusy = id;
         refresh();
-        return fetch("/api/playground/wallets/run", {
+        // A check takes milliseconds: a single test keeps its spinner up briefly so the run is seen.
+        var shown = new Promise(function (resolve) { window.setTimeout(resolve, ids.length === 1 ? MIN_SPIN_MS : 0); });
+        return Promise.all([fetch("/api/playground/wallets/run", {
           method: "POST", cache: "no-store",
           headers: { "Content-Type": "application/json", "Accept": "application/json", "X-Blackbox-Token": tok },
           body: JSON.stringify({ id: id })
-        }).then(function (r) { return r.json(); }).then(function (body) {
+        }).then(function (r) { return r.json(); }), shown]).then(function (both) {
+          var body = both[0];
           if (body && body.ok) walletResults[id] = body.result; else walletError = (body && body.error) || "The test did not run.";
         }).then(next);
       }
@@ -261,7 +273,11 @@
       setLabel(button, busy === kind ? "Asking Blackbox… (up to 90 s)" : "Send: " + (KIND_LABELS[kind] || kind), busy === kind);
       button.type = "button";
       button.disabled = !!busy || !state.sharing;
-      button.addEventListener("click", function () { run(kind); });
+      button.addEventListener("click", function () {
+        setLabel(button, "Asking Blackbox… (up to 90 s)", true);
+        button.disabled = true;
+        run(kind);
+      });
       kinds.appendChild(button);
     });
     panel.appendChild(kinds);
