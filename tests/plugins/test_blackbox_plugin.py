@@ -12,7 +12,6 @@ import pytest
 
 from _blackbox_loader import load_blackbox
 
-
 blackbox = load_blackbox()
 hooks = load_blackbox("guard.hooks")
 community_sharing = load_blackbox("community.sharing")
@@ -1118,6 +1117,7 @@ def test_blackbox_sync_waits_for_public_vm_when_community_arrives_first(monkeypa
             context_graph_id=constants.DEFAULT_CONTEXT_GRAPH_ID,
             dkg_url=constants.DEFAULT_DKG_URL,
             graph_peer_id=constants.DEFAULT_GRAPH_PEER_ID,
+            report=False,
         ),
     )
     monkeypatch.setattr(sync_command.ruleset, "refresh", fake_refresh)

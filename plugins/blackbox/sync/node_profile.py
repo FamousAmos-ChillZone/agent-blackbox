@@ -83,6 +83,10 @@ def node_sync_settings(cfg: BlackboxConfig) -> dict[str, str]:
     """
     from . import native   # sibling module; lazy so the two never import-cycle
 
+    if cfg.snapshot_sync is not None:
+        return {**_DKG_NATIVE_SYNC_SETTINGS,
+                "DKG_SYNC_ON_CONNECT_ENABLED": "0", "DKG_VM_RECONCILER_ENABLED": "0",
+                "DKG_EXACT_BATCH_STREAM_ENABLED": "1", "DKG_VM_RECOVERY_PREFETCH_ENABLED": "0"}
     settings = dict(_DKG_NATIVE_SYNC_SETTINGS if native.handles(cfg) else _DKG_STEADY_SYNC_SETTINGS)
     # The tables carry the ≥ 8 GB values; a smaller machine runs fewer transfers at once.
     inflight, queue = process_limits.sync_slots()

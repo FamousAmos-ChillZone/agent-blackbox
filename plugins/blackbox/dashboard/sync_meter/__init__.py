@@ -222,7 +222,7 @@ def read_sync_meter(cfg: Any, *, node_reachable: bool, verified_rules: int,
     graph_id = cfg.context_graph_id
     downloaded = None
     if node_reachable:
-        client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
+        client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg)
         downloaded = ruleset.verified_download_totals(client, graph_id, timeout=QUERY_TIMEOUT_SECONDS)
     backlog = read_recovery_backlog(cfg.dkg_home, graph_id)
     compiled = (ruleset.verified_progress(graph_id) or {}).get("assets_compiled")

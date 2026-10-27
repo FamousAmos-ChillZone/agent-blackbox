@@ -87,7 +87,7 @@ def _share_findings(cfg: BlackboxConfig, event: str, finding_dicts: list[dict[st
     """Per finding: cooldown, private audit KA, share-policy decision, background share."""
     client: Optional[DkgClient] = None
     try:
-        client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
+        client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg)
     except Exception:   # health: allow BLE001 -- the hook boundary is fail-open: a node client that cannot be built must never break the agent's tool call (KI-033)
         client = None
     policy = community.CommunitySharePolicy(cfg)
@@ -122,6 +122,22 @@ def _share_findings(cfg: BlackboxConfig, event: str, finding_dicts: list[dict[st
             continue
         community.spawn_community_share(client, cfg, finding, reporter)
 
+
+def blackbox_block_message(findings: list[detection.Finding]) -> str:
+    """Human-readable block message summarizing the blocking findings."""
+    lines = [
+        "Blackbox blocked this tool call — it matched "
+        f"{len(findings)} known threat{'s' if len(findings) != 1 else ''} in the threat graph:",
+        "",
+    ]
+    for f in findings:
+        lines.append(f"- [{f.severity.upper()}] {f.category}: {f.title} ({f.identifier})")
+    lines.append("")
+    lines.append(
+        "Treat the source content as untrusted. If this is a false positive, "
+        "switch Blackbox to audit mode and report the identifier to Umanitek."
+    )
+    return "\n".join(lines)
 
 def hook_failed(hook: str, exc: BaseException, *, tool_name: str = "", consequence: str) -> None:
     """A hook raised and the host carried on (fail-open): say so at WARNING and

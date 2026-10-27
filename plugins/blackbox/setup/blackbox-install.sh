@@ -82,8 +82,8 @@ BLACKBOX_DKG_BIN="$BLACKBOX_DKG_CLI_DIR/node_modules/.bin/dkg"
 # have (`npm view <package> dist.integrity`). The hash is checked on the tarball npm will
 # install, never on the registry's own claim about it. Another BLACKBOX_DKG_PACKAGE needs
 # its own BLACKBOX_DKG_INTEGRITY, or BLACKBOX_DKG_INTEGRITY=unpinned to skip the check knowingly.
-BLACKBOX_DKG_DEFAULT_PACKAGE="@origintrail-official/dkg@10.0.25"
-BLACKBOX_DKG_DEFAULT_INTEGRITY="sha512-ZdEnX1DANj8/Cnu0acV9au+ht2OvxZ+p4MSPpEFur+pI0k6reMzJcsZlpVoby60wnqgE3Nn6oXVL8ubx0wQJrA=="
+BLACKBOX_DKG_DEFAULT_PACKAGE="@origintrail-official/dkg@10.0.26"
+BLACKBOX_DKG_DEFAULT_INTEGRITY="sha512-QlCW/5UvL2UHaR2QGAemQzvu+ZtBKfefwuitoX2hGr/XZAgkFXsln1NHitzftQM99qTrlKBq8CFfDSfDFAbMHg=="
 BLACKBOX_DKG_PACKAGE="${BLACKBOX_DKG_PACKAGE:-$BLACKBOX_DKG_DEFAULT_PACKAGE}"
 BLACKBOX_DKG_INTEGRITY="${BLACKBOX_DKG_INTEGRITY:-}"
 if [ -z "$BLACKBOX_DKG_INTEGRITY" ] && [ "$BLACKBOX_DKG_PACKAGE" = "$BLACKBOX_DKG_DEFAULT_PACKAGE" ]; then
@@ -1003,6 +1003,7 @@ data.setdefault("name", "agent-blackbox")
 data["apiPort"] = api_port
 data.setdefault("listenPort", 0)
 data["nodeRole"] = "edge"
+data.setdefault("DKG_Core_chain_cache", True)
 data["networkConfig"] = "mainnet-base"
 # Relay reachability: an edge node behind NAT must hold circuit-relay
 # reservations so other members can dial it (and so it can dial them). DKG
@@ -2125,6 +2126,7 @@ if os.path.exists(cfg_path):
 plugins = data.setdefault("plugins", {})
 entries = plugins.setdefault("entries", {})
 blackbox = entries.setdefault("blackbox", {})
+no_explicit_snapshot_profile = "snapshot_sync" not in blackbox
 # Idempotent for custom user edits, but migrate deprecated defaults that point
 # at the user's shared DKG install or a retired graph.
 legacy_dkg_urls = {"http://127.0.0.1:9200", "http://localhost:9200"}
@@ -2201,6 +2203,18 @@ defaults = {
     # Optional LLM reviewer — off until `blackbox setup-llm` fills it in.
     "llm": {"enabled": False, "provider": "", "model": "", "api_key": ""},
 }
+# Keep community protection and ordinary sync unless the installed plugin can
+# admit a snapshot attempt; DKG authenticates cores before accepting any data.
+if no_explicit_snapshot_profile:
+    try:
+        import runpy
+        from pathlib import Path
+        checkout = Path(repo_dir)
+        plugin = checkout if (checkout / "plugin.yaml").is_file() else checkout / "plugins" / "blackbox"
+        defaults.update(runpy.run_path(str(plugin / "setup" / "sync_defaults.py"))["defaults"](
+            {**defaults, **blackbox}, os.environ.get("BLACKBOX_DKG_NETWORK", "mainnet-base")))
+    except Exception:
+        print("  Keeping ordinary sync: the compatible Core-cache default is not available.")
 for k, v in defaults.items():
     if k not in blackbox:
         blackbox[k] = v
