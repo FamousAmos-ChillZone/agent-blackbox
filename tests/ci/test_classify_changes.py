@@ -48,13 +48,12 @@ DEFAULT = {
     "desktop_updater": True,
     "rust": True,
     "remote_backends": True,
-    "blackbox_only": False,
 }
 
 SLOW_LANES = {"docker", "nix", "e2e", "e2e_upgrade", "e2e_desktop_core", "e2e_desktop_update"}
 
 
-def _lanes(python=False, frontend=False, site=False, scan=False, deps=False, uv_lock=False, npm_lock=False, bootstrap=False, desktop_updater=False, rust=False, docker_meta=False, python_prod=None, nix=False, docker=None, e2e=False, e2e_upgrade=False, e2e_desktop_core=False, e2e_desktop_update=False, remote_backends=False, blackbox_only=False) -> dict[str, bool]:
+def _lanes(python=False, frontend=False, site=False, scan=False, deps=False, uv_lock=False, npm_lock=False, bootstrap=False, desktop_updater=False, rust=False, docker_meta=False, python_prod=None, nix=False, docker=None, e2e=False, e2e_upgrade=False, e2e_desktop_core=False, e2e_desktop_update=False, remote_backends=False) -> dict[str, bool]:
     # python_prod tracks python except for tests-only diffs; default it to
     # python so the majority of cases don't need to spell it out.
     #
@@ -83,7 +82,6 @@ def _lanes(python=False, frontend=False, site=False, scan=False, deps=False, uv_
         "desktop_updater": desktop_updater,
         "rust": rust,
         "remote_backends": remote_backends,
-        "blackbox_only": blackbox_only,
     }
 
 
@@ -408,15 +406,6 @@ CASES = {
     "image tests → docker": (
         ["tests/docker/test_image_smoke.py"],
         _lanes(python=True, python_prod=False, scan=True, docker=True),
-    ),
-    # The Blackbox plugin alone (with prose) runs its own lane and no host lane.
-    "blackbox plugin → blackbox only": (
-        ["plugins/blackbox/guard/hooks.py", "tests/plugins/test_blackbox_detection.py", "plugins/blackbox/README.md"],
-        _lanes(python=True, scan=True, blackbox_only=True),
-    ),
-    "blackbox + host file → not blackbox only": (
-        ["plugins/blackbox/guard/hooks.py", "gateway/run.py"],
-        _lanes(python=True, scan=True),
     ),
     # Fail open: CI-config / empty / blank diffs run everything.
     ".github change → all": ([".github/workflows/tests.yml"], DEFAULT),
