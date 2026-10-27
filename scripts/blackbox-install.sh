@@ -2400,6 +2400,79 @@ setup_llm() {
     fi
 }
 
+# ── The dashboard's supervisor (KI-455) ─────────────────────────────────────
+# Once a service runs the dashboard (systemd unit, or a LOADED LaunchAgent), it is started
+# and restarted only through that service (LES-063). An update once launched its own copy
+# beside the unit: the copy stopped the unit's dashboard, `enable --now` then started the
+# unit again, the unit's dashboard replaced the copy, and the final check caught it mid-start
+# and rolled a healthy update back (bb-install-1022b, 2026-10-27).
+BLACKBOX_DASHBOARD_LAUNCHD_LABEL=ai.umanitek.blackbox-dashboard
+# A dashboard (re)start takes 5-15 s, longer on a 2-CPU machine while the node syncs: the
+# final check waits this long for an answer before calling it broken (LES-011 — still
+# starting is not broken).
+BLACKBOX_DASHBOARD_ANSWER_WAIT_SECONDS="${BLACKBOX_DASHBOARD_ANSWER_WAIT_SECONDS:-60}"
+# Set by start_dashboard when the service must restart the dashboard (new code, or not
+# answering); register_dashboard_service does it once the unit itself is current.
+BLACKBOX_DASHBOARD_RESTART_PENDING=false
+
+# Prints who runs the dashboard: systemd | systemd-user | launchd, or nothing (no service:
+# the installer launches it). A LaunchAgent counts only while loaded — one registered "for
+# the next login" does not run the dashboard yet.
+blackbox_dashboard_supervisor() {
+    if command -v systemctl >/dev/null 2>&1; then
+        if [ -f "$BLACKBOX_SYSTEMD_DIR/blackbox-dashboard.service" ] &&
+            systemctl is-enabled --quiet blackbox-dashboard 2>/dev/null; then
+            echo systemd
+            return 0
+        fi
+        if [ -f "$HOME/.config/systemd/user/blackbox-dashboard.service" ] &&
+            systemctl --user is-enabled --quiet blackbox-dashboard 2>/dev/null; then
+            echo systemd-user
+            return 0
+        fi
+    fi
+    if [ "$(uname -s 2>/dev/null)" = Darwin ] && command -v launchctl >/dev/null 2>&1 &&
+        launchctl print "gui/$(id -u)/$BLACKBOX_DASHBOARD_LAUNCHD_LABEL" >/dev/null 2>&1; then
+        echo launchd
+    fi
+    return 0
+}
+
+# `blackbox_dashboard_control restart|reload <supervisor>` — restart the dashboard through its
+# service; `reload` first makes the service re-read its (rewritten or restored) definition.
+blackbox_dashboard_control() {
+    local action="$1" supervisor="$2" target
+    local -a systemctl_cmd=(systemctl)
+    case "$supervisor" in
+        systemd | systemd-user)
+            [ "$supervisor" = systemd-user ] && systemctl_cmd+=(--user)
+            if [ "$action" = reload ]; then "${systemctl_cmd[@]}" daemon-reload || return 1; fi
+            "${systemctl_cmd[@]}" restart blackbox-dashboard
+            ;;
+        launchd)
+            target="gui/$(id -u)/$BLACKBOX_DASHBOARD_LAUNCHD_LABEL"
+            if [ "$action" = reload ]; then
+                launchctl bootout "$target" 2>/dev/null || true
+                launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$BLACKBOX_DASHBOARD_LAUNCHD_LABEL.plist"
+            else
+                launchctl kickstart -k "$target"
+            fi
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+# Whether the dashboard at URL answers within WAIT seconds (polled every 2 s).
+blackbox_dashboard_answers_within() {
+    local url="$1" wait="$2" waited=0
+    while true; do
+        curl -fsS --max-time 10 "$url" >/dev/null 2>&1 && return 0
+        [ "$waited" -ge "$wait" ] && return 1
+        sleep 2
+        waited=$((waited + 2))
+    done
+}
+
 start_dashboard() {
     case "$BLACKBOX_AUTO_DASHBOARD" in
         0|false|never|no)
@@ -2423,12 +2496,25 @@ start_dashboard() {
     if [ -z "$revision" ] && [ -n "$REPO_DIR" ] && git -C "$REPO_DIR" rev-parse -q --verify HEAD >/dev/null 2>&1; then
         revision="$(git -C "$REPO_DIR" rev-parse HEAD)"
     fi
+    local supervisor
+    supervisor="$(blackbox_dashboard_supervisor)"
     if command -v curl >/dev/null 2>&1 && curl -fsS "$url/" >/dev/null 2>&1; then
         if [ -z "$revision" ] || [ "$(cat "$revision_file" 2>/dev/null)" = "$revision" ]; then
             ok "Dashboard already running at $url"
             return 0
         fi
         step "Blackbox was updated: restarting the dashboard so the new code runs"
+    fi
+
+    # A service runs the dashboard: it restarts it once its own definition is current
+    # (register_dashboard_service) — never a second copy launched beside it (KI-455).
+    if [ -n "$supervisor" ]; then
+        step "The dashboard runs under its $supervisor service; it is restarted through it below."
+        BLACKBOX_DASHBOARD_RESTART_PENDING=true
+        if [ -n "$revision" ]; then
+            mkdir -p "$(dirname "$revision_file")" && printf '%s\n' "$revision" > "$revision_file"
+        fi
+        return 0
     fi
 
     step "Launching: blackbox dashboard"
@@ -2617,7 +2703,8 @@ verify_install() {
     fi
     case "$BLACKBOX_AUTO_DASHBOARD" in
         0|false|never|no) ;;
-        *) verify_part "Dashboard answers at $dashboard_url" curl -fsS --max-time 10 "$dashboard_url" ;;
+        *) verify_part "Dashboard answers at $dashboard_url" \
+            blackbox_dashboard_answers_within "$dashboard_url" "$BLACKBOX_DASHBOARD_ANSWER_WAIT_SECONDS" ;;
     esac
     unset -f verify_part
     if [ "$failed" = true ]; then
@@ -2809,6 +2896,7 @@ rollback_install() {
     rollback_files
     rollback_repo_head
     rollback_restart_previous
+    rollback_restart_dashboard
     ok "Nothing from this install attempt was left behind."
     step "Fix the reason shown above, then run the installer again."
 }
@@ -2921,6 +3009,18 @@ rollback_restart_previous() {
     [ -e "$INSTALL_RECORD_DIR/node-was-running" ] || return 0
     blackbox_dkg_control restart >/dev/null 2>&1 || blackbox_dkg start >/dev/null 2>&1 ||
         warn "Could not restart the Blackbox DKG node that was running before."
+    return 0
+}
+
+# A dashboard service that existed before this run is restarted once the files are back:
+# it may have loaded this run's code, and would keep running it beside the restored plugin
+# copy (KI-455). A service this run created is already gone (rollback_services + files).
+rollback_restart_dashboard() {
+    local supervisor
+    supervisor="$(blackbox_dashboard_supervisor)"
+    [ -n "$supervisor" ] || return 0
+    blackbox_dashboard_control reload "$supervisor" >/dev/null 2>&1 ||
+        warn "Could not restart the Blackbox dashboard; restart its $supervisor service."
     return 0
 }
 
@@ -3078,11 +3178,14 @@ register_dashboard_service() {
     case "$(uname -s)" in
         Linux)
             command -v systemctl >/dev/null 2>&1 || return 0   # register_boot_service already warned
-            local unit=/etc/systemd/system/blackbox-dashboard.service
+            local unit=/etc/systemd/system/blackbox-dashboard.service before="" start_action=start
+            local -a systemctl_cmd=(systemctl)
             if [ ! -w /etc/systemd/system ] && [ "$(id -u)" != 0 ]; then
                 unit="$HOME/.config/systemd/user/blackbox-dashboard.service"
+                systemctl_cmd+=(--user)
                 mkdir -p "$(dirname "$unit")"
             fi
+            [ -f "$unit" ] && before="$(cat "$unit")"
             cat > "$unit" <<DASHUNIT
 [Unit]
 Description=Agent Blackbox dashboard (rule refresh + community pulse)
@@ -3101,22 +3204,29 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target default.target
 DASHUNIT
-            if [ "$unit" = /etc/systemd/system/blackbox-dashboard.service ]; then
-                # --now: the dashboard runs under systemd from this moment (restarted
-                # on a crash), not only after the next reboot; it replaces the one
-                # the installer just launched on the same port.
-                systemctl daemon-reload && systemctl enable --now blackbox-dashboard >/dev/null 2>&1 \
-                    && ok "systemd service registered (blackbox-dashboard) — protection stays current after reboots" \
-                    || warn "could not enable blackbox-dashboard; enable manually: systemctl enable blackbox-dashboard"
+            # Enabled AND started: the dashboard runs under systemd from this moment (restarted
+            # on a crash), not only after the next reboot; on a first install it replaces the
+            # copy the installer launched on the same port. A running service keeps the code
+            # and unit it started with, so after an update or a changed unit it is RESTARTED —
+            # through systemd only (KI-455). verify_install waits for it to answer.
+            if [ "$BLACKBOX_DASHBOARD_RESTART_PENDING" = true ] || [ "$(cat "$unit")" != "$before" ]; then
+                start_action=restart
+            fi
+            if "${systemctl_cmd[@]}" daemon-reload && "${systemctl_cmd[@]}" enable blackbox-dashboard >/dev/null 2>&1 &&
+                "${systemctl_cmd[@]}" "$start_action" blackbox-dashboard >/dev/null 2>&1; then
+                if [ "$unit" = /etc/systemd/system/blackbox-dashboard.service ]; then
+                    ok "systemd service registered (blackbox-dashboard) — protection stays current after reboots"
+                else
+                    ok "systemd user service registered (blackbox-dashboard)"
+                fi
             else
-                systemctl --user daemon-reload && systemctl --user enable --now blackbox-dashboard >/dev/null 2>&1 \
-                    && ok "systemd user service registered (blackbox-dashboard)" \
-                    || warn "could not enable the dashboard user service; enable manually: systemctl --user enable blackbox-dashboard"
+                warn "could not enable blackbox-dashboard; enable manually: ${systemctl_cmd[*]} enable --now blackbox-dashboard"
             fi
             ;;
         Darwin)
-            local plist="$HOME/Library/LaunchAgents/ai.umanitek.blackbox-dashboard.plist"
+            local plist="$HOME/Library/LaunchAgents/$BLACKBOX_DASHBOARD_LAUNCHD_LABEL.plist" before="" action=""
             mkdir -p "$HOME/Library/LaunchAgents"
+            [ -f "$plist" ] && before="$(cat "$plist")"
             cat > "$plist" <<DASHPLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -3133,9 +3243,24 @@ DASHUNIT
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
 </dict></plist>
 DASHPLIST
-            # Registered for the next login only: the dashboard started above keeps
-            # running now, and loading the agent here would start a second one.
-            ok "LaunchAgent registered (blackbox-dashboard) — starts at your next login"
+            if [ "$(blackbox_dashboard_supervisor)" != launchd ]; then
+                # Registered for the next login only: the dashboard started above keeps
+                # running now, and loading the agent here would start a second one.
+                ok "LaunchAgent registered (blackbox-dashboard) — starts at your next login"
+                return 0
+            fi
+            # Loaded: the agent runs the dashboard now. It takes a rewritten plist only when
+            # reloaded, and new code only when restarted — both through launchd (KI-455).
+            if [ "$(cat "$plist")" != "$before" ]; then
+                action=reload
+            elif [ "$BLACKBOX_DASHBOARD_RESTART_PENDING" = true ]; then
+                action=restart
+            fi
+            if [ -z "$action" ] || blackbox_dashboard_control "$action" launchd >/dev/null 2>&1; then
+                ok "LaunchAgent registered (blackbox-dashboard) — the dashboard runs under it"
+            else
+                warn "could not restart the dashboard's LaunchAgent; run: launchctl kickstart -k gui/$(id -u)/$BLACKBOX_DASHBOARD_LAUNCHD_LABEL"
+            fi
             ;;
     esac
 }
