@@ -90,6 +90,9 @@ jobs:
       e2e_upgrade: ${{ steps.gate-lanes.outputs.e2e_upgrade }}
       e2e_desktop_core: ${{ steps.gate-lanes.outputs.e2e_desktop_core }}
       e2e_desktop_update: ${{ steps.gate-lanes.outputs.e2e_desktop_update }}
+      # true on a manual dispatch or a release run only: the heavy suites gate on
+      # it, and the Blackbox lane runs when it is false (umanitek, 2026-10-27).
+      e2e_allowed: ${{ steps.gate-lanes.outputs.e2e_allowed }}
       event_name: ${{ github.event_name }}
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
@@ -125,6 +128,7 @@ jobs:
                   if '\n' in value or '\r' in value:
                       continue
                   output.write(f'{lane}={value}\n')
+              output.write(f"e2e_allowed={'true' if e2e_allowed else 'false'}\n")
           PY
 
   # ─────────────────────────────────────────────────────────────────────
@@ -136,12 +140,23 @@ jobs:
   # or a manual dispatch; the detect gate forces their lanes off for pull
   # requests and pushes to main.
   # ─────────────────────────────────────────────────────────────────────
+  blackbox:
+    name: Blackbox plugin
+    needs: detect
+    # Every pull request and main push: the plugin's suite and the blocking
+    # lints on one Linux runner. The heavy host suites run on dispatch/release.
+    if: needs.detect.outputs.e2e_allowed != 'true'
+    uses: ./.github/workflows/blackbox-ci.yml
+    with:
+      commit: ${{ inputs.commit }}
+
   tests:
     name: Python tests
     needs: detect
     # Its E2E jobs are lanes of their own: a lane the classifier sets must reach
     # its job whatever `python` says (tests/ci/test_update_ci_routing.py).
-    if: needs.detect.outputs.python == 'true' || needs.detect.outputs.e2e == 'true' || needs.detect.outputs.e2e_upgrade == 'true'
+    # Heavy: dispatch or release only (umanitek, 2026-10-27: Actions use).
+    if: needs.detect.outputs.e2e_allowed == 'true' && (needs.detect.outputs.python == 'true' || needs.detect.outputs.e2e == 'true' || needs.detect.outputs.e2e_upgrade == 'true')
     uses: ./.github/workflows/tests.yml
     with:
       commit: ${{ inputs.commit }}
@@ -158,7 +173,8 @@ jobs:
   tests-os:
     name: OS-specific tests
     needs: detect
-    if: needs.detect.outputs.python == 'true' || needs.detect.outputs.desktop_updater == 'true' || needs.detect.outputs.e2e == 'true' || needs.detect.outputs.e2e_upgrade == 'true'
+    # Heavy (Windows + macOS runners): dispatch or release only.
+    if: needs.detect.outputs.e2e_allowed == 'true' && (needs.detect.outputs.python == 'true' || needs.detect.outputs.desktop_updater == 'true' || needs.detect.outputs.e2e == 'true' || needs.detect.outputs.e2e_upgrade == 'true')
     uses: ./.github/workflows/tests-os.yml
     with:
       commit: ${{ inputs.commit }}
@@ -184,7 +200,8 @@ jobs:
   js-tests:
     name: JS & TS checks
     needs: detect
-    if: needs.detect.outputs.frontend == 'true'
+    # Heavy (TypeScript matrix): dispatch or release only.
+    if: needs.detect.outputs.e2e_allowed == 'true' && needs.detect.outputs.frontend == 'true'
     uses: ./.github/workflows/js-tests.yml
     with:
       commit: ${{ inputs.commit }}
@@ -412,6 +429,7 @@ jobs:
     name: All required checks pass (v2)
     needs:
       - detect
+      - blackbox
       - tests
       - tests-os
       - lint
