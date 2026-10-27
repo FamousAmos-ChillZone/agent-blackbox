@@ -37,7 +37,10 @@
     ".pg-w-allowed{color:var(--signal);background:var(--signal-soft)}.pg-w-note{grid-column:1/-1;font-size:12px;color:var(--muted)}" +
     ".pg-wallets button{border:1px solid var(--sandbox,#8B5CF6);background:transparent;color:var(--text);border-radius:8px;padding:5px 10px;cursor:pointer}" +
     ".pg-wallets button:disabled{opacity:.55;cursor:progress}.pg-w-box{border:1px solid var(--border);border-radius:8px}" +
-    "@media (max-width:560px){.pg-w-row{grid-template-columns:1fr}.pg-w-side{justify-self:start}}";
+    "@media (max-width:560px){.pg-w-row{grid-template-columns:1fr}.pg-w-side{justify-self:start}}" +
+    ".pg-spin{display:inline-block;width:11px;height:11px;margin-right:6px;vertical-align:-1px;border:2px solid currentColor;" +
+    "border-right-color:transparent;border-radius:50%;animation:pg-spin .7s linear infinite}@keyframes pg-spin{to{transform:rotate(360deg)}}" +
+    "@media (prefers-reduced-motion:reduce){.pg-spin{animation-duration:2.4s}}";
 
   function el(tag, cls, text) {
     var node = document.createElement(tag);
@@ -139,6 +142,18 @@
     return li;
   }
 
+  // A button's label, with a spinner in front while its test runs (so the wait is visible).
+  function setLabel(button, text, spinning) {
+    button.textContent = "";
+    if (spinning) {
+      var spin = el("span", "pg-spin");
+      spin.setAttribute("aria-hidden", "true");
+      button.appendChild(spin);
+      button.setAttribute("aria-busy", "true");
+    }
+    button.appendChild(document.createTextNode(text));
+  }
+
   function ensureWalletStyle() {
     if (document.getElementById("pg-wallet-style")) return;
     var style = el("style");
@@ -167,7 +182,8 @@
     var mark = result ? DECISIONS[result.decision] : null;
     if (mark) side.appendChild(el("span", "pg-w-out " + mark[1], mark[0]));
     else side.appendChild(el("span", "pg-meta", "should be " + test.expect));
-    var button = el("button", "", walletBusy === test.id ? "Checking…" : (result ? "Run again" : "Run"));
+    var button = el("button");
+    setLabel(button, walletBusy === test.id ? "Checking…" : (result ? "Run again" : "Run"), walletBusy === test.id);
     button.type = "button";
     button.disabled = !!walletBusy;
     button.addEventListener("click", function () { runWallets([test.id]); });
@@ -183,7 +199,8 @@
     var box = el("div", "pg-wallets");
     var head = el("div", "pg-w-head");
     head.appendChild(el("h3", "", "Wallet tests · local only"));
-    var all = el("button", "", walletBusy ? "Running…" : "Run all " + walletTests.length);
+    var all = el("button");
+    setLabel(all, walletBusy ? "Running…" : "Run all " + walletTests.length, !!walletBusy);
     all.type = "button";
     all.disabled = !!walletBusy || !walletTests.length;
     all.addEventListener("click", function () { runWallets(walletTests.map(function (t) { return t.id; })); });
@@ -240,7 +257,8 @@
     if (!state.sharing) panel.appendChild(el("p", "pg-error", "Community sharing is off. Turn it on in Settings to run tests (they stay in the sandbox lane)."));
     var kinds = el("div", "pg-kinds");
     (state.kinds || []).forEach(function (kind) {
-      var button = el("button", "", busy === kind ? "Asking Blackbox… (up to 90 s)" : "Send: " + (KIND_LABELS[kind] || kind));
+      var button = el("button");
+      setLabel(button, busy === kind ? "Asking Blackbox… (up to 90 s)" : "Send: " + (KIND_LABELS[kind] || kind), busy === kind);
       button.type = "button";
       button.disabled = !!busy || !state.sharing;
       button.addEventListener("click", function () { run(kind); });

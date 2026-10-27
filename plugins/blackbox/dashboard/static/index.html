@@ -6960,7 +6960,8 @@
       }
       if (detail.duration_ms != null) bits2.push(fmtDuration(detail.duration_ms));
       if (entry.findingCount) bits2.push(entry.findingCount + ' finding' + (entry.findingCount === 1 ? '' : 's'));
-      if (detail.session_id) bits2.push('session ' + esc(String(detail.session_id).slice(-6)));
+      if (entry.sandbox) bits2.push('sandbox test');   // the Playground's session id, not a real session
+      else if (detail.session_id) bits2.push('session ' + esc(String(detail.session_id).slice(-6)));
       meta = bits2.join(" · ");
     } else if (ev === "pre_api_request") {
       primary = esc(detail.model || detail.provider || "API request");
@@ -7038,7 +7039,8 @@
   function renderAuditTrail(data) {
     if (data !== undefined) activityCache = data;
     data = activityCache;
-    var entries = ((data && Array.isArray(data.entries)) ? data.entries : []).concat(sandboxAuditEntries())
+    var sandboxEntries = sandboxAuditEntries();
+    var entries = ((data && Array.isArray(data.entries)) ? data.entries : []).concat(sandboxEntries)
       .sort(function (a, b) { return (Number(b.ts) || 0) - (Number(a.ts) || 0); });
     toolCmdById = {};
     entries.forEach(function (e) {
@@ -7051,7 +7053,7 @@
     var filtered = (activityFilter === "threats")
       ? entries.filter(function (e) { return e.event === "flagged" || e.event === "blocked"; })
       : entries;
-    var total = (data && data.total != null) ? data.total : entries.length;
+    var total = ((data && data.total != null) ? data.total + sandboxEntries.length : entries.length);   // sandbox rows counted
     var body = $("audit-body");
     if (!body) return;
 

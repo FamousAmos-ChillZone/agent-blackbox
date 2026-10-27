@@ -158,3 +158,16 @@ def test_a_run_shows_in_the_sandbox_feed_the_dashboard_merges_into_agent_activit
 def test_outside_sandbox_mode_the_feed_is_empty(monkeypatch):
     monkeypatch.setattr(config_mod, "load_blackbox_config", lambda: _cfg(community_sandbox=False))
     assert playground_routes.local_payload()["audit"] == []
+
+
+def test_in_sandbox_mode_recent_events_include_the_tests_tagged(machine, monkeypatch):
+    """Amos (2026-10-27): a wallet test shows in the shield's Recent events while in sandbox mode."""
+    from plugins.blackbox.dashboard import shields_routes
+
+    monkeypatch.setattr(config_mod, "load_blackbox_config", lambda: _cfg())
+    monkeypatch.setattr(shields_routes, "load_blackbox_config", lambda: _cfg())
+    playground.run_wallet_test(next(t["id"] for t in playground.wallet_tests() if t["id"].startswith("vault:")), _cfg())
+    events = shields_routes.events_payload("trader")
+    assert events and all(event.get("sandbox") is True for event in events)
+    monkeypatch.setattr(shields_routes, "load_blackbox_config", lambda: _cfg(community_sandbox=False))
+    assert shields_routes.events_payload("trader") == []
