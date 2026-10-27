@@ -3410,6 +3410,7 @@
   // beside the real findings and in the Local tab with a SANDBOX tag, and never reach a
   // count, the onboarding check or an alert: those read the real payloads only.
   var sandboxLocal = null;
+  var sandboxRowsSeen = false;   // the sandbox tests present at first sight never alert
   var SANDBOX_RING = "#8B5CF6";
   var findingsSort = "newest";   // "newest" | "severity"
 
@@ -7304,7 +7305,14 @@
       if (requestGeneration !== findingsRequestGeneration) return null;
       // Sandbox tests alert the way real findings do (tagged SANDBOX in the toast); the
       // unread count and the findings counts stay the real ones' business otherwise.
-      processThreatNotifications(asList(data).concat(sandboxFindingRows()));
+      var sandboxRows = sandboxFindingRows();
+      // The first time sandbox rows arrive (the mode is learned a moment after the first poll),
+      // the tests already there are known, not new — only tests run from now on alert.
+      if (sandboxRows.length && !sandboxRowsSeen && knownFindingKeys !== null) {
+        sandboxRows.forEach(function (f) { var key = findingNotificationKey(f); knownFindingKeys.add(key); knownFindingOrder.push(key); });
+      }
+      if (sandboxRows.length) sandboxRowsSeen = true;
+      processThreatNotifications(asList(data).concat(sandboxRows));
       renderFindings(data);
       return data;
     });
