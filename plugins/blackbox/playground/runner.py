@@ -123,6 +123,13 @@ def sandbox_activity(max_sessions: int = 60) -> dict[str, Any]:
         return audit.read_local_activity(max_sessions=max_sessions)
 
 
+def sandbox_audit(limit: int = 200) -> list[dict[str, Any]]:
+    """The sandbox's own activity trail in ``/api/audit``'s entry shape, newest first (read
+    from the sandbox folder). The dashboard merges it into Agent activity, tagged SANDBOX."""
+    with audit.sandbox_run():
+        return audit.read_audit(limit=limit)
+
+
 def _pick(rules: Any, kind: str) -> Attempt:
     if kind == "package":
         return _pick_package(rules)
