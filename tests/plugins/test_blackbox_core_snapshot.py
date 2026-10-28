@@ -78,9 +78,15 @@ def test_route_and_managed_profile_do_not_start_competing_recovery(tmp_path):
     configured = cfg(tmp_path)
     assert native.route(configured, lambda _: 9) is core.sync
     switches = profile.node_sync_settings(configured)
-    assert switches["DKG_VM_RECONCILER_ENABLED"] == "0"
     assert switches["DKG_SYNC_ON_CONNECT_ENABLED"] == "0"
     assert switches["DKG_SYNC_RECONCILER_ENABLED"] == "0"
+
+
+def test_snapshot_profile_keeps_the_vm_reconciler_so_progress_knows_the_graph_size(tmp_path):
+    """Amos (2026-10-28): the progress bar needs the graph's size mid-sync, and on the
+    snapshot path the VM reconciler's pass line (pending=N) is the only place the node
+    states it — so the snapshot profile keeps that reconciler on."""
+    assert profile.node_sync_settings(cfg(tmp_path))["DKG_VM_RECONCILER_ENABLED"] == "1"
 
 
 @pytest.mark.parametrize("terminal,current,expected", [("complete", True, 0), ("complete", False, 2), ("failed", True, 2)])
