@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 
 import pytest
+pytest.importorskip("rdflib", reason="rdflib backs this test's in-memory graph store; CI installs it (blackbox-ci.yml); locally: uv pip install rdflib==7.6.0")
 from rdflib import Dataset, URIRef, Literal, RDF
 
 from _blackbox_loader import load_blackbox

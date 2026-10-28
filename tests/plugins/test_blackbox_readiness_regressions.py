@@ -3,6 +3,7 @@ import argparse
 from dataclasses import replace
 
 import pytest
+pytest.importorskip("rdflib", reason="rdflib backs this test's in-memory graph store; CI installs it (blackbox-ci.yml); locally: uv pip install rdflib==7.6.0")
 from rdflib import URIRef
 from test_blackbox_core_snapshot import cfg, local_server, core, direct
 from test_blackbox_direct_graph import GraphNode, CG, PART, BASE, D, DP, config, load_blackbox
