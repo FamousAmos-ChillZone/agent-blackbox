@@ -80,8 +80,8 @@ $DkgCliDir   = Join-Path $DefaultRepoDir "dkg"
 $DkgBin      = Join-Path $DkgCliDir "node_modules\.bin\dkg.cmd"
 # The DKG release this Blackbox installs and the sha512 the downloaded tarball must have; another
 # package needs its own BLACKBOX_DKG_INTEGRITY, or "unpinned" to skip the check knowingly (see the .sh).
-$DkgDefaultPackage = "@origintrail-official/dkg@10.0.25"
-$DkgDefaultIntegrity = "sha512-ZdEnX1DANj8/Cnu0acV9au+ht2OvxZ+p4MSPpEFur+pI0k6reMzJcsZlpVoby60wnqgE3Nn6oXVL8ubx0wQJrA=="
+$DkgDefaultPackage = "@origintrail-official/dkg@10.0.26"
+$DkgDefaultIntegrity = "sha512-QlCW/5UvL2UHaR2QGAemQzvu+ZtBKfefwuitoX2hGr/XZAgkFXsln1NHitzftQM99qTrlKBq8CFfDSfDFAbMHg=="
 $DkgPackage  = if ($env:BLACKBOX_DKG_PACKAGE) { $env:BLACKBOX_DKG_PACKAGE } else { $DkgDefaultPackage }
 $DkgIntegrity = if ($env:BLACKBOX_DKG_INTEGRITY) { $env:BLACKBOX_DKG_INTEGRITY } elseif ($DkgPackage -eq $DkgDefaultPackage) { $DkgDefaultIntegrity } else { "" }
 # Packages whose install scripts the DKG node needs; npm 12 runs only those listed under
@@ -885,6 +885,7 @@ data.setdefault("name", "agent-blackbox")
 data["apiPort"] = api_port
 data.setdefault("listenPort", 0)
 data["nodeRole"] = "edge"
+data.setdefault("DKG_Core_chain_cache", True)
 data["networkConfig"] = "mainnet-base"
 # Relay reachability (see the .sh installer for the full rationale): DKG builds
 # its relay set from `relayPeers`; empty -> network-isolation denies every
@@ -1450,6 +1451,7 @@ function Enable-AndConfigure {
     $configWriter = @'
 import sys, os
 cfg_path, dkg_url, dkg_home, dkg_bin, context_graph_id, graph_peer_id = sys.argv[1:7]
+repo_dir = sys.argv[7] if len(sys.argv) > 7 else ""
 try:
     try:
         import hermes_yaml as yaml  # Hermes 0.21.7+: YAML through ruamel (PyYAML left the host)
@@ -1466,6 +1468,7 @@ if os.path.exists(cfg_path):
 plugins = data.setdefault("plugins", {})
 entries = plugins.setdefault("entries", {})
 blackbox = entries.setdefault("blackbox", {})
+no_explicit_snapshot_profile = "snapshot_sync" not in blackbox
 legacy_dkg_urls = {"http://127.0.0.1:9200", "http://localhost:9200"}
 legacy_graphs = {"0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox", "umanitek/blackbox-threats-staging", "umanitek/guardian-threats-staging", "umanitek/guardian-threats"}
 legacy_peers = {"12D3KooWAuEHYTWbD3R3yPTcECCYZnrjHNpJmrUw5b4D5T3m5Kr3", "12D3KooWBY9jmNATMPv1DZcKbFas5RtjpkhT69pPwvkUBY2MMnDX", "12D3KooWQHQd1SNecrRxwceqPJkXS" + "K" + "EYn8vrV4QyJ2AfqeYwXz1E", "12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyKndHXjZM"}
@@ -1540,6 +1543,18 @@ defaults = {
     # Optional LLM reviewer — off until `blackbox setup-llm` fills it in.
     "llm": {"enabled": False, "provider": "", "model": "", "api_key": ""},
 }
+# Keep community protection and ordinary sync unless the installed plugin can
+# admit a snapshot attempt; DKG authenticates cores before accepting any data.
+if no_explicit_snapshot_profile:
+    try:
+        import runpy
+        from pathlib import Path
+        checkout = Path(repo_dir)
+        plugin = checkout if (checkout / "plugin.yaml").is_file() else checkout / "plugins" / "blackbox"
+        defaults.update(runpy.run_path(str(plugin / "setup" / "sync_defaults.py"))["defaults"](
+            {**defaults, **blackbox}, os.environ.get("BLACKBOX_DKG_NETWORK", "mainnet-base")))
+    except Exception:
+        print("  Keeping ordinary sync: the compatible Core-cache default is not available.")
 for k, v in defaults.items():
     if k not in blackbox:
         blackbox[k] = v
@@ -1548,7 +1563,6 @@ for k, v in defaults.items():
 # re-run and upgrade; only a pre-release opt-in (no consent record in force) is
 # migrated off. The product's own consent code decides; if it cannot be
 # imported the answer is "no consent" (fail closed = sharing off).
-repo_dir = sys.argv[7] if len(sys.argv) > 7 else ""
 def _consent_in_force(checkout):
     try:
         if checkout and os.path.isfile(os.path.join(checkout, "plugin.yaml")):

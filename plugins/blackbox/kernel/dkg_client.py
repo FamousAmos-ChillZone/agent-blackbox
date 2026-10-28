@@ -25,6 +25,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import constants, host_secrets
+from .snapshot_config import query_evidence
+from .sparql_text import run_query
 from .sparql_text import extract_binding, normalize_bindings, rows_or_fallback  # re-exported: callers import them from here
 
 logger = logging.getLogger(__name__)
@@ -164,10 +166,12 @@ class DkgClient:
         url: Optional[str] = None,
         token: Optional[str] = None,
         dkg_home: Optional[str] = None,
+        config=None,
     ) -> None:
         self.url = (url or load_daemon_url()).rstrip("/")
         self.dkg_home = str(_dkg_home(dkg_home))
         self.token = token if token is not None else load_token(self.dkg_home)
+        self._chain_evidence = query_evidence(config, self.url, self.dkg_home)
 
     @classmethod
     def from_env(cls) -> DkgClient:
@@ -584,24 +588,8 @@ class DkgClient:
         since read paths fail open. A caller that must tell a genuine *empty*
         result (``[]``) apart from a *failure* passes a unique sentinel.
         """
-        payload = {"sparql": sparql, "contextGraphId": cg_id}
-        if view:
-            payload["view"] = view
-        if view == constants.VIEW_SHARED_WORKING_MEMORY:   # community statements live in their subgraph
-            payload["subGraphName"] = sub_graph
-        if agent_address:
-            payload["agentAddress"] = agent_address
-        try:
-            result = self.request(
-                "POST",
-                "/api/query",
-                payload,
-                timeout=timeout or _QUERY_TIMEOUT,
-            )
-        except DkgError as exc:
-            logger.debug("blackbox: query failed: %s", exc)
-            result = None  # a failure, reported like a malformed reply
-        return rows_or_fallback(result, on_error)
+        return run_query(self, sparql, cg_id, view, on_error, agent_address,
+                         timeout or _QUERY_TIMEOUT, sub_graph)
 
     def threat_count(self, cg_id: str) -> int:
         """Return the locally verified Blackbox threat count with one query.

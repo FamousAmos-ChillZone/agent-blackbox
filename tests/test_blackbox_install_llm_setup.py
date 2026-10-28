@@ -433,7 +433,7 @@ def test_unix_installer_uses_isolated_blackbox_dkg_node() -> None:
     assert 'BLACKBOX_DKG_HOME="$BLACKBOX_INSTALL_ROOT/.dkg"' in text
     assert 'BLACKBOX_DKG_CLI_DIR="$BLACKBOX_INSTALL_ROOT/dkg"' in text
     assert 'BLACKBOX_DKG_BIN="$BLACKBOX_DKG_CLI_DIR/node_modules/.bin/dkg"' in text
-    assert 'BLACKBOX_DKG_DEFAULT_PACKAGE="@origintrail-official/dkg@10.0.25"' in text
+    assert 'BLACKBOX_DKG_DEFAULT_PACKAGE="@origintrail-official/dkg@10.0.26"' in text
     assert 'BLACKBOX_DKG_PACKAGE="${BLACKBOX_DKG_PACKAGE:-$BLACKBOX_DKG_DEFAULT_PACKAGE}"' in text
     assert 'BLACKBOX_DKG_DAEMON_URL="http://127.0.0.1:$BLACKBOX_DKG_PORT"' in text
     assert 'npm install --prefix "$BLACKBOX_DKG_CLI_DIR"' in text
@@ -665,7 +665,7 @@ def test_windows_installer_uses_isolated_blackbox_dkg_node() -> None:
     assert '$DkgHome     = Join-Path $DefaultRepoDir ".dkg"' in text
     assert '$DkgCliDir   = Join-Path $DefaultRepoDir "dkg"' in text
     assert r'$DkgBin      = Join-Path $DkgCliDir "node_modules\.bin\dkg.cmd"' in text
-    assert "@origintrail-official/dkg@10.0.25" in text
+    assert "@origintrail-official/dkg@10.0.26" in text
     assert '$DkgDaemonUrl = "http://127.0.0.1:$DkgPort"' in text
     assert "npm install --prefix $DkgCliDir --prefer-online $installSpec" in text
     assert "BLACKBOX_DKG_REPO_URL" not in text
@@ -1327,7 +1327,8 @@ def test_blazegraph_helper_uses_built_dkg_provisioner(tmp_path: Path) -> None:
     }
 
 
-def test_blazegraph_helper_sizes_heap_and_preserves_undersized_store(tmp_path: Path) -> None:
+@pytest.mark.parametrize("old_heap", ["-Xmx1g", "-Xms512m -Xmx4g"])
+def test_blazegraph_helper_sizes_heap_and_preserves_undersized_store(tmp_path: Path, old_heap: str) -> None:
     node = shutil.which("node")
     if not node:
         pytest.skip("Node.js is not installed")
@@ -1352,7 +1353,7 @@ def test_blazegraph_helper_sizes_heap_and_preserves_undersized_store(tmp_path: P
         "#!/bin/sh\n"
         f"printf '%s\\n' \"$*\" >> {shlex.quote(str(docker_log))}\n"
         "case \"$1\" in\n"
-        "  inspect) printf '%s\\n' '[{\"Config\":{\"Env\":[\"JAVA_OPTS=-Xmx1g\"]}}]' ;;\n"
+        f"  inspect) printf '%s\\n' '[{{\"Config\":{{\"Env\":[\"JAVA_OPTS={old_heap}\",\"TOMCAT_JAVA_OPTS=\"]}}}}]' ;;\n"
         "  run) printf '%s\\n' \"$*\" ;;\n"
         "esac\n",
         encoding="utf-8",
@@ -1372,7 +1373,7 @@ def test_blazegraph_helper_sizes_heap_and_preserves_undersized_store(tmp_path: P
     assert calls[1] == "stop dkg-blazegraph-test"
     assert calls[2].startswith("rename dkg-blazegraph-test dkg-blazegraph-test-pre-4g-")
     assert calls[3] == "info --format {{.NCPU}}"   # this fake Docker gives no count: the old 4 stands
-    assert calls[4] == "run --cpus 4 -e JAVA_OPTS=-Xms512m -Xmx4g -d blazegraph"
+    assert calls[4] == "run --cpus 4 -e TOMCAT_JAVA_OPTS=-Xms512m -Xmx4g -d blazegraph"
     assert json.loads(completed.stdout)["url"] == calls[4]
 
 
@@ -1412,7 +1413,7 @@ def test_blazegraph_helper_never_asks_docker_for_more_cpus_than_it_has(tmp_path:
         env={**os.environ, "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", "")},
     )
 
-    assert json.loads(completed.stdout)["url"] == "run --cpus 2 -e JAVA_OPTS=-Xms512m -Xmx4g -d blazegraph"
+    assert json.loads(completed.stdout)["url"] == "run --cpus 2 -e TOMCAT_JAVA_OPTS=-Xms512m -Xmx4g -d blazegraph"
 
 
 def test_blazegraph_helper_uses_dkg_store_health_check(tmp_path: Path) -> None:

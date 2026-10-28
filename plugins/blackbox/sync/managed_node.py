@@ -326,7 +326,7 @@ def _stop_managed_dkg(cfg: BlackboxConfig, old_pid: Optional[int], env: dict[str
     # worker is still draining sync jobs. Starting immediately then sees
     # the old PID and refuses with "Daemon already running". Wait for the
     # exact managed worker and API listener to disappear first.
-    stopped = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
+    stopped = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg)
     stop_deadline = time.monotonic() + 45
     while time.monotonic() < stop_deadline:
         pid_running = old_pid is not None and node_process.is_managed_daemon(cfg, old_pid)
@@ -351,7 +351,7 @@ def _wait_for_managed_dkg_ready(cfg: BlackboxConfig, detail: str) -> None:
 
     *detail* is the start command's output, appended to the error for context.
     """
-    client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
+    client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg)
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
         try:
