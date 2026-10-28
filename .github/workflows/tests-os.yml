@@ -201,7 +201,17 @@ jobs:
         env:
           # These files spawn nested PowerShell trees. CPU-count parallelism
           # starves cold child startup before the fixture's idle deadline.
+          # Upstream runs 16 workers on a 32-core runner; this fork's windows-latest has
+          # 4 vCPUs, where 16 workers timed out every PowerShell child (run 38927008162)
+          # and 2 still pushed the slowest desktop-update files past the per-file cap
+          # (run 38993760723). One worker per slice keeps the box quiet.
           HERMES_TEST_WORKERS: ${{ matrix.marker == 'windows' && '1' || '' }}
+          # The 300 s per-file cap is sized for the 32-core runner (tests.yml says the same
+          # for Linux). On this runner test_desktop_update_windows_marker.py alone has run
+          # 64 s, 302 s (killed) and 875 s across three runs with no test failing
+          # (KI-433): the cap covers the observed maximum twice over, and the row's
+          # 90-minute job budget covers a slice that holds it.
+          HERMES_TEST_FILE_TIMEOUT: ${{ matrix.marker == 'windows' && '1800' || '300' }}
           HERMES_TEST_SLICE: ${{ matrix.slice || '' }}
           # Belt-and-suspenders with tests/conftest.py's env blanking: no
           # test may reach a real provider API.
@@ -243,9 +253,10 @@ jobs:
     # xfails (per-file KNOWN tables), so a fix turns this job red until the entry goes.
     name: Windows E2E (real processes)
     if: inputs.e2e
-    # The upstream 32-core pool is unavailable to this fork. Keep the same
-    # process-isolation checks, worker count and deadlines on a standard runner.
-    runs-on: windows-latest
+    # 32-core like os-tests' Windows row: seven files run in parallel and each spawns
+    # process trees; on the 4-vCPU image the suite step took 153-171 s (job 4.7-5.6 min),
+    # here 124 s (job 3.1 min), with headroom against scheduling-starved timeouts.
+    runs-on: windows-latest-32-core
     timeout-minutes: 25
     steps:
       - name: Checkout code

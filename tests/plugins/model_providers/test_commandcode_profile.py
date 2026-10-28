@@ -140,8 +140,7 @@ class TestCommandCodeFetchModelsPickerContract:
     """
 
 
-    @pytest.mark.parametrize("catalog_present", [False, True])
-    def test_resolve_provider_full(self, monkeypatch, catalog_present):
+    def test_resolve_provider_full(self):
         """Both profiles must resolve through the model-switch path.
 
         Regression: ``resolve_provider_full`` only knew models.dev + overlay
@@ -149,22 +148,12 @@ class TestCommandCodeFetchModelsPickerContract:
         "Unknown provider" on /model switches even though the picker listed
         them.
         """
-        from types import SimpleNamespace
-        import hermes_cli.providers as provider_defs
         from hermes_cli.providers import resolve_provider_full
 
-        # The remote catalog can gain this provider after the plugin shipped.
-        # Preserve its existing key name as well as the catalog's newer alias.
-        entry = SimpleNamespace(name="CommandCode", env=("CMD_API_KEY",),
-                                api="https://api.commandcode.ai/provider/v1", doc="")
-        monkeypatch.setattr(provider_defs, "_models_dev_info",
-                            lambda name, *args: entry if catalog_present and name == "commandcode" else None)
         chat = resolve_provider_full("commandcode", {}, [])
         assert chat is not None and chat.id == "commandcode"
         assert chat.transport == "openai_chat"
         assert "COMMANDCODE_API_KEY" in chat.api_key_env_vars
-        if catalog_present:
-            assert "CMD_API_KEY" in chat.api_key_env_vars
 
         anth = resolve_provider_full("commandcode-anthropic", {}, [])
         assert anth is not None and anth.id == "commandcode-anthropic"

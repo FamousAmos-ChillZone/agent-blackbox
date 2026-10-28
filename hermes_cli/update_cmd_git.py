@@ -572,9 +572,7 @@ def _portable_git_candidates() -> list:
     from hermes_constants import get_default_hermes_root, get_hermes_home
     candidates = []
     with suppress(Exception):
-        candidates += [root / "git" / arch / "libexec" / "git-core" / "git.exe"
-                       for root in (get_default_hermes_root(), Path(get_hermes_home()))
-                       for arch in ("mingw64", "ucrt64")]
+        candidates += [root / "git" / "mingw64" / "libexec" / "git-core" / "git.exe" for root in (get_default_hermes_root(), Path(get_hermes_home()))]
     return candidates
 
 
