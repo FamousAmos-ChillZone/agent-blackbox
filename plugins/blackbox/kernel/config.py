@@ -11,11 +11,14 @@ from __future__ import annotations
 
 import logging
 import os
+from .snapshot_config import SnapshotSyncConfig, snapshot_config
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Mapping, Tuple
 
 from . import constants
+from .config_values.semantic import SemanticConfig, semantic_config
 from .host_secrets import read_host_secret
 
 #: The detection categories a user can tune individually.
@@ -41,76 +44,19 @@ DEFAULT_PROTECTED_PATHS: tuple[str, ...] = (
 )
 
 
-def _as_bool(value: Any, default: bool) -> bool:
-    if isinstance(value, bool):
-        return value
-    raw = str(value).strip().lower()
-    if raw in _TRUE:
-        return True
-    if raw in _FALSE:
-        return False
-    return default
-
-
-def _as_int(value: Any, default: int) -> int:
-    try:
-        return int(str(value).strip())
-    except (TypeError, ValueError):
-        return default
-
-
-def _as_float(value: Any, default: float) -> float:
-    try:
-        return float(str(value).strip())
-    except (TypeError, ValueError):
-        return default
-
-
-def _fallback_mode(value: Any) -> str:
-    """``index`` only when the operator wrote exactly that; anything else is ``off``."""
-    return "index" if str(value or "").strip().lower() == "index" else "off"
-
-
-def _env_or(entry: dict[str, Any], *, env: str, key: str, default: Any) -> Any:
-    """Resolve a single config value: env var wins, then config entry, then default."""
-    env_val = os.environ.get(env)
-    if env_val is not None and env_val.strip() != "":
-        return env_val.strip()
-    if key in entry and entry[key] is not None:
-        return entry[key]
-    return default
-
-
-def _first_env(*names: str) -> str:
-    """Return the first non-empty environment variable from *names*."""
-    for name in names:
-        value = os.environ.get(name)
-        if value is not None and value.strip() != "":
-            return value.strip()
-    return ""
-
-
-def _default_dkg_url() -> str:
-    port = _as_int(os.environ.get("BLACKBOX_DKG_PORT"), constants.DEFAULT_DKG_PORT)
-    return f"http://127.0.0.1:{port}"
-
-
-def _is_default_dkg_home(value: object) -> bool:
-    """True when a config entry points at the DKG CLI's shared default home."""
-    raw = str(value or "").strip()
-    if not raw:
-        return False
-    try:
-        return Path(raw).expanduser().resolve() == (Path.home() / ".dkg").resolve()
-    except Exception:
-        return Path(raw).expanduser() == Path.home() / ".dkg"
-
+from .config_values import (_as_bool, _as_int, _as_float, _env_or, _first_env,
+                            _default_dkg_url, _is_default_dkg_home, _fallback_mode)
 
 @dataclass(frozen=True)
 class BlackboxConfig:
     """Resolved Blackbox settings for the current process."""
 
     mode: str = "audit"
+    #: Opt in to "dkg" after upgrading the local query capability.
+    #: Existing and older-daemon installs retain their explicitly named legacy mode.
+    detection_backend: str = "legacy-cache"
+    snapshot_sync: SnapshotSyncConfig | None = None
+    semantic: SemanticConfig = field(default_factory=SemanticConfig)
     context_graph_id: str = constants.DEFAULT_CONTEXT_GRAPH_ID
     graph_peer_id: str = constants.DEFAULT_GRAPH_PEER_ID
     dkg_url: str = constants.DEFAULT_DKG_URL
@@ -261,14 +207,15 @@ def _note_retired_community_settings(entry: Mapping[str, Any]) -> None:
             logger.info("blackbox: %s is ignored: community reports live in the verified graph now", name)
 
 
-def load_blackbox_config() -> BlackboxConfig:
-    """Build a :class:`BlackboxConfig` from config file + environment overrides."""
-    entry = _blackbox_entry()
+def load_blackbox_config(*, entry: dict[str, Any] | None = None) -> BlackboxConfig:
+    """Resolve the saved or proposed entry with the same environment precedence."""
+    entry = _blackbox_entry() if entry is None else entry
     _note_retired_community_settings(entry)
     mode = str(_env_or(entry, env="BLACKBOX_MODE", key="mode", default="audit")).lower()
-    if mode not in {"audit", "block"}:
-        mode = "audit"
-    block_severity = str(_env_or(entry, env="BLACKBOX_BLOCK_SEVERITY", key="block_severity", default="critical")).lower()
+    mode = mode if mode in {"audit", "block"} else "audit"
+    block_severity = str(
+        _env_or(entry, env="BLACKBOX_BLOCK_SEVERITY", key="block_severity", default="critical")
+    ).lower()
     if block_severity not in constants.SEVERITY_RANK:
         block_severity = "critical"
     report_min_severity = str(_env_or(entry, env="BLACKBOX_REPORT_MIN_SEVERITY", key="report_min_severity",
@@ -321,9 +268,7 @@ def load_blackbox_config() -> BlackboxConfig:
         or dkg_url_env
         or _default_dkg_url()
     ).rstrip("/")
-    legacy_dkg_urls = {"http://127.0.0.1:9200", "http://localhost:9200"}
-    has_configured_dkg_home = bool(configured_dkg_home)
-    if not has_configured_dkg_home and dkg_url in legacy_dkg_urls:
+    if not configured_dkg_home and dkg_url in {"http://127.0.0.1:9200", "http://localhost:9200"}:
         dkg_url = _default_dkg_url()
     graph_peer_id = str(
         _env_or(
@@ -342,7 +287,8 @@ def load_blackbox_config() -> BlackboxConfig:
         )
         graph_peer_id = constants.DEFAULT_GRAPH_PEER_ID
     return BlackboxConfig(
-        mode=mode,
+        mode=mode, semantic=semantic_config(entry), snapshot_sync=snapshot_config(entry),
+        detection_backend=str(entry.get("detection_backend", "legacy-cache")).strip().lower(),
         context_graph_id=context_graph_id,
         graph_peer_id=graph_peer_id,
         dkg_url=dkg_url,

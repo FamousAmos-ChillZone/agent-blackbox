@@ -139,6 +139,15 @@ class CommunityMembership:
         graph = str(getattr(cfg, "context_graph_id", "") or "")
         if not graph:
             return False, "no graph configured"
+        if getattr(cfg, "snapshot_sync", None) is not None:
+            # Adding shared memory can schedule catch-up. Do not race the owned
+            # foreground snapshot; existing local community protections still read.
+            try:
+                job = client.request("GET", "/api/context-graph/snapshot-sync")
+            except DkgError:
+                return False, "snapshot state unavailable; subscription unchanged"
+            if job.get("state") not in {"complete", "failed"}:
+                return False, "shared memory follows the owned public snapshot"
         if getattr(cfg, "community_auto_approve", False):
             self._approve_pending(client, graph)
         self._join_check(client, cfg, graph)

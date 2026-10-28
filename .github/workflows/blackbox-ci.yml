@@ -33,11 +33,21 @@ jobs:
           fetch-depth: 2 # the merge commit and its first parent (the base branch tip)
 
       - name: Set up locked Python and test dependencies
+        id: setup
         uses: ./.github/actions/setup-pm
         with:
           extras: '[]'
           test-environment: 'true'
           prune-python-cache: true
+
+      - name: Install Blackbox's test-only packages
+        # rdflib backs the in-memory graph store five Blackbox tests stand in for the
+        # node with; the plugin never imports it. Hermes' lock pulls it only through the
+        # text-to-speech extra, so it is installed here (same version as uv.lock) rather
+        # than by editing Hermes' pyproject (upstream-first, Amos 2026-10-28).
+        uses: ./.github/actions/retry
+        with:
+          command: uv pip install --python "${{ steps.setup.outputs.python-path }}" "rdflib==7.6.0"
 
       - name: Blackbox suite
         # scripts/run_tests.sh — the canonical runner, as every Hermes lane uses:

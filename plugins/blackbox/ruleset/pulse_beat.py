@@ -20,6 +20,8 @@ import threading
 import time
 from typing import Optional
 
+from agent.memory_provider import spawn_context_thread
+
 from .. import community
 from ..kernel.config import BlackboxConfig, load_blackbox_config
 from ..kernel.dkg_client import DkgClient
@@ -50,7 +52,7 @@ def pulse(config: Optional[BlackboxConfig] = None) -> bool:
         _pulsing = True
         _pulsing_since = time.time()
     try:
-        threading.Thread(target=_background_pulse, args=(config,), name="blackbox-pulse", daemon=True).start()
+        spawn_context_thread(target=_background_pulse, args=(config,), name="blackbox-pulse", daemon=True).start()
     except Exception:  # pragma: no cover
         with _pulsing_lock:
             _pulsing = False
@@ -63,7 +65,11 @@ def _background_pulse(config: BlackboxConfig) -> None:
     try:
         from . import refresh_cycle   # lazy: refresh_cycle imports this module
 
-        client = DkgClient(url=config.dkg_url, dkg_home=config.dkg_home)
+        client = DkgClient(url=config.dkg_url, dkg_home=config.dkg_home, config=config)
+        if config.detection_backend == "dkg":
+            from .direct.community import refresh
+            refresh(config, client)
+            return
         # KI-216 / FIX-0039: the beat is the one path that ALWAYS runs on a node
         # (the heavy refresh fails outright on a node without the verified graph),
         # so membership — the verified graph's subscription with its shared memory —
