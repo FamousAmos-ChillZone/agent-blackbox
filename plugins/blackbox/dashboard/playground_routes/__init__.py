@@ -7,11 +7,16 @@
 * ``GET /api/playground/graph`` and ``GET /api/playground/threat`` — the sandbox lane in
   the Community graph's own response shapes; in sandbox mode the dashboard's Community
   tab reads these instead of ``/api/graph`` / ``/api/threat`` (display only);
-* ``GET /api/playground/local`` — this node's sandbox tests as findings rows and as
-  local activity; in sandbox mode the dashboard lists them beside the real findings
-  and in the Local tab, tagged SANDBOX, and never counts them or alerts on them;
+* ``GET /api/playground/local`` — this node's sandbox tests as findings rows, as local
+  activity and as Agent activity entries; in sandbox mode the dashboard lists them beside
+  the real findings, in the Local tab and in Agent activity, tagged SANDBOX, and alerts on
+  new ones the way it alerts on real findings (Amos, 2026-10-27) — counts stay the real ones;
 * ``POST /api/playground/run`` ``{"kind": "domain"}`` — run one sandbox test
-  (:func:`playground.run_test`); 409 with a plain reason when it cannot run.
+  (:func:`playground.run_test`); 409 with a plain reason when it cannot run;
+* ``GET /api/playground/wallets`` — the shields' wallet tests for this machine (every
+  wallet found here, generated seed phrases and keys; never a generated secret);
+* ``POST /api/playground/wallets/run`` ``{"id": "vault:metamask:…"}`` — run one through the
+  real check, local only (:func:`playground.run_wallet_test`); 409 with the reason.
 
 The POST is a state change, so the app-wide browser boundary already demands
 the session token on it (KI-028 / LES-006); nothing here bypasses that.
@@ -77,8 +82,10 @@ def local_payload() -> dict[str, Any]:
     from ...kernel.config import load_blackbox_config
 
     if not load_blackbox_config().community_sandbox:
-        return {"sandbox": False, "findings": [], "local": {"sessions": [], "sessionCount": 0, "threatCount": 0}}
-    return {"sandbox": True, "findings": playground.recent_tests(limit=100), "local": playground.sandbox_activity()}
+        return {"sandbox": False, "findings": [], "audit": [],
+                "local": {"sessions": [], "sessionCount": 0, "threatCount": 0}}
+    return {"sandbox": True, "findings": playground.recent_tests(limit=100), "audit": playground.sandbox_audit(),
+            "local": playground.sandbox_activity()}
 
 
 def run_payload(body: Any) -> tuple[int, dict[str, Any]]:
@@ -88,6 +95,25 @@ def run_payload(body: Any) -> tuple[int, dict[str, Any]]:
     kind = str(body.get("kind") or "") if isinstance(body, dict) else ""
     try:
         return 200, {"ok": True, "result": playground.run_test(kind).to_dict()}
+    except playground.PlaygroundRefused as exc:
+        return 409, {"ok": False, "error": str(exc)}
+
+
+def wallet_list_payload() -> dict[str, Any]:
+    """The wallet tests the panel lists (empty outside sandbox mode)."""
+    from ... import playground
+    from ...kernel.config import load_blackbox_config
+
+    return {"tests": playground.wallet_tests() if load_blackbox_config().community_sandbox else []}
+
+
+def wallet_run_payload(body: Any) -> tuple[int, dict[str, Any]]:
+    """(status, body) for one wallet test: 200 with the result, 409 with the reason it cannot run."""
+    from ... import playground
+
+    test_id = str(body.get("id") or "") if isinstance(body, dict) else ""
+    try:
+        return 200, {"ok": True, "result": playground.run_wallet_test(test_id).to_dict()}
     except playground.PlaygroundRefused as exc:
         return 409, {"ok": False, "error": str(exc)}
 
@@ -124,4 +150,13 @@ def register(app: Any, swr: Cache) -> None:
     @app.post("/api/playground/run")
     def playground_run(body: dict[str, Any] = Body(default={})) -> Any:
         status, payload = run_payload(body)
+        return JSONResponse(payload, status_code=status, headers=NO_CACHE)
+
+    @app.get("/api/playground/wallets")
+    def playground_wallets() -> Any:
+        return JSONResponse(wallet_list_payload(), headers=NO_CACHE)
+
+    @app.post("/api/playground/wallets/run")
+    def playground_wallet_run(body: dict[str, Any] = Body(default={})) -> Any:
+        status, payload = wallet_run_payload(body)
         return JSONResponse(payload, status_code=status, headers=NO_CACHE)

@@ -3411,6 +3411,7 @@
   // beside the real findings and in the Local tab with a SANDBOX tag, and never reach a
   // count, the onboarding check or an alert: those read the real payloads only.
   var sandboxLocal = null;
+  var sandboxRowsSeen = false;   // the sandbox tests present at first sight never alert
   var SANDBOX_RING = "#8B5CF6";
   var findingsSort = "newest";   // "newest" | "severity"
 
@@ -6378,7 +6379,7 @@
         // Local is this machine's own log (fetched fast): loader only until the
         // first payload lands, then the real count even when it's 0.
         if (localCache == null) { if (!showsLoader(lel)) lel.innerHTML = LOADER_HTML; }
-        else lel.textContent = localCache.threatCount || 0;
+        else lel.textContent = localViewData().threatCount || 0;   // sandbox mode: tests counted too
         return;
       }
       // ``setCount`` keeps the latest committed number and adds the loader
@@ -6704,9 +6705,9 @@
     copy.className = "threat-toast-copy";
     var title = document.createElement("div");
     title.className = "threat-toast-title";
-    title.textContent = fresh.length === 1
+    title.textContent = (fresh.every(function (f) { return f.sandbox; }) ? "SANDBOX TEST · " : "") + (fresh.length === 1
       ? highest.charAt(0).toUpperCase() + highest.slice(1) + " threat detected"
-      : fresh.length + " new threats detected";
+      : fresh.length + " new threats detected");
     var detail = document.createElement("div");
     detail.className = "threat-toast-detail";
     detail.textContent = fresh.length === 1
@@ -6972,7 +6973,8 @@
       }
       if (detail.duration_ms != null) bits2.push(fmtDuration(detail.duration_ms));
       if (entry.findingCount) bits2.push(entry.findingCount + ' finding' + (entry.findingCount === 1 ? '' : 's'));
-      if (detail.session_id) bits2.push('session ' + esc(String(detail.session_id).slice(-6)));
+      if (entry.sandbox) bits2.push('sandbox test');   // the Playground's session id, not a real session
+      else if (detail.session_id) bits2.push('session ' + esc(String(detail.session_id).slice(-6)));
       meta = bits2.join(" · ");
     } else if (ev === "pre_api_request") {
       primary = esc(detail.model || detail.provider || "API request");
@@ -7031,7 +7033,8 @@
       fwIcon(fw) +
       '<span>' + esc(fwLabel(fw)) + '</span>' +
       '</span>';
-    var eventCell = '<span class="au-event ev-' + grp + '">' + esc(evtLabel(entry.event)) + '</span>';
+    var eventCell = '<span class="au-event ev-' + grp + '">' + esc(evtLabel(entry.event)) + '</span>' +
+      (entry.sandbox ? ' <span class="sb-tag">SANDBOX</span>' : '');
     return '<tr class="' + (isThreat ? "threat-row" : "") + '" data-idx="' + idx + '">' +
       '<td>' + fmtTime(entry.ts, entry.iso) + '</td>' +
       '<td>' + agentCell + '</td>' +
@@ -7040,10 +7043,18 @@
     '</tr>';
   }
 
+  // In sandbox mode, the Playground's own activity (tests) merged into Agent activity, tagged.
+  function sandboxAuditEntries() {
+    if (window.__bbSandbox !== true || !sandboxLocal) return [];
+    return asList(sandboxLocal.audit).map(function (e) { return Object.assign({}, e, { sandbox: true }); });
+  }
+
   function renderAuditTrail(data) {
     if (data !== undefined) activityCache = data;
     data = activityCache;
-    var entries = (data && Array.isArray(data.entries)) ? data.entries : [];
+    var sandboxEntries = sandboxAuditEntries();
+    var entries = ((data && Array.isArray(data.entries)) ? data.entries : []).concat(sandboxEntries)
+      .sort(function (a, b) { return (Number(b.ts) || 0) - (Number(a.ts) || 0); });
     toolCmdById = {};
     entries.forEach(function (e) {
       var det = e && e.detail;
@@ -7055,7 +7066,7 @@
     var filtered = (activityFilter === "threats")
       ? entries.filter(function (e) { return e.event === "flagged" || e.event === "blocked"; })
       : entries;
-    var total = (data && data.total != null) ? data.total : entries.length;
+    var total = ((data && data.total != null) ? data.total + sandboxEntries.length : entries.length);   // sandbox rows counted
     var body = $("audit-body");
     if (!body) return;
 
@@ -7283,7 +7294,8 @@
   }
 
   // The Local tab's data: the real activity, plus (in sandbox mode) the sandbox sessions with
-  // every threat marked. threatCount stays the real one, so the tab count never moves.
+  // every threat marked. In sandbox mode the count includes the tests, so the tab counts what it
+  // draws (Amos, 2026-10-27); out of sandbox mode it is the real count alone.
   function localViewData() {
     var tests = window.__bbSandbox === true && sandboxLocal && sandboxLocal.local;
     if (!tests || !(tests.sessions || []).length) return localCache;
@@ -7296,7 +7308,8 @@
         })
       });
     });
-    return Object.assign({}, real, { sessions: (real.sessions || []).concat(marked) });
+    return Object.assign({}, real, { sessions: (real.sessions || []).concat(marked),
+      threatCount: (real.threatCount || 0) + (tests.threatCount || 0) });
   }
 
   function loadFindings() {
@@ -7305,7 +7318,16 @@
       return loadSandboxLocal().then(function () { return data; });
     }).then(function (data) {
       if (requestGeneration !== findingsRequestGeneration) return null;
-      processThreatNotifications(data);
+      // Sandbox tests alert the way real findings do (tagged SANDBOX in the toast); the
+      // unread count and the findings counts stay the real ones' business otherwise.
+      var sandboxRows = sandboxFindingRows();
+      // The first time sandbox rows arrive (the mode is learned a moment after the first poll),
+      // the tests already there are known, not new — only tests run from now on alert.
+      if (sandboxRows.length && !sandboxRowsSeen && knownFindingKeys !== null) {
+        sandboxRows.forEach(function (f) { var key = findingNotificationKey(f); knownFindingKeys.add(key); knownFindingOrder.push(key); });
+      }
+      if (sandboxRows.length) sandboxRowsSeen = true;
+      processThreatNotifications(asList(data).concat(sandboxRows));
       renderFindings(data);
       return data;
     });
