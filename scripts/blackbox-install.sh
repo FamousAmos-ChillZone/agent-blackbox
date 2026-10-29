@@ -1313,12 +1313,12 @@ check_python() {
         warn "No system Python 3.11–3.13 found — uv will provide a compatible one."
         PY=""
     else
-        err "Python 3.11–3.13 not found (and uv isn't installed)."
-        case "$OS" in
-            macos) step "Easiest fix: brew install uv   (or: brew install python@3.12)" ;;
-            linux) step "Easiest fix: curl -LsSf https://astral.sh/uv/install.sh | sh   (or: apt install python3.12 python3.12-venv)" ;;
-        esac
-        exit 1
+        # Nothing to install by hand: Hermes's own setup (setup-hermes.sh, run below) downloads a
+        # pinned, sha256-verified uv and has it install Python. Stopping here sent a user to
+        # `brew install python@3.12` for a step the installer does itself (2026-10-29). Only the
+        # old-Hermes fallback (minimal_python_env) still needs a Python or uv, and says so there.
+        step "No Python 3.11–3.13 or uv yet — Hermes's setup will download a pinned, checksum-verified uv and Python."
+        PY=""
     fi
 }
 
@@ -1552,7 +1552,12 @@ minimal_python_env() {
             step "Creating virtual environment (uv fetches Python 3.12) ..."
             ( cd "$REPO_DIR" && uv venv --python 3.12 "$VENV_DIR" )
         else
-            err "Need Python 3.11–3.13 or uv to build the environment."; exit 1
+            err "Need Python 3.11–3.13 or uv to build the environment (this Hermes has no setup that fetches them)."
+            case "$OS" in
+                macos) step "Easiest fix: brew install uv   (or: brew install python@3.12)" ;;
+                linux) step "Easiest fix: curl -LsSf https://astral.sh/uv/install.sh | sh   (or: apt install python3.12 python3.12-venv)" ;;
+            esac
+            exit 1
         fi
     else
         step "Reusing existing venv at $VENV_DIR"
